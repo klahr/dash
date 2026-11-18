@@ -1103,6 +1103,10 @@ func (a *app) startWorkers() {
 	go a.todos.Run(ctx)
 	a.merges.Resume()
 	go a.merges.Run(ctx) // one merge worker per project
+	// Conflicts between tasks' branches, found before the merge queue meets them.
+	conflicts := queue.NewConflictWatch(&queue.ConflictWatch{Store: a.st, Git: a.git, Log: a.todoLog})
+	a.storeEvents.chain(conflicts.Observe)
+	go conflicts.Run(ctx)
 	// Goals' coordinators wake on their tasks' events.
 	a.storeEvents.chain(a.apiSrv.ObserveGoals)
 	a.apiSrv.StartGoals(ctx)

@@ -1006,6 +1006,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	}
 	req := agent.ExecRequest{Dir: wt.Path, Shared: dir}
 	unsent := t.Feedback[min(t.FeedbackSent, len(t.Feedback)):]
+	given := len(t.Feedback) // notes added during the run (a conflict ahead in the merge queue) wait for the next one
 	stat := model.TodoRun{Kind: model.RunFirst}
 	switch {
 	case t.SessionID != "" && len(unsent) > 0:
@@ -1089,7 +1090,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		x.CostUSD += res.CostUSD
 		x.Runs++
 		x.RunStats = append(x.RunStats, stat)
-		x.FeedbackSent = len(x.Feedback)
+		x.FeedbackSent = min(given, len(x.Feedback))
 		return nil
 	})
 	if uerr == nil {

@@ -377,7 +377,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .paused-tag { color: var(--muted); }
 .start-now-tag { color: var(--running); } /* the task skips the wait for the weekly pace */
 /* A card's small word tags (paused, reviewing, a PR, CI, checks, a revert): one size; each sets its colour. */
-:is(.paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag) { font-size: var(--fs-xs); font-weight: 600; }
+:is(.paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .conflict-tag) { font-size: var(--fs-xs); font-weight: 600; }
+/* A conflict found ahead of the merge queue: one short line, the rest on hover. */
+.conflict-tag { color: var(--running); max-width: min(22em, 100%); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conflicts { color: var(--running); overflow-wrap: anywhere; }
 
 .s-draft { --c: var(--faint); }
 .s-queued { --c: var(--accent); }

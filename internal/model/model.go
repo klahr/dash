@@ -446,6 +446,13 @@ type Todo struct {
 	// SentBack is why the merge queue last returned the todo to Claude
 	// (a conflict or failing tests), shown on the card while it is fixed.
 	SentBack string `json:"sent_back,omitempty"`
+	// Conflicts are the other tasks in progress, in review or merging (and
+	// the default branch) the task's branch would conflict with if merged,
+	// as git merge-tree found (see queue.ConflictWatch). ConflictNoted
+	// holds the ids of the tasks ahead of it in the merge queue Claude has
+	// had a note about, so a conflict is noted once.
+	Conflicts     []Conflict `json:"conflicts,omitempty"`
+	ConflictNoted []string   `json:"conflict_noted,omitempty"`
 	// Paused holds a queued todo back from the dispatcher. Pausing a running
 	// todo stops Claude and requeues it paused, keeping its worktree and
 	// session so resuming continues where it stopped.
@@ -529,6 +536,20 @@ type Todo struct {
 	UpdatedAt  time.Time  `json:"updated_at"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// Conflict is what a task's branch would conflict with: another task's
+// branch, or the default branch (Base), and in which files.
+type Conflict struct {
+	// TodoID is the other task (empty for the default branch). On a runner,
+	// HubTodoID is the hub's id for it, if it is a hub's task: the hub
+	// shows the conflict with its own ids.
+	TodoID    string `json:"todo_id,omitempty"`
+	HubTodoID string `json:"hub_todo_id,omitempty"`
+	Base      bool   `json:"base,omitempty"`
+	// Name is the other task's name, or the default branch's.
+	Name  string   `json:"name"`
+	Files []string `json:"files"`
 }
 
 // TodoModels are the model aliases offered for a task; any other Claude

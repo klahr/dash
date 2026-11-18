@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
-import { approvable, buildsOnMeta, canMergePR, mergePR, depMeta, hasPriority, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
+import { approvable, buildsOnMeta, canMergePR, conflictMeta, mergePR, depMeta, hasPriority, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
 import { goalChip } from "./goals.js";
 import { editable, openTodoForm } from "./todos.js";
 import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.js";
@@ -120,6 +120,7 @@ export function renderDetail() {
     hasPriority(t) && !inlineEdits(t) ? h("span", {}, `Priority ${t.priority}`) : null, // else an editable field below
     depMeta(t),
     buildsOnMeta(t),
+    conflictMeta(t),
     t.runs ? h("span", {}, `${plural(t.runs, "run")}${t.cost_usd ? ` · ≈$${t.cost_usd.toFixed(2)}` : ""}`) : null,
     t.auto_fixes ? h("span", {}, `Fixed automatically ${t.auto_fixes}×`) : null,
     t.status === "queued" && t.start_now ? h("span", { class: "start-now-tag", title: "It starts as soon as a lane is free, while the queue waits for the weekly pace. A usage limit or a paused queue still holds it back." }, "Starts now, despite the pace") : null,

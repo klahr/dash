@@ -280,6 +280,9 @@ type TaskState struct {
 	MergedCommit   string        `json:"merged_commit,omitempty"`
 	Revert         *model.Revert `json:"revert,omitempty"`
 	RevertConflict []string      `json:"revert_conflict,omitempty"`
+	// Conflicts are what the task's branch conflicts with on the runner
+	// (other tasks there, by their hub ids, and the default branch).
+	Conflicts []model.Conflict `json:"conflicts,omitempty"`
 	// Session: the runner still has the task's worktree and Claude
 	// session, so it can continue the task.
 	Session   bool      `json:"session,omitempty"`
@@ -296,7 +299,7 @@ func StateOf(t model.Todo) TaskState {
 		HubTodoID: t.HubTodoID, ID: t.ID, Status: t.Status, Paused: t.Paused, Error: t.Error, Summary: t.Summary,
 		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, CostUSD: t.CostUSD, Runs: t.Runs, RunStats: t.RunStats,
 		Checks: t.Checks, PR: t.PR, MergedCommit: t.MergedCommit, Revert: t.Revert, RevertConflict: t.RevertConflict,
-		Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
+		Conflicts: t.Conflicts, Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
 	}
 	if t.Worktree != nil {
 		s.Branch = t.Worktree.Branch

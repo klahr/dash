@@ -397,6 +397,7 @@ func (sv *service) startOver(ctx context.Context, id string) (model.Todo, error)
 		x.MergeMain, x.EditsApplied = false, false
 		x.Checks, x.DiffFiles, x.DiffAdd, x.DiffDel = nil, 0, 0, 0
 		x.AutoFixes, x.AutoMerge, x.SentBack = 0, false, ""
+		x.Conflicts, x.ConflictNoted = nil, nil
 		return nil
 	})
 }

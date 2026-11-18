@@ -537,6 +537,45 @@ export function buildsOnMeta(t) {
     "Builds on ", d ? depLink(d, `#${d.id} ${title(d)}`) : `#${t.builds_on}`);
 }
 
+// Conflicts found ahead of the merge queue (t.conflicts) show while the
+// task's branch is in play: in progress, in review or merging.
+function conflictsOf(t) {
+  return ["in_progress", "review", "merging"].includes(t.status) && t.conflicts?.length ? t.conflicts : null;
+}
+
+// What a conflict is with: the default branch, or the other task.
+function conflictWho(c) {
+  if (c.base) return c.name;
+  const o = c.todo_id && state.todos.get(c.todo_id);
+  return o ? title(o) : c.name || "another task";
+}
+
+// "Conflicts with Fix login in auth.go +2" on a card; every conflict and
+// file on hover.
+function conflictTag(t) {
+  const cs = conflictsOf(t);
+  if (!cs) return null;
+  const c = cs[0], files = c.files || [];
+  const more = (files.length > 1 ? ` +${files.length - 1}` : "") + (cs.length > 1 ? ` · ${plural(cs.length - 1, "more conflict")}` : "");
+  const hover = cs.map((x) => `Conflicts with ${conflictWho(x)} in ${(x.files || []).join(", ")}`).join("\n");
+  return h("span", { class: "conflict-tag", title: `${hover}\nFound ahead of the merge queue` },
+    `Conflicts with ${conflictWho(c)} in ${files[0] || "files"}${more}`);
+}
+
+// The detail view's lines about conflicts: each one with the other task
+// (which opens it) or the default branch, and all its files.
+export function conflictMeta(t) {
+  const cs = conflictsOf(t);
+  if (!cs) return null;
+  return h("span", { class: "conflicts", title: "Found ahead of the merge queue by merging the branches without a checkout" },
+    ...cs.flatMap((c, i) => {
+      const o = !c.base && c.todo_id && state.todos.get(c.todo_id);
+      return [i ? "; " : "", "Conflicts with ", o ? depLink(o, `#${o.id} ${title(o)}`) : c.base ? h("span", { class: "branch" }, c.name) : conflictWho(c),
+        o?.status === "merging" ? " (ahead in the merge queue)" : "",
+        " in ", (c.files || []).join(", ")];
+    }));
+}
+
 // The detail view's line about dependencies.
 export function depMeta(t) {
   const wait = depWait(t);
@@ -592,6 +631,7 @@ export function todoRow(t, li = -1, ri = -1) {
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
       t.ci_run ? h("span", { class: "ci-tag" }, "Build fix") : null,
       fixing ? h("span", { class: "sentback-tag", title: `Sent back: ${fixing}` }, /^review /.test(fixing) ? "Review comments" : /conflict/.test(fixing) ? "Merge conflict" : "Failing checks") : null,
+      conflictTag(t),
       t.attachments?.length ? h("span", { class: "attach-tag", title: `${t.attachments.length} attached` }, clip(), String(t.attachments.length)) : null,
       t.diff_files && ["review", "merging", "merged", "failed"].includes(t.status)
         ? h("span", { class: "diffsize", title: `${plural(t.diff_files, "file")} changed` },

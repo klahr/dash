@@ -29,7 +29,8 @@ In pull request mode the pull request is where a task is reviewed:
    automatic fixes are used up, waits in Review without a pull request, as before: **Approve**
    opens one anyway.
 2. **The checks run.** Failing checks and conflicts with the base branch go back to Claude, within
-   the project's automatic fixes, and its fixes are pushed to the same pull request. Checks no
+   the project's automatic fixes (conflicts with other tasks show on the card before that; see
+   [Merge queue](merge-queue.md#conflicts-found-early)), and its fixes are pushed to the same pull request. Checks no
    change to the code can fix (an unsigned CLA, a check that runs from the base branch) are
    shown on the card, and Dash carries on once they pass. When the checks pass, Dash marks the
    draft **ready for review**.

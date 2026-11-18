@@ -982,6 +982,14 @@ func clone(t model.Todo) model.Todo {
 	cp.Feedback = append([]string(nil), t.Feedback...)
 	cp.DependsOn = append([]string(nil), t.DependsOn...)
 	cp.Attachments = append([]model.Attachment(nil), t.Attachments...)
+	cp.ConflictNoted = append([]string(nil), t.ConflictNoted...)
+	if t.Conflicts != nil {
+		cp.Conflicts = make([]model.Conflict, len(t.Conflicts))
+		for i, c := range t.Conflicts {
+			c.Files = append([]string(nil), c.Files...)
+			cp.Conflicts[i] = c
+		}
+	}
 	if t.Worktree != nil {
 		w := *t.Worktree
 		cp.Worktree = &w

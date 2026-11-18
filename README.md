@@ -11,7 +11,8 @@ merge them one at a time.
   command runs on a runner (**`dash runner`**), with its owner's logins. The hub needs **no
   `claude`, `git` or `gh`** installed and no API key. The runner can be the same computer as the
   hub ([several computers](docs/several-computers.md)). Each computer that runs `dash runner` needs:
-  - **git**;
+  - **git** (2.38 or newer to find conflicts between tasks early; see
+    [Merge queue](docs/merge-queue.md#conflicts-found-early));
   - **[Claude Code](https://claude.com/claude-code)** (`claude`), installed and logged in: run
     `claude` once in a terminal there and sign in;
   - optional: **[`gh`](https://cli.github.com)**, logged in, to create GitHub repositories and
@@ -230,6 +231,7 @@ API is `POST /api/projects/{id}/pause` and `POST /api/projects/{id}/resume`.
 - [Task boards](docs/boards.md): keep a project's board in Dash or in an external tracker, synced both ways (the backend interface for trackers such as Trello and Jira)
 - [Claude status](docs/claude-status.md): follow status.claude.com with its webhooks, and see Claude's incidents beside the board
 - [Notifications](docs/notifications.md): push notifications to your browser or installed app, even while it's closed, and webhooks that send reviews, failures, merges, approvals, failing builds and runners low on disk space to Slack, ntfy or a signed JSON endpoint
+- [Merge queue](docs/merge-queue.md): how approved tasks land one at a time, and conflicts between running tasks found before they merge
 - [GitHub](docs/github.md): merge locally or review and merge through pull requests, work on another branch and open its pull request, auto-approve, revert, tag releases from History
 - [MCP and the claude.ai connector](docs/mcp.md)
 - [Several computers](docs/several-computers.md)

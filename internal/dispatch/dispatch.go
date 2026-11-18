@@ -826,6 +826,21 @@ func nextStatus(x model.Todo, to model.TodoStatus) (model.TodoStatus, bool) {
 	return "", false
 }
 
+// hubConflicts are a runner's conflicts as the hub shows them: other tasks
+// by the hub's ids (a task of the runner's own, not the hub's, by name only).
+func hubConflicts(cs []model.Conflict) []model.Conflict {
+	if len(cs) == 0 {
+		return nil
+	}
+	out := make([]model.Conflict, len(cs))
+	for i, c := range cs {
+		c.TodoID, c.HubTodoID = c.HubTodoID, ""
+		c.Files = append([]string(nil), c.Files...)
+		out[i] = c
+	}
+	return out
+}
+
 // copyReport moves x to status to and copies onto it what its runner,
 // runnerName, reports in ts.
 func copyReport(x *model.Todo, ts TaskState, to model.TodoStatus, runnerName string) {
@@ -834,6 +849,7 @@ func copyReport(x *model.Todo, ts TaskState, to model.TodoStatus, runnerName str
 	x.Summary, x.CostUSD, x.Runs, x.Checks, x.PR = ts.Summary, ts.CostUSD, ts.Runs, ts.Checks, ts.PR
 	x.RunStats = ts.RunStats
 	x.DiffFiles, x.DiffAdd, x.DiffDel = ts.DiffFiles, ts.DiffAdd, ts.DiffDel
+	x.Conflicts = hubConflicts(ts.Conflicts)
 	x.RemoteID = ts.ID
 	if to == model.StatusMerged {
 		x.MergedCommit = ts.MergedCommit
