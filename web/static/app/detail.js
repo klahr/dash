@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
-import { approvable, buildsOnMeta, canMergePR, conflictMeta, mergePR, depMeta, hasPriority, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
+import { approvable, buildsOnMeta, canMergePR, doneMeta, conflictMeta, mergePR, depMeta, hasPriority, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
 import { goalChip } from "./goals.js";
 import { editable, openTodoForm } from "./todos.js";
 import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.js";
@@ -125,6 +125,7 @@ export function renderDetail() {
   $("#d-meta").replaceChildren(...[
     h("span", { class: `status s-${t.status}` }, STATUS_LABEL[t.status] || t.status),
     t.worktree ? h("span", { class: "branch" }, t.worktree.branch) : null,
+    doneMeta(t),
     goalChip(t),
     createdBy(t),
     hasPriority(t) && !inlineEdits(t) ? h("span", {}, `Priority ${t.priority}`) : null, // else an editable field below

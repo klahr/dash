@@ -1,4 +1,4 @@
-import { $, $$, avatar, h, ib, ico, plural } from "./dom.js";
+import { $, $$, avatar, dateTimeText, h, ib, ico, plural } from "./dom.js";
 import * as store from "./store.js";
 import { api } from "./api.js";
 import { EASE, art, ask, attempt, busy, reduceMotion, toast } from "./dialogs.js";
@@ -492,6 +492,20 @@ export function ago(iso) {
 // "just now", "2m ago"
 export const agoText = (iso) => { const a = ago(iso); return a === "now" ? "just now" : `${a} ago`; };
 
+// doneAt is when a merged or failed task finished: finished_at, or updated_at
+// for one that has none (a task synced in from elsewhere).
+export const doneAt = (t) => (t.status === "merged" || t.status === "failed") ? (t.finished_at || t.updated_at || "") : "";
+
+// doneMeta is "Merged 3d ago" / "Failed 2h ago" for the task pane; older
+// than a week it gives the date itself.
+export function doneMeta(t) {
+  const at = doneAt(t);
+  if (!at || isNaN(new Date(at))) return null;
+  const word = t.status === "merged" ? "Merged" : "Failed";
+  const text = Date.now() - new Date(at) > 7 * DAY ? dateTimeText(at) : agoText(at);
+  return h("time", { datetime: at, title: dateTimeText(at) }, `${word} ${text}`);
+}
+
 // A merged todo is pushed once origin has its commit (in "pr" mode, and on
 // runners, merging is pushing).
 function isPushed(t) {
@@ -700,6 +714,7 @@ export function todoRow(t, li = -1, ri = -1) {
       ["review", "merging", "merged", "failed"].includes(t.status) ? tokenTag(t) : null,
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
       previewTag(t),
+      t.status === "merged" && doneAt(t) ? h("span", { class: "done-ago", title: `Merged ${dateTimeText(doneAt(t))}` }, ago(doneAt(t))) : null,
       t.status === "review" && t.finished_at ? h("span", { title: waitsOnGitHub(t) ? "Waiting on GitHub since" : "Waiting for review" }, ago(t.finished_at)) : null,
       t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
       t.run_on ? runOnTag(t.run_on) : null,
