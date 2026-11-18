@@ -439,6 +439,7 @@ type projectUpdate struct {
 	AutoApprove    *bool     `json:"auto_approve"`
 	MergeMode      *string   `json:"merge_mode"`
 	MergeMethod    *string   `json:"merge_method"`
+	MergeBatch     *int      `json:"merge_batch"`
 	InvestigateCI  *bool     `json:"investigate_ci"`
 	MaxRunMinutes  *int      `json:"max_run_minutes"`
 	MaxTurns       *int      `json:"max_turns"`
@@ -674,6 +675,9 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	}
 	if req.MaxRunMinutes != nil {
 		p.MaxRunMinutes = max(0, *req.MaxRunMinutes)
+	}
+	if req.MergeBatch != nil {
+		p.MergeBatch = max(0, min(*req.MergeBatch, model.MaxMergeBatch))
 	}
 	if req.MaxTurns != nil {
 		p.MaxTurns = max(0, *req.MaxTurns)

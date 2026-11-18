@@ -20,6 +20,37 @@ Claude gets a limited number of automatic fixes per task (**Project settings →
 Automatic fix attempts**). When they are used up, the task fails and waits for you to send it
 back for rework.
 
+## Testing several tasks together
+
+When many tasks are approved at once, each one waits for a full test run. A batch tests several
+of them in one run instead. It is off by default.
+
+To turn it on, set **Project settings → Approval & push → Merge queue batch size** to more than 1
+(at most 10). The setting shows in "Merge it" mode only: in pull request mode GitHub merges the
+work, and a project that runs on runners merges one task at a time.
+
+With more than one approved task waiting, Dash:
+
+1. **Picks the batch.** It takes up to that many waiting tasks, in queue order. A task that
+   conflicts with the default branch, or with a task already in the batch (checked with
+   `git merge-tree`), is left out: it merges on its own later.
+2. **Builds it.** In a checkout of its own, Dash puts each task's changes on top of the default
+   branch, one squashed commit per task, in order.
+3. **Tests it once.** The **Test command** runs on the result.
+4. **Lands it.** When the tests pass, the default branch moves to exactly those commits: one per
+   task, with the same message as a task merged alone. If the default branch moved while the
+   tests ran, nothing lands: Dash builds the batch again on top of it and tests it again.
+
+When the batch's tests fail, Dash tests its tasks one by one, in order, each on top of the
+default branch and the tasks before it that passed. Only a task that fails like that goes back
+to Claude; the others land. A run that fails once by chance blames no task.
+
+Dash tests one by one rather than splitting the batch in halves: batches are small, so halving
+saves few runs, and a task has to fail on its own before it is blamed anyway.
+
+Each task's **Timeline** tab shows its batch: the tasks it was tested with, the test run and how long
+it took, and why it landed or went back.
+
 ## Conflicts found early
 
 Dash doesn't wait for the merge to find a conflict. For each project, it checks the branches of

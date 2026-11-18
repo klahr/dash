@@ -138,6 +138,11 @@ type Project struct {
 	// request on GitHub: "squash", "merge" (a merge commit) or "rebase";
 	// "" uses the repository's default (gitops.DefaultMergeMethod).
 	MergeMethod string `json:"merge_method,omitempty"`
+	// MergeBatch is how many approved tasks the merge queue may test
+	// together, in one run of TestCommand, and then land one squashed
+	// commit each (0 or 1: one at a time). Only direct merges batch: not
+	// pull requests, nor a project shared with runners. See MergeBatchSize.
+	MergeBatch int `json:"merge_batch,omitempty"`
 	// Limits for one Claude run; 0 means the default. Time spent waiting
 	// for a human to answer a permission prompt doesn't count.
 	MaxRunMinutes int `json:"max_run_minutes,omitempty"`
@@ -271,6 +276,9 @@ const (
 	MergeLocal = "local"
 	MergePR    = "pr"
 
+	// MaxMergeBatch bounds Project.MergeBatch.
+	MaxMergeBatch = 10
+
 	ChatModeAuto        = "auto"
 	ChatModeAcceptEdits = "acceptEdits"
 )
@@ -368,6 +376,16 @@ func (p Project) DashOwnsCheckout() bool {
 // pushes it, and when origin moved meanwhile merges again on top of it.
 // Nobody else would ever see a commit that stayed in one runner's clone.
 func (p Project) LandsOnOrigin() bool { return p.RemoteURL != "" && !p.UsesPR() && p.Shared() }
+
+// MergeBatchSize is how many approved tasks the merge queue tests together
+// here: MergeBatch, but 1 (one at a time) for pull requests, which GitHub
+// merges, and for a project shared with runners, which lands on origin.
+func (p Project) MergeBatchSize() int {
+	if p.UsesPR() || p.Shared() || p.MergeBatch <= 1 {
+		return 1
+	}
+	return min(p.MergeBatch, MaxMergeBatch)
+}
 
 // RunMinutes is the time limit for one Claude run.
 func (p Project) RunMinutes() int {
@@ -735,6 +753,9 @@ type Checks struct {
 	// for the commit. Before review and before landing, Dash runs the checks
 	// again unless they passed on that commit or that tree.
 	Tree string `json:"tree,omitempty"`
+	// Batch, for checks the merge queue ran on several approved tasks at
+	// once, are those tasks' ids, in the order they land.
+	Batch []string `json:"batch,omitempty"`
 }
 
 // Attachment is an uploaded file attached to a todo or a rework note.

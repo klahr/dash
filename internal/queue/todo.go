@@ -1472,16 +1472,22 @@ func (e *TodoEngine) runChecks(ctx context.Context, t model.Todo, p model.Projec
 }
 
 func runChecks(ctx context.Context, g *gitops.Git, l *TodoLog, sh *SharedWork, t model.Todo, p model.Project, dir, stage string, timeout time.Duration) model.Checks {
+	return runChecksLog(ctx, g, func(s string) { l.Line(t, s) }, sh, t, p, dir, stage, timeout)
+}
+
+// runChecksLog is runChecks, with its progress and output going to line
+// (the merge queue's batch logs a run to each task in it).
+func runChecksLog(ctx context.Context, g *gitops.Git, line func(string), sh *SharedWork, t model.Todo, p model.Project, dir, stage string, timeout time.Duration) model.Checks {
 	if err := sh.ok(t); err != nil {
-		l.Line(t, "✖ tests not run: "+err.Error())
+		line("✖ tests not run: " + err.Error())
 		return model.Checks{Command: p.TestCommand, ExitCode: -1, Output: err.Error(), Stage: stage, At: time.Now()}
 	}
 	env, _ := sh.shellEnv(t)
-	l.Line(t, "▶ tests: "+p.TestCommand)
+	line("▶ tests: " + p.TestCommand)
 	commit := checkedCommit(ctx, g, p.ID, dir)
 	tree := workTree(ctx, g, p.ID, dir)
 	start := time.Now()
-	code, tail, err := runShell(ctx, dir, p.TestCommand, timeout, env, func(s string) { l.Line(t, "│ "+s) })
+	code, tail, err := runShell(ctx, dir, p.TestCommand, timeout, env, func(s string) { line("│ " + s) })
 	c := model.Checks{Command: p.TestCommand, ExitCode: code, Output: tail, Stage: stage, At: time.Now(), Duration: time.Since(start).Seconds()}
 	if commit != "" {
 		if after, herr := g.Head(ctx, p.ID, dir, "HEAD"); herr == nil && after == commit {
@@ -1496,9 +1502,9 @@ func runChecks(ctx context.Context, g *gitops.Git, l *TodoLog, sh *SharedWork, t
 	}
 	c.Passed = err == nil && code == 0
 	if c.Passed {
-		l.Line(t, fmt.Sprintf("✔ tests passed (%.0fs)", c.Duration))
+		line(fmt.Sprintf("✔ tests passed (%.0fs)", c.Duration))
 	} else {
-		l.Line(t, fmt.Sprintf("✖ tests failed (exit %d, %.0fs)", code, c.Duration))
+		line(fmt.Sprintf("✖ tests failed (exit %d, %.0fs)", code, c.Duration))
 	}
 	return c
 }

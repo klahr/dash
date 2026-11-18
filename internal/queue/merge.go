@@ -80,6 +80,9 @@ type MergeQueue struct {
 	// beforePush, when set (tests), runs just before a shared project's
 	// merge is pushed, e.g. to push to origin first.
 	beforePush func()
+	// batchTested, when set (tests), runs after a batch's tests, before it
+	// lands, e.g. to move the default branch meanwhile.
+	batchTested func()
 	// dirtyPoll is how often a job waiting for uncommitted changes checks
 	// the files again (default 5 seconds; shortened in tests).
 	dirtyPoll time.Duration
@@ -115,6 +118,9 @@ type lane struct {
 	jobs     chan mergeItem
 	polling  atomic.Bool // a pull request poll is queued or running
 	cleaning atomic.Bool // a timed cleanup is queued or running
+	// backlog are items taken off jobs to look for a batch (see batch),
+	// handled before jobs. Only the lane's worker uses it.
+	backlog []mergeItem
 }
 
 func NewMergeQueue(s *store.Store, g *gitops.Git, pub Publisher, log *TodoLog, capacity int) *MergeQueue {
@@ -210,10 +216,20 @@ func (m *MergeQueue) start(l *lane) {
 		defer m.running.Done()
 		defer m.workers.Done()
 		for {
-			select {
-			case <-m.ctx.Done():
-				return
-			case it := <-l.jobs:
+			var it mergeItem
+			if len(l.backlog) > 0 {
+				if m.ctx.Err() != nil {
+					return // left merging: Resume queues them again
+				}
+				it, l.backlog = l.backlog[0], l.backlog[1:]
+			} else {
+				select {
+				case <-m.ctx.Done():
+					return
+				case it = <-l.jobs:
+				}
+			}
+			if !m.batch(m.ctx, l, it) {
 				m.handle(m.ctx, it)
 			}
 		}
@@ -331,7 +347,16 @@ func (m *MergeQueue) handle(ctx context.Context, it mergeItem) {
 	m.publish(job.TodoID)
 	if job.Revert {
 		m.revert(ctx, job)
-	} else if err := m.process(ctx, job); err != nil && ctx.Err() != nil {
+		m.done(job)
+		return
+	}
+	m.finish(ctx, job, m.process(ctx, job))
+}
+
+// finish ends merge job job, which came to err: it waits, fails or is
+// handed back, as for a job handled alone.
+func (m *MergeQueue) finish(ctx context.Context, job model.MergeJob, err error) {
+	if err != nil && ctx.Err() != nil {
 		// Dash is stopping, not the merge failing: the todo stays
 		// merging and Resume queues it again at the next start.
 		// Nothing counts until origin has it (or the default branch
@@ -360,6 +385,11 @@ func (m *MergeQueue) handle(ctx context.Context, it mergeItem) {
 			_, _ = m.Store.SetStatus(job.TodoID, model.StatusFailed, "merge: "+err.Error())
 		}
 	}
+	m.done(job)
+}
+
+// done counts merge job job no longer queued.
+func (m *MergeQueue) done(job model.MergeJob) {
 	m.track(job.TodoID, -1)
 	m.pending.Add(-1)
 	m.publish("")

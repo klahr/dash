@@ -1270,6 +1270,10 @@
             </select></label>
             <label class="toggle" id="auto-push-row"><input type="checkbox" name="auto_push"><span>Push after every merge</span></label>
             <p class="hint" id="merge-hint"></p>
+            <div id="merge-batch-row">
+              <label class="field inline"><span>Merge queue batch size</span><input type="number" name="merge_batch" min="1" max="10" inputmode="numeric" placeholder="1"></label>
+              <p class="hint">With several approved tasks waiting, test up to this many together in one run of the test command, then land each as its own commit. When the run fails, Dash tests them one by one and sends back only the tasks that fail. 1 merges one task at a time. Pull requests aren't batched: GitHub merges them.</p>
+            </div>
             <label class="toggle"><input type="checkbox" name="investigate_ci"><span>Fix failed builds automatically</span></label>
             <p class="hint">When GitHub Actions fails on the default branch, Claude gets a task with the failed log to investigate and fix it.</p>
             <label class="field"><span>Release tag format <em>X, Y and Z are the major, minor and patch version, e.g. vX.Y.Z</em></span><input name="tag_format" placeholder="X.Y.Z" spellcheck="false" autocomplete="off"></label>

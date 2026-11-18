@@ -84,7 +84,7 @@ func (m *MergeQueue) cleanup(ctx context.Context, p model.Project) (CleanupRepor
 	}
 	todos := m.Store.ListTodos(p.ID)
 
-	inUse := map[string]bool{m.landingDir(p): true} // worktree paths and branches still needed
+	inUse := map[string]bool{m.landingDir(p): true, m.batchDir(p): true} // worktree paths and branches still needed
 	for _, t := range todos {
 		if t.Worktree == nil || t.Status == model.StatusMerged || t.OnRunner() {
 			continue // a runner's task has its worktree on the runner

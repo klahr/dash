@@ -40,6 +40,7 @@ export function openSettings() {
   f.auto_approve.checked = !!p.auto_approve;
   f.merge_mode.value = p.merge_mode || "local";
   f.merge_method.value = p.merge_method || "";
+  f.merge_batch.value = p.merge_batch > 1 ? p.merge_batch : 1;
   f.investigate_ci.checked = p.investigate_ci !== false;
   f.tag_format.value = p.tag_format || "X.Y.Z";
   checkTagFormat();
@@ -144,6 +145,8 @@ function syncMergeHint() {
   // On runners, merging is pushing: there's no separate push to turn on.
   $("#auto-push-row").hidden = pr || onRunners;
   $("#merge-method-row").hidden = !pr;
+  // Only direct merges here batch: not pull requests, nor merges on runners.
+  $("#merge-batch-row").hidden = pr || onRunners;
   const who = onRunners ? "the runner" : "Dash";
   $("#auto-approve-hint").textContent = pr
     ? "Pull requests whose checks pass wait for you to merge them, on GitHub or with Merge pull request in Dash, without waiting for an approving review first. Dash never merges a pull request on its own. Reviews asking for changes still go back to Claude."
@@ -240,6 +243,7 @@ const FIELDS = {
   auto_approve: { read: (f) => f.auto_approve.checked },
   merge_mode: { read: (f) => f.merge_mode.value },
   merge_method: { read: (f) => f.merge_method.value },
+  merge_batch: { read: (f) => Math.min(10, Math.max(1, Math.round(Number(f.merge_batch.value) || 1))) },
   investigate_ci: { read: (f) => f.investigate_ci.checked },
   tag_format: { read: (f) => f.tag_format.value.trim() || "X.Y.Z", check: async (v) => {
     const res = await tagFormatCheck(v);
