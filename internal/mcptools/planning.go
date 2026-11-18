@@ -31,7 +31,8 @@ type NewCard struct {
 	Title, Description, Project, Column, Priority, Target string
 }
 
-// CardBoard is a Board with the org's plan: Tools then has PlanningToolNames.
+// CardBoard is a Board with the org's plan: Tools then has the planning tools
+// (see PlanningTools).
 type CardBoard interface {
 	// Cards lists the org's cards, of one project (projectID) or all ("").
 	Cards(projectID string) ([]CardRow, error)
@@ -39,9 +40,6 @@ type CardBoard interface {
 	// LinkCard links a card to a task (kind "task") or goal ("goal").
 	LinkCard(cardID, kind, workID string) (CardRow, error)
 }
-
-// PlanningToolNames are the planning tools; list_cards only looks.
-var PlanningToolNames = []string{"list_cards", "create_card", "link_card"}
 
 // PlanningTools returns list_cards, create_card and link_card on cb.
 func PlanningTools(b Board, cb CardBoard, o Options) []Tool {

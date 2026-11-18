@@ -47,7 +47,7 @@ type GoalChange struct {
 }
 
 // GoalManager is a Board on which the user manages goals: Tools then has
-// the goal tools (GoalManagerToolNames).
+// the goal tools.
 type GoalManager interface {
 	// Goals lists a project's goals, or every goal for projectID "".
 	Goals(projectID string) ([]GoalView, error)
@@ -67,13 +67,6 @@ type GoalManager interface {
 	// answer to its question, or a change of direction).
 	MessageGoal(id, text string) (GoalView, error)
 }
-
-// GoalManagerToolNames are the goal tools; GoalManagerReadTools only look.
-var (
-	GoalManagerToolNames = []string{"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal",
-		"accept_goal_plan", "reject_goal_plan", "message_goal"}
-	GoalManagerReadTools = []string{"list_goals", "get_goal"}
-)
 
 // PGoal is the goal id parameter.
 var PGoal = Param{"goal", "string", "Goal id (see list_goals).", true}
