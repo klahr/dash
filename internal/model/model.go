@@ -163,6 +163,9 @@ type Project struct {
 	// project resumes; a task paused on its own stays paused.
 	Paused      bool     `json:"paused,omitempty"`
 	PausedTodos []string `json:"paused_todos,omitempty"`
+	// Boards are the project's task boards besides its main one, in the
+	// order they are shown (see board.go and Todo.Board).
+	Boards []Board `json:"boards,omitempty"`
 
 	// RunsOn are, on a hub, the runner labels (see labels.go) this
 	// project's tasks run on: they go to the runners (`dash runner`) of its
@@ -398,7 +401,10 @@ type Todo struct {
 	// queued it, sent it back with feedback, retried or resumed it, or
 	// changed its instructions (0: its creator, or Dash itself). A run is
 	// for its creator and for them (WorkFor).
-	RunBy  int64  `json:"run_by,omitempty"`
+	RunBy int64 `json:"run_by,omitempty"`
+	// Board is the id of the project's board the task is on ("": its main
+	// board; see Project.Boards).
+	Board  string `json:"board,omitempty"`
 	Title  string `json:"title"`
 	Prompt string `json:"prompt"`
 	// Priority orders the queue: prioritised todos run first, lower before

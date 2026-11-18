@@ -339,6 +339,24 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
    are filtered to, which a press clears. */
 .board-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 6px var(--pad-x); border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--fs-s); }
 .board-filters[hidden], .goal-filter[hidden], .mine-filter[hidden] { display: none; }
+/* The board switcher (app/boards.js), for a project with more than one board: one tab per
+   board, the shown one underlined, and + to add one. Scrolls sideways on a phone. */
+.board-switch { display: flex; align-items: stretch; gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 0 var(--pad-x); border-bottom: 1px solid var(--line); }
+.board-switch::-webkit-scrollbar { display: none; }
+.board-switch[hidden] { display: none; }
+.board-tab {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 10px; white-space: nowrap;
+  color: var(--muted); font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.board-tab:hover { color: var(--text); }
+.board-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.board-tab .n { font-variant-numeric: tabular-nums; color: var(--faint); font-size: var(--fs-s); }
+.board-switch .board-add { align-self: center; margin-left: 4px; flex: none; }
+/* Project settings → Board → Boards */
+.board-row { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 2px 4px 2px 10px; border: 1px solid var(--line); border-radius: var(--r-s); }
+.board-row-name { font-weight: 500; overflow-wrap: anywhere; }
+.board-row .hint { margin: 0; }
+.board-row-actions { display: flex; gap: 2px; margin-left: auto; }
 .goal-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
 .goal-filter .goal-chip { margin-top: 0; min-width: 0; }
 .mine-filter {

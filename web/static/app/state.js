@@ -25,6 +25,7 @@ export const state = {
   project: null,
   todos: new Map(),
   goals: new Map(),   // the project's goals by id, for their tasks' chips
+  board: "",          // the project's board shown ("": its Main board; see boards.js)
   goalFilter: null,   // the board shows only this goal's tasks (null: every task)
   mine: false,        // the board shows only the tasks the user created (see people.js)
   lastLine: new Map(),

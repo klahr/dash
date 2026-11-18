@@ -212,6 +212,7 @@
       <h1 class="sr-only">{{DASH_NAME}}</h1>
       <!-- Board -->
       <section class="view active" id="view-board" aria-label="Board">
+        <div class="board-switch" id="board-switch" role="tablist" aria-label="Boards" hidden></div>
         <div class="board-tools">
           <div class="lanes" role="tablist" id="lane-tabs"></div>
         </div>
@@ -1186,6 +1187,14 @@
             <p class="hint" id="settings-runners-hint" hidden></p>
           </section>
           <section class="rail-section" data-section="board">
+            <!-- The project's boards (app/boards.js). Saved as they change, not with the settings form. -->
+            <fieldset class="field choice" id="settings-boards">
+              <legend>Boards <em>a project's tasks can be split over several boards; the board shows one at a time</em></legend>
+              <ul class="item-list boards-list" id="boards-list"></ul>
+              <div class="board-actions">
+                <button class="btn small" type="button" id="boards-add" data-icon="plus">Add board</button>
+              </div>
+            </fieldset>
             <!-- The project's board backend. Saved with its own button, not the settings form: its inputs have no names. -->
             <fieldset class="field choice" id="settings-board-field" hidden>
               <legend>Task board <em>where this project's tasks are planned: Dash's own board, or an external tracker kept in sync both ways</em></legend>

@@ -29,6 +29,7 @@ import { loadScans, onScanRun, scanFinished, scans } from "./scans.js";
 import { clChanged } from "./checklist.js";
 import { checkForUpdate } from "./updates.js";
 import { onPlanningEvent } from "./planning.js";
+import { renderBoardSettings } from "./boards.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
 import { goalTaskChanged, onGoalEvent, showGoal } from "./goals.js";
 import { goalChatEvent, projectChatEvent } from "./chatpane.js";
@@ -176,6 +177,7 @@ function onEvent(ev, m = { name: "" }) {
       // runner's Projects screen shows on both sides.
       loadProjects().then(async () => {
         syncSettingsRunners();
+        if (mine) { renderBoard(); renderBoardSettings(); } // its boards may have changed
         if ($("#runners-sheet").open) { await renderRunners(); await refreshRunnerLinks(); }
       }).catch(fail);
       break;

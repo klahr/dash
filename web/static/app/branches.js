@@ -24,6 +24,7 @@ import { keys, laneHidden, todoKey } from "./vim.js";
 import { desktop } from "./viewport.js";
 import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
 import { creator, mineOn, multiMember, myID, people, setMine } from "./people.js";
+import { hasBoards, onBoard, renderBoardSwitch } from "./boards.js";
 
 // ------------------------------------------------------------------ branches
 // The open switcher's GET /branches answer, for the project it was opened on.
@@ -158,14 +159,15 @@ export const byPriority = (a, b) => (hasPriority(b) - hasPriority(a)) || (a.prio
 
 const isOld = (t) => t.status === "merged" && Date.now() - new Date(t.finished_at || t.updated_at) > DAY;
 
-// laneItems is the board's tasks by lane, as shown: only the goal filtered
-// to, if any, and only the user's own with Mine on (all: every task, as the
-// review count and priorities need).
+// laneItems is the board's tasks by lane, as shown: only the board shown's,
+// only the goal filtered to, if any, and only the user's own with Mine on
+// (all: every task of every board, as the review count and priorities need).
 export function laneItems(all = false) {
   const out = Object.fromEntries(LANES.map((l) => [l.key, []]));
   const mine = mineOn() && myID();
   for (const t of state.todos.values()) {
     if (!state.showOld && isOld(t)) continue;
+    if (!all && !onBoard(t)) continue;
     if (!all && state.goalFilter && t.goal_id !== state.goalFilter) continue;
     if (!all && mine && t.created_by !== mine) continue;
     const lane = LANES.find((l) => l.statuses.includes(t.status));
@@ -223,6 +225,7 @@ function renderBoardNow() {
     $("#lane-chips").replaceChildren();
     $("#new-todo").hidden = true;
     $("#board-filters").hidden = true;
+    renderBoardSwitch();
     // Until the projects and runners are in, don't flash a welcome, a board
     // or "create your first project" that one of the others then replaces.
     empty.hidden = !state.projectsLoaded || state.runners === undefined;
@@ -243,6 +246,7 @@ function renderBoardNow() {
   empty.hidden = true;
   $("#new-todo").hidden = false;
   renderRunnerBanner();
+  renderBoardSwitch();
   renderGoalFilter();
   renderMineFilter();
   $("#board-filters").hidden = $("#goal-filter").hidden && $("#mine-filter").hidden;
@@ -290,7 +294,7 @@ function renderBoardNow() {
       l.key === "done" ? oldToggle() : null,
       l.key === "done" ? clearDoneBtn() : null))));
   // What needs you counts every task, whatever the board is filtered to.
-  const every = state.goalFilter || mineOn() ? laneItems(true) : items;
+  const every = state.goalFilter || mineOn() || hasBoards() ? laneItems(true) : items;
   updateNeedsYou(every);
 
   $(".lane-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });

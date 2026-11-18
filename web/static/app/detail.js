@@ -20,6 +20,7 @@ import { shellBlocked, startProc } from "./terminal.js";
 import { closeCommit } from "./history.js";
 import { clearPriority } from "./dnd.js";
 import { linkToCard } from "./planning.js";
+import { boardName, boardsOf, hasBoards, moveToBoard, onBoard, showBoard } from "./boards.js";
 import { creator } from "./people.js";
 import { avatar } from "./avatar.js";
 
@@ -41,6 +42,9 @@ export async function openDetail(id, { pane = "timeline" } = {}) {
   setDetailModal(true);
   if (state.detail !== id) hidePreview();
   state.detail = id;
+  // A task on another of the project's boards: show that board, with it.
+  const opened = state.todos.get(id);
+  if (opened && !onBoard(opened)) showBoard(opened.board);
   // On a desktop the task's running preview opens beside it.
   if (desktop.matches && previewOf(id)) pv.todo = id;
   state.pane = pane;
@@ -255,6 +259,10 @@ $("#d-more").addEventListener("click", attempt(async () => {
   if (!["in_progress", "merging"].includes(t.status)) {
     if (t.worktree && here && state.project?.test_command) choices.push(["check", "Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
     if (hasPriority(t)) choices.push(["x", "Clear priority", () => clearPriority(t)]);
+    if (hasBoards()) {
+      const others = boardsOf().filter((b) => b.id !== (t.board || ""));
+      choices.push(["right", "Move to another board…", () => menu(others.map((b) => ["right", b.name, () => moveToBoard(t, b.id)]), `Move from ${boardName(t.board)} to`)]);
+    }
     choices.push(["copy", "Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
     if (t.worktree && !here) choices.push(["copy", `Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
     if (t.worktree && here) {

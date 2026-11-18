@@ -909,6 +909,7 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		BuildsOn    string   `json:"builds_on"`   // todo id whose Claude session the first run continues
 		Model       string   `json:"model"`       // claude --model; empty: the default
 		RunOn       string   `json:"run_on"`      // a runner id, on a hub; empty: any of the project's
+		Board       string   `json:"board"`       // the project's board; empty: its main board
 	}
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -930,6 +931,7 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 	t, err := sv.addTodo(model.Todo{
 		ProjectID: r.PathValue("pid"), Title: req.Title, Prompt: req.Prompt, Priority: req.Priority,
 		Attachments: atts, DependsOn: req.DependsOn, BuildsOn: req.BuildsOn, Model: req.Model, RunOn: req.RunOn,
+		Board: req.Board,
 	}, req.Enqueue)
 	if err != nil {
 		writeErr(w, err)
@@ -1021,7 +1023,7 @@ func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
 		title += " (copy)"
 	}
 	t, err := sv.data.CreateTodo(model.Todo{ProjectID: src.ProjectID, CreatedBy: sv.c.User, Title: title, Prompt: src.Prompt,
-		Priority: src.Priority, Attachments: src.Attachments, Edits: src.Edits, DependsOn: src.DependsOn, BuildsOn: src.BuildsOn, Model: src.Model, RunOn: src.RunOn})
+		Priority: src.Priority, Attachments: src.Attachments, Edits: src.Edits, DependsOn: src.DependsOn, BuildsOn: src.BuildsOn, Model: src.Model, RunOn: src.RunOn, Board: src.Board})
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -1110,6 +1112,7 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 		BuildsOn    *string     `json:"builds_on"`   // a todo id; "" builds on none
 		Model       *string     `json:"model"`       // "" goes back to the default
 		RunOn       *string     `json:"run_on"`      // a runner id; "" runs on any of the project's
+		Board       *string     `json:"board"`       // the project's board to move it to; "" its main board
 	}
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -1129,7 +1132,7 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 		atts = &a
 	}
 	t, err := sv.editTodo(r.PathValue("tid"), mcptools.TodoUpdate{
-		Title: req.Title, Prompt: req.Prompt, DependsOn: req.DependsOn, BuildsOn: req.BuildsOn, Model: req.Model, RunOn: req.RunOn,
+		Title: req.Title, Prompt: req.Prompt, DependsOn: req.DependsOn, BuildsOn: req.BuildsOn, Model: req.Model, RunOn: req.RunOn, Board: req.Board,
 		Priority: req.Priority.Value, ClearPriority: req.Priority.Set && req.Priority.Value == nil,
 	}, atts)
 	if err != nil {

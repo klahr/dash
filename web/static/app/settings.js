@@ -10,6 +10,7 @@ import { DEFAULT_REVIEW_PROMPT } from "./drawmode.js";
 import { loadClaudeFiles } from "./claudefiles.js";
 import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
+import { renderBoardSettings } from "./boards.js";
 import { missingLabels, parseLabels, servesProject } from "../groups.js";
 
 // ------------------------------------------------------------------ project settings
@@ -50,6 +51,7 @@ export function openSettings() {
   syncMergeHint();
   $("#webhook-secret").hidden = true;
   loadWebhooks().catch(fail);
+  renderBoardSettings();
   loadBoard().catch(fail);
   loadClaudeFiles().catch(fail);
   loadRepoInfo();

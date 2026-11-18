@@ -299,6 +299,9 @@ const buildsOnDesc = "Id of an earlier task in the same project to build on: the
 	"Use it for a follow-up to a finished task. It waits queued until that task is merged or failed. If that session can't be found " +
 	"(the task ran on another runner, or its session was deleted), the task starts fresh with its full prompt."
 
+// boardDesc describes a task's board to Claude.
+const boardDesc = "The project's board the task is on, by name or id (a project's boards are in its \"boards\"; empty or \"Main\": its main board)."
+
 // priorityDesc describes a task's priority to Claude.
 const priorityDesc = "Prioritised tasks run first, lower before higher (0 is a real priority); unprioritised tasks run after all of them, oldest first."
 
@@ -313,6 +316,7 @@ type NewTodo struct {
 	BuildsOn      string   // id of a task whose Claude session its first run continues
 	Model         string   // claude --model: an alias or model id; empty: the default
 	RunOn         string   // on a hub: the id of the project's runner it must run on; empty: any
+	Board         string   // the project's board it goes on, by id or name; empty: its main board
 }
 
 // TodoUpdate changes a task; nil fields stay as they are. ClearPriority
@@ -325,6 +329,7 @@ type TodoUpdate struct {
 	BuildsOn      *string   // "" builds on no task
 	Model         *string   // "" goes back to the default model
 	RunOn         *string   // a runner id; "" runs on any of the project's runners
+	Board         *string   // the project's board to move it to; "" its main board
 }
 
 // NewRelease is a release to tag: a version ("1.4.0", or a tag in the
@@ -770,6 +775,7 @@ func boardTools(b Board, o Options) []Tool {
 			{"builds_on", "string", buildsOnDesc, false},
 			{"model", "string", modelDesc, false},
 			{"run_on", "string", runOnDesc, false},
+			{"board", "string", boardDesc, false},
 			{"draft", "boolean", draftDesc, false}},
 			func(a Args) (any, error) {
 				p, err := project(a)
@@ -783,6 +789,7 @@ func boardTools(b Board, o Options) []Tool {
 					Title: a.Str("title"), Prompt: a.Str("prompt"),
 					Priority: a.OptNum("priority"), Enqueue: !a.FlagOr("draft", o.Draft),
 					DependsOn: a.List("depends_on"), BuildsOn: a.Str("builds_on"), Model: a.Str("model"), RunOn: a.Str("run_on"),
+					Board: a.Str("board"),
 				})
 			}},
 		{"queue_todo", queueDesc, queueParams,
@@ -829,7 +836,7 @@ func boardTools(b Board, o Options) []Tool {
 		tools = append(tools, restartTools(b, restarter)...)
 	}
 	tools = append(tools, []Tool{
-		{"update_todo", "Change a task's title, prompt, priority, dependencies, the task it builds on, its model or the runner it runs on; only the given fields change. " +
+		{"update_todo", "Change a task's title, prompt, priority, dependencies, the task it builds on, its model, the runner it runs on or its board; only the given fields change. " +
 			"The prompt can only be changed while the task is a draft, queued or failed.", []Param{PTodo,
 			{"title", "string", "New short title.", false},
 			{"prompt", "string", "New task for Claude.", false},
@@ -838,12 +845,13 @@ func boardTools(b Board, o Options) []Tool {
 			{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts; replaces the list, an empty array clears it.", false},
 			{"builds_on", "string", buildsOnDesc + " An empty string builds on none. It can only be changed while the task is a draft, queued or failed.", false},
 			{"model", "string", modelDesc + " An empty string goes back to the default; a new model applies from the task's next run.", false},
-			{"run_on", "string", runOnDesc + " An empty string runs it on any of them. It can only be changed while the task is a draft, queued or failed.", false}},
+			{"run_on", "string", runOnDesc + " An empty string runs it on any of them. It can only be changed while the task is a draft, queued or failed.", false},
+			{"board", "string", boardDesc + " Moves the task there.", false}},
 			func(a Args) (any, error) {
 				if a.Str("todo") == "" {
 					return nil, errors.New("todo is required")
 				}
-				u := TodoUpdate{Title: a.OptStr("title"), Prompt: a.OptStr("prompt"), Priority: a.OptNum("priority"), DependsOn: a.OptList("depends_on"), BuildsOn: a.OptStr("builds_on"), Model: a.OptStr("model"), RunOn: a.OptStr("run_on")}
+				u := TodoUpdate{Title: a.OptStr("title"), Prompt: a.OptStr("prompt"), Priority: a.OptNum("priority"), DependsOn: a.OptList("depends_on"), BuildsOn: a.OptStr("builds_on"), Model: a.OptStr("model"), RunOn: a.OptStr("run_on"), Board: a.OptStr("board")}
 				if v, ok := a["priority"]; ok && v == nil {
 					u.ClearPriority = true // priority: null
 				}
@@ -853,8 +861,8 @@ func boardTools(b Board, o Options) []Tool {
 					}
 					u.ClearPriority = true
 				}
-				if u.Title == nil && u.Prompt == nil && u.Priority == nil && !u.ClearPriority && u.DependsOn == nil && u.BuildsOn == nil && u.Model == nil && u.RunOn == nil {
-					return nil, errors.New("nothing to change: pass title, prompt, priority, clear_priority, depends_on, builds_on, model or run_on")
+				if u.Title == nil && u.Prompt == nil && u.Priority == nil && !u.ClearPriority && u.DependsOn == nil && u.BuildsOn == nil && u.Model == nil && u.RunOn == nil && u.Board == nil {
+					return nil, errors.New("nothing to change: pass title, prompt, priority, clear_priority, depends_on, builds_on, model, run_on or board")
 				}
 				t, err := b.UpdateTodo(a.Str("todo"), u)
 				if err != nil {
@@ -873,7 +881,8 @@ func boardTools(b Board, o Options) []Tool {
 					BuildsOn  string           `json:"builds_on,omitempty"`
 					Model     string           `json:"model,omitempty"`
 					RunOn     string           `json:"run_on,omitempty"`
-				}{t.ID, t.Title, t.Status, t.Priority, deps, t.BuildsOn, t.Model, t.RunOn}, nil
+					Board     string           `json:"board,omitempty"`
+				}{t.ID, t.Title, t.Status, t.Priority, deps, t.BuildsOn, t.Model, t.RunOn, t.Board}, nil
 			}},
 		{"create_release", "Tag a release: an annotated tag in the project's tag format (e.g. vX.Y.Z), pushed to origin, " +
 			"which starts the repository's release workflow. Only when the user asks for a release. Give version or bump.", []Param{pProject,

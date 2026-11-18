@@ -24,6 +24,7 @@ import "./app/github.js";
 import "./app/projects.js";
 import "./app/planner.js";
 import "./app/board.js";
+import "./app/boards.js";
 import { renderBoard } from "./app/branches.js";
 import "./app/activity.js";
 import "./app/todos.js";

@@ -5,6 +5,7 @@ import { ask, attempt, busy, toast } from "./dialogs.js";
 import { attachBox } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { projectKey } from "./events.js";
+import { boardField } from "./boards.js";
 import { agoText, byPriority, title } from "./branches.js";
 import { editing, pickProject, showNewTasks } from "./todos.js";
 import { formPriority } from "./dnd.js";
@@ -342,7 +343,7 @@ async function saveSplit(parts, p, enqueue) {
   const order = $("#split-order").checked;
   for (const part of left) {
     const depends_on = [...new Set([...deps, ...(order ? [...part.after].map((x) => x.id) : [])])].filter(Boolean);
-    const t = await api("POST", `/api/projects/${p.id}/todos`, { ...common, title: part.title, prompt: part.prompt, depends_on, enqueue }, p.prefix || "");
+    const t = await api("POST", `/api/projects/${p.id}/todos`, { ...common, title: part.title, prompt: part.prompt, depends_on, enqueue, ...(projectKey(p) === projectKey(state.project) ? boardField() : {}) }, p.prefix || "");
     part.id = t.id;
   }
 }
