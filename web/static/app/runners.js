@@ -297,7 +297,9 @@ export function renderSideRunners() {
   const box = $("#side-runners"), list = state.runners;
   box.hidden = !Array.isArray(list);
   if (box.hidden) return;
-  const tone = (r) => !r.online ? "down" : r.paused || r.update ? "some" : "ok";
+  // The dot takes the runner's tone from runnerStatus, as in the Runners
+  // sheet: yellow while it runs tasks or is paused, green idle, red offline.
+  const dot = { off: "down", busy: "some", paused: "some", on: "ok" };
   const row = (r) => {
     const st = runnerStatus(r), outdated = runnerOutdated(r);
     const count = !r.online ? "offline" : r.update ? "updating" : r.paused ? "paused" : `${r.running || 0}/${runnerSlots(r)}${runnerBoost(r) ? "⇡" : ""}`;
@@ -307,7 +309,7 @@ export function renderSideRunners() {
       type: "button", class: "side-runner", title: [`${r.name}: ${st.text}`, runnerOS(r)?.label, diskWarn, update].filter(Boolean).join("\n"),
       onclick: attempt(async () => { setMenu(false); await openRunners(r.id); }),
     },
-    h("span", { class: "side-runner-icon", "aria-hidden": "true" }, h("span", { class: `machine-dot ${tone(r)}` }), outdated ? h("span", { class: "side-runner-badge" }, "⬆") : null),
+    h("span", { class: "side-runner-icon", "aria-hidden": "true" }, h("span", { class: `machine-dot ${dot[st.tone]}` }), outdated ? h("span", { class: "side-runner-badge" }, "⬆") : null),
     h("span", { class: "side-runner-name" }, r.name),
     osLogo(r, "side-runner-os"),
     diskWarn ? h("span", { class: "side-runner-disk", "aria-hidden": "true" }, ico("alert")) : null,
