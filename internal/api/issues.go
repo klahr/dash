@@ -11,6 +11,7 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -295,7 +296,7 @@ const maxListedDetails = 300
 func issueListing(issues []model.Issue) string {
 	var b strings.Builder
 	for n, is := range issues {
-		fmt.Fprintf(&b, "%d. [%s %s] %s", n+1, is.Severity, is.Type, oneLine(is.Title, 200))
+		fmt.Fprintf(&b, "%d. [%s %s] %s", n+1, is.Severity, is.Type, textutil.OneLine(is.Title, 200))
 		var about []string
 		if loc := is.Location(); loc != "" {
 			about = append(about, "at "+loc)
@@ -310,20 +311,11 @@ func issueListing(issues []model.Issue) string {
 			fmt.Fprintf(&b, " (%s)", strings.Join(about, ", "))
 		}
 		b.WriteByte('\n')
-		if d := oneLine(is.Details, maxListedDetails); d != "" {
+		if d := textutil.OneLine(is.Details, maxListedDetails); d != "" {
 			fmt.Fprintf(&b, "   %s\n", d)
 		}
 	}
 	return b.String()
-}
-
-// oneLine is s on one line, cut to at most n runes.
-func oneLine(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > n {
-		s = string(r[:n]) + "…"
-	}
-	return s
 }
 
 // fitGroups turns Claude's groups of issues into batches: an issue named
