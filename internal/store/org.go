@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"slices"
 
 	"github.com/klahr/dash/internal/model"
 )
@@ -160,12 +161,21 @@ func (o *OrgStore) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo
 
 // startsRun reports whether a change of a todo from before to after starts
 // a run of it, for its RunBy: it is queued (or resumed while queued), sent
-// feedback, or its instructions change. Who does that is who the run is for.
+// feedback, or what it gives Claude changes: its title or prompt (both in
+// Claude's prompt), its attachments, its web-editor edits, or the task it
+// builds on (whose Claude session it forks). Who does that is who the run
+// is for, so a member can't put their instructions in another member's
+// task and have it run on that member's own runner.
 func startsRun(before, after model.Todo) bool {
 	if after.Status == model.StatusQueued && (before.Status != model.StatusQueued || (before.Paused && !after.Paused)) {
 		return true
 	}
-	return len(after.Feedback) > len(before.Feedback) || after.Prompt != before.Prompt
+	return len(after.Feedback) > len(before.Feedback) ||
+		after.Prompt != before.Prompt ||
+		after.Title != before.Title ||
+		after.BuildsOn != before.BuildsOn ||
+		!slices.Equal(after.Attachments, before.Attachments) ||
+		!slices.Equal(after.Edits, before.Edits)
 }
 
 func (o *OrgStore) SetStatus(id string, to model.TodoStatus, errMsg string) (model.Todo, error) {

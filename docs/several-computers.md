@@ -459,7 +459,8 @@ the org sees it and adds tasks to it, and each member's tasks run on their own r
 
 - A task runs on the runners of the member who created it. Labels pick which of their runners.
 - A later run of a task is for whoever started it: queueing it, sending it back with feedback,
-  retrying, continuing or resuming it, or changing its instructions. If that is someone else than
+  retrying, continuing or resuming it, or changing what it gives Claude (its title, instructions,
+  attachments, file edits or **Build on**). If that is someone else than
   the task's creator, the run needs a runner that does both members' work: a shared runner.
 - A task Dash makes itself (a failing build's fix, a card from the project's tracker) is a
   member's, so their runners take it. The hub gives it, when it first looks for a runner for it,

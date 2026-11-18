@@ -413,9 +413,9 @@ type Todo struct {
 	CreatedBy int64 `json:"created_by,omitempty"`
 	// RunBy is, on a hub, the user who started the task's latest run:
 	// queued it, sent it back with feedback, retried or resumed it, or
-	// changed its instructions (0: its creator, or Dash itself). For a task
-	// Dash made (CreatedBy 0) that nobody started, the hub sets it to the
-	// member the task's work is for (store.Store.DashWorkFor), so one of
+	// changed what it gives Claude (store.startsRun) (0: its creator, or
+	// Dash itself). For a task Dash made (CreatedBy 0) that nobody started,
+	// the hub sets it to the member the task's work is for (store.Store.DashWorkFor), so one of
 	// their runners takes it; CreatedBy stays 0, and the task still reads as
 	// made by Dash. A run is for its creator and for them (WorkFor).
 	RunBy int64 `json:"run_by,omitempty"`
