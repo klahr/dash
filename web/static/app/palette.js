@@ -9,6 +9,7 @@ import { LANES, STATUS_LABEL, cp, hist, state } from "./state.js";
 import { showView } from "./nav.js";
 import { baseBranch, projectKey } from "./events.js";
 import { cleanup, grouped, loadProjects, menuOpen, notifyLabel, openDeleteProject, openNewProject, openPlanner, openProjects, projectWhere, selectProject, setMenu, setPicker, setSideCollapsed, sideCollapsed, stepProject, toggleProjectPause } from "./projects.js";
+import { mineOn, multiMember } from "./people.js";
 import { pushDone } from "./board.js";
 import { byPriority, title } from "./branches.js";
 import { openQuickAdd, openTodoForm } from "./todos.js";
@@ -68,6 +69,7 @@ function paletteCommands() {
     p && ["New task with all options", "plus", () => openTodoForm(), "N", "add create todo full form title priority dependencies attachments"],
     p && ["New goal", "target", () => openGoalSheet(), "", "goal coordinator plan bigger project objective"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
+    p && multiMember() && [mineOn() ? "Show everyone's tasks" : "Show only my tasks", "users", () => runCommand("mine"), ":mine", "mine my own created by me filter board"],
     ["Issues", "bug", go("issues"), "gi", "bugs vulnerabilities problems triage scan"],
     ["Scans", "scan", go("scans"), "gS", "scan security review dependency audit schedule cron"],
     ["Toggle chat", "comment", () => toggleChatPane(), "gc", "chat open close claude ask project general"],

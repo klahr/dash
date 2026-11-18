@@ -20,6 +20,8 @@ import { shellBlocked, startProc } from "./terminal.js";
 import { closeCommit } from "./history.js";
 import { clearPriority } from "./dnd.js";
 import { linkToCard } from "./planning.js";
+import { creator } from "./people.js";
+import { avatar } from "./avatar.js";
 
 // ------------------------------------------------------------------ detail
 // The panel is modal (a scrim on desktop, full screen on phones): the rest of the
@@ -94,6 +96,17 @@ export async function loadDiff() {
   renderPane();
 }
 
+// createdBy names who created task t in its pane: "Created by Dash" for one
+// Dash made, nothing when their account was deleted or they left the org
+// (nor without an org, where there are no people to name).
+function createdBy(t) {
+  if (!state.me?.org) return null;
+  if (!t.created_by) return h("span", { class: "created-by" }, "Created by Dash");
+  const u = creator(t);
+  if (!u) return null;
+  return h("span", { class: "created-by" }, avatar(u), `Created by ${u.username}`);
+}
+
 let promptFold = ""; // the task and fold state the prompt was last opened or folded for
 export function renderDetail() {
   const t = state.todos.get(state.detail);
@@ -103,6 +116,7 @@ export function renderDetail() {
     h("span", { class: `status s-${t.status}` }, STATUS_LABEL[t.status] || t.status),
     t.worktree ? h("span", { class: "branch" }, t.worktree.branch) : null,
     goalChip(t),
+    createdBy(t),
     hasPriority(t) && !inlineEdits(t) ? h("span", {}, `Priority ${t.priority}`) : null, // else an editable field below
     depMeta(t),
     buildsOnMeta(t),

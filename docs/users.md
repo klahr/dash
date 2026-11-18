@@ -34,7 +34,9 @@ it:
 - **Projects on a runner** (**Add project** → **Local only**, clones of shared projects, or added
   from its computer) go in the org's own folder in the runner's projects directory, `<projects root>/<org slug>/` (e.g.
   `~/dash-projects/default/my-app`).
-- Tasks and chat messages record who created them (`created_by`).
+- Tasks and chat messages record who created them (`created_by`). The board shows the creator
+  on each card and in the task's pane, and **Mine** filters the board to your own tasks (see
+  [Your first task](../README.md#your-first-task)).
 
 Runners belong to the org of the person who registered them: every member sees the org's
 runners and can register their own (see [several computers](several-computers.md)). What
@@ -141,8 +143,9 @@ A planner's role is per org: someone can be a planner in one org and a member in
 ## Profile picture
 
 Open **Account → Profile picture** and click **Choose picture…**. Dash crops the picture to a square
-in the middle and makes it small before saving it. It shows in the account menu and in the
-members list of **Organization**. Only members of your organizations see it. **Remove** goes back
+in the middle and makes it small before saving it. It shows in the account menu, in the
+members list of **Organization**, on the board's cards you created and on Planning cards
+assigned to you. Only members of your organizations see it. **Remove** goes back
 to your initial.
 
 Dash takes PNG, JPEG, GIF and WebP pictures, up to 1 MB once made small.

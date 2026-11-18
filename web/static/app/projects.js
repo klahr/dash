@@ -33,6 +33,7 @@ import { loadScans, resetScans } from "./scans.js";
 import { loadChecklist } from "./checklist.js";
 import { gp, loadGoals, resetGoals, showGoal } from "./goals.js";
 import { planner } from "./planner.js";
+import { loadPeople } from "./people.js";
 
 // ------------------------------------------------------------------ projects
 export async function loadProjects() {
@@ -989,7 +990,11 @@ $("#pm-cleanup").addEventListener("click", attempt(cleanup));
 $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
 // The account menu shows who is logged in, the org they work in and the
 // others they can switch to.
-loadMe().then(() => loadBilling()).catch(() => {});
+loadMe().then(() => {
+  // The org's people, for who created each task (none without an org).
+  if (state.me?.org) loadPeople().catch(() => {});
+  return loadBilling();
+}).catch(() => {});
 loadRunners().catch(() => {});
 $("#account-open").addEventListener("click", attempt(() => openAccount()));
 $("#org-open").addEventListener("click", attempt(openOrg));

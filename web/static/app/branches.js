@@ -1,4 +1,4 @@
-import { $, $$, h, ib, ico, plural } from "./dom.js";
+import { $, $$, avatar, h, ib, ico, plural } from "./dom.js";
 import * as store from "./store.js";
 import { api } from "./api.js";
 import { EASE, art, ask, attempt, busy, reduceMotion, toast } from "./dialogs.js";
@@ -8,7 +8,7 @@ import { baseBranch, projectKey } from "./events.js";
 import { openNewProject, renderProjectHeader, renderProjectList } from "./projects.js";
 import { landsOnGitHub, loadUnpushed, pushBar } from "./board.js";
 import { activityNodes } from "./activity.js";
-import { closeDetail, openDetail } from "./detail.js";
+import { closeDetail, openDetail, renderDetail } from "./detail.js";
 import { canPreview, previewOf, previewTag, previewTodo } from "./preview.js";
 import { reviewTodo } from "./drawmode.js";
 import { renderRunnerBanner, runnerName, welcomeScreen } from "./runners.js";
@@ -23,6 +23,7 @@ import { loadChecklist } from "./checklist.js";
 import { keys, laneHidden, todoKey } from "./vim.js";
 import { desktop } from "./viewport.js";
 import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
+import { creator, mineOn, multiMember, myID, people, setMine } from "./people.js";
 
 // ------------------------------------------------------------------ branches
 // The open switcher's GET /branches answer, for the project it was opened on.
@@ -158,12 +159,15 @@ export const byPriority = (a, b) => (hasPriority(b) - hasPriority(a)) || (a.prio
 const isOld = (t) => t.status === "merged" && Date.now() - new Date(t.finished_at || t.updated_at) > DAY;
 
 // laneItems is the board's tasks by lane, as shown: only the goal filtered
-// to, if any (all: every task, as the review count and priorities need).
+// to, if any, and only the user's own with Mine on (all: every task, as the
+// review count and priorities need).
 export function laneItems(all = false) {
   const out = Object.fromEntries(LANES.map((l) => [l.key, []]));
+  const mine = mineOn() && myID();
   for (const t of state.todos.values()) {
     if (!state.showOld && isOld(t)) continue;
     if (!all && state.goalFilter && t.goal_id !== state.goalFilter) continue;
+    if (!all && mine && t.created_by !== mine) continue;
     const lane = LANES.find((l) => l.statuses.includes(t.status));
     if (lane) out[lane.key].push(t);
   }
@@ -218,7 +222,7 @@ function renderBoardNow() {
     $("#lane-tabs").replaceChildren();
     $("#lane-chips").replaceChildren();
     $("#new-todo").hidden = true;
-    $("#goal-filter").hidden = true;
+    $("#board-filters").hidden = true;
     // Until the projects and runners are in, don't flash a welcome, a board
     // or "create your first project" that one of the others then replaces.
     empty.hidden = !state.projectsLoaded || state.runners === undefined;
@@ -240,6 +244,8 @@ function renderBoardNow() {
   $("#new-todo").hidden = false;
   renderRunnerBanner();
   renderGoalFilter();
+  renderMineFilter();
+  $("#board-filters").hidden = $("#goal-filter").hidden && $("#mine-filter").hidden;
 
   // A task just added may already have moved on (a queued task picked up at
   // once is Running): follow it rather than show its old lane empty.
@@ -284,7 +290,7 @@ function renderBoardNow() {
       l.key === "done" ? oldToggle() : null,
       l.key === "done" ? clearDoneBtn() : null))));
   // What needs you counts every task, whatever the board is filtered to.
-  const every = state.goalFilter ? laneItems(true) : items;
+  const every = state.goalFilter || mineOn() ? laneItems(true) : items;
   updateNeedsYou(every);
 
   $(".lane-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -383,6 +389,40 @@ $("#board").addEventListener("touchend", (e) => {
     [{ transform: `translateX(${d * 48}px)`, opacity: 0.4 }, { transform: "none", opacity: 1 }],
     { duration: 220, easing: EASE });
 }, { passive: true });
+
+// ------------------------------------------------------------------ Mine filter
+// Only the tasks the signed-in user created; in an org of one it is hidden.
+// Like the goal filter, a lane it leaves empty gives way to one with tasks.
+export function toggleMine(on = !mineOn()) {
+  if (!multiMember() || !myID()) return;
+  setMine(on);
+  state.lane = null;
+  renderBoard();
+}
+
+function renderMineFilter() {
+  const btn = $("#mine-filter");
+  btn.hidden = !multiMember() || !myID();
+  if (btn.hidden) return;
+  const on = mineOn();
+  btn.setAttribute("aria-pressed", String(on));
+  btn.title = on ? "Show everyone's tasks (:mine)" : "Show only the tasks you created (:mine)";
+  const me = people.byId.get(myID()) || { id: myID(), username: state.me?.username, avatar: state.me?.user?.avatar };
+  btn.replaceChildren(avatar(me), "Mine");
+}
+$("#mine-filter").addEventListener("click", () => toggleMine());
+// The people arrive after the board's first drawing: draw it again with them.
+people.onChange = () => { renderBoard(); if (state.detail) renderDetail(); };
+
+// creatorEl is the face of who created task t, on its card: only in an org
+// of several, and not for tasks Dash made or whose creator left.
+function creatorEl(t) {
+  if (!multiMember()) return null;
+  const u = creator(t);
+  if (!u) return null;
+  return h("span", { class: "todo-creator", title: `Created by ${u.username}` },
+    avatar(u), h("span", { class: "sr-only" }, `Created by ${u.username}`));
+}
 
 function toggleCollapsed(key) {
   if (!state.collapsed.delete(key)) state.collapsed.add(key);
@@ -564,6 +604,7 @@ export function todoRow(t, li = -1, ri = -1) {
       t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
       t.run_on ? runOnTag(t.run_on) : null,
       hasPriority(t) ? h("span", { class: "prio-tag", title: `Priority ${t.priority} (lower runs first)` }, `P${t.priority}`) : null,
+      creatorEl(t),
       t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), askClaudeChip(t), approvable(t) ? approveChip(t) : canMergePR(t) ? mergeChip(t) : null) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
 }

@@ -6,7 +6,8 @@ import { LANES, state } from "./state.js";
 import { showView } from "./nav.js";
 import { cleanup, loadProjects, openProjects, selectProject } from "./projects.js";
 import { pushDone } from "./board.js";
-import { hasPriority, laneItems, renderBoard, title } from "./branches.js";
+import { hasPriority, laneItems, renderBoard, title, toggleMine } from "./branches.js";
+import { multiMember } from "./people.js";
 import { openTodoForm } from "./todos.js";
 import { editTodo } from "./inlineedit.js";
 import { closeDetail } from "./detail.js";
@@ -150,6 +151,9 @@ export async function runCommand(line) {
   switch (name) {
     case "q": case "q!": case "close": closeDetail(); openDialog()?.close(); return;
     case "b": case "board": return showView("board");
+    case "mine":
+      if (!multiMember()) throw new Error("Mine filters the board to your own tasks, in an organization of several people.");
+      showView("board"); return toggleMine();
     case "c": case "chat": return toggleChatPane();
     case "pin": case "unpin": return togglePin();
     case "run": case "!": case "sh": case "shell":

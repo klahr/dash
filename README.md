@@ -134,6 +134,13 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
+**Who made a task.** The task's pane says who created it ("Created by Ana", or "Created by Dash"
+for a task Dash made itself). When your organization has more than one member, each card also
+shows its creator's picture or initial, and the filter row above the board has **Mine**: press it
+to show only the tasks you created, and again to show everyone's (or type `:mine`). Your browser
+remembers the choice. A task whose creator has left the organization, or deleted their account,
+shows no creator.
+
 **Goals.** For something bigger than one task, make a [goal](docs/goals.md): a coordinator
 (Claude) plans the tasks, dispatches them, and reviews each one as it enters review, fails or is
 merged, sending work back with notes. It never approves or merges: you do. By default its plan

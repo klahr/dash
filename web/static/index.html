@@ -215,7 +215,10 @@
         <div class="board-tools">
           <div class="lanes" role="tablist" id="lane-tabs"></div>
         </div>
-        <div class="goal-filter" id="goal-filter" role="group" aria-label="Goal filter" hidden></div>
+        <div class="board-filters" id="board-filters" role="group" aria-label="Filters" hidden>
+          <button class="mine-filter" type="button" id="mine-filter" aria-pressed="false" title="Show only the tasks you created" hidden></button>
+          <div class="goal-filter" id="goal-filter" hidden></div>
+        </div>
         <div class="sync-warn billing-warn" id="billing-banner" role="status" hidden></div>
         <div class="sync-warn disk-warn" id="disk-banner" role="alert" hidden></div>
         <div class="sync-warn" id="sync-warn" role="alert" hidden></div>
@@ -1695,7 +1698,7 @@
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>New task</dt><dd><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · <kbd>Backspace</kbd> in an empty field removes it · a pasted text stays one task · <kbd>Esc</kbd> close</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
-        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:prefs</code> <code>:connector</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:pin</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:vim</code> <code>:list</code> <code>:q</code></dd>
+        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:prefs</code> <code>:connector</code> <code>:perms</code> <code>:board</code> <code>:mine</code> <code>:chat</code> <code>:pin</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:vim</code> <code>:list</code> <code>:q</code></dd>
       </dl>
       <p class="hint">Dash version <code>{{DASH_VERSION}}</code></p>
       <!--DASH_FOOTER-->

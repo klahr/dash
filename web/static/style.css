@@ -335,10 +335,26 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .goal-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--goal); }
 @media (pointer: coarse) { .goal-chip { min-height: 32px; padding: 0 12px; } }
 #d-meta .goal-chip { margin-top: 0; }
-/* The board's goal filter: shows the goal its tasks are filtered to, and clears it. */
-.goal-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 8px var(--pad-x); border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--fs-s); }
-.goal-filter[hidden] { display: none; }
+/* The board's filters (app/branches.js): Mine, in an org of several, and the goal its tasks
+   are filtered to, which a press clears. */
+.board-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 6px var(--pad-x); border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--fs-s); }
+.board-filters[hidden], .goal-filter[hidden], .mine-filter[hidden] { display: none; }
+.goal-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
 .goal-filter .goal-chip { margin-top: 0; min-width: 0; }
+.mine-filter {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px 0 4px;
+  border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted);
+  font: inherit; font-size: var(--fs-xs); font-weight: 600; cursor: pointer;
+}
+.mine-filter .avatar { width: 18px; height: 18px; }
+.mine-filter:hover { color: var(--text); border-color: var(--faint); }
+.mine-filter[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+@media (pointer: coarse) { .mine-filter { min-height: 32px; padding-right: 12px; } }
+/* Who created a task: their face on the card, their name in the task's pane. */
+.todo-creator { display: inline-flex; }
+.todo-creator .avatar { width: 20px; height: 20px; box-shadow: 0 0 0 2px var(--surface); }
+.created-by { display: inline-flex; align-items: center; gap: 6px; }
+.created-by .avatar { width: 18px; height: 18px; }
 /* A goal coordinator's note on a task's timeline. */
 .tl-coord { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 8px 12px; border-left: 3px solid var(--goal); border-radius: var(--r-s); background: color-mix(in srgb, var(--goal) 8%, var(--surface)); font-size: var(--fs-s); color: var(--text); }
 .tl-coord b { color: var(--goal); }
