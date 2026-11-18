@@ -3,6 +3,7 @@ package fsutil
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -19,13 +20,15 @@ func TestWriteFileAtomic(t *testing.T) {
 	if err != nil || string(b) != "two" {
 		t.Fatalf("read %q, %v", b, err)
 	}
-	fi, _ := os.Stat(path)
-	if fi.Mode().Perm() != 0o600 {
-		t.Errorf("file mode %v", fi.Mode().Perm())
-	}
-	di, _ := os.Stat(filepath.Dir(path))
-	if di.Mode().Perm() != 0o700 {
-		t.Errorf("dir mode %v", di.Mode().Perm())
+	if runtime.GOOS != "windows" { // which has no Unix permission bits
+		fi, _ := os.Stat(path)
+		if fi.Mode().Perm() != 0o600 {
+			t.Errorf("file mode %v", fi.Mode().Perm())
+		}
+		di, _ := os.Stat(filepath.Dir(path))
+		if di.Mode().Perm() != 0o700 {
+			t.Errorf("dir mode %v", di.Mode().Perm())
+		}
 	}
 	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
 		t.Errorf("temp file left behind: %v", err)

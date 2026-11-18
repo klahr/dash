@@ -18,12 +18,14 @@ import (
 
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // With local Claude off (as on every hub), no way into Claude
 // in this package runs it: a fake `claude` that leaves a mark is never
 // started, and the API is never called.
 func TestNoLocalClaudeRunsNothing(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for claude")
 	dir := t.TempDir()
 	mark := filepath.Join(dir, "ran")
 	bin := filepath.Join(dir, "claude")

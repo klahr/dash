@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/klahr/dash/internal/testbin"
 )
 
 func TestParseGitHubProtocol(t *testing.T) {
@@ -51,6 +53,7 @@ func TestCloneRemote(t *testing.T) {
 // A remote the runner can't read fails before the clone, naming the runner,
 // the repository and the protocol, and ssh never prompts (BatchMode).
 func TestCheckAccessFailsClearly(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for ssh")
 	dir := t.TempDir()
 	ssh := filepath.Join(dir, "ssh")
 	script := "#!/bin/sh\necho \"ssh $* prompt=$GIT_TERMINAL_PROMPT\" >&2\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n"
@@ -298,6 +301,7 @@ func TestGhCredentialEnv(t *testing.T) {
 // Git really asks gh for github.com credentials, after a helper the user
 // configured, and the quoted path survives sh.
 func TestGhCredentialHelperRuns(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for gh")
 	dir := filepath.Join(t.TempDir(), "with 'quote")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

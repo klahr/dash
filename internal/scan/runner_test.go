@@ -122,6 +122,7 @@ func newFixture(t *testing.T, name, src string) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() }) // before TempDir is removed: Windows can't remove an open file
 	p, err := st.CreateProject(model.Project{Name: "p", Path: repo, DefaultBranch: "main"})
 	if err != nil {
 		t.Fatal(err)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/perm"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // flag returns the value after name in args, and whether name is there.
@@ -211,6 +212,7 @@ func TestToolBlockDeltas(t *testing.T) {
 // TestChatUsage: the turn's tokens come from the result event, and the time
 // between a thinking block's start and stop counts as thinking.
 func TestChatUsage(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for claude")
 	bin := filepath.Join(t.TempDir(), "claude")
 	script := `#!/bin/sh
 cat >/dev/null

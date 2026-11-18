@@ -11,6 +11,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 type nopPub struct{}
@@ -21,11 +22,13 @@ func (nopPub) Publish(model.Event) {}
 // and a fixed log for `run view --log-failed`.
 func newWatcher(t *testing.T, investigate bool) (*Watcher, model.Project, func(string)) {
 	t.Helper()
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for gh")
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "dash.db"), nopPub{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() }) // before TempDir is removed: Windows can't remove an open file
 	runsFile := filepath.Join(dir, "runs.json")
 	gh := filepath.Join(dir, "gh")
 	script := "#!/bin/sh\ncase \"$1 $2\" in\n\"run list\") cat " + runsFile + " ;;\n" +

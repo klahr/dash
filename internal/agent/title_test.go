@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/klahr/dash/internal/testbin"
 )
 
 func TestCleanTitle(t *testing.T) {
@@ -167,6 +169,7 @@ func TestSuggestTranscript(t *testing.T) {
 // Suggest runs the small model on the conversation with the prompt that
 // asks for the user's next message, and reads its reply.
 func TestSuggestAsksHaiku(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for claude")
 	dir := t.TempDir()
 	bin := dir + "/claude"
 	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + dir + "/args\ncat > " + dir + "/stdin\nprintf '%s' \"$REPLY\"\n"

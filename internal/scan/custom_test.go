@@ -78,6 +78,7 @@ func TestTemplatesMergeAndShadow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() }) // before TempDir is removed: Windows can't remove an open file
 	repo := t.TempDir()
 	p, _ := st.CreateProject(model.Project{Name: "p", Path: repo})
 	save := func(name string) {

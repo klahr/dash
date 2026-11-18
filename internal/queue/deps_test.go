@@ -92,6 +92,7 @@ func TestDependencyCyclesAreRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() }) // before TempDir is removed: Windows can't remove an open file
 	p, _ := st.CreateProject(model.Project{Name: "p"})
 	a, _ := st.CreateTodo(model.Todo{ProjectID: p.ID, Title: "a"})
 	b, err := st.CreateTodo(model.Todo{ProjectID: p.ID, Title: "b", DependsOn: []string{a.ID}})

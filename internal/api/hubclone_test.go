@@ -13,12 +13,14 @@ import (
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/peer"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // A runner without access to a hub's GitHub project says which runner,
 // which repository and which protocol, instead of git's exit 128; with no
 // -github-protocol it uses ssh, even when the hub's remote is https://.
 func TestHubLinkReportsNoAccess(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for ssh")
 	serial(t) // t.Setenv
 	s, h, _ := runnerSide(t, 7)
 	s.Peers = &peer.Hub{Self: "rg-klarre-runner"}

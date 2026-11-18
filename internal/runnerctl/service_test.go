@@ -468,7 +468,8 @@ func TestPreflightDoesNotNeedGh(t *testing.T) {
 }
 
 func TestServicePath(t *testing.T) {
-	if got := ServicePath("/usr/bin::/bin", "/bin", "/opt/x", ""); got != "/usr/bin:/bin:/opt/x" {
+	list := func(dirs ...string) string { return strings.Join(dirs, string(os.PathListSeparator)) }
+	if got := ServicePath(list("/usr/bin", "", "/bin"), "/bin", "/opt/x", ""); got != list("/usr/bin", "/bin", "/opt/x") {
 		t.Errorf("got %s", got)
 	}
 }

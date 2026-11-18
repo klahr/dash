@@ -14,6 +14,7 @@ import (
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
+	"github.com/klahr/dash/internal/testbin"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -219,6 +220,7 @@ func TestRelabellingWaitsForRunningTasks(t *testing.T) {
 // once, and a remote it can't read says why, in the same words as the
 // project's work would ("runner … cannot access … Permission denied").
 func TestRunnerScreenReportsCloneErrors(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for ssh")
 	serial(t) // t.Setenv
 	ssh := filepath.Join(t.TempDir(), "ssh")
 	if err := os.WriteFile(ssh, []byte("#!/bin/sh\necho 'git@github.com: Permission denied (publickey).' >&2\nexit 255\n"), 0o755); err != nil {

@@ -91,10 +91,12 @@ func TestStoreMarksStaleRunningInterrupted(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "dash.db")
 	st, _ := store.Open(path, nil)
+	t.Cleanup(func() { st.Close() })
 	p, _ := st.CreateProject(model.Project{Name: "p", Path: t.TempDir()})
 	r, _ := st.CreateScanRun(model.ScanRun{ProjectID: p.ID, Scan: "x", Status: model.ScanRunning, StartedAt: time.Now()})
-	st, _ = store.Open(path, nil) // after a crash: the run was never finished
-	if got, _ := st.GetScanRun(r.ID); got.Status != model.ScanInterrupted || got.FinishedAt == nil || got.Note == "" {
+	after, _ := store.Open(path, nil) // after a crash: the run was never finished
+	t.Cleanup(func() { after.Close() })
+	if got, _ := after.GetScanRun(r.ID); got.Status != model.ScanInterrupted || got.FinishedAt == nil || got.Note == "" {
 		t.Fatalf("after restart: %+v", got)
 	}
 }
@@ -112,6 +114,7 @@ func TestResumeOnceAfterCrash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() }) // before TempDir is removed: Windows can't remove an open file
 	fx.st = st
 	fx.restart(t)
 

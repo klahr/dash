@@ -97,6 +97,7 @@ func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() }) // before TempDir is removed: Windows can't remove an open file
 	g := gitops.New(nopPub{})
 	p.Path, p.DefaultBranch = filepath.Join(dir, "repo"), "main"
 	ctx, cancel := context.WithCancel(context.Background())

@@ -14,9 +14,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/klahr/dash/internal/testbin"
 )
 
 func TestCommandRefusesOnHub(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in")
 	t.Cleanup(func() { Set(nil) })
 	var logs bytes.Buffer
 	prev := slog.Default()

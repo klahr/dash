@@ -21,6 +21,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/klahr/dash/internal/testbin"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -32,6 +33,7 @@ import (
 // claude that leaves a mark and a fake API that counts its calls catch any
 // code path that would.
 func TestHubWithoutClaudeNeverRunsIt(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for claude")
 	endToEnd(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("needs git")

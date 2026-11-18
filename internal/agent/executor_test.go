@@ -9,6 +9,7 @@ import (
 
 	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 func streamEvents(t *testing.T, line string) []model.RunEvent {
@@ -82,6 +83,7 @@ func TestSummary(t *testing.T) {
 // fakeClaude is a `claude` that prints out and exits 0.
 func fakeClaude(t *testing.T, out string) string {
 	t.Helper()
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for claude")
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "out.jsonl"), []byte(out), 0o644); err != nil {
 		t.Fatal(err)
@@ -135,6 +137,7 @@ func TestRunLogsClaudeCodeOutputChanges(t *testing.T) {
 }
 
 func TestRunForksAResumedSession(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for claude")
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "claude")
 	script := "#!/bin/sh\ncat >/dev/null\necho \"$@\" >'" + dir + "/args'\n" +
@@ -170,6 +173,7 @@ func TestRunForksAResumedSession(t *testing.T) {
 // arguments, then claude and claude's, in the worktree, and tells it
 // which worktree that is.
 func TestRunInSandbox(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for the sandbox")
 	dir := t.TempDir()
 	wrap := filepath.Join(dir, "sandbox")
 	script := "#!/bin/sh\necho \"$PWD|$DASH_WORKTREE|$@\" >'" + dir + "/seen'\nshift\nexec \"$@\"\n"

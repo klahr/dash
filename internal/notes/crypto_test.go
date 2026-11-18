@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestIdentityIsKept(t *testing.T) {
 	if err != nil || b.Public != a.Public || b.private != a.private {
 		t.Fatalf("reloaded a different identity: %v", err)
 	}
-	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o600 {
+	if fi, err := os.Stat(path); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("identity file mode: %v %v", fi.Mode(), err)
 	}
 	// A file whose public key isn't its private key's is refused.

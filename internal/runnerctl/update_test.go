@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // releaseServer serves release 1.3.0 for linux/amd64: an archive holding a
@@ -51,6 +53,7 @@ func releaseServer(t *testing.T, sum string) string {
 // installed is a dash binary at version 1.2.0 in a fresh directory.
 func installed(t *testing.T) string {
 	t.Helper()
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for dash")
 	bin := filepath.Join(t.TempDir(), "dash")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho dash 1.2.0\n"), 0o755); err != nil {
 		t.Fatal(err)

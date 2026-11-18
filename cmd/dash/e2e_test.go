@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/klahr/dash/internal/testbin"
 	"github.com/klahr/dash/internal/testgit"
 )
 
@@ -50,8 +51,8 @@ func buildDash(t *testing.T) (dash, fakeClaude string) {
 		if bins.dir, bins.err = os.MkdirTemp("", "dash-e2e-"); bins.err != nil {
 			return
 		}
-		bins.dash = filepath.Join(bins.dir, "dash")
-		bins.fake = filepath.Join(bins.dir, "fakebin", "claude")
+		bins.dash = filepath.Join(bins.dir, testbin.Exe("dash"))
+		bins.fake = filepath.Join(bins.dir, "fakebin", testbin.Exe("claude"))
 		var wg sync.WaitGroup
 		errs := make([]error, 2)
 		for i, b := range [][2]string{{bins.dash, "."}, {bins.fake, "./testdata/fakeclaude"}} {
