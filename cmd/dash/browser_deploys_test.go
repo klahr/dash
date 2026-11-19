@@ -15,7 +15,8 @@ import (
 
 // The Deploys page against a real hub and runner: a card per environment,
 // Deploy on one runs its script on the runner and goes live; the deploy
-// opens in a pane beside the list with its log, and Esc closes it. Once a
+// opens in a pane beside the list with its log, and Esc closes it. Deploy
+// picks one of the project's release tags, the newest chosen. Once a
 // newer commit is live, the card offers Roll back to the one before, which
 // deploys it again after asking; its pane shows how its checks went. On a
 // phone's screen the pane covers the page and its close button reads
@@ -33,6 +34,10 @@ func TestBrowserDeploys(t *testing.T) {
 		{"name": "production", "deploy_command": "echo deploying $DASH_ENV at $DASH_COMMIT", "url": "https://example.com"},
 		{"name": "staging", "deploy_command": "echo staging rollback=$DASH_ROLLBACK", "verify_command": `test -n "$DASH_COMMIT"`, "soak": 1},
 	}}, http.StatusOK, nil)
+
+	// Deploy ships release tags: tag what origin has.
+	first := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "rev-parse", "main"))
+	run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "tag", "1.0.0", first)
 
 	b := newBrowser(t, chrome)
 	b.signIn(h)
@@ -58,8 +63,18 @@ func TestBrowserDeploys(t *testing.T) {
 	// org's only admin, so their own will do); approved, it runs on the
 	// runner and goes live.
 	b.waitJS("production needs an approval", `document.querySelector('#env-cards [data-env="production"]').textContent.includes("Deploys need approval from an admin")`)
-	b.until("deploy production", `document.querySelector('#env-cards [data-env="production"] .env-awaiting button.primary')`,
-		chromedp.Click(chromedp.CSS(`#env-cards [data-env="production"] .env-deploy`)))
+	// pickTag deploys tag to env with Deploy's picker; the newest tag is
+	// the one chosen.
+	pickTag := func(env, tag string) {
+		t.Helper()
+		b.until("open "+env+"'s Deploy", `document.querySelector("dialog.sheet[open] .tag-pick input[name=tag]")`,
+			chromedp.Click(chromedp.CSS(`#env-cards [data-env="`+env+`"] .env-deploy`)))
+		b.waitJS(tag+" the newest, chosen", `document.querySelector('dialog.sheet[open] .tag-pick input[name=tag]:checked')?.value === "`+tag+`"`)
+		b.until("deploy "+tag+" to "+env, `!document.querySelector("dialog.sheet[open] .tag-pick")`,
+			chromedp.Click(chromedp.CSS(`dialog.sheet[open] footer button[value=ok]`)))
+	}
+	pickTag("production", "1.0.0")
+	b.waitJS("approve on the card", `document.querySelector('#env-cards [data-env="production"] .env-awaiting button.primary')`)
 	b.waitJS("it awaits approval in the list", `document.querySelector("#deploy-list li .status.d-awaiting_approval")`)
 	shot("deploys-approval-wide")
 	b.do("approve it", chromedp.Click(chromedp.CSS(`#env-cards [data-env="production"] .env-awaiting button.primary`)))
@@ -84,26 +99,28 @@ func TestBrowserDeploys(t *testing.T) {
 
 	// Staging, checked by its verify command and a soak; then a newer
 	// commit, and Roll back to the first.
-	// A click that starts a deploy is retried only until the deploy is in
-	// the list (each click queues one), never until it is live: checks and
-	// a soak take longer than until waits between clicks.
+	// The picker's Deploy is clicked only until the picker closes (each
+	// click queues one), never until it is live: checks and a soak take
+	// longer than until waits between clicks.
 	stagingDeploys := `[...document.querySelectorAll("#deploy-list li .deploy-env")].filter((e) => e.textContent === "staging").length`
-	stagingLiveAt := func(commit string) string {
-		return `document.querySelector('#env-cards [data-env="staging"] .env-live .status.d-live') && document.querySelector('#env-cards [data-env="staging"] .env-live code')?.textContent === "` + commit[:7] + `"`
+	stagingLiveAt := func(tag, commit string) string {
+		return `document.querySelector('#env-cards [data-env="staging"] .env-live .status.d-live') && document.querySelector('#env-cards [data-env="staging"] .env-live code')?.textContent === "` + tag + ` (` + commit[:7] + `)"`
 	}
 	stagingIdle := `!document.querySelector('#env-cards [data-env="staging"].busy')`
-	first := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "rev-parse", "main"))
-	b.until("deploy staging", stagingDeploys+` === 1`, chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-deploy`)))
-	b.waitJS("staging live at the first", stagingLiveAt(first)+` && `+stagingIdle)
+	pickTag("staging", "1.0.0")
+	b.waitJS("staging deployed once", stagingDeploys+` === 1`)
+	b.waitJS("staging live at the first", stagingLiveAt("1.0.0", first)+` && `+stagingIdle)
 	next := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "commit-tree", "main^{tree}", "-p", "main", "-m", "second"))
 	run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "update-ref", "refs/heads/main", next)
-	b.until("deploy staging's next commit", stagingDeploys+` === 2`, chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-deploy`)))
-	b.waitJS("staging live at the next", stagingLiveAt(next)+` && `+stagingIdle)
+	run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "tag", "1.1.0", next)
+	pickTag("staging", "1.1.0")
+	b.waitJS("staging deployed twice", stagingDeploys+` === 2`)
+	b.waitJS("staging live at the next", stagingLiveAt("1.1.0", next)+` && `+stagingIdle)
 	b.waitJS("Roll back to the first", `document.querySelector('#env-cards [data-env="staging"] .env-rollback button')?.textContent.includes("Roll back to `+first[:7]+`")`)
 	shot("deploys-rollback-wide")
 	b.until("ask to roll back", `document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-rollback button`)))
 	b.until("roll back", `!document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.ID("ask-ok")))
-	b.waitJS("rolled back", stagingDeploys+` === 3 && document.querySelector("#deploy-list .status.d-rolled_back") && `+stagingLiveAt(first))
+	b.waitJS("rolled back", stagingDeploys+` === 3 && document.querySelector("#deploy-list .status.d-rolled_back") && `+stagingLiveAt("1.0.0", first))
 	b.until("open the rollback", `document.querySelector("#dd-title").textContent === "Rollback to staging" && !document.querySelector("#dd-checks-wrap").hidden`,
 		chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-live`)))
 	b.waitJS("its checks", `[...document.querySelectorAll("#dd-checks .deploy-check")].map((e) => e.textContent).join() === "PassedVerify command,PassedSoak"`)
