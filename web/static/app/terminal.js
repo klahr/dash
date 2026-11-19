@@ -137,7 +137,12 @@ export function shortDir(d) {
 
 function renderShellHead() {
   const p = state.project;
-  const cur = (attached && state.procs.find((x) => x.id === attached)) || (attachedIn === p?.id ? attachedProc : null);
+  const want = shellPick(p);
+  let cur = (attached && state.procs.find((x) => x.id === attached)) || (attachedIn === p?.id ? attachedProc : null);
+  // A shell on another runner than the one picked isn't in view (see ensureShell):
+  // the header names the picked runner, also when it refused to open one, so the
+  // menu doesn't jump back and the shell before can be picked again.
+  if (cur?.kind === "pty" && want && procRunner(cur) !== want) cur = null;
   const hub = !!p && !p.prefix && isHub();
   const { eligible, others } = shellRunners(p);
   const menu = hub && eligible.length > 1;
@@ -148,7 +153,7 @@ function renderShellHead() {
     if (curID && !opts.some((r) => r.id === curID) && cur?.runner) opts.push({ id: curID, name: cur.runner });
     sel.replaceChildren(...opts.map((r) => h("option", { value: r.id }, r.name)),
       ...others.map((r) => h("option", { value: r.id, disabled: true }, `${r.name} (${r.why})`)));
-    sel.value = curID || shellPick(p) || eligible[0].id;
+    sel.value = want || curID || eligible[0].id;
   }
   $("#shell-runner-wrap").hidden = !menu;
   const name = menu ? "" : cur?.runner || (hub ? eligible[0]?.name || "" : p?.prefix ? "" : "This computer");
