@@ -153,7 +153,7 @@ func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 		t.Skip("needs git")
 	}
 	backend := gitHTTPBackend(t, gitBin)
-	dir := t.TempDir()
+	dir := procsTempDir(t)
 	dash, fake := buildDash(t)
 	calls := filepath.Join(dir, "claude-calls")
 
@@ -213,6 +213,30 @@ func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 	// A project shared with it: the hub keeps none on its own disk.
 	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": remote, "runs_on": []string{"any"}}, http.StatusCreated, &h.project)
 	return h
+}
+
+// procsTempDir is t.TempDir for a test whose dash processes work in it.
+// Stopping a runner doesn't wait for every git process it started: a fetch's
+// children (index-pack, git-remote-https) may still write into a checkout's
+// .git for a moment, and t.TempDir's single RemoveAll then fails with
+// "directory not empty". Its cleanup, registered after t.TempDir's and so
+// run before it (but after the processes' own, registered later), removes
+// the folder, trying again while something still writes into it.
+func procsTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Cleanup(func() {
+		var err error
+		for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+			if err = os.RemoveAll(dir); err == nil || time.Now().After(deadline) {
+				break
+			}
+		}
+		if err != nil {
+			t.Logf("removing %s: %v", dir, err) // t.TempDir's cleanup reports it
+		}
+	})
+	return dir
 }
 
 // lowDiskMinimum lets runner id start tasks with little disk space free:

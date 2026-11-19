@@ -39,7 +39,7 @@ func newFleet(t *testing.T) *fleet {
 		t.Skip("needs git")
 	}
 	backend := gitHTTPBackend(t, gitBin)
-	f := &fleet{t: t, dir: t.TempDir(), gitBin: gitBin}
+	f := &fleet{t: t, dir: procsTempDir(t), gitBin: gitBin}
 	dash, fake := buildDash(t)
 	f.dash = dash
 	f.hold = filepath.Join(f.dir, "hold")
