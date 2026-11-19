@@ -129,6 +129,27 @@ func TestDashMCPPlanningTools(t *testing.T) {
 	if _, err := runTool(t, tools, "get_card", `{"card":"nope"}`); err == nil {
 		t.Error("get_card of no card")
 	}
+
+	more, err := raw(s).CreateQueuedTodo(model.Todo{ProjectID: p.ID, Title: "PDF fonts", Prompt: "fonts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err = runTool(t, tools, "link_card", `{"card":"`+c.ID+`","todo":"`+more.ID+`"}`); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.(mcptools.CardRow); got.ID != c.ID || got.Links != 2 {
+		t.Errorf("linked card %+v", got)
+	}
+	for _, args := range []string{
+		`{"card":"` + c.ID + `"}`,
+		`{"card":"` + c.ID + `","todo":"` + more.ID + `","goal":"` + more.ID + `"}`,
+		`{"card":"` + c.ID + `","todo":"nope"}`,
+		`{"card":"nope","todo":"` + more.ID + `"}`,
+	} {
+		if _, err := runTool(t, tools, "link_card", args); err == nil {
+			t.Errorf("link_card %s", args)
+		}
+	}
 }
 
 // A project's chat reads, changes and starts its project's cards and cards
@@ -183,6 +204,71 @@ func TestProjectChatPlanningTools(t *testing.T) {
 	}
 }
 
+// A project's chat links its project's work to its project's cards and
+// cards of no project, never another project's card or work.
+func TestProjectChatLinkCard(t *testing.T) {
+	s, _, p := boardServer(t)
+	h := s.Routes()
+	other, otherTodo, otherGoal := otherProject(t, s)
+	o := s.Store.ForOrg(ownerSession(t, s).Org.ID)
+	secret, err := o.CreateCard(model.Card{Title: "Secret card", ProjectID: other.ID, Column: model.CardIdeas})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loose, err := o.CreateCard(model.Card{Title: "Loose card", Column: model.CardIdeas})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, err := raw(s).CreateQueuedTodo(model.Todo{ProjectID: p.ID, Title: "Mine", Prompt: "mine"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	defer release()
+
+	links := func(id string) []model.CardLink {
+		t.Helper()
+		ls, err := o.CardLinks(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ls[id]
+	}
+	for _, args := range []string{
+		`{"card":"` + secret.ID + `","todo":"` + mine.ID + `"}`,
+		`{"card":"` + loose.ID + `","todo":"` + otherTodo.ID + `"}`,
+		`{"card":"` + loose.ID + `","goal":"` + otherGoal.ID + `"}`,
+		`{"card":"` + loose.ID + `"}`,
+		`{"card":"` + loose.ID + `","todo":"` + mine.ID + `","goal":"` + otherGoal.ID + `"}`,
+		`{"todo":"` + mine.ID + `"}`,
+	} {
+		if text, isErr := toolCall(h, token, "link_card", args); !isErr || strings.Contains(text, "Secret") {
+			t.Errorf("link_card %s: %s", args, text)
+		}
+	}
+	if ls := links(secret.ID); len(ls) != 0 {
+		t.Errorf("another project's card linked: %+v", ls)
+	}
+	if ls := links(loose.ID); len(ls) != 0 {
+		t.Errorf("another project's work linked: %+v", ls)
+	}
+
+	text, isErr := toolCall(h, token, "link_card", `{"card":"`+loose.ID+`","todo":"`+mine.ID+`"}`)
+	if isErr {
+		t.Fatalf("link_card: %s", text)
+	}
+	var row mcptools.CardRow
+	if err := json.Unmarshal([]byte(text), &row); err != nil || row.Links != 1 || row.Column != "in_progress" {
+		t.Fatalf("linked %s %v", text, err)
+	}
+	if ls := links(loose.ID); len(ls) != 1 || ls[0].WorkID != mine.ID {
+		t.Errorf("links %+v", ls)
+	}
+	if c, _ := o.GetCard(loose.ID); c.Column != model.CardInProgress {
+		t.Errorf("linked card %+v", c)
+	}
+}
+
 // The connector (/mcp) has the planning tools too; a read-only connection
 // only reads the plan.
 func TestConnectorPlanningTools(t *testing.T) {
@@ -196,6 +282,9 @@ func TestConnectorPlanningTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := out.(mcptools.CardRow).ID
+	if _, err := runTool(t, tools, "link_card", `{"card":"`+id+`","todo":"nope"}`); err == nil || !strings.Contains(err.Error(), "see list_cards") {
+		t.Errorf("link_card of no task: %v", err)
+	}
 	ro := mcptools.ReadOnly(tools, mcptools.FleetReadTools, errReadOnly)
 	if _, err := runTool(t, ro, "get_card", `{"card":"`+id+`"}`); err != nil {
 		t.Errorf("read-only get_card: %v", err)
