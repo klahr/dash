@@ -289,10 +289,52 @@ func (pb projectBoard) CreateCard(nc mcptools.NewCard) (mcptools.CardRow, error)
 	return pb.b.CreateCard(nc)
 }
 
-func (pb projectBoard) LinkCard(cardID, kind, workID string) (mcptools.CardRow, error) {
-	c, err := pb.b.sv.data.GetCard(cardID)
+// card checks that card id is the run's project's, or of no project.
+func (pb projectBoard) card(id string) (model.Card, error) {
+	c, err := pb.b.sv.data.GetCard(id)
 	if err != nil || (c.ProjectID != "" && c.ProjectID != pb.project) {
-		return mcptools.CardRow{}, fmt.Errorf("no card %q (see list_cards)", cardID)
+		return model.Card{}, fmt.Errorf("no card %q (see list_cards)", id)
+	}
+	return c, nil
+}
+
+func (pb projectBoard) Card(id string) (mcptools.CardDetail, error) {
+	if _, err := pb.card(id); err != nil {
+		return mcptools.CardDetail{}, err
+	}
+	return pb.b.Card(id)
+}
+
+func (pb projectBoard) UpdateCard(id string, u mcptools.CardUpdate) (mcptools.CardRow, error) {
+	if _, err := pb.card(id); err != nil {
+		return mcptools.CardRow{}, err
+	}
+	return pb.b.UpdateCard(id, u)
+}
+
+func (pb projectBoard) CommentCard(id, text string) (mcptools.CardNote, error) {
+	if _, err := pb.card(id); err != nil {
+		return mcptools.CardNote{}, err
+	}
+	return pb.b.CommentCard(id, text)
+}
+
+// StartCard starts a card's work in the run's project only.
+func (pb projectBoard) StartCard(id, project, kind string) (mcptools.CardStarted, error) {
+	if _, err := pb.card(id); err != nil {
+		return mcptools.CardStarted{}, err
+	}
+	if project != "" {
+		if err := pb.check(project); err != nil {
+			return mcptools.CardStarted{}, err
+		}
+	}
+	return pb.b.StartCard(id, pb.project, kind)
+}
+
+func (pb projectBoard) LinkCard(cardID, kind, workID string) (mcptools.CardRow, error) {
+	if _, err := pb.card(cardID); err != nil {
+		return mcptools.CardRow{}, err
 	}
 	switch kind {
 	case model.LinkTask:

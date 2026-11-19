@@ -211,6 +211,48 @@ func TestBrowserPlanningCardPane(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`.pl-member .icon-btn`)))
 }
 
+// Ask in chat on a card opens the chat about it: a card of no project in the
+// general chat, its message box started with the card's title and id, and
+// nothing sent.
+func TestBrowserPlanningAskInChat(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	var c struct{ ID string }
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Dark mode", "column": "ideas"}, http.StatusCreated, &c)
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open Planning", `document.querySelector("#view-planning.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
+	card := fmt.Sprintf(`#view-planning .pl-card[data-id=%q]`, c.ID)
+	b.until("open the card", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-desc")`,
+		chromedp.Click(chromedp.CSS(card+" .pl-open")))
+	want := fmt.Sprintf(`About the planning card "Dark mode" (card %s): `, c.ID)
+	b.until("the general chat, about the card", fmt.Sprintf(`!document.querySelector("#chat-pane").hidden && !document.querySelector("#chat-general").hidden &&
+		document.querySelector("#chat-general textarea")?.value === %q`, want),
+		chromedp.Click(chromedp.CSS(`#pd-actions button[title^="Ask Claude about this card"]`)))
+	b.waitJS("nothing sent", `!document.querySelector("#chat-general .chat-log .msg")`)
+
+	// On a phone, a card of a project opens that project's chat, full screen.
+	var pr struct{ ID string }
+	h.api.must("POST", "/api/projects", map[string]any{"name": "shop", "remote_url": "https://example.com/shop.git", "runs_on": []string{"any"}}, http.StatusCreated, &pr)
+	var c2 struct{ ID string }
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Gift cards", "column": "ideas", "project": pr.ID}, http.StatusCreated, &c2)
+	b.until("close the chat", `document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.CSS(`#pc-close`)))
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.run("open the shop card", fmt.Sprintf(`location.href = "/planning/cards/%s"; true`, c2.ID))
+	b.waitJS("the card, full screen", `!document.querySelector("#card-detail").hidden && document.querySelector("#pd-title")?.textContent === "Gift cards" &&
+		document.querySelector("#card-detail").offsetWidth >= innerWidth - 1`)
+	want = fmt.Sprintf(`About the planning card "Gift cards" (card %s): `, c2.ID)
+	b.until("shop's chat, full screen, about the card", fmt.Sprintf(`(() => {
+		const pane = document.querySelector("#chat-pane");
+		const panel = [...pane.querySelectorAll(".chat-panel[data-chat]")].find((p) => !p.hidden);
+		return !pane.hidden && pane.offsetWidth >= innerWidth - 1 && panel?.querySelector("textarea")?.value === %q;
+	})()`, want),
+		chromedp.Click(chromedp.CSS(`#pd-actions button[title^="Ask Claude about this card"]`)))
+}
+
 // A card's pane adds a card it depends on from a list of the org's cards;
 // the board then shows that it waits, until that card is in Done.
 func TestBrowserPlanningCardDeps(t *testing.T) {

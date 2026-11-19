@@ -61,6 +61,11 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
 **Copy link** in the card's head copies its address, `/planning/cards/<id>`. It opens the card
 for anyone in the org, after signing in if needed (see [Links](links.md)).
 
+**Ask in chat** in the card's head opens the chat about the card: its project's chat, or the
+**General** chat for a card of no project. The message box starts with the card's title and id;
+add your question and send it. Claude reads the card with `get_card`. Planners don't have it:
+they have no chat.
+
 ## Dependencies
 
 A card that depends on cards not in **Done** yet shows **Waits for** and how many, on the
@@ -147,13 +152,20 @@ see it only through the card.
 The board and an open card update by themselves when anyone changes a card, comments, or
 when linked work moves on.
 
-## From the chat
+## From the chat and MCP
 
-The chat has three tools for the plan (see [MCP](mcp.md#the-chats-task-tools)):
+The chats, `dash-mcp` and the claude.ai connector have tools for the plan (see
+[MCP](mcp.md#planning)):
 
 - `list_cards`: the cards, with their column, priority, target, members, dependencies and status
+- `get_card`: one card, with its description, linked work and comments
 - `create_card`: add a card, and the cards it depends on
+- `update_card`: change a card, or move it to another column
+- `comment_card`: comment on a card
+- `start_card`: start a task or a goal for a card, as **Start…** does
 - `link_card`: link a task or goal to a card
+
+A project's chat reaches that project's cards and cards of no project.
 
 ## API
 
@@ -170,7 +182,7 @@ Planning is under `/api/planning/`:
 | `POST /api/planning/cards/{id}/files?name=<name>`     | attach a file: the request's body                |
 | `GET /api/planning/cards/{id}/files/{file}/{name}`    | a card's file                                    |
 | `DELETE /api/planning/cards/{id}/files/{file}`        | take a file off the card                         |
-| `POST /api/planning/cards/{id}/start`                 | `project` and `kind` (`task` or `goal`)          |
+| `POST /api/planning/cards/{id}/start`                 | `project` and `kind` (`task` or `goal`); the card, with `started`: the new work's `kind` and `id` |
 | `GET /api/planning/projects`                          | the org's projects' ids, names, colors and icon URLs |
 | `GET /api/planning/projects/{id}/icon`                | a project's icon image                           |
 | `GET /api/planning/people`                            | the org's members to add to cards: ids, usernames and picture versions |

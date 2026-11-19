@@ -220,17 +220,31 @@ before it uses the others.
 
 ## Planning
 
-Dash's chats' `dash_board` reads and adds to the org's [plan](planning.md):
+`dash-mcp`, the connector and the chats' `dash_board` work on the org's [plan](planning.md), as
+you would on the **Planning** page:
 
 - `list_cards(project?, column?, tag?)`: the cards with their column, priority, target, members,
   tags, the cards they depend on and the status of their linked work. In a project chat, that
   project's cards.
+- `get_card(card)`: one card, with its description, the cards that depend on it, its linked tasks
+  and goals with their state, and its comments.
 - `create_card(title, description?, project?, column?, priority?, target?, tags?, depends_on?)`:
   add a card. `depends_on` takes the ids of cards to be done first. It starts no work.
+- `update_card(card, title?, description?, priority?, target?, tags?, depends_on?, column?, position?)`:
+  only the given ones change. `column` moves the card, to the end of the column or to `position`
+  (0 is the top). `tags` and `depends_on` replace the lists; `[]` clears them.
+- `comment_card(card, text)`: comment on a card, as you.
+- `start_card(card, kind?, project?)`: what **Start…** does. `kind` is `task` (the default,
+  queued now) or `goal`; `project` defaults to the card's. It answers the card and the new work's
+  id.
 - `link_card(card, todo?, goal?)`: link a task or a goal to a card, so the card shows its
-  status. In a project chat, only that project's work, to its cards or cards of no project.
+  status.
 
-A shell chat asks before it uses `create_card` and `link_card`.
+The plan is the org's, kept by the Dash you log in to (the hub): `dash-mcp` and the connector
+read and change it there. A project's chat reaches only that project's cards and cards of no
+project, links and starts only that project's work, and gives a card of no project to it when it
+starts it. A read-only connector (`scope=read`) can only use `list_cards` and `get_card`. A shell
+chat asks before it uses the others.
 
 ## Deploys
 

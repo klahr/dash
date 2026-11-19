@@ -420,12 +420,12 @@ type Options struct {
 
 // Tool names the chat may call; ReadTools never change anything.
 var (
-	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "read_checklist", "list_goals", "get_goal", "list_cards", "list_deploys"}
+	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "read_checklist", "list_goals", "get_goal", "list_cards", "get_card", "list_deploys"}
 	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "create_release", "delete_todo",
 		"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "reorder_checklist_item", "move_checklist_item_to_task",
 		"list_issues", "report_issue", "read_try_terminal",
 		"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal", "accept_goal_plan", "reject_goal_plan", "message_goal",
-		"list_cards", "create_card", "link_card",
+		"list_cards", "get_card", "create_card", "update_card", "comment_card", "start_card", "link_card",
 		"list_deploys", "deploy", "rollback", "promote"}
 	// AskTools are board tools a chat never gets without asking: they publish
 	// something (a release tag pushed to origin, a TODO.md change committed
@@ -1017,7 +1017,7 @@ func restartTools(b Board, r Restarter) []Tool {
 }
 
 // FleetReadTools are the FleetTools that only look.
-var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "list_issues", "get_diff", "get_log", "get_project", "read_checklist", "list_goals", "get_goal"}
+var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "list_issues", "get_diff", "get_log", "get_project", "read_checklist", "list_goals", "get_goal", "list_cards", "get_card"}
 
 // ReadOnly returns tools with those not in read made to fail with err: a
 // read-only caller still sees every tool, and learns why one doesn't work.

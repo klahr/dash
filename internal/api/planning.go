@@ -650,16 +650,22 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	req.Column = nil
-	if err := sv.writable(); err != nil {
-		writeErr(w, err)
-		return
-	}
-	if _, err := sv.data.UpdateCard(r.PathValue("cid"), req.apply); err != nil {
+	if err := sv.updateCard(r.PathValue("cid"), req); err != nil {
 		writeErr(w, err)
 		return
 	}
 	s.answerCard(w, r, sv, r.PathValue("cid"))
+}
+
+// updateCard changes a card's fields (not its column: see moveCard), for
+// the REST API and the update_card tool.
+func (sv *service) updateCard(id string, req cardRequest) error {
+	req.Column = nil
+	if err := sv.writable(); err != nil {
+		return err
+	}
+	_, err := sv.data.UpdateCard(id, req.apply)
+	return err
 }
 
 // answerCard answers r with the card's view.
@@ -703,24 +709,29 @@ func (s *Server) moveCard(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	col := model.CardColumn(req.Column)
-	if !col.Valid() {
-		writeErr(w, fmt.Errorf("%w: unknown column %q: use ideas, planned, in_progress or done", errBadRequest, req.Column))
-		return
-	}
-	if err := sv.writable(); err != nil {
-		writeErr(w, err)
-		return
-	}
-	pos := 1 << 30
-	if req.Position != nil {
-		pos = *req.Position
-	}
-	if _, err := sv.data.MoveCard(r.PathValue("cid"), col, pos); err != nil {
+	if err := sv.moveCard(r.PathValue("cid"), req.Column, req.Position); err != nil {
 		writeErr(w, err)
 		return
 	}
 	s.answerCard(w, r, sv, r.PathValue("cid"))
+}
+
+// moveCard puts a card in column, at position (nil: the end), for the REST
+// API and the update_card tool.
+func (sv *service) moveCard(id, column string, position *int) error {
+	col := model.CardColumn(column)
+	if !col.Valid() {
+		return fmt.Errorf("%w: unknown column %q: use ideas, planned, in_progress or done", errBadRequest, column)
+	}
+	if err := sv.writable(); err != nil {
+		return err
+	}
+	pos := 1 << 30
+	if position != nil {
+		pos = *position
+	}
+	_, err := sv.data.MoveCard(id, col, pos)
+	return err
 }
 
 func (s *Server) cardComments(w http.ResponseWriter, r *http.Request) {
@@ -748,25 +759,28 @@ func (s *Server) addCardComment(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	text, err := model.CleanComment(req.Text)
-	if err != nil {
-		writeErr(w, fmt.Errorf("%w: %v", errBadRequest, err))
-		return
-	}
-	if sv.c.User == 0 {
-		writeErr(w, fmt.Errorf("%w: a comment is a person's: sign in to comment", errBadRequest))
-		return
-	}
-	if err := sv.writable(); err != nil {
-		writeErr(w, err)
-		return
-	}
-	m, err := sv.data.AddCardComment(r.PathValue("cid"), text)
+	m, err := sv.addCardComment(r.PathValue("cid"), req.Text)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, m)
+}
+
+// addCardComment adds the caller's comment to a card, for the REST API and
+// the comment_card tool.
+func (sv *service) addCardComment(cardID, text string) (model.CardComment, error) {
+	text, err := model.CleanComment(text)
+	if err != nil {
+		return model.CardComment{}, fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	if sv.c.User == 0 {
+		return model.CardComment{}, fmt.Errorf("%w: a comment is a person's: sign in to comment", errBadRequest)
+	}
+	if err := sv.writable(); err != nil {
+		return model.CardComment{}, err
+	}
+	return sv.data.AddCardComment(cardID, text)
 }
 
 // deleteCardComment handles DELETE …/comments/{mid}: its author, or an
@@ -977,11 +991,29 @@ func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if _, err := sv.startCard(r.PathValue("cid"), req.Project, req.Kind); err != nil {
+	id, err := sv.startCard(r.PathValue("cid"), req.Project, req.Kind)
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.answerCard(w, r, sv, r.PathValue("cid"))
+	v, err := sv.cardView(r.Context(), r.PathValue("cid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	kind := req.Kind
+	if kind == "" {
+		kind = model.LinkTask
+	}
+	// started is the work Start made, for dash-mcp's start_card.
+	type started struct {
+		Kind string `json:"kind"`
+		ID   string `json:"id"`
+	}
+	writeJSON(w, http.StatusOK, struct {
+		cardView
+		Started started `json:"started"`
+	}{v, started{kind, id}})
 }
 
 // startCard is what Start does (the REST API's and the start_card tool's):
@@ -1258,4 +1290,77 @@ func (b board) LinkCard(cardID, kind, workID string) (mcptools.CardRow, error) {
 	}
 	v, err := b.sv.cardView(context.Background(), cardID)
 	return cardRow(v), err
+}
+
+func (b board) Card(id string) (mcptools.CardDetail, error) {
+	v, err := b.sv.cardView(context.Background(), id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return mcptools.CardDetail{}, fmt.Errorf("no card %q (see list_cards)", id)
+		}
+		return mcptools.CardDetail{}, err
+	}
+	d := mcptools.CardDetail{CardRow: cardRow(v), Description: v.Description, Work: []mcptools.CardWork{}}
+	for _, n := range v.NeededBy {
+		d.NeededBy = append(d.NeededBy, n.ID)
+	}
+	for _, l := range v.Links {
+		d.Work = append(d.Work, mcptools.CardWork{Kind: l.Kind, ID: l.ID, Title: l.Title, Project: l.Project, State: l.State})
+	}
+	ms, err := b.sv.data.CardComments(id)
+	if err != nil {
+		return d, err
+	}
+	for _, m := range ms {
+		d.Comments = append(d.Comments, mcptools.CardNote{Author: m.AuthorName, Text: m.Text, At: m.CreatedAt})
+	}
+	return d, nil
+}
+
+func (b board) UpdateCard(id string, u mcptools.CardUpdate) (mcptools.CardRow, error) {
+	if _, err := b.sv.data.GetCard(id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return mcptools.CardRow{}, fmt.Errorf("no card %q (see list_cards)", id)
+		}
+		return mcptools.CardRow{}, err
+	}
+	req := cardRequest{Title: u.Title, Description: u.Description, Priority: u.Priority, Target: u.Target, Tags: u.Tags, DependsOn: u.DependsOn}
+	if req.Title != nil || req.Description != nil || req.Priority != nil || req.Target != nil || req.Tags != nil || req.DependsOn != nil {
+		if err := b.sv.updateCard(id, req); err != nil {
+			return mcptools.CardRow{}, err
+		}
+	}
+	if u.Column != nil {
+		if err := b.sv.moveCard(id, *u.Column, u.Position); err != nil {
+			return mcptools.CardRow{}, err
+		}
+	}
+	v, err := b.sv.cardView(context.Background(), id)
+	return cardRow(v), err
+}
+
+func (b board) CommentCard(id, text string) (mcptools.CardNote, error) {
+	m, err := b.sv.addCardComment(id, text)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return mcptools.CardNote{}, fmt.Errorf("no card %q (see list_cards)", id)
+		}
+		return mcptools.CardNote{}, err
+	}
+	return mcptools.CardNote{Author: m.AuthorName, Text: m.Text, At: m.CreatedAt}, nil
+}
+
+func (b board) StartCard(id, project, kind string) (mcptools.CardStarted, error) {
+	if kind == "" {
+		kind = model.LinkTask
+	}
+	work, err := b.sv.startCard(id, project, kind)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) && work == "" {
+			return mcptools.CardStarted{}, fmt.Errorf("no card %q or project %q (see list_cards)", id, project)
+		}
+		return mcptools.CardStarted{}, err
+	}
+	v, err := b.sv.cardView(context.Background(), id)
+	return mcptools.CardStarted{Card: cardRow(v), Kind: kind, ID: work}, err
 }

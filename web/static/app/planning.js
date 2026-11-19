@@ -78,6 +78,7 @@ const paneEl = () => $("#card-detail");
 //   visible()    whether the board shows (default: always), to load it
 //   background() the elements the pane covers on a phone (made inert)
 //   openWork(link) opens a linked task or goal (members)
+//   askChat(card) opens the card's project chat, about the card (members)
 //   me()         the signed-in user: { id, admin } (to delete comments)
 // The card's pane goes in paneParent (default root): outside what
 // background() returns, which a phone makes inert while the pane is open.
@@ -1006,6 +1007,8 @@ function renderCard() {
   fill($("#pd-actions"),
     ib({ type: "button", class: `btn small ${started ? "" : "primary"}`, title: "Make a task or a goal in a project for this card", onclick: attempt(() => startSheet(c)) }, "play", "Start…"),
     pl.planner ? null : ib({ type: "button", class: "btn small", title: "Link a task or goal that's already on a board", onclick: attempt(() => linkExistingSheet(c)) }, "link", "Link existing…"),
+    !pl.planner && pl.hooks.askChat ? ib({ type: "button", class: "btn small", title: c.project_id ? "Ask Claude about this card in its project's chat" : "Ask Claude about this card in the general chat",
+      onclick: () => pl.hooks.askChat(c) }, "comment", "Ask in chat") : null,
     ib({ type: "button", class: "btn small", title: "Change the title", onclick: () => { pl.editing = true; renderCard(); $("#pd-edit-title")?.focus(); } }, "edit", "Rename"),
     ib({ type: "button", class: "btn small", title: "Copy a link that opens this card", onclick: () => copy(linkTo({ view: "planning", card: c.id }), "Link copied") }, "link", "Copy link"));
   const body = $("#pd-body");
