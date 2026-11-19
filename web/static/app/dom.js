@@ -6,6 +6,10 @@ export const $ = (s, el = document) => el.querySelector(s);
 // Decorative pictures that fail to load go away (pagekit.js is a classic
 // script that index.html loads first).
 window.DashPage.optionalImages();
+// On a Mac (or iPad with a keyboard) the shortcuts that take Ctrl also take ⌘,
+// so key hints marked data-mod say ⌘ there.
+export const isApple = /mac|iphone|ipad|ipod/i.test(navigator.userAgentData?.platform || navigator.platform || "");
+if (isApple) for (const el of document.querySelectorAll("[data-mod]")) el.textContent = "⌘";
 // The server's LC_TIME, since browsers format times by their UI language instead.
 const serverTimeLocale = (() => {
   const l = document.querySelector('meta[name="dash-time-locale"]')?.content;

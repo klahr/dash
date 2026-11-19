@@ -121,7 +121,7 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    builds on.
 3. **Queue it.** Every way of making tasks ends with the same two buttons: **Save draft** keeps
    it in the *Drafts* column to queue later, **Queue** queues it. In the **New task** sheet,
-   <kbd>Enter</kbd> saves a draft and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> queues. The task moves to *Queued*, then *Running* as soon as Claude starts on it in
+   <kbd>Enter</kbd> saves a draft and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac) queues. The task moves to *Queued*, then *Running* as soon as Claude starts on it in
    its own worktree. Open the card to follow along; if Claude needs permission for something,
    Dash asks you.
 4. **Review.** When Claude is done the task lands in *Review*. Click **Review** on the card (or

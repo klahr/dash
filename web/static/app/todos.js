@@ -77,7 +77,7 @@ new ResizeObserver(([e]) => {
 // The quick sheet (FAB, n): one field per task, the text is its prompt and
 // Claude names it. A multi-line paste stays one task; the field just grows.
 // "More options…" carries the text over to the full form (Shift+N). It
-// ends like the full form: Save draft (Enter) or Queue (Ctrl+Enter).
+// ends like the full form: Save draft (Enter, so it is the primary button) or Queue (Ctrl/⌘+Enter).
 const quick = {
   sheet: $("#quick-sheet"),
   rows: $("#quick-rows"),

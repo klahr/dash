@@ -748,15 +748,16 @@
       <header class="sheet-head"><h2 id="quick-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint warn runner-note" id="quick-runner-note" hidden></p>
       <div class="quick-rows" id="quick-rows"></div>
-      <p class="hint quick-hint"><kbd>Enter</kbd> save draft · <kbd>Ctrl-Enter</kbd> queue · <kbd>Shift-Enter</kbd> another task · Claude names each task.</p>
+      <p class="hint quick-hint"><kbd>Enter</kbd> save draft · <kbd><span data-mod>Ctrl</span>-Enter</kbd> queue · <kbd>Shift-Enter</kbd> another task · Claude names each task.</p>
       <div class="quick-tools">
         <button class="link" type="button" id="quick-another" data-icon="plus">Another task</button>
         <button class="link" type="button" id="quick-goal" data-icon="target">New goal…</button>
         <button class="link" type="button" id="quick-more" data-icon="edit">More options…</button>
       </div>
       <footer class="sheet-actions">
-        <button class="btn" value="draft" data-icon="draft">Save draft</button>
-        <button class="btn primary" value="queue" data-icon="queue">Queue</button>
+        <!-- Save draft is the primary button here because Enter saves a draft (Ctrl/⌘-Enter queues). -->
+        <button class="btn primary" value="draft" data-icon="draft">Save draft</button>
+        <button class="btn" value="queue" data-icon="queue">Queue</button>
       </footer>
     </form>
   </dialog>
@@ -1893,11 +1894,11 @@
             <table class="keys-table">
               <caption class="sr-only">Forms</caption>
               <tbody>
-                <tr><th scope="row"><kbd>Enter</kbd></th><td>New task sheet: save</td></tr>
+                <tr><th scope="row"><kbd>Enter</kbd></th><td>New task sheet: save a draft</td></tr>
                 <tr><th scope="row"><kbd>Shift-Enter</kbd></th><td>New task sheet: another task</td></tr>
                 <tr><th scope="row"><kbd>Backspace</kbd></th><td>New task sheet: in an empty field, remove it</td></tr>
-                <tr><th scope="row"><kbd>Ctrl-Enter</kbd></th><td>Task form: queue</td></tr>
-                <tr><th scope="row"><kbd>Ctrl-Shift-Enter</kbd> <kbd>Ctrl-s</kbd></th><td>Task form: save a draft</td></tr>
+                <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Enter</kbd></th><td>New task sheet and task form: queue</td></tr>
+                <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Shift-Enter</kbd> <kbd><span data-mod>Ctrl</span>-s</kbd></th><td>Task form: save a draft</td></tr>
                 <tr><th scope="row"><kbd>Esc</kbd></th><td>Close or cancel</td></tr>
               </tbody>
             </table>
