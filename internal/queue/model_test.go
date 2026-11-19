@@ -25,13 +25,13 @@ func TestRunUsesTaskModel(t *testing.T) {
 	}
 	h.engine.Kick()
 	h.waitFor(td.ID, model.StatusReview)
-	args := exe.Calls()[0].ExtraArgs
+	args := (agent.ClaudeCode{}).RunArgs(exe.Calls()[0])
 	if i := slices.Index(args, "--model"); i < 0 || args[i+1] != "opus" {
 		t.Fatalf("want --model opus, got %v", args)
 	}
 
 	h.waitFor(h.add("small").ID, model.StatusReview)
-	if args := exe.Calls()[1].ExtraArgs; slices.Contains(args, "--model") {
+	if args := (agent.ClaudeCode{}).RunArgs(exe.Calls()[1]); slices.Contains(args, "--model") {
 		t.Fatalf("task without a model got --model: %v", args)
 	}
 }

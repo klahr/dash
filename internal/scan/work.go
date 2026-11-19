@@ -12,7 +12,6 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
-	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/textutil"
@@ -120,8 +119,8 @@ type Request struct {
 	Job     Job    `json:"job"`
 }
 
-// Check refuses a Job a runner shouldn't run as sent: claude's flags are
-// built from its fields, so none may look like a flag.
+// Check refuses a Job a runner shouldn't run as sent: the agent's flags
+// are built from its fields, so none may look like a flag.
 func (j Job) Check() error {
 	t := j.Template
 	if !nameRE.MatchString(t.Name) {
@@ -199,17 +198,18 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 	defer cancelRun()
 	// The tools may read the checkout only: not the runner's data directory
 	// (its hub token) or the user's credentials.
-	extra := Args(t, job.Tools, dir, filepath.Dir(r.Root), r.Root)
-	if r.GitTools != nil && r.GitURL != "" {
+	req := RunRequest(t, job.Tools, dir, filepath.Dir(r.Root), r.Root)
+	req.Dir, req.Prompt, req.Shared = dir, prompt, job.Shared
+	if r.GitTools != nil && r.GitURL != "" && agent.CanMCP(r.Exec) {
 		token, release := r.GitTools.Register(dir)
 		defer release()
-		extra = append(extra, mcptools.ConfigArgs(map[string]any{GitServerName: GitServerConfig(r.GitURL, token)})...)
+		req.MCPServers = map[string]any{GitServerName: GitServerConfig(r.GitURL, token)}
 	}
 	emit := h.Event
 	if emit == nil {
 		emit = func(model.RunEvent) {}
 	}
-	res, err := r.Exec.Run(runCtx, agent.ExecRequest{Dir: dir, Prompt: prompt, ExtraArgs: extra, Shared: job.Shared}, emit)
+	res, err := r.Exec.Run(runCtx, req, emit)
 	out.Result, out.CostUSD, out.Turns, out.Dir = res.Result, res.CostUSD, res.Turns, dir
 	if ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 		return out, fmt.Errorf("stopped: the scan ran longer than its %s limit", timeout)

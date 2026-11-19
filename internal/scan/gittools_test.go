@@ -132,7 +132,7 @@ func TestRunServesGitTools(t *testing.T) {
 	var cfg string
 	var during int
 	fx.exec.onRun = func(req agent.ExecRequest) {
-		cfg, _ = flagValue(req.ExtraArgs, "--mcp-config")
+		cfg, _ = flagValue((agent.ClaudeCode{}).RunArgs(req), "--mcp-config")
 		during = callGitMCP(t, srv.URL, cfg)
 	}
 	if r := fx.run(t, "s"); r.Status != model.ScanSucceeded {
@@ -167,4 +167,29 @@ func callGitMCP(t *testing.T, url, cfg string) int {
 	}
 	resp.Body.Close()
 	return resp.StatusCode
+}
+
+// noMCPExec is an agent that takes no MCP servers (no agent.MCPConfigurer).
+type noMCPExec struct{ agent.Executor }
+
+// A scan on an agent without MCP servers still runs, with the file tools
+// only: no git tools server, and no token registered for one.
+func TestRunWithoutMCPGetsNoGitTools(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t, "s", "---\nkind: security\n---\nLook.")
+	fx.runner.GitTools = &GitMCP{}
+	fx.runner.GitURL = "http://127.0.0.1:1"
+	fx.runner.Exec = noMCPExec{fx.exec}
+	var got agent.ExecRequest
+	fx.exec.onRun = func(req agent.ExecRequest) { got = req }
+	if r := fx.run(t, "s"); r.Status != model.ScanSucceeded {
+		t.Fatalf("run: %+v", r)
+	}
+	if len(got.MCPServers) > 0 {
+		t.Fatalf("MCP servers for an agent without them: %v", got.MCPServers)
+	}
+	if !got.Unattended || len(got.AllowedTools) == 0 {
+		t.Fatalf("scan run should be unattended with its tools: %+v", got)
+	}
 }

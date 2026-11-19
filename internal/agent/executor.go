@@ -7,48 +7,67 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
-	"github.com/klahr/dash/internal/claudecli"
-	"github.com/klahr/dash/internal/gitops"
-	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/textutil"
 )
 
-// ExecRequest is one Claude run inside a worktree.
+// ExecRequest is one agent run inside a worktree. Its fields say what the
+// run needs, not how a CLI spells it: the provider turns them into its own
+// flags (ClaudeCode's are in RunArgs).
 type ExecRequest struct {
 	Dir    string
 	Prompt string
-	Resume string // Claude Code session to continue, if any
-	// ForkSession continues Resume in a new session (--fork-session),
-	// leaving Resume's own untouched: a task building on another's.
+	// Resume is the session to continue, if any; only a Resumer takes it.
+	Resume string
+	// ForkSession continues Resume in a new session, leaving Resume's own
+	// untouched: a task building on another's.
 	ForkSession bool
-	ExtraArgs   []string // per-run flags, e.g. the permission prompt tool
-	Env         []string
+	// Model is the model to run on ("": the provider's default, or one in
+	// its Config.Args).
+	Model string
+	// Effort is the reasoning effort, e.g. "high" ("": the default).
+	Effort string
+	// MaxTurns stops the run after that many turns (0: no limit); the
+	// result's Stop is then StopMaxTurns.
+	MaxTurns int
+	// AddDirs are directories outside Dir the run may read (attachments).
+	AddDirs []string
+	// AppendSystem is added to the provider's system prompt.
+	AppendSystem string
+	// MCPServers are MCP servers for the run, by name, each in the shape
+	// of mcptools.ServerConfig; only an MCPConfigurer takes them.
+	MCPServers map[string]any
+	// AllowMCPTools are tools on MCPServers the run may call without
+	// asking: server name → tool names.
+	AllowMCPTools map[string][]string
+	// PermissionTool is the tool, on a server in MCPServers, that is asked
+	// before a tool call the run isn't allowed outright; only a
+	// PermissionHook takes it.
+	PermissionTool MCPTool
+	// ToolTimeout is how long the run waits on one MCP tool call (0: the
+	// provider's default), e.g. while a person answers a permission prompt.
+	ToolTimeout time.Duration
+	// Unattended marks a run nobody watches (a scan): it goes without the
+	// provider's task flags (Config.Args) and the user's settings and hooks,
+	// and any tool call outside AllowedTools is refused, never asked about.
+	Unattended bool
+	// AllowedTools and DeniedTools are tool permission rules for the run, in
+	// Claude Code's syntax ("Read", "Bash(npm audit:*)", "Read(//abs/**)"),
+	// which a provider maps to its own.
+	AllowedTools, DeniedTools []string
+	Env                       []string
 	// Shared, when set, is the Claude config folder of work for another
 	// member than this runner's owner: Claude runs with the API key in
 	// claudecli.KeyEnv and without any subscription login
 	// (claudecli.SharedEnv), and the run stops if Claude Code says it signed
 	// in another way.
 	Shared string
-}
-
-// errNotAPIKey is why a shared run stopped: Claude Code didn't sign in
-// with the API key.
-type errNotAPIKey struct{ source string }
-
-func (e errNotAPIKey) Error() string {
-	return "stopped: this run is for another member than the runner's owner, so it must use the runner's API key (" + claudecli.KeyEnv +
-		"), but Claude Code signed in with " + e.source
 }
 
 // ExecResult describes a finished run.
@@ -63,203 +82,23 @@ type ExecResult struct {
 	// ResumeFailed is set when Resume named a session Claude Code no longer
 	// has; the caller should retry with a full prompt.
 	ResumeFailed bool
-	// Stop is the result subtype, e.g. "success" or "error_max_turns".
+	// Stop is how the run ended, e.g. "success" or StopMaxTurns.
 	Stop string
 	// Result is Claude's final message.
 	Result string
 }
+
+// StopMaxTurns is ExecResult.Stop of a run that used its MaxTurns.
+const StopMaxTurns = "error_max_turns"
+
+// MCPTool is a tool on an MCP server; the zero value is none.
+type MCPTool struct{ Server, Tool string }
 
 // Executor carries out a Todo inside its worktree. emit receives the run's
 // events (text, tool calls and results, the result) as they happen; Summary
 // turns one into a human-readable progress line.
 type Executor interface {
 	Run(ctx context.Context, req ExecRequest, emit func(model.RunEvent)) (ExecResult, error)
-}
-
-// ClaudeCode runs `claude -p` with stream-json output in the worktree. Claude
-// Code supplies the agent loop and file/bash tools; Dash supplies isolation
-// (the worktree), the commit, tests and review.
-type ClaudeCode struct {
-	Bin  string   // default "claude"
-	Args []string // extra flags, e.g. permission mode / allowed tools
-	// Sandbox, if set, is a command that runs Claude for Dash: Dash
-	// starts Sandbox[0] with the rest of Sandbox, then Bin and its
-	// arguments, in the worktree, e.g. a script that runs them as a user
-	// with fewer rights or in a container (-claude-sandbox, see
-	// docs/sandbox.md). The run's environment is passed to it, with
-	// DASH_WORKTREE naming the worktree.
-	Sandbox []string
-	// OnRateLimit receives the rate_limit_info of every rate_limit_event.
-	OnRateLimit func(json.RawMessage)
-	// CLI collects what looks changed about the Claude Code CLI; the run's
-	// log shows it too (optional).
-	CLI *claudecli.Monitor
-}
-
-// cliWarning is how a Claude Code CLI warning shows in a task's log.
-func cliWarning(w string) model.RunEvent {
-	return model.RunEvent{Kind: "status", Text: "⚠ Claude Code CLI: " + w}
-}
-
-func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.RunEvent)) (ExecResult, error) {
-	if err := checkLocal(); err != nil {
-		return ExecResult{}, err
-	}
-	bin := c.Bin
-	if bin == "" {
-		bin = localrun.Claude
-	}
-	args := append([]string{"-p", "--output-format", "stream-json", "--verbose"}, c.Args...)
-	args = append(args, req.ExtraArgs...)
-	if req.Resume != "" {
-		// Claude Code finds the session wherever it was started (sessions
-		// are kept per working directory, and the task building on another
-		// runs in a worktree of its own); a fork is saved under this one.
-		// (Checked with Claude Code 2.1.322; where it isn't found, Run
-		// reports ResumeFailed and the caller starts fresh.)
-		args = append(args, "--resume", req.Resume)
-		if req.ForkSession {
-			args = append(args, "--fork-session")
-		}
-	}
-	name := bin
-	if len(c.Sandbox) > 0 {
-		name, args = c.Sandbox[0], append(append(c.Sandbox[1:len(c.Sandbox):len(c.Sandbox)], bin), args...)
-	}
-	if req.Shared != "" {
-		if !claudecli.HasKey() {
-			return ExecResult{}, errNotAPIKey{source: "no API key: " + claudecli.KeyEnv + " isn't set"}
-		}
-		if err := os.MkdirAll(req.Shared, 0o700); err != nil {
-			return ExecResult{}, err
-		}
-	}
-	ctx, stop := context.WithCancelCause(ctx)
-	defer stop(nil)
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = req.Dir
-	cmd.Env = localrun.Environ(req.Env...)
-	if req.Shared != "" {
-		cmd.Env = claudecli.SharedEnv(cmd.Env, req.Shared)
-	}
-	var gitState string
-	if len(c.Sandbox) > 0 {
-		cmd.Env = append(cmd.Env, "DASH_WORKTREE="+req.Dir)
-		gitState = gitops.GitDirState(req.Dir)
-	}
-	cmd.Stdin = strings.NewReader(req.Prompt)
-	// Own process group so cancel kills Claude and everything it spawned.
-	localrun.Group(cmd, syscall.SIGTERM, 10*time.Second)
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return ExecResult{}, err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return ExecResult{}, err
-	}
-	if err := cmd.Start(); err != nil {
-		return ExecResult{}, fmt.Errorf("start %s: %w", name, err)
-	}
-
-	var res ExecResult
-	check := c.CLI.Stream()
-	for _, w := range check.Start() {
-		emit(cliWarning(w))
-	}
-	stderrDone := make(chan struct{})
-	go func() {
-		defer close(stderrDone)
-		n := pumpLines(stderr, func(l string) {
-			if strings.Contains(l, "No conversation found with session ID") {
-				res.ResumeFailed = true
-			}
-			emit(model.RunEvent{Kind: "status", Text: "stderr: " + l})
-		})
-		if n > 0 {
-			emit(model.RunEvent{Kind: "status", Text: skippedLines(n, "stderr")})
-		}
-	}()
-
-	var resultErr error
-	sawInit := false // Claude Code's system init message, which says how it signed in
-	skipped := pumpLines(stdout, func(l string) {
-		for _, w := range check.Line(l) {
-			emit(cliWarning(w))
-		}
-		ev, ok := parseStreamLine(l)
-		if !ok {
-			emit(model.RunEvent{Kind: "status", Text: l})
-			return
-		}
-		if req.Shared != "" && !sawInit && ev.Type != "system" {
-			stop(errNotAPIKey{source: "something Dash couldn't check (no init message)"})
-			return
-		}
-		if ev.SessionID != "" && res.SessionID == "" {
-			res.SessionID = ev.SessionID
-		}
-		switch ev.Type {
-		case "rate_limit_event":
-			if c.OnRateLimit != nil && len(ev.RateLimitInfo) > 0 {
-				c.OnRateLimit(ev.RateLimitInfo)
-			}
-			return
-		case "system":
-			if ev.Subtype == "init" && ev.Model != "" {
-				res.Model = ev.Model
-			}
-			if ev.Subtype == "init" {
-				sawInit = true
-			}
-			if ev.Subtype == "init" && req.Shared != "" && ev.APIKeySource != claudecli.KeyEnv {
-				// Before Claude does anything: not on the API key, not at all.
-				src := ev.APIKeySource
-				if src == "" || src == "none" {
-					src = "a subscription login"
-				}
-				stop(errNotAPIKey{source: src})
-			}
-		case "result":
-			res.CostUSD, res.Turns, res.Stop, res.Result = ev.Cost, ev.NumTurns, ev.Subtype, ev.Result
-			res.Usage = ev.Usage.chatUsage()
-			res.Usage.DurationMS = ev.DurationMS
-			if ev.IsError || ev.Subtype != "success" {
-				resultErr = fmt.Errorf("claude reported %s: %s", ev.Subtype, strings.TrimSpace(ev.Result))
-			}
-		}
-		for _, e := range events(ev) {
-			emit(e)
-		}
-	})
-	if skipped > 0 {
-		emit(model.RunEvent{Kind: "status", Text: skippedLines(skipped, "output")})
-	}
-	<-stderrDone
-	waitErr := cmd.Wait()
-	// Dash runs git in the worktree next, outside the sandbox: a run that
-	// pointed .git (or its commondir) elsewhere would choose the config,
-	// and so the commands, that git runs then.
-	if len(c.Sandbox) > 0 && gitops.GitDirState(req.Dir) != gitState {
-		return res, fmt.Errorf("claude changed the worktree's git metadata (.git, commondir or config.worktree): Dash won't run git there")
-	}
-	if cause := context.Cause(ctx); errors.As(cause, new(errNotAPIKey)) {
-		return res, cause
-	}
-	if err := waitErr; err != nil {
-		if ctx.Err() != nil {
-			return res, ctx.Err()
-		}
-		if resultErr != nil {
-			return res, resultErr
-		}
-		return res, fmt.Errorf("claude exited: %w", err)
-	}
-	for _, w := range check.End() {
-		emit(cliWarning(w))
-	}
-	return res, resultErr
 }
 
 // BuildPrompt is the full prompt for a todo's first run (or when its
@@ -392,64 +231,6 @@ func pumpLinesMax(r io.Reader, max int, fn func(string)) (skipped int) {
 			return skipped
 		}
 	}
-}
-
-type streamEvent struct {
-	Type          string          `json:"type"`
-	Subtype       string          `json:"subtype"`
-	SessionID     string          `json:"session_id"`
-	IsError       bool            `json:"is_error"`
-	Result        string          `json:"result"`
-	Cost          float64         `json:"total_cost_usd"`
-	NumTurns      int             `json:"num_turns"`
-	DurationMS    int64           `json:"duration_ms"`
-	Model         string          `json:"model"`        // system init
-	APIKeySource  string          `json:"apiKeySource"` // system init: "ANTHROPIC_API_KEY", "none", …
-	Usage         *cliUsage       `json:"usage"`        // result
-	RateLimitInfo json.RawMessage `json:"rate_limit_info"`
-	Message       struct {
-		Content []contentBlock `json:"content"`
-	} `json:"message"`
-}
-
-func parseStreamLine(raw string) (streamEvent, bool) {
-	var ev streamEvent
-	if err := json.Unmarshal([]byte(raw), &ev); err != nil || ev.Type == "" {
-		return ev, false
-	}
-	return ev, true
-}
-
-// events converts one stream-json event into the run's events: Claude's text,
-// its tool calls with their full input, the tools' results and the result.
-func events(ev streamEvent) []model.RunEvent {
-	switch ev.Type {
-	case "system":
-		if ev.Subtype == "init" {
-			return []model.RunEvent{{Kind: "status", Text: "▶ Claude Code session started"}}
-		}
-	case "assistant", "user":
-		var out []model.RunEvent
-		for _, b := range ev.Message.Content {
-			if b.Type == "text" {
-				if ev.Type == "assistant" && strings.TrimSpace(b.Text) != "" {
-					out = append(out, model.RunEvent{Kind: "text", Text: b.Text})
-				}
-				continue
-			}
-			if d, ok := b.delta(); ok {
-				out = append(out, model.RunEvent{Kind: d.Kind, Text: d.Text, ID: d.ID, Tool: d.Tool, Input: d.Input, IsError: d.IsError})
-			}
-		}
-		return out
-	case "result":
-		e := model.RunEvent{Kind: "result", Text: ev.Result, Turns: ev.NumTurns, CostUSD: ev.Cost}
-		if ev.IsError || ev.Subtype != "success" {
-			e.IsError, e.Text = true, fmt.Sprintf("%s: %s", ev.Subtype, ev.Result)
-		}
-		return []model.RunEvent{e}
-	}
-	return nil
 }
 
 // Summary converts one run event into a short progress line for the text

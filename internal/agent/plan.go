@@ -131,11 +131,7 @@ func (t Titler) Plan(ctx context.Context, input string) (string, error) {
 	if len(input) > MaxPlanInput {
 		return "", errors.New("the plan is too long to send to Claude")
 	}
-	model := t.SplitModel
-	if model == "" {
-		model = "sonnet"
-	}
-	return t.run(ctx, model, 4*time.Minute, PlanSystem, input)
+	return t.run(ctx, PromptRequest{Model: t.SplitModel, Large: true, Timeout: 4 * time.Minute}, PlanSystem, input)
 }
 
 // ParsePlanTurn reads the interviewer's reply: a JSON object, perhaps in a

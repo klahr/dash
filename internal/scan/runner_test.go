@@ -34,6 +34,9 @@ type fakeExec struct {
 	onRun   func(agent.ExecRequest) // called during the run, if set
 }
 
+// fakeExec takes MCP servers, as Claude Code does (agent.MCPConfigurer).
+func (*fakeExec) CanMCP() bool { return true }
+
 func (f *fakeExec) Run(ctx context.Context, req agent.ExecRequest, emit func(model.RunEvent)) (agent.ExecResult, error) {
 	f.mu.Lock()
 	f.reqs = append(f.reqs, req)
@@ -192,7 +195,7 @@ func TestRunRecordsFindings(t *testing.T) {
 	if !strings.Contains(prompt, "Scan .") || !strings.Contains(prompt, `"findings"`) {
 		t.Fatalf("prompt: %s", prompt)
 	}
-	if args := strings.Join(fx.exec.reqs[0].ExtraArgs, " "); !strings.Contains(args, "--disallowedTools Edit,Write,NotebookEdit") {
+	if args := strings.Join((agent.ClaudeCode{}).RunArgs(fx.exec.reqs[0]), " "); !strings.Contains(args, "--disallowedTools Edit,Write,NotebookEdit") {
 		t.Fatalf("args: %s", args)
 	}
 	if _, err := os.Stat(fx.runner.LogPath(r.ID)); err != nil {
@@ -418,12 +421,12 @@ func TestRunToolsNeedApproval(t *testing.T) {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		for i, a := range req.ExtraArgs {
+		for i, a := range (agent.ClaudeCode{}).RunArgs(req) {
 			if a == "--allowedTools" {
-				return req.ExtraArgs[i+1]
+				return (agent.ClaudeCode{}).RunArgs(req)[i+1]
 			}
 		}
-		t.Fatalf("no --allowedTools in %q", req.ExtraArgs)
+		t.Fatalf("no --allowedTools in %q", (agent.ClaudeCode{}).RunArgs(req))
 		return ""
 	}
 	readOnly := func() string { return strings.Join(Confine(DefaultTools, dir), ",") }
@@ -472,7 +475,12 @@ func flagValue(args []string, name string) (string, bool) {
 func TestArgsNeverAsk(t *testing.T) {
 	t.Parallel()
 
-	args := Args(Template{Model: "sonnet"}, []string{"Read", "Bash(npm audit:*)"}, "")
+	// -claude-args are for tasks: a scan's run goes without them.
+	claude := agent.ClaudeCode{Args: []string{"--permission-mode", "acceptEdits", "--allowedTools", "Bash"}}
+	args := claude.RunArgs(RunRequest(Template{Model: "sonnet"}, []string{"Read", "Bash(npm audit:*)"}, ""))
+	if slices.Contains(args, "acceptEdits") || slices.Contains(args, "Bash") {
+		t.Errorf("task flags in a scan's run: %q", args)
+	}
 	if v, ok := flagValue(args, "--setting-sources"); !ok || v != "" {
 		t.Errorf("--setting-sources %q %v, want empty", v, ok)
 	}
@@ -511,7 +519,7 @@ func TestArgsConfineFileTools(t *testing.T) {
 	data := filepath.Join(home, ".local", "share", "dash-runner")
 	root := filepath.Join(data, "scans")
 	dir := filepath.Join(root, "worktrees", "p", "run")
-	args := Args(Template{}, nil, dir, data, root)
+	args := (agent.ClaudeCode{}).RunArgs(RunRequest(Template{}, nil, dir, data, root))
 	allow, _ := flagValue(args, "--allowedTools")
 	for _, tool := range []string{"Read", "Grep", "Glob"} {
 		if slices.Contains(strings.Split(allow, ","), tool) {

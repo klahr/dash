@@ -288,6 +288,7 @@ type app struct {
 	procs                               *runner.Manager
 	previews                            *preview.Manager
 	tracker                             *usage.Tracker
+	agent                               agent.Provider
 	cli                                 *claudecli.Monitor
 	perms                               *perm.Broker
 	todoLog                             *queue.TodoLog
@@ -589,9 +590,20 @@ func (a *app) buildServices() {
 	if err := a.tracker.Keep(filepath.Join(o.dataDir, "usage.json")); err != nil {
 		slog.Warn("read usage.json", "err", err)
 	}
+	// The agent CLI that runs tasks, scans, chat and short calls: Claude
+	// Code, the default (and so far only) provider.
+	prov, err := agent.NewProvider(agent.DefaultProvider, agent.Config{Bin: o.claudeBin, Args: strings.Fields(o.claudeArgs), Sandbox: o.sandbox()})
+	if err != nil {
+		fatal("agent provider", "err", err)
+	}
+	if r, ok := prov.(agent.RateLimitReporter); ok {
+		r.ReportRateLimits(a.tracker.Observe)
+	}
+	a.agent = prov
 	// What looks changed about the installed Claude Code CLI: checked on a
-	// runner, shown in task logs and on the hub's Runners page.
-	a.cli = &claudecli.Monitor{Bin: o.claudeBin}
+	// runner, shown in task logs and on the hub's Runners page (nil for a
+	// provider that doesn't check its CLI: nothing to show).
+	a.cli = agent.MonitorOf(prov)
 	// A runner tells its hub of the requests of the hub's tasks (see reporter).
 	a.permEvents = &teePublisher{Publisher: events}
 	a.perms = perm.NewBroker(a.permEvents)
@@ -609,7 +621,7 @@ func (a *app) buildServices() {
 	a.todos = queue.NewTodoEngine(&queue.TodoEngine{
 		Store:        st,
 		Git:          a.git,
-		Exec:         agent.ClaudeCode{Bin: o.claudeBin, Args: strings.Fields(o.claudeArgs), Sandbox: o.sandbox(), OnRateLimit: a.tracker.Observe, CLI: a.cli},
+		Exec:         prov,
 		Pub:          events,
 		Log:          a.todoLog,
 		Merges:       a.merges,
@@ -620,7 +632,7 @@ func (a *app) buildServices() {
 	// Claude's short calls. Only a runner makes them: the hub has no tasks
 	// of its own to summarise, and asks the caller's runner for titles and
 	// clean-ups (Titler only says whether to name untitled tasks there).
-	a.small = agent.Titler{Bin: o.claudeBin, Model: o.titleModel}
+	a.small = agent.Titler{Prompter: prov, Model: o.titleModel}
 	if o.autoTitles && o.runnerMode {
 		a.todos.Summarizer = a.small
 	}
@@ -630,11 +642,11 @@ func (a *app) buildServices() {
 	if o.autoTitles {
 		titler = a.small
 	}
-	// Scans read a throwaway checkout and file issues; they get their own
-	// claude flags (read-only tools), not -claude-args.
+	// Scans read a throwaway checkout and file issues; their runs are
+	// unattended, with their own read-only tools, not -claude-args.
 	a.scans = &scan.Runner{
 		Store: st, Git: a.git, Context: ctx,
-		Exec:        agent.ClaudeCode{Bin: o.claudeBin, Sandbox: o.sandbox(), OnRateLimit: a.tracker.Observe, CLI: a.cli},
+		Exec:        prov,
 		Root:        filepath.Join(o.dataDir, "scans"),
 		RunTimeout:  o.scanTimeout,
 		GitTools:    &scan.GitMCP{Pin: a.git.PinnedEnv},
@@ -1150,11 +1162,10 @@ func (a *app) configureChat() {
 		if o.chatTools == agent.ChatShell && !o.askPerms {
 			slog.Warn("-chat-tools shell without -permission-prompts: the chat can only use tools allowed with -chat-allow")
 		}
-		a.apiSrv.Chat = agent.ClaudeCodeChat{
-			Bin: o.claudeBin, Dir: o.home, Tools: o.chatTools, AllowedTools: o.chatAllow,
-			Perms: a.perms, PermURL: a.permURL, Board: a.apiSrv.Board, BoardURL: a.mcpURL, OnRateLimit: a.tracker.Observe,
-			CLI: a.cli,
-		}
+		a.apiSrv.Chat = a.agent.Chat(agent.ChatConfig{
+			Dir: o.home, Tools: o.chatTools, AllowedTools: o.chatAllow,
+			Perms: a.perms, PermURL: a.permURL, Board: a.apiSrv.Board, BoardURL: a.mcpURL,
+		})
 	case chat == "api":
 		a.apiSrv.Chat = agent.NewChat()
 	default:

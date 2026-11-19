@@ -101,8 +101,12 @@ type Monitor struct {
 	runNoKey func(ctx context.Context, bin string, args ...string) (string, error)
 }
 
-// OnChange sets f to be called after the Status changed.
+// OnChange sets f to be called after the Status changed (never, on a nil
+// Monitor).
 func (m *Monitor) OnChange(f func()) {
+	if m == nil {
+		return
+	}
 	m.mu.Lock()
 	m.onChange = f
 	m.mu.Unlock()

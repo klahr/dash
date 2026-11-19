@@ -129,11 +129,11 @@ func TestRunGetsTestsHint(t *testing.T) {
 	h.engine.TestTimeout = 2 * time.Hour
 	h.waitFor(h.add("work").ID, model.StatusReview)
 	req := h.engine.Exec.(*fakeExec).Calls()[0]
-	i := slices.Index(req.ExtraArgs, "--append-system-prompt")
-	if i < 0 || !strings.Contains(req.ExtraArgs[i+1], fmt.Sprintf(testsHint, "true")) {
-		t.Fatalf("no run_tests hint in %q", req.ExtraArgs)
+	i := slices.Index((agent.ClaudeCode{}).RunArgs(req), "--append-system-prompt")
+	if i < 0 || !strings.Contains((agent.ClaudeCode{}).RunArgs(req)[i+1], fmt.Sprintf(testsHint, "true")) {
+		t.Fatalf("no run_tests hint in %q", (agent.ClaudeCode{}).RunArgs(req))
 	}
-	if !slices.Contains(req.Env, "MCP_TOOL_TIMEOUT=7500000") {
-		t.Fatalf("env %q, want a tool timeout past the tests' 2h", req.Env)
+	if req.ToolTimeout != 7500*time.Second {
+		t.Fatalf("tool timeout %s, want one past the tests' 2h", req.ToolTimeout)
 	}
 }

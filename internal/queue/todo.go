@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -809,24 +808,23 @@ func (r *todoRun) mergeBaseIn() error {
 	return r.update(func(x *model.Todo) { x.MergeMain = false })
 }
 
-// claudeArgs adds to req the arguments of a Claude run on task t: limits,
-// model, attachments, Dash's MCP servers and the extra system prompt. It
-// sets stat's model. release ends the MCP servers' tokens: call it once the
-// run is over.
+// claudeArgs sets what a run of task t needs in req: limits, model,
+// attachments, Dash's MCP servers and the extra system prompt. It sets
+// stat's model. release ends the MCP servers' tokens: call it once the run
+// is over. A provider without MCP servers (agent.MCPConfigurer) runs
+// without the task tools, and one without permission prompts
+// (agent.PermissionHook) without Dash asking before tool calls.
 func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t model.Todo, p model.Project, log func(string)) (release func()) {
 	var releases []func()
-	req.ExtraArgs = append(req.ExtraArgs, "--max-turns", strconv.Itoa(p.TurnLimit()))
+	req.MaxTurns = p.TurnLimit()
 	if m, err := model.CleanModel(t.Model); err != nil {
 		log("⚠ " + err.Error() + "; running on the default model")
 	} else if m != "" {
 		stat.Model = m
-		// After -claude-args, so it wins over a --model there.
-		req.ExtraArgs = append(req.ExtraArgs, "--model", m)
+		req.Model = m
 		log("model: " + m)
 	}
-	for _, dir := range attachmentDirs(t.Attachments) {
-		req.ExtraArgs = append(req.ExtraArgs, "--add-dir", dir)
-	}
+	req.AddDirs = append(req.AddDirs, attachmentDirs(t.Attachments)...)
 	servers := map[string]any{}
 	var system []string // appended to Claude's system prompt
 	var toolTimeout time.Duration
@@ -834,22 +832,23 @@ func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t m
 	if e.Owner != nil {
 		owner, ownerErr = e.Owner(t)
 	}
-	if ownerErr != nil && (e.Perms != nil || e.Board != nil) {
+	mcp := agent.CanMCP(e.Exec)
+	if ownerErr != nil && mcp && (e.Perms != nil || e.Board != nil) {
 		slog.Warn("task runs without Dash's MCP servers: no user and org to act as", "todo", t.ID, "err", ownerErr)
 	}
-	if e.Perms != nil && e.BaseURL != "" && ownerErr == nil {
+	if e.Perms != nil && e.BaseURL != "" && ownerErr == nil && agent.CanPromptPermissions(e.Exec) {
 		token, release := e.Perms.Register(owner, t.ID, t.ProjectID)
 		releases = append(releases, release)
 		servers[perm.ServerName] = perm.ServerConfig(e.BaseURL, token)
-		req.ExtraArgs = append(req.ExtraArgs, "--permission-prompt-tool", perm.PromptTool)
+		req.PermissionTool = agent.MCPTool{Server: perm.ServerName, Tool: perm.ToolName}
 		// Claude waits on the MCP tool while a human decides; don't let it time out first.
 		toolTimeout = time.Hour
 	}
-	if e.Board != nil && e.BoardURL != "" && ownerErr == nil {
+	if e.Board != nil && e.BoardURL != "" && ownerErr == nil && mcp {
 		token, release := e.Board.RegisterTask(owner, t.ProjectID, t.ID)
 		releases = append(releases, release)
 		servers[mcptools.ServerName] = mcptools.ServerConfig(e.BoardURL, token)
-		req.ExtraArgs = append(req.ExtraArgs, mcptools.AllowedToolArgs(mcptools.ServerName, mcptools.TaskToolNames...)...)
+		req.AllowMCPTools = map[string][]string{mcptools.ServerName: mcptools.TaskToolNames}
 		system = append(system, issuesHint, activeWorkHint)
 		// run_tests runs here, also for a hub's task (api's toHubBoard).
 		if p.TestCommand != "" && p.Held(model.CmdTest) == "" {
@@ -858,16 +857,14 @@ func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t m
 			toolTimeout = max(toolTimeout, e.TestTimeout+5*time.Minute)
 		}
 	}
-	if toolTimeout > 0 {
-		req.Env = []string{"MCP_TOOL_TIMEOUT=" + strconv.FormatInt(toolTimeout.Milliseconds(), 10)}
-	}
+	req.ToolTimeout = toolTimeout
 	if s := strings.TrimSpace(p.TaskInstructions); s != "" {
 		system = append(system, s)
 	}
-	if len(system) > 0 {
-		req.ExtraArgs = append(req.ExtraArgs, "--append-system-prompt", strings.Join(system, "\n\n"))
+	req.AppendSystem = strings.Join(system, "\n\n")
+	if len(servers) > 0 {
+		req.MCPServers = servers
 	}
-	req.ExtraArgs = append(req.ExtraArgs, mcptools.ConfigArgs(servers)...)
 	return func() {
 		for _, r := range releases {
 			r()
@@ -1065,19 +1062,28 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		return "", err
 	}
 	req := agent.ExecRequest{Dir: wt.Path, Shared: dir}
+	// A provider that can't continue a session starts each run fresh, with
+	// the full task and every note (BuildPrompt).
+	resume := agent.CanResume(e.Exec)
+	session := t.SessionID
+	if !resume {
+		session = ""
+	}
 	unsent := t.Feedback[min(t.FeedbackSent, len(t.Feedback)):]
 	given := len(t.Feedback) // notes added during the run (a conflict ahead in the merge queue) wait for the next one
 	stat := model.TodoRun{Kind: model.RunFirst}
 	switch {
-	case t.SessionID != "" && len(unsent) > 0:
-		req.Resume, req.Prompt = t.SessionID, agent.ContinuePrompt(unsent)
+	case session != "" && len(unsent) > 0:
+		req.Resume, req.Prompt = session, agent.ContinuePrompt(unsent)
 		stat.Kind = model.RunNotes
-	case t.SessionID != "":
-		req.Resume, req.Prompt = t.SessionID, agent.ContinuePrompt([]string{"You were interrupted. Continue where you left off and finish the task."})
+	case session != "":
+		req.Resume, req.Prompt = session, agent.ContinuePrompt([]string{"You were interrupted. Continue where you left off and finish the task."})
 		stat.Kind = model.RunInterrupted
 	default:
 		req.Prompt = agent.BuildPrompt(*t)
-		if parent, ok := e.buildsOn(*t, log); ok {
+		if t.BuildsOn != "" && !resume {
+			log("⚠ this agent can't continue the Claude session of the task this builds on; starting a fresh one with the full task")
+		} else if parent, ok := e.buildsOn(*t, log); ok {
 			// A follow-up: continue the earlier task's session in a fork of
 			// it, so that session stays as it is.
 			req.Resume, req.ForkSession, req.Prompt = parent.LatestSession(), true, agent.FollowUpPrompt(*t, parent)
@@ -1136,7 +1142,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	switch {
 	case overTime.Load() && ctx.Err() == nil:
 		err = fmt.Errorf("stopped: Claude worked longer than the %d-minute limit; rework it to let Claude continue, or raise the limit in the project settings", p.RunMinutes())
-	case res.Stop == "error_max_turns":
+	case res.Stop == agent.StopMaxTurns:
 		err = fmt.Errorf("stopped: Claude used its %d-turn limit; rework it to let Claude continue, or raise the limit in the project settings", p.TurnLimit())
 	}
 	if err != nil {

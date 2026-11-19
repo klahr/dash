@@ -611,19 +611,19 @@ func Tools(t Template, set model.ScanSetting, hasSetting bool) (tools []string, 
 	return DefaultTools, false
 }
 
-// Args are the claude flags of a scan: its model and effort, and the tools
-// it may use (see Tools). Edits are refused (the checkout is thrown away
-// anyway).
+// RunRequest is the agent run of a scan, without its directory and prompt:
+// its model and effort, and the tools it may use (see Tools). Edits are
+// refused (the checkout is thrown away anyway).
 //
-// Scans run unattended, so nothing may wait for a permission answer: any
-// tool call outside the allowed tools is denied at once (dontAsk, and no
-// prompt handler), and the user's and project's settings are not loaded, so
+// Scans run unattended (agent.ExecRequest.Unattended), so nothing may wait
+// for a permission answer: any tool call outside the allowed tools is
+// denied at once, and the user's and project's settings are not loaded, so
 // their hooks (e.g. a PermissionRequest hook that asks a phone) don't run.
 //
 // With a checkout dir, the file tools are confined to it (see Confine): a
 // prompt injection in the scanned code must not be able to read the
 // runner's token or the user's credentials and quote them in a finding.
-func Args(t Template, tools []string, dir string, secrets ...string) []string {
+func RunRequest(t Template, tools []string, dir string, secrets ...string) agent.ExecRequest {
 	if len(tools) == 0 {
 		tools = DefaultTools
 	}
@@ -632,20 +632,7 @@ func Args(t Template, tools []string, dir string, secrets ...string) []string {
 		tools = Confine(tools, dir)
 		deny = append(deny, DenyReads(dir, secrets)...)
 	}
-	args := []string{
-		"--setting-sources", "",
-		"--permission-mode", "dontAsk",
-		"--permission-prompts", "none",
-		"--allowedTools", strings.Join(tools, ","),
-		"--disallowedTools", strings.Join(deny, ","),
-	}
-	if t.Model != "" {
-		args = append(args, "--model", t.Model)
-	}
-	if t.Effort != "" {
-		args = append(args, "--effort", t.Effort)
-	}
-	return args
+	return agent.ExecRequest{Unattended: true, AllowedTools: tools, DeniedTools: deny, Model: t.Model, Effort: t.Effort}
 }
 
 // fileTools read files; unscoped, they read anything the runner's user can.

@@ -509,6 +509,9 @@ func TestBoardMCPDeleteTodo(t *testing.T) {
 // blockExec is Claude working until it is stopped; each run is sent on runs.
 type blockExec struct{ runs chan agent.ExecRequest }
 
+// CanResume: blockExec continues sessions, as Claude Code does (agent.Resumer).
+func (blockExec) CanResume() bool { return true }
+
 func (e blockExec) Run(ctx context.Context, req agent.ExecRequest, emit func(model.RunEvent)) (agent.ExecResult, error) {
 	e.runs <- req
 	<-ctx.Done()

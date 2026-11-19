@@ -179,7 +179,7 @@ func TestSuggestAsksHaiku(t *testing.T) {
 	transcript := SuggestTranscript([]ChatMessage{{Role: "user", Content: "Why does login fail?"}, {Role: "assistant", Content: "The cookie lacks Secure. Want me to fix it?"}})
 	for reply, want := range map[string]string{"\"Yes, fix it\"\n": "Yes, fix it", "NONE": ""} {
 		t.Setenv("REPLY", reply)
-		got, err := Titler{Bin: bin}.Suggest(context.Background(), transcript)
+		got, err := Titler{Prompter: ClaudeCode{Bin: bin}}.Suggest(context.Background(), transcript)
 		if err != nil || got != want {
 			t.Errorf("reply %q: Suggest = %q, %v; want %q", reply, got, err, want)
 		}
@@ -193,7 +193,7 @@ func TestSuggestAsksHaiku(t *testing.T) {
 		t.Errorf("claude was asked %q", stdin)
 	}
 	// Nothing to go on: no call.
-	if got, err := (Titler{Bin: dir + "/missing"}).Suggest(context.Background(), " "); got != "" || err != nil {
+	if got, err := (Titler{Prompter: ClaudeCode{Bin: dir + "/missing"}}).Suggest(context.Background(), " "); got != "" || err != nil {
 		t.Errorf("Suggest of an empty transcript = %q, %v", got, err)
 	}
 }

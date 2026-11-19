@@ -159,7 +159,7 @@ func TestRunTimeLimitStopsClaude(t *testing.T) {
 	if !strings.Contains(td.Error, "1-minute limit") {
 		t.Fatalf("want a time-limit error, got %q", td.Error)
 	}
-	if args := exe.Calls()[0].ExtraArgs; !slices.Contains(args, "--max-turns") || !slices.Contains(args, "7") {
+	if args := (agent.ClaudeCode{}).RunArgs(exe.Calls()[0]); !slices.Contains(args, "--max-turns") || !slices.Contains(args, "7") {
 		t.Fatalf("want --max-turns 7 passed to Claude, got %v", args)
 	}
 }

@@ -24,7 +24,7 @@ func TestRunGetsIssueTools(t *testing.T) {
 	h.engine.Owner = func(model.Todo) (model.Owner, error) { return model.Owner{User: 1, Org: 1}, nil }
 	h.waitFor(h.add("work").ID, model.StatusReview)
 
-	args := exe.Calls()[0].ExtraArgs
+	args := (agent.ClaudeCode{}).RunArgs(exe.Calls()[0])
 	i := slices.Index(args, "--mcp-config")
 	if i < 0 {
 		t.Fatalf("no --mcp-config in %v", args)
@@ -51,7 +51,7 @@ func TestRunWithoutOwnerGetsNoTools(t *testing.T) {
 	h.engine.Board, h.engine.BoardURL = &mcptools.Tokens{}, "http://127.0.0.1:1"
 	h.engine.Owner = func(model.Todo) (model.Owner, error) { return model.Owner{}, errors.New("nobody") }
 	h.waitFor(h.add("work").ID, model.StatusReview)
-	if args := exe.Calls()[0].ExtraArgs; slices.Contains(args, "--mcp-config") {
+	if args := (agent.ClaudeCode{}).RunArgs(exe.Calls()[0]); slices.Contains(args, "--mcp-config") {
 		t.Fatalf("unowned run got MCP servers: %v", args)
 	}
 }
@@ -80,7 +80,7 @@ func TestRunGetsTaskInstructions(t *testing.T) {
 		}
 		return out
 	}
-	got := system(exe.Calls()[0].ExtraArgs)
+	got := system((agent.ClaudeCode{}).RunArgs(exe.Calls()[0]))
 	if len(got) != 1 || got[0] != issuesHint+"\n\n"+activeWorkHint+"\n\nAnswer in Swedish." {
 		t.Fatalf("--append-system-prompt %q", got)
 	}
@@ -88,7 +88,7 @@ func TestRunGetsTaskInstructions(t *testing.T) {
 	// Without Dash's MCP servers only the instructions go.
 	h.engine.Board = nil
 	h.waitFor(h.add("more").ID, model.StatusReview)
-	if got := system(exe.Calls()[1].ExtraArgs); len(got) != 1 || got[0] != "Answer in Swedish." {
+	if got := system((agent.ClaudeCode{}).RunArgs(exe.Calls()[1])); len(got) != 1 || got[0] != "Answer in Swedish." {
 		t.Fatalf("--append-system-prompt without issue tools %q", got)
 	}
 
@@ -97,7 +97,7 @@ func TestRunGetsTaskInstructions(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.waitFor(h.add("last").ID, model.StatusReview)
-	if got := system(exe.Calls()[2].ExtraArgs); len(got) != 0 {
+	if got := system((agent.ClaudeCode{}).RunArgs(exe.Calls()[2])); len(got) != 0 {
 		t.Fatalf("--append-system-prompt with nothing to say %q", got)
 	}
 }

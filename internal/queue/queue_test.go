@@ -31,6 +31,11 @@ type fakeExec struct {
 	result string // Claude's final message
 }
 
+// fakeExec has Claude Code's optional abilities (agent.Resumer, …).
+func (*fakeExec) CanResume() bool            { return true }
+func (*fakeExec) CanMCP() bool               { return true }
+func (*fakeExec) CanPromptPermissions() bool { return true }
+
 func (f *fakeExec) Run(ctx context.Context, req agent.ExecRequest, emit func(model.RunEvent)) (agent.ExecResult, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, req)

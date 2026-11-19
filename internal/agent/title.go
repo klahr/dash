@@ -5,25 +5,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"regexp"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 	"unicode"
-
-	"github.com/klahr/dash/internal/localrun"
 )
 
 // Titler writes short titles for todos created without one, using a small
-// model through the Claude Code CLI (so it runs on the same login as todos).
+// model through the agent provider (so it runs on the same login as todos).
 type Titler struct {
-	Bin   string // default "claude"
-	Model string // default "haiku"
-	// SplitModel splits large tasks (default "sonnet"): planning the parts
-	// takes more judgement than naming them.
+	// Prompter answers the prompts (nil: the default provider, Claude Code).
+	Prompter Prompter
+	Model    string // "": the provider's small default (Claude's "haiku")
+	// SplitModel splits large tasks ("": the provider's larger default,
+	// Claude's "sonnet"): planning the parts takes more judgement than
+	// naming them.
 	SplitModel string
 }
 
@@ -322,11 +319,7 @@ func (t Titler) Split(ctx context.Context, prompt string) ([]Part, error) {
 	if len(prompt) > maxRefine {
 		return nil, errors.New("instructions are too long to split")
 	}
-	model := t.SplitModel
-	if model == "" {
-		model = "sonnet"
-	}
-	out, err := t.run(ctx, model, 3*time.Minute,
+	out, err := t.run(ctx, PromptRequest{Model: t.SplitModel, Large: true, Timeout: 3 * time.Minute},
 		"You plan software work for a coding agent. Reply with only JSON.",
 		"Split the task below into smaller tasks for a coding agent working in the repository. "+
 			"Each task must be done, reviewed and merged on its own and leave the code working, so a "+
@@ -387,36 +380,23 @@ func parseParts(s string) ([]Part, error) {
 
 // ask runs the small model on input, cut to limit bytes when limit > 0.
 func (t Titler) ask(ctx context.Context, system, input string, limit int) (string, error) {
-	model := t.Model
-	if model == "" {
-		model = "haiku"
-	}
 	if limit > 0 && len(input) > limit {
 		input = input[:limit]
 	}
-	return t.run(ctx, model, 90*time.Second, system, input)
+	return t.run(ctx, PromptRequest{Model: t.Model, Timeout: 90 * time.Second}, system, input)
 }
 
-// run runs model on input, without tools, for at most timeout.
-func (t Titler) run(ctx context.Context, model string, timeout time.Duration, system, input string) (string, error) {
+// run asks the provider req, with system and input, without tools.
+func (t Titler) run(ctx context.Context, req PromptRequest, system, input string) (string, error) {
 	if err := checkLocal(); err != nil {
 		return "", err
 	}
-	bin := t.Bin
-	if bin == "" {
-		bin = localrun.Claude
+	p := t.Prompter
+	if p == nil {
+		p = defaultPrompter()
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "-p", "--output-format", "text", "--model", model,
-		"--tools", "", "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "",
-		"--system-prompt", system)
-	cmd.Dir = os.TempDir()
-	cmd.Stdin = strings.NewReader(input)
-	// Don't wait on a grandchild that keeps stdout open past the timeout.
-	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
-	out, err := cmd.Output()
-	return string(out), err
+	req.System, req.Input = system, input
+	return p.Prompt(ctx, req)
 }
 
 const maxRefine = 30000

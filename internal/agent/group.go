@@ -26,11 +26,7 @@ func (t Titler) Group(ctx context.Context, issues string) ([]IssueGroup, error) 
 	if len(issues) > maxGroup {
 		return nil, errors.New("too many issues to group at once: pick fewer")
 	}
-	model := t.SplitModel
-	if model == "" {
-		model = "sonnet"
-	}
-	out, err := t.run(ctx, model, 3*time.Minute,
+	out, err := t.run(ctx, PromptRequest{Model: t.SplitModel, Large: true, Timeout: 3 * time.Minute},
 		"You triage issues found in a software project into tasks for a coding agent. Reply with only JSON.",
 		"Group the numbered issues below into tasks for a coding agent working in the repository. "+
 			"Put issues in one task when fixing them together makes sense: the same kind of problem or "+

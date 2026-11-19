@@ -44,7 +44,7 @@ func TestNoLocalClaudeRunsNothing(t *testing.T) {
 
 	ctx := context.Background()
 	history := []ChatMessage{{Role: "user", Content: "hi"}}
-	titler := Titler{Bin: bin}
+	titler := Titler{Prompter: ClaudeCode{Bin: bin}}
 	calls := map[string]func() error{
 		"task run": func() error {
 			_, err := ClaudeCode{Bin: bin}.Run(ctx, ExecRequest{Dir: dir, Prompt: "x"}, func(model.RunEvent) {})
