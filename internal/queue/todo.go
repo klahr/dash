@@ -44,9 +44,12 @@ type Publisher interface{ Publish(model.Event) }
 //     request (or pushes to it) and moves it to review, where it waits on
 //     GitHub (see MergeQueue.openPR)
 type TodoEngine struct {
-	Store   *store.Store
-	Git     *gitops.Git
-	Exec    agent.Executor
+	Store *store.Store
+	Git   *gitops.Git
+	Exec  agent.Executor
+	// ExecFor, if set, is the executor of a project's tasks: its agent's
+	// (model.Project.AgentName). Nil, or nil for a project, is Exec.
+	ExecFor func(p model.Project) agent.Executor
 	Pub     Publisher
 	Log     *TodoLog
 	Merges  *MergeQueue
@@ -832,11 +835,12 @@ func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t m
 	if e.Owner != nil {
 		owner, ownerErr = e.Owner(t)
 	}
-	mcp := agent.CanMCP(e.Exec)
+	exec := e.exec(p)
+	mcp := agent.CanMCP(exec)
 	if ownerErr != nil && mcp && (e.Perms != nil || e.Board != nil) {
 		slog.Warn("task runs without Dash's MCP servers: no user and org to act as", "todo", t.ID, "err", ownerErr)
 	}
-	if e.Perms != nil && e.BaseURL != "" && ownerErr == nil && agent.CanPromptPermissions(e.Exec) {
+	if e.Perms != nil && e.BaseURL != "" && ownerErr == nil && agent.CanPromptPermissions(exec) {
 		token, release := e.Perms.Register(owner, t.ID, t.ProjectID)
 		releases = append(releases, release)
 		servers[perm.ServerName] = perm.ServerConfig(e.BaseURL, token)
@@ -1053,6 +1057,16 @@ const testsHint = "This project's test command is `%s`. To run it, call the " + 
 	"When it passes and you change no file afterwards, Dash doesn't run the tests again when you finish. " +
 	"Other checks (a single test, a linter) you run as usual."
 
+// exec is the executor of p's tasks (ExecFor, else Exec).
+func (e *TodoEngine) exec(p model.Project) agent.Executor {
+	if e.ExecFor != nil {
+		if x := e.ExecFor(p); x != nil {
+			return x
+		}
+	}
+	return e.Exec
+}
+
 // runClaude runs Claude once, resuming the todo's session when it has one,
 // and records the session, cost, the run's tokens (RunStats) and which notes
 // Claude has now seen. It returns Claude's final message.
@@ -1064,7 +1078,8 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	req := agent.ExecRequest{Dir: wt.Path, Shared: dir}
 	// A provider that can't continue a session starts each run fresh, with
 	// the full task and every note (BuildPrompt).
-	resume := agent.CanResume(e.Exec)
+	exec := e.exec(p)
+	resume := agent.CanResume(exec)
 	session := t.SessionID
 	if !resume {
 		session = ""
@@ -1123,7 +1138,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	go e.watchdog(runCtx, t.ID, limit, func() { overTime.Store(true); stop() })
 
 	stat.At = time.Now()
-	res, err := e.Exec.Run(runCtx, req, emit)
+	res, err := exec.Run(runCtx, req, emit)
 	if res.ResumeFailed && req.Resume != "" && runCtx.Err() == nil {
 		if req.ForkSession {
 			log("↻ the Claude session of the task this builds on isn't on this computer (it ran on another runner, or the session was deleted); starting a fresh one with the full task")
@@ -1133,7 +1148,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		emit(model.RunEvent{Kind: "run_start", Text: "Started over with the full task"})
 		req.Resume, req.ForkSession, req.Prompt = "", false, agent.BuildPrompt(*t)
 		stat.Kind = model.RunRetry
-		res, err = e.Exec.Run(runCtx, req, emit)
+		res, err = exec.Run(runCtx, req, emit)
 	}
 	if res.Model != "" {
 		stat.Model = res.Model

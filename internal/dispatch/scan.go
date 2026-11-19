@@ -123,7 +123,7 @@ func (d *Dispatcher) scanRunner(p model.Project, users []int64) (r *tunnel.Runne
 	}
 	if len(cands) == 0 {
 		if len(reasons) == 0 && len(notFor) > 0 {
-			return nil, "waiting: no runner " + d.whose(users) + " has the labels " + strings.Join(p.RunsOn, ", ") + "; " + strings.Join(notFor, "; "), linked
+			return nil, "waiting: no runner " + d.whose(users) + " has the labels " + strings.Join(p.RunnerLabels(), ", ") + "; " + strings.Join(notFor, "; "), linked
 		}
 		return nil, waitReason(append(reasons, notFor...)), linked
 	}
@@ -169,7 +169,7 @@ func (d *Dispatcher) link(ctx context.Context, r tunnel.Runner, p model.Project)
 // hub sent the runner lately, unchanged, isn't sent again (see linkCache).
 func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Linked, error) {
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, CloneURL: p.CloneURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
-		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, TaskInstructions: p.TaskInstructions,
+		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, TaskInstructions: p.TaskInstructions, Agent: p.Agent,
 		AutoApprove: &p.AutoApprove, CloseNoChanges: &p.CloseNoChanges, MaxAutoFixes: &p.MaxAutoFixes,
 		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand,
 		Environments: model.CloneEnvironments(p.Environments), PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand}

@@ -321,9 +321,19 @@ func (sv *service) checkRunsOn(p model.Project, labels []string) ([]string, erro
 	if len(labels) > 0 && p.RemoteURL == "" {
 		return nil, fmt.Errorf("%w: a project that runs on runners needs a git remote (each runner clones it); connect one first", errBadRequest)
 	}
-	before := sv.s.projectRunners(p)
 	np := p
 	np.RunsOn = labels
+	if err := sv.checkNewRunners(p, np); err != nil {
+		return nil, err
+	}
+	return labels, nil
+}
+
+// checkNewRunners checks that every runner project p newly runs on as np
+// (its labels or its agent changed) is c's own, a shared runner, or c an
+// admin of the org (see checkRunsOn).
+func (sv *service) checkNewRunners(p, np model.Project) error {
+	before := sv.s.projectRunners(p)
 	for _, r := range sv.s.projectRunners(np) {
 		if slices.ContainsFunc(before, func(b tunnel.Runner) bool { return b.ID == r.ID }) || sv.s.canManageRunner(sv.c, r) {
 			continue
@@ -331,10 +341,10 @@ func (sv *service) checkRunsOn(p model.Project, labels []string) ([]string, erro
 		if shared, _ := r.TakesOthers(); shared {
 			continue // it takes the org's work: what it is shared for
 		}
-		return nil, fmt.Errorf("%w: %s is %s's runner and has the labels %s: only they or an admin of the organization can link projects to it. "+
-			"Pick labels it lacks (give your own runners a label of their own in Runners), or ask them", errBadRequest, r.Name, r.Owner.Username, strings.Join(labels, ", "))
+		return fmt.Errorf("%w: %s is %s's runner and has the labels %s: only they or an admin of the organization can link projects to it. "+
+			"Pick labels it lacks (give your own runners a label of their own in Runners), or ask them", errBadRequest, r.Name, r.Owner.Username, strings.Join(np.RunnerLabels(), ", "))
 	}
-	return labels, nil
+	return nil
 }
 
 // checkDeployRunsOn checks the runner labels a project's deploy command

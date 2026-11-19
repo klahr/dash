@@ -289,6 +289,7 @@ type app struct {
 	previews                            *preview.Manager
 	tracker                             *usage.Tracker
 	agent                               agent.Provider
+	agents                              *agent.Set
 	cli                                 *claudecli.Monitor
 	perms                               *perm.Broker
 	todoLog                             *queue.TodoLog
@@ -590,14 +591,18 @@ func (a *app) buildServices() {
 	if err := a.tracker.Keep(filepath.Join(o.dataDir, "usage.json")); err != nil {
 		slog.Warn("read usage.json", "err", err)
 	}
-	// The agent CLI that runs tasks, scans, chat and short calls: Claude
-	// Code, the default (and so far only) provider.
-	prov, err := agent.NewProvider(agent.DefaultProvider, agent.Config{Bin: o.claudeBin, Args: strings.Fields(o.claudeArgs), Sandbox: o.sandbox()})
-	if err != nil {
-		fatal("agent provider", "err", err)
+	// The agent CLIs that run tasks: each project's tasks run on its agent
+	// (agent.Set.For), and a runner reports them all to its hub. Scans,
+	// chat and short calls use Claude Code, the default provider.
+	a.agents = agent.NewSet(agent.Config{Bin: o.claudeBin, Args: strings.Fields(o.claudeArgs), Sandbox: o.sandbox()})
+	prov := a.agents.Get(agent.DefaultProvider)
+	if prov == nil {
+		fatal("agent provider", "err", agent.ErrUnknownProvider)
 	}
-	if r, ok := prov.(agent.RateLimitReporter); ok {
-		r.ReportRateLimits(a.tracker.Observe)
+	for _, p := range a.agents.All() {
+		if r, ok := p.(agent.RateLimitReporter); ok {
+			r.ReportRateLimits(a.tracker.Observe)
+		}
 	}
 	a.agent = prov
 	// What looks changed about the installed Claude Code CLI: checked on a
@@ -629,6 +634,8 @@ func (a *app) buildServices() {
 		WorktreeRoot: a.merges.WorktreeRoot,
 		MaxParallel:  o.parallel,
 	})
+	agents := a.agents
+	a.todos.ExecFor = func(p model.Project) agent.Executor { return agents.For(p) }
 	// Claude's short calls. Only a runner makes them: the hub has no tasks
 	// of its own to summarise, and asks the caller's runner for titles and
 	// clean-ups (Titler only says whether to name untitled tasks there).
@@ -964,7 +971,7 @@ func (a *app) setupRunner() {
 	}}
 	apiSrv.Shared, a.todos.Shared, merges.Shared = shared, shared, shared
 	// The hub hears where its tasks are, and this computer's usage.
-	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli, Disk: disks.Status, EnvFiles: apiSrv.EnvFiles,
+	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli, Agents: a.agents.Statuses, Disk: disks.Status, EnvFiles: apiSrv.EnvFiles,
 		// As shellAllowed: the hub's "!" commands run only for a known owner,
 		// in a chat that runs commands (agent.ReadOnlyChat).
 		ChatCommands: creds.UserID != 0 && o.chatBackend == "claude-code" && o.chatTools == agent.ChatShell,
@@ -1019,14 +1026,14 @@ func (a *app) setupRunner() {
 	reporter.Perms = func() []perm.Request { return perms.Pending("") }
 	a.permEvents.also = reporter.Observe
 	go reporter.Run(ctx)
-	// The hub hears of the Claude Code version and warnings at once.
-	cli.OnChange(func() {
-		for _, w := range cli.Warnings() {
-			slog.Warn("claude code cli", "warning", w)
+	// The hub hears of its agents' versions, logins and warnings at once.
+	// Agent CLIs (Claude Code) update themselves: checked every hour.
+	a.agents.Run(ctx, time.Hour, func(p agent.Provider) {
+		for _, w := range agent.MonitorOf(p).Warnings() {
+			slog.Warn("agent cli", "agent", p.Name(), "warning", w)
 		}
 		reporter.Nudge()
 	})
-	go cli.Run(ctx, time.Hour) // Claude Code updates itself
 }
 
 // wireOwners makes every per-run MCP token act as its task's (or chat's)

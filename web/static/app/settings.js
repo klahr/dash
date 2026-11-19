@@ -13,7 +13,8 @@ import { changed } from "./routes.js";
 import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
 import { renderBoardSettings } from "./boards.js";
-import { missingLabels, parseLabels, servesProject } from "../groups.js";
+import { agentRunners, missingLabels, parseLabels, projectAgent, servesProject } from "../groups.js";
+import { FEATURES, agentTitle, loadAgents } from "./agents.js";
 import { docsLabels, labelPicker, matchList, setLabels } from "./labelpicker.js";
 
 // ------------------------------------------------------------------ project settings
@@ -49,6 +50,7 @@ export function openSettings() {
   showColor(f, p.color || "");
   f.icon.value = p.icon || "";
   projectIcon(p, $("#settings-icon"));
+  renderAgentPicker(p);
   renderRunnerPicker(p);
   renderEnvEditor(p);
   syncMergeHint();
@@ -79,9 +81,49 @@ function renderRunnerPicker(p) {
   renderRunsOnPreview();
 }
 
+// renderAgentPicker offers the agents this Dash can run (GET /api/agents),
+// the project's own first if this Dash doesn't know it.
+function renderAgentPicker(p) {
+  const sel = $("#settings-agent");
+  const fill = () => {
+    const names = (state.agents || []).map((a) => a.name);
+    if (!names.includes(projectAgent(p))) names.unshift(projectAgent(p));
+    sel.replaceChildren(...names.map((n) => h("option", { value: n }, agentTitle(n))));
+    sel.value = projectAgent(p);
+    sel.disabled = names.length < 2;
+    renderAgentHint();
+  };
+  fill();
+  if (!state.agents) loadAgents().then(() => { if (state.project === p) { fill(); markSettingSaved("agent"); } });
+}
+
+// renderAgentHint says what the chosen agent can't do, and, on a hub, warns
+// when no online runner can run it, as the labels do: its tasks go only to
+// runners where it is installed and logged in (its label).
+function renderAgentHint() {
+  const name = $("#settings-agent").value || projectAgent(state.project);
+  const info = (state.agents || []).find((a) => a.name === name);
+  const lacks = info ? Object.keys(FEATURES).filter((f) => !(info.features || []).includes(f)) : [];
+  const parts = [];
+  if (lacks.length) parts.push(`${agentTitle(name)} can't ${lacks.map((f) => FEATURES[f].does).join(", or ")}.`);
+  const hint = $("#settings-agent-hint");
+  let warn = false;
+  if (Array.isArray(state.runners) && !state.project.prefix) {
+    const { ready, why } = agentRunners(state.runners, name);
+    if (!ready.length) {
+      warn = true;
+      parts.unshift(`No online runner has ${agentTitle(name)} installed and logged in: this project's tasks wait until one does.${why.length ? ` ${why.join("; ")}.` : ""}`);
+    }
+  }
+  hint.textContent = parts.join(" ");
+  hint.hidden = !parts.length;
+  hint.classList.toggle("warn", warn);
+}
+
 // deployRunners are the runners a project on runsOn deploys on with deploy.
 export const deployRunners = (runsOn, deploy) =>
-  (state.runners || []).filter((r) => servesProject(r, { runs_on: runsOn }) && (!deploy.length || servesProject(r, { runs_on: deploy })));
+  (state.runners || []).filter((r) => servesProject(r, { runs_on: runsOn, agent: state.project?.agent })
+    && (!deploy.length || servesProject(r, { runs_on: deploy, agent: state.project?.agent })));
 
 // ------------------------------------------------------------------ environments
 // Project settings → Deploy: the project's environments, each with its name,
@@ -307,7 +349,7 @@ $("#settings-sheet").addEventListener("close", () => { if (JSON.stringify(cleanE
 // renderRunsOnPreview lists the org's runners as the typed labels would
 // have it: those that would work on the project first.
 function renderRunsOnPreview() {
-  const want = { runs_on: typedRunsOn() };
+  const want = { runs_on: typedRunsOn(), agent: $("#settings-agent").value || projectAgent(state.project) };
   const rs = [...(state.runners || [])].map((r) => ({ r, ok: servesProject(r, want) })).sort((a, b) => b.ok - a.ok);
   $("#settings-runners").replaceChildren(...rs.map(({ r, ok }) => {
     const missing = missingLabels(r, want);
@@ -318,6 +360,7 @@ function renderRunsOnPreview() {
         : want.runs_on.length ? `lacks ${missing.join(", ")}` : "no labels: runs nothing"));
   }));
   renderEnvHints();
+  renderAgentHint();
 }
 const typedRunsOn = () => parseLabels($("#settings-runs-on").value);
 // shownRunsOn is the project's labels as the field was last drawn with.
@@ -345,7 +388,7 @@ function syncMergeHint() {
   const onRunners = !$("#settings-runners-field").hidden && typedRunsOn().length > 0;
   const hint = $("#settings-runners-hint");
   hint.hidden = $("#settings-runners-field").hidden;
-  const n = (state.runners || []).filter((r) => servesProject(r, { runs_on: typedRunsOn() })).length;
+  const n = (state.runners || []).filter((r) => servesProject(r, { runs_on: typedRunsOn(), agent: $("#settings-agent").value })).length;
   hint.textContent = !onRunners
     ? "No labels: its work waits until it has some a runner has."
     : !p.remote_url ? "Runners clone the project's git remote: connect a GitHub repository first."
@@ -464,6 +507,7 @@ const FIELDS = {
   color: { read: (f) => (f.color_pick.value === "custom" ? f.color.value : f.color_pick.value), el: () => $("#settings-color") },
   icon: { read: (f) => f.icon.value, el: () => $("#settings-icon-pick") },
   runs_on: { read: () => typedRunsOn(), skip: () => $("#settings-runners-field").hidden },
+  agent: { read: (f) => f.agent.value, skip: () => !$("#settings-agent").options.length },
 };
 // A form control's name → the field it saves.
 const FIELD_OF = { color_pick: "color" };
@@ -501,6 +545,7 @@ function saveSetting(key) {
       renderProjectList();
       renderApprove();
       if (key === "auto_approve") renderBoard(); // auto approve shows or hides Review
+      if (key === "agent") { renderRunsOnPreview(); syncMergeHint(); }
     });
   });
 }

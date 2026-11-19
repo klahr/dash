@@ -39,26 +39,62 @@ export function projectGroups({ machines = [], runners = null, projects = [] }) 
 export const LABEL_ANY = "any";
 const isAny = (l) => String(l).toLowerCase() === LABEL_ANY;
 
+// DEFAULT_AGENT is the agent a project without one runs on: Claude Code
+// (model.DefaultAgent). Each agent's label is its name (model.AgentLabel).
+export const DEFAULT_AGENT = "claude";
+export const projectAgent = (p) => p?.agent || DEFAULT_AGENT;
+
 // runnerLabels are every label runner r has: its default ones (its system
-// and architecture; none for a runner too old to say), then those it was
-// given. Never "any", which every runner matches anyway.
-export const runnerLabels = (r) => [...(r?.default_labels || []), ...(r?.labels || [])];
+// and architecture, none for a runner too old to say; then one per agent it
+// can run), then those it was given. Never "any", which every runner
+// matches anyway. A runner the hub says nothing of agents about runs
+// Claude Code, as every runner did.
+export const runnerLabels = (r) => [...(r?.default_labels || []), ...(r && !r.agents ? [DEFAULT_AGENT] : []), ...(r?.labels || [])];
+
+// projectLabels are the labels a runner needs to work on hub project p:
+// those it runs on (p.runs_on), and its agent's (model.Project.RunnerLabels).
+// None when it runs on no labels: then it runs on no runner.
+export function projectLabels(p) {
+  const want = [...(p?.runs_on || [])];
+  if (want.length && !want.some((l) => String(l).toLowerCase() === projectAgent(p))) want.push(projectAgent(p));
+  return want;
+}
 
 // servesProject reports whether runner r works on hub project p: it has every
-// label p runs on (p.runs_on), whatever their case, as on GitHub; every
-// runner matches "any". A project that runs on no labels runs on no runner.
+// label p runs on, and its agent's (projectLabels), whatever their case, as on
+// GitHub; every runner matches "any". A project that runs on no labels runs
+// on no runner.
 export function servesProject(r, p) {
-  const want = p?.runs_on || [];
+  const want = projectLabels(p);
   if (!r || !want.length) return false;
   const have = new Set(runnerLabels(r).map((l) => l.toLowerCase()));
   return want.every((l) => isAny(l) || have.has(String(l).toLowerCase()));
 }
 
-// missingLabels are the labels p runs on that runner r lacks (never "any").
+// missingLabels are the labels p needs that runner r lacks (never "any").
 export function missingLabels(r, p) {
   const have = new Set(runnerLabels(r).map((l) => l.toLowerCase()));
-  return (p?.runs_on || []).filter((l) => !isAny(l) && !have.has(String(l).toLowerCase()));
+  return projectLabels(p).filter((l) => !isAny(l) && !have.has(String(l).toLowerCase()));
 }
+
+// agentRunners says which of runners can run agent name now: those online
+// with its label (ready), and why each other online one can't (why, one
+// line per runner). The project settings warn when ready is empty.
+export function agentRunners(runners, name) {
+  const want = String(name || DEFAULT_AGENT).toLowerCase();
+  const ready = [], why = [];
+  for (const r of runners || []) {
+    if (!r.online) continue;
+    if (runnerLabels(r).some((l) => String(l).toLowerCase() === want)) { ready.push(r); continue; }
+    const a = runnerAgent(r, want);
+    why.push(`${r.name}: ${!a ? "doesn't have it" : !a.installed ? "not installed" : !a.logged_in ? "not logged in" : "not ready"}`);
+  }
+  return { ready, why };
+}
+
+// runnerAgent is what runner r reported of agent name (null: nothing; a
+// runner the hub says nothing of agents about may still run Claude Code).
+export const runnerAgent = (r, name) => (r?.agents || []).find((a) => a.name === name) || null;
 
 // parseLabels reads labels typed in one box, split by commas or spaces.
 export const parseLabels = (s) => [...new Set(String(s || "").split(/[\s,]+/).map((l) => l.trim()).filter(Boolean))];
@@ -96,7 +132,7 @@ export function runnerBadge(p, ctx = {}) {
   const rs = projectRunners(p, ctx);
   if (!rs.length) {
     if (!isShared(p) || !Array.isArray(ctx.runners)) return null;
-    return { kind: "none", label: "needs a runner", title: `No runner has the labels it runs on${p.runs_on?.length ? ` (${p.runs_on.join(", ")})` : ""}: give one those labels in Runners, or change them in Project settings → Runners` };
+    return { kind: "none", label: "needs a runner", title: `No runner has the labels it runs on${p.runs_on?.length ? ` (${projectLabels(p).join(", ")})` : ""}: give one those labels in Runners, or change them in Project settings → Runners` };
   }
   const up = rs.filter((r) => r.online).length;
   if (up === rs.length) return null;

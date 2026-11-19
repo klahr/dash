@@ -67,6 +67,9 @@ type Link struct {
 	// (model.Project.TaskInstructions). The link is sent again whenever it changes,
 	// so the runner's copy follows the hub's.
 	TaskInstructions string `json:"task_instructions,omitempty"`
+	// Agent is the hub project's model.Project.Agent: the agent provider
+	// its tasks run on ("": Claude Code, as from older hubs).
+	Agent string `json:"agent,omitempty"`
 	// AutoApprove is the hub project's model.Project.AutoApprove: finished
 	// tasks whose tests pass skip review and go straight to merging. It is
 	// nil from hubs that predate it; the runner then keeps its own setting.
@@ -193,6 +196,10 @@ type Report struct {
 	// Claude is the runner's Claude Code CLI: its version and what looks
 	// changed about it (nil from a runner older than this field).
 	Claude *claudecli.Status `json:"claude,omitempty"`
+	// Agents are the agent CLIs the runner can run: each one's version,
+	// whether it is installed and logged in, its warnings and features
+	// (nil from a runner older than this field: the hub goes by Claude).
+	Agents []model.AgentStatus `json:"agents,omitempty"`
 	// Disk is the free space where the runner keeps its projects (and its
 	// cache folder, when that is on another disk), the largest folders in
 	// that cache folder when space is low, and its Go build cache (nil

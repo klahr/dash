@@ -21,6 +21,7 @@ import { closeCommit } from "./history.js";
 import { PRIORITY_LEVELS, clearPriority, priorityLevel } from "./dnd.js";
 import { linkToCard } from "./planning.js";
 import { boardName, boardsOf, hasBoards, moveToBoard, onBoard, showBoard } from "./boards.js";
+import { agentCan, cantSay } from "./agents.js";
 import { creator } from "./people.js";
 import { avatar } from "./avatar.js";
 import { changed, linkTo } from "./routes.js";
@@ -194,7 +195,7 @@ export function renderDetail() {
   // where it is edited in place. Only on a change, so a fold by hand stays.
   const fold = `${t.id}:${!t.worktree || inlineEdits(t)}`;
   if (promptFold !== fold) { promptFold = fold; $("#d-prompt-wrap").open = !t.worktree || inlineEdits(t); }
-  const why = t.error ? t.error + (t.resumable && t.runner ? ` — retry to continue on ${runnerName(t.runner)}, where its session is kept.` : "")
+  const why = t.error ? t.error + (t.resumable && t.runner && agentCan(state.project, "resume") ? ` — retry to continue on ${runnerName(t.runner)}, where its session is kept.` : "")
     : t.status === "queued" && t.waiting ? t.waiting : "";
   $("#d-error").hidden = !why;
   $("#d-error").textContent = why;
@@ -223,7 +224,15 @@ export function renderActions(t) {
       else if (canStartNow(t) && pacing(t)) btns.push(startNowButton(t, post));
       break;
     case "in_progress":
-      if (!t.paused) btns.push(b("pause", "Pause", post("pause", null, "Pausing")));
+      if (!t.paused) {
+        // Pausing keeps the session to go on with: an agent that can't resume one would start over.
+        const pause = b("pause", "Pause", post("pause", null, "Pausing"));
+        if (!agentCan(state.project, "resume")) {
+          pause.disabled = true;
+          pause.title = `${cantSay(state.project, "resume")}, so a paused task would start over. Stop it instead.`;
+        }
+        btns.push(pause);
+      }
       btns.push(b("stop", "Stop", post("cancel", null, "Stopping"), "danger grow"));
       break;
     case "review":
@@ -275,7 +284,8 @@ export function renderActions(t) {
 // continues there, in the session that runner kept.
 function retryButton(t, b, post) {
   const btn = b("redo", "Retry", post("enqueue", null, "Queued again"), "primary grow");
-  if (t.resumable && t.runner) btn.title = `Continues on ${runnerName(t.runner)}, where its session is kept`;
+  if (!agentCan(state.project, "resume")) btn.title = `Starts over with the full task: ${cantSay(state.project, "resume")}`;
+  else if (t.resumable && t.runner) btn.title = `Continues on ${runnerName(t.runner)}, where its session is kept`;
   return btn;
 }
 

@@ -313,7 +313,7 @@ func (s *Server) projectChatRunner(c Caller, p model.Project, want string) (tunn
 	}
 	if len(linked) == 0 {
 		return tunnel.Runner{}, fmt.Errorf("no runner of yours works on %s: this hub runs Claude only on its users' own runners. "+
-			"Give one of yours the labels it runs on (%s) in Runners, or change them in Project settings → Runners", p.Name, strings.Join(p.RunsOn, ", "))
+			"Give one of yours the labels it runs on (%s) in Runners, or change them in Project settings → Runners", p.Name, strings.Join(p.RunnerLabels(), ", "))
 	}
 	if want != "" {
 		if i := slices.IndexFunc(linked, func(r tunnel.Runner) bool { return r.ID == want && r.Online }); i >= 0 {

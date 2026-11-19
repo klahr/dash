@@ -304,9 +304,9 @@ func TestProjectsRunOnLabels(t *testing.T) {
 		}
 	}
 	label(f.u, "u-box", `["gpu"]`)
-	label(f.c, "c-box", `["mine"," mine ","MINE"]`) // tidied to one
+	label(f.c, "c-box", `["mine"," mine ","MINE"]`) // tidied to one; its default label is its agent's, as it hasn't reported
 	label(f.b, "b-box", `["gpu","mine"]`)           // another org's: never counts
-	if r, _ := f.rh.Get(f.ids["c-box"]); !slices.Equal(r.Labels, []string{"mine"}) || len(r.DefaultLabels) != 0 {
+	if r, _ := f.rh.Get(f.ids["c-box"]); !slices.Equal(r.Labels, []string{"mine"}) || !slices.Equal(r.DefaultLabels, []string{"claude"}) {
 		t.Errorf("c-box's labels: %v and %v", r.Labels, r.DefaultLabels)
 	}
 	if w := send(f.c, "PATCH", "/api/runners/"+f.ids["u-box"], `{"labels":["x"]}`); w.Code != http.StatusForbidden {

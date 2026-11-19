@@ -29,6 +29,9 @@ var (
 // Name is "claude".
 func (ClaudeCode) Name() string { return DefaultProvider }
 
+// DisplayName is "Claude Code".
+func (ClaudeCode) DisplayName() string { return "Claude Code" }
+
 // CanResume: Claude Code continues sessions with --resume.
 func (ClaudeCode) CanResume() bool { return true }
 

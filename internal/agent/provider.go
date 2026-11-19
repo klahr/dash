@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/mcptools"
+	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 )
 
@@ -102,6 +104,11 @@ type RateLimitReporter interface {
 // accepted flags, login) and keeps what it found in a monitor.
 type StatusReporter interface {
 	CLIMonitor() *claudecli.Monitor
+}
+
+// DisplayNamer is a provider with a name for people, e.g. "Claude Code".
+type DisplayNamer interface {
+	DisplayName() string
 }
 
 // CanResume reports whether x can continue an earlier session (Resumer).
@@ -221,4 +228,91 @@ func defaultPrompter() Prompter {
 		panic(err) // registered in init
 	}
 	return p
+}
+
+// Features are the optional abilities x has, by name (model.FeatureResume,
+// model.FeatureMCP, model.FeaturePermissionHook, model.FeatureUsage), as
+// the interfaces above say: what a runner reports of each agent it has.
+func Features(x any) []string {
+	out := []string{}
+	if CanResume(x) {
+		out = append(out, model.FeatureResume)
+	}
+	if CanMCP(x) {
+		out = append(out, model.FeatureMCP)
+	}
+	if CanPromptPermissions(x) {
+		out = append(out, model.FeaturePermissionHook)
+	}
+	if _, ok := x.(RateLimitReporter); ok {
+		out = append(out, model.FeatureUsage)
+	}
+	return out
+}
+
+// ProviderFeatures are the features of the provider registered as name,
+// built with no settings (nil for a name nobody registered).
+func ProviderFeatures(name string) []string {
+	p, err := NewProvider(name, Config{})
+	if err != nil {
+		return nil
+	}
+	return Features(p)
+}
+
+// StatusOf is what a runner reports of provider p: its name and features,
+// and what its CLI monitor (StatusReporter) last found. A provider without
+// a monitor can't say whether its CLI is installed: it is reported as not
+// installed, with a warning, so no project's tasks are sent to it.
+func StatusOf(p Provider) model.AgentStatus {
+	s := model.AgentStatus{Name: p.Name(), Features: Features(p)}
+	m := MonitorOf(p)
+	if m == nil {
+		s.Warnings = []string{"Dash can't check this agent's CLI"}
+		s.CheckedAt = time.Now()
+		return s
+	}
+	return withCLIStatus(s, m.Status())
+}
+
+// ClaudeStatus is the agent status of Claude Code as a runner too old to
+// report agents described its CLI (c), for the hub to show and match.
+func ClaudeStatus(c claudecli.Status) model.AgentStatus {
+	return withCLIStatus(model.AgentStatus{Name: DefaultProvider, Features: ProviderFeatures(DefaultProvider)}, c)
+}
+
+// withCLIStatus fills s from what a CLI monitor found (c). It counts as
+// logged in unless the CLI said it isn't: an auth status Dash doesn't
+// understand doesn't keep tasks from a runner.
+func withCLIStatus(s model.AgentStatus, c claudecli.Status) model.AgentStatus {
+	s.Version, s.CheckedAt = c.Version, c.CheckedAt
+	s.Warnings = slices.Clone(c.Warnings)
+	s.Installed = c.Version != ""
+	s.LoggedIn = s.Installed && (c.Auth == nil || c.Auth.Method != claudecli.AuthNone)
+	return s
+}
+
+// ProviderInfo is a registered provider as the dashboard shows it.
+type ProviderInfo struct {
+	Name     string   `json:"name"`
+	Title    string   `json:"title"` // for people (DisplayNamer), else Name
+	Features []string `json:"features"`
+	Default  bool     `json:"default,omitempty"` // DefaultProvider
+}
+
+// Providers are the registered providers, by name.
+func Providers() []ProviderInfo {
+	out := []ProviderInfo{}
+	for _, n := range ProviderNames() {
+		p, err := NewProvider(n, Config{})
+		if err != nil {
+			continue
+		}
+		i := ProviderInfo{Name: n, Title: n, Features: Features(p), Default: n == DefaultProvider}
+		if d, ok := p.(DisplayNamer); ok && d.DisplayName() != "" {
+			i.Title = d.DisplayName()
+		}
+		out = append(out, i)
+	}
+	return out
 }

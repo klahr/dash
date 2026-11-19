@@ -1430,6 +1430,21 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .sync-warn.disk-warn.full strong { color: var(--failed); }
 .side-runner-disk { flex: none; display: inline-flex; color: var(--failed); }
 .side-runner-disk .ico { width: 13px; height: 13px; }
+/* A runner's agents: each one's name, version, login and label, then its features as chips. */
+.runner-agents { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.runner-agent { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); min-width: 0; }
+.runner-agent-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.runner-agent-state { font-size: var(--fs-s); color: var(--muted); }
+.runner-agent-state.ok { color: var(--merged); }
+.runner-agent-state.warn { color: var(--running); }
+.runner-agent-state.off { color: var(--failed); }
+.runner-agent-head .runner-label { margin-left: auto; }
+.runner-agent-features { display: flex; flex-wrap: wrap; gap: 6px; }
+.runner-agent-feature { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px 1px 6px; font-size: var(--fs-xs); border: 1px solid var(--line); border-radius: var(--r-pill); }
+.runner-agent-feature .ico { width: 12px; height: 12px; color: var(--merged); }
+.runner-agent-feature.off { color: var(--muted); border-style: dashed; }
+.runner-agent-feature.off .ico { color: var(--muted); }
+.runner-agent-warn { margin: 0; padding-left: 18px; overflow-wrap: anywhere; }
 .runner-claude-warn ul { margin: 4px 0 0; padding-left: 18px; font-size: var(--fs-s); overflow-wrap: anywhere; }
 /* A runner's repositories to add, or projects to link: a raised box with a list of choice cards (.choice-card, below). */
 .runner-repos { margin-top: 12px; padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); }

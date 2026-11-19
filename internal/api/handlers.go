@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
@@ -451,6 +452,9 @@ type projectUpdate struct {
 	// RunsOn are the runner labels the project runs on (replaces them; []
 	// runs it on no runner). See model.Project.RunsOn.
 	RunsOn *[]string `json:"runs_on"`
+	// Agent is the agent provider its tasks run on ("": Claude Code). On
+	// a hub they go only to runners that have it. See model.Project.Agent.
+	Agent *string `json:"agent"`
 }
 
 func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
@@ -517,6 +521,15 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 	}
 	next := cur
 	next.RunsOn = runsOn
+	if req.Agent != nil && *req.Agent != cur.Agent {
+		// Another agent may send its work to other runners: as for labels.
+		next.Agent = *req.Agent
+		withRemote := next
+		withRemote.RemoteURL = remote
+		if err := sv.checkNewRunners(cur, withRemote); err != nil {
+			return cur, err
+		}
+	}
 	runners := sv.s.projectRunners(next)
 	if err := sv.checkCommandChange(cur, req, runners); err != nil {
 		return cur, err
@@ -556,7 +569,7 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		sv.s.recordEnvChanges(sv.c, p.ID, envsBefore, p.Environments)
 	}
 	sv.s.unlinkLater([]model.Project{p}, gone)
-	if req.RunsOn != nil {
+	if req.RunsOn != nil || req.Agent != nil {
 		sv.s.Todos.Kick() // queued tasks may go elsewhere now
 	}
 	return p, nil
@@ -571,6 +584,13 @@ func (sv *service) normalizeProjectUpdate(ctx context.Context, req *projectUpdat
 		if *req.Name == "" {
 			return fmt.Errorf("%w: name is required", errBadRequest)
 		}
+	}
+	if req.Agent != nil {
+		name, ok := model.CleanAgent(*req.Agent)
+		if !ok || name != "" && !slices.Contains(agent.ProviderNames(), name) {
+			return fmt.Errorf("%w: agent must be one of %s", errBadRequest, strings.Join(agent.ProviderNames(), ", "))
+		}
+		*req.Agent = name
 	}
 	if req.ChatMode != nil {
 		switch *req.ChatMode {
@@ -663,6 +683,7 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	set(&p.Color, req.Color)
 	set(&p.Icon, req.Icon)
 	set(&p.ChatPermissionMode, req.ChatMode)
+	set(&p.Agent, req.Agent)
 	set(&p.ReviewPrompt, req.ReviewPrompt)
 	if req.Instructions != nil {
 		p.TaskInstructions = strings.TrimSpace(*req.Instructions)

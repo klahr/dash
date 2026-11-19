@@ -2,7 +2,7 @@
 // `node --test web/`; groups_test.go runs them as part of `go test ./...`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { projectGroups, uniqueProjects, projectRunnerNames, projectRunners, runnerBadge, remoteRepo, projectSubtitle, servesProject, missingLabels, parseLabels } from "./static/groups.js";
+import { projectGroups, uniqueProjects, projectRunnerNames, projectRunners, runnerBadge, remoteRepo, projectSubtitle, servesProject, missingLabels, parseLabels, projectLabels, runnerAgent, agentRunners } from "./static/groups.js";
 
 const hub = { name: "hub", local: true, ok: true, prefix: "" };
 const runner = (name, ok) => ({ name, runner: true, ok, prefix: `/peer/${name}`, error: ok ? "" : "offline" });
@@ -149,4 +149,37 @@ test("a runner works on a project when it has every label it runs on, whatever t
   assert.equal(servesProject(alpha, { runs_on: [] }), false);
   assert.equal(servesProject(alpha, {}), false);
   assert.deepEqual(parseLabels(" gpu, big-disk  gpu,,"), ["gpu", "big-disk"]);
+});
+
+test("a project needs its agent's label too; a runner that says nothing of agents runs Claude Code", () => {
+  assert.deepEqual(projectLabels({ runs_on: ["gpu"] }), ["gpu", "claude"]);
+  assert.deepEqual(projectLabels({ runs_on: ["any"], agent: "codex" }), ["any", "codex"]);
+  assert.deepEqual(projectLabels({ runs_on: ["Claude"] }), ["Claude"]);
+  assert.deepEqual(projectLabels({ agent: "codex" }), []); // no labels: no runner
+  // As the hub lists them: an agent label per agent it can run.
+  const both = { name: "both", default_labels: ["Linux", "claude", "codex"], labels: [], agents: [{ name: "claude" }, { name: "codex" }] };
+  const codexOnly = { name: "codex-only", default_labels: ["Linux", "codex"], labels: [], agents: [{ name: "codex" }, { name: "claude", logged_in: false }] };
+  const old = { name: "old", default_labels: ["Linux"], labels: [] }; // no agents field at all
+  assert.equal(servesProject(both, { runs_on: ["any"] }), true);
+  assert.equal(servesProject(codexOnly, { runs_on: ["any"] }), false);
+  assert.deepEqual(missingLabels(codexOnly, { runs_on: ["any", "gpu"] }), ["gpu", "claude"]);
+  assert.equal(servesProject(codexOnly, { runs_on: ["any"], agent: "codex" }), true);
+  assert.equal(servesProject(old, { runs_on: ["linux"] }), true);
+  assert.equal(servesProject(old, { runs_on: ["linux"], agent: "codex" }), false);
+  assert.equal(runnerAgent(codexOnly, "claude").logged_in, false);
+  assert.equal(runnerAgent(old, "claude"), null);
+});
+
+test("agentRunners: the online runners that can run an agent, and why the others can't", () => {
+  const list = [
+    { name: "a", online: true, default_labels: ["codex"], agents: [{ name: "codex", installed: true, logged_in: true }, { name: "claude", installed: true, logged_in: false }] },
+    { name: "b", online: true, default_labels: [], agents: [{ name: "codex", installed: false }] },
+    { name: "c", online: false, default_labels: ["claude"], agents: [{ name: "claude", installed: true, logged_in: true }] },
+    { name: "old", online: true, default_labels: [], labels: [] }, // says nothing of agents: Claude Code
+  ];
+  assert.deepEqual(agentRunners(list, "codex").ready.map((r) => r.name), ["a"]);
+  assert.deepEqual(agentRunners(list, "codex").why, ["b: not installed", "old: doesn't have it"]);
+  assert.deepEqual(agentRunners(list, "").ready.map((r) => r.name), ["old"]);
+  assert.deepEqual(agentRunners(list, "claude").why, ["a: not logged in", "b: doesn't have it"]);
+  assert.deepEqual(agentRunners(list, "gemini").ready, []);
 });

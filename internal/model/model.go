@@ -199,6 +199,10 @@ type Project struct {
 	// default branch there and pushing it to origin ("local"); the hub
 	// never merges in a checkout of its own.
 	RunsOn []string `json:"runs_on,omitempty"`
+	// Agent is the agent provider its tasks run on, e.g. "claude" (""
+	// is DefaultAgent, Claude Code). On a hub its tasks go only to runners
+	// that have that agent's label too (RunnerLabels, AgentLabels).
+	Agent string `json:"agent,omitempty"`
 	// LegacyRunners are the ids of the runners a hub's project was linked
 	// to before projects ran on labels; the hub turns them into labels when
 	// it starts (dispatch.MigrateRunnerLinks) and clears them.

@@ -30,8 +30,12 @@ type Reporter struct {
 	Terminals bool
 	// ChatCommands: its chats run "!" commands for its owner.
 	ChatCommands bool
-	// Claude reports the runner's Claude Code CLI (optional).
+	// Claude reports the runner's Claude Code CLI (optional). It still
+	// goes in every report, for hubs older than Agents.
 	Claude *claudecli.Monitor
+	// Agents reports the agent CLIs the runner can run (agent.Set.Statuses;
+	// optional).
+	Agents func() []model.AgentStatus
 	// Disk measures the runner's free disk space for every report
 	// (disk.Monitor.Status; optional).
 	Disk func() disk.Status
@@ -271,6 +275,9 @@ func (r *Reporter) Build(now time.Time) Report {
 	if r.Claude != nil {
 		c := r.Claude.Status()
 		rep.Claude = &c
+	}
+	if r.Agents != nil {
+		rep.Agents = r.Agents()
 	}
 	if r.Disk != nil {
 		d := r.Disk()

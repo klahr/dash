@@ -293,6 +293,19 @@ checks the version and whether `claude -p` still accepts `--output-format stream
 `--permission-prompt-tool` when it starts and every hour. On every run, it checks that the
 stream-json events (the session's start, messages, `rate_limit_event`, the result) still have the
 fields Dash reads.
+
+Its page in **Runners** also lists its **Agents**: each agent CLI it can run tasks with (Claude
+Code, and any other agent this Dash supports), with its version, whether it is installed and
+logged in, its warnings, and the features it has:
+
+- **Resume**: it continues a task's earlier session (needed for **Pause** and **Build on**);
+- **MCP**: it uses Dash's MCP servers (the task tools);
+- **Permission prompts**: it asks you in Dash before a tool call it isn't allowed;
+- **Usage**: it reports its account's usage limits.
+
+The runner checks each agent when it starts and every hour; nothing needs setting up. A runner
+older than this version reports only Claude Code, which the hub shows as its one agent.
+
 Its owner and the org's admins can:
 
 - **Pause** it: it finishes what it is running and gets no new tasks;
@@ -394,6 +407,9 @@ project's work can go; whose tasks a runner then runs is the next section's rule
 
 - Every runner has the labels of its system (`Linux`, `macOS` or `Windows`) and its architecture
   (`X64`, `ARM64`, `ARM` or `X86`). A runner from before Dash reported its system has none.
+- Every runner also has a label for each agent that is installed and logged in on it, named like
+  the agent: `claude` for Claude Code, `codex` for Codex. A runner too old to report its agents
+  keeps `claude`, as every runner ran Claude Code.
 - Its owner or an org admin gives it labels of its own on its page in **Runners → Labels**. A
   label is letters, digits and `- _ . : + /`, up to 64 characters. `any` can't be a runner's
   label. Each change is saved at once.
@@ -401,6 +417,10 @@ project's work can go; whose tasks a runner then runs is the next section's rule
   it when it has every one of them, whatever their case: `any` is any runner of the org,
   `macOS` and `ARM64` is Apple silicon Macs, `gpu` is the runners you labelled so. A project with
   no labels runs on no runner, and says it **needs a runner**.
+- A project also needs its agent's label. Pick the agent in **Project settings → Agent**; it is
+  Claude Code unless you change it. Its tasks then go only to runners where that agent is
+  installed and logged in. If no online runner has it, the setting says so, and the tasks wait.
+  Actions the agent can't do are grayed out on its tasks, with a tooltip saying why.
 
 Every labels field works the same way. The picked labels show as chips; **×** on a chip removes
 it. Below the field are the labels that already exist in the organization (on runners and

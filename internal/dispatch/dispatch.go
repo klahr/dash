@@ -347,10 +347,10 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 	}
 	if len(cands) == 0 {
 		if len(why) == 0 && len(notFor) > 0 {
-			return nil, "waiting: no runner " + d.whose(users) + " has the labels " + strings.Join(p.RunsOn, ", ") + "; " + strings.Join(notFor, "; "), ""
+			return nil, "waiting: no runner " + d.whose(users) + " has the labels " + strings.Join(p.RunnerLabels(), ", ") + "; " + strings.Join(notFor, "; "), ""
 		}
 		if len(why) == 0 {
-			return nil, "no runner: no runner has the labels this project runs on (" + strings.Join(p.RunsOn, ", ") + "); give one those labels, or change them in the project's settings", ""
+			return nil, "no runner: no runner has the labels this project runs on (" + strings.Join(p.RunnerLabels(), ", ") + "); give one those labels, or change them in the project's settings", ""
 		}
 		return nil, waitReason(append(why, notFor...)), strings.Join(full, "; ")
 	}

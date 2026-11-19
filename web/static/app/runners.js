@@ -16,7 +16,8 @@ import { ensureShell, forgetShellRefusal } from "./terminal.js";
 import { loadTry } from "./try.js";
 import { loadRunnerTokens } from "./tokens.js";
 import { isRelease, runnerOutdated as outdatedFor } from "../runnerversion.js";
-import { LABEL_ANY, runnerLabels, servesProject } from "../groups.js";
+import { LABEL_ANY, projectLabels, runnerLabels, servesProject } from "../groups.js";
+import { FEATURES, agentTitle, loadAgents } from "./agents.js";
 import { docsLabels, labelPicker, refreshLabelPickers } from "./labelpicker.js";
 
 // ------------------------------------------------------------------ runners
@@ -51,6 +52,7 @@ const updateCmds = () => [
 // access, VPN or shared secret needed on their side. Projects run on runner
 // labels; the hub sends their tasks only to runners with those labels.
 export async function loadRunners() {
+  loadAgents(); // their names and features, once
   try {
     const res = await api("GET", "/api/runners");
     // By name, so every list of them (a project's settings too) keeps one
@@ -102,7 +104,7 @@ function runnerNeeded(p) {
   if (!p || p.prefix || !Array.isArray(state.runners)) return "";
   if (!state.runners.length) return `Its work needs a runner. To add one, ${startRunner}.`;
   const linked = state.runners.filter((r) => servesProject(r, p));
-  if (!linked.length) return `${p.name} needs a runner: ${p.runs_on?.length ? `none has ${p.runs_on.join(", ")}` : "it has no labels"}. Its work waits.`;
+  if (!linked.length) return `${p.name} needs a runner: ${p.runs_on?.length ? `none has ${projectLabels(p).join(", ")}` : "it has no labels"}. Its work waits.`;
   if (!linked.some((r) => r.online)) return "No runner of this project is online. Its work waits.";
   return "";
 }
@@ -558,6 +560,8 @@ function paintRunner(r) {
     claudeWarns.length ? h("div", { class: "runner-update runner-claude-warn", role: "status" },
       h("p", { class: "hint warn" }, `Claude Code${claude.version ? ` ${claude.version}` : ""} looks different from what Dash expects. Updating Dash may help:`),
       h("ul", {}, ...claudeWarns.map((w) => h("li", {}, w)))) : null,
+    h("h4", { class: "section-head" }, "Agents"),
+    runnerAgents(r),
     usage ? h("h4", { class: "section-head" }, "Claude usage") : null,
     usage,
     r.reported?.disk?.volumes?.length || r.can_manage ? h("h4", { class: "section-head" }, "Disk") : null,
@@ -631,13 +635,49 @@ function paintRunner(r) {
       }) }, "trash", "Revoke…"), "danger"));
 }
 
+// agentState is how agent a stands on its runner: a short text and a tone.
+function agentState(a) {
+  if (!a.checked_at) return { text: "Not checked yet", tone: "muted" };
+  if (!a.installed) return { text: "Not installed", tone: "off" };
+  if (!a.logged_in) return { text: "Not logged in", tone: "warn" };
+  return { text: "Logged in", tone: "ok" };
+}
+
+// runnerAgents lists the agent CLIs runner r reported: each one's version,
+// login, the features it has and its warnings. Projects on an agent run
+// only on runners where it is installed and logged in (its label).
+function runnerAgents(r) {
+  const list = r.agents || [];
+  if (!list.length) {
+    return h("p", { class: "hint" }, r.online ? "It hasn't reported its agents yet." : "It reports its agents when it's online.");
+  }
+  // Claude Code's warnings are shown above, as before agents were reported.
+  const claudeShown = runnerClaudeWarnings(r).length > 0;
+  return h("ul", { class: "runner-agents" }, ...list.map((a) => {
+    const st = agentState(a);
+    const has = new Set(a.features || []);
+    const warns = a.name === "claude" && claudeShown ? [] : a.warnings || [];
+    return h("li", { class: "runner-agent" },
+      h("div", { class: "runner-agent-head" },
+        h("strong", {}, agentTitle(a.name)),
+        a.version ? h("span", { class: `runner-version${a.warnings?.length ? " warn" : ""}`, title: `${agentTitle(a.name)} version` }, a.version) : null,
+        h("span", { class: `runner-agent-state ${st.tone}` }, st.text),
+        h("span", { class: "runner-label default", title: st.tone === "ok" || st.tone === "muted"
+          ? `Its label: projects on ${agentTitle(a.name)} run here` : `Without its label until ${agentTitle(a.name)} is installed and logged in` }, a.name)),
+      h("div", { class: "runner-agent-features", "aria-label": "Features" }, ...Object.entries(FEATURES).map(([f, x]) =>
+        h("span", { class: `runner-agent-feature${has.has(f) ? "" : " off"}`, title: `${has.has(f) ? "Can" : "Can't"} ${x.does}` },
+          ico(has.has(f) ? "check" : "x"), x.label))),
+      warns.length ? h("ul", { class: "hint warn runner-agent-warn" }, ...warns.map((w) => h("li", {}, w))) : null);
+  }));
+}
+
 // runnerLabelsSection shows runner r's labels: its system's (dashed) and,
 // as chips its owner or an admin picks, its own; each change is saved.
 function runnerLabelsSection(r) {
   const defaults = r.default_labels || [];
   if (!r.can_manage) {
     return runnerLabels(r).length ? h("div", { class: "runner-labels" }, ...runnerLabels(r).map((l, i) =>
-      h("span", { class: `runner-label${i < defaults.length ? " default" : ""}`, title: i < defaults.length ? "Its system or architecture" : "" }, l)))
+      h("span", { class: `runner-label${i < defaults.length ? " default" : ""}`, title: i < defaults.length ? "Its system, architecture or agents" : "" }, l)))
       : h("p", { class: "hint" }, `None: it builds only projects on ${LABEL_ANY}.`);
   }
   const picker = labelPicker({ value: (r.labels || []).join(","), exclude: defaults, label: `${r.name}'s own labels`, placeholder: "e.g. gpu",
@@ -651,7 +691,7 @@ function runnerLabelsSection(r) {
     })() });
   return h("div", { class: "runner-own-labels" },
     defaults.length ? h("div", { class: "runner-labels" }, ...defaults.map((l) =>
-      h("span", { class: "runner-label default", title: "Its system or architecture" }, l))) : null,
+      h("span", { class: "runner-label default", title: "Its system, architecture or agents" }, l))) : null,
     picker.el);
 }
 

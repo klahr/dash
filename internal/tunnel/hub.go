@@ -26,6 +26,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/fsutil"
@@ -77,9 +78,9 @@ type Runner struct {
 	OS   string `json:"os,omitempty"`
 	Arch string `json:"arch,omitempty"`
 	// Labels are the labels its owner or an org admin gave it, and
-	// DefaultLabels those it has anyway (model.DefaultRunnerLabels, from OS
-	// and Arch). It works on the projects of its org that run on labels it
-	// has (Serves).
+	// DefaultLabels those it has anyway: model.DefaultRunnerLabels, from OS
+	// and Arch, then one per agent it can run (model.AgentLabels). It works
+	// on the projects of its org that run on labels it has (Serves).
 	Labels        []string `json:"labels"`
 	DefaultLabels []string `json:"default_labels"`
 	// Parallel is how many tasks the hub sends it at once (0: as many as
@@ -102,6 +103,10 @@ type Runner struct {
 	// Reported is what the runner last told the hub about itself: its own
 	// limit and its owner's Claude subscription usage (nil until it has).
 	Reported *Reported `json:"reported,omitempty"`
+	// Agents are the agent CLIs it can run, as it last reported them; from
+	// a runner too old to report agents, its Claude Code as it reported
+	// that (Reported.AgentList). Empty until it has reported either.
+	Agents []AgentStatus `json:"agents"`
 	// Running is how many of the hub's tasks it is working on (filled in by
 	// the API).
 	Running int `json:"running"`
@@ -123,16 +128,32 @@ func (r Runner) OrgID() int64 {
 }
 
 // AllLabels are every label the runner has: its default ones (from its OS
-// and Arch), then its own.
+// and Arch, and its agents), then its own.
 func (r Runner) AllLabels() []string {
-	return append(model.DefaultRunnerLabels(r.OS, r.Arch), r.Labels...)
+	return append(defaultLabels(r.OS, r.Arch, r.Reported), r.Labels...)
+}
+
+// defaultLabels are the labels a runner on goos and goarch that last
+// reported rep has without being given them: its system's and
+// architecture's, then its agents' (model.AgentLabels). A runner that
+// hasn't said which agents it has runs Claude Code, as every runner did.
+func defaultLabels(goos, goarch string, rep *Reported) []string {
+	agents, reported := rep.AgentList()
+	return append(model.DefaultRunnerLabels(goos, goarch), model.AgentLabels(agents, reported && len(rep.Agents) > 0)...)
 }
 
 // Serves reports whether the runner works on hub project p: it is in p's
-// org and has every label p runs on (model.LabelsMatch). A runner of
-// nobody's (its owner unknown) serves no project.
+// org and has every label p runs on, and its agent's
+// (model.Project.RunnerLabels, model.LabelsMatch). A runner of nobody's
+// (its owner unknown) serves no project.
 func (r Runner) Serves(p model.Project) bool {
-	return r.OrgID() != 0 && r.OrgID() == p.OrgID && model.LabelsMatch(r.AllLabels(), p.RunsOn)
+	return r.OrgID() != 0 && r.OrgID() == p.OrgID && model.LabelsMatch(r.AllLabels(), p.RunnerLabels())
+}
+
+// HasAgent reports whether the runner can run agent provider name: it
+// has that agent's label (model.AgentLabel).
+func (r Runner) HasAgent(name string) bool {
+	return model.HasLabel(r.AllLabels(), model.AgentLabel(name))
 }
 
 // Deploys reports whether the runner runs hub project p's deploys to e:
@@ -203,6 +224,9 @@ func (r Runner) SlotsNow() int {
 	return n
 }
 
+// AgentStatus is an agent CLI a runner can run, as it reports it.
+type AgentStatus = model.AgentStatus
+
 // Reported is a runner's report on itself.
 type Reported struct {
 	Parallel int             `json:"parallel"`
@@ -216,6 +240,9 @@ type Reported struct {
 	// Claude is its Claude Code CLI: version and warnings (nil until a
 	// runner that knows to report it has).
 	Claude *claudecli.Status `json:"claude,omitempty"`
+	// Agents are the agent CLIs it can run (nil from a runner older than
+	// agent reports, which still sends Claude: see AgentList).
+	Agents []AgentStatus `json:"agents,omitempty"`
 	// Disk is its free disk space, the largest folders in its cache folder
 	// when that is low, and its Go build cache (nil from an older runner).
 	Disk *disk.Status `json:"disk,omitempty"`
@@ -223,6 +250,23 @@ type Reported struct {
 	// (~/.dash/env/<name>.env): the names only, never what is in them.
 	EnvFiles []string  `json:"env_files,omitempty"`
 	At       time.Time `json:"at"`
+}
+
+// AgentList are the agents the runner reported, and whether it said which
+// it has. A runner older than agent reports (no Agents) has its Claude
+// Code as it reported that, if it has (agent.ClaudeStatus); reported is
+// then true too, but its Claude Code isn't held to its login
+// (defaultLabels).
+func (r *Reported) AgentList() (agents []AgentStatus, reported bool) {
+	switch {
+	case r == nil:
+		return nil, false
+	case len(r.Agents) > 0:
+		return r.Agents, true
+	case r.Claude != nil:
+		return []AgentStatus{agent.ClaudeStatus(*r.Claude)}, true
+	}
+	return nil, false
 }
 
 // record is a runner in runners.json. Its token is in the token table
@@ -628,7 +672,7 @@ func (h *Hub) ListBare() []Runner {
 func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runner {
 	v := Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner,
 		Version: r.Version, OS: r.OS, Arch: r.Arch, Parallel: r.Parallel, Paused: r.Paused, Shared: r.Shared, AutoUpdate: r.AutoUpdate,
-		Labels: slices.Clone(r.Labels), DefaultLabels: model.DefaultRunnerLabels(r.OS, r.Arch)}
+		Labels: slices.Clone(r.Labels)}
 	if v.Labels == nil {
 		v.Labels = []string{}
 	}
@@ -644,7 +688,13 @@ func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runne
 		cp := *rep
 		v.Reported = &cp
 		v.DiskLow, v.DiskFull = diskState(r.Name, r.Disk, rep.Disk)
+		agents, _ := rep.AgentList()
+		v.Agents = slices.Clone(agents)
 	}
+	if v.Agents == nil {
+		v.Agents = []AgentStatus{}
+	}
+	v.DefaultLabels = defaultLabels(r.OS, r.Arch, v.Reported)
 	return v
 }
 
@@ -1005,6 +1055,7 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		Terminals    bool              `json:"terminals"`
 		ChatCommands bool              `json:"chat_commands"`
 		Claude       *claudecli.Status `json:"claude"`
+		Agents       []AgentStatus     `json:"agents"`
 		Disk         *disk.Status      `json:"disk"`
 		EnvFiles     []string          `json:"env_files"`
 	}
@@ -1024,8 +1075,9 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		self.Disk = cleanDisk(*self.Disk)
 	}
 	self.Claude, self.Usage = carryOver(prev, self.Claude, self.Usage, h.clock())
+	self.Agents = carryOverAgents(prev, cleanAgents(self.Agents))
 	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, Terminals: self.Terminals, ChatCommands: self.ChatCommands, Claude: self.Claude,
-		Disk: self.Disk, EnvFiles: cleanEnvFiles(self.EnvFiles), At: h.clock()}
+		Agents: self.Agents, Disk: self.Disk, EnvFiles: cleanEnvFiles(self.EnvFiles), At: h.clock()}
 	var diskChanged bool
 	if prev != nil {
 		pl, pf := diskState(rec.Name, rec.Disk, prev.Disk)
@@ -1034,7 +1086,7 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Unlock()
 	if prev == nil || prev.Parallel != self.Parallel || prev.Terminals != self.Terminals || prev.ChatCommands != self.ChatCommands || paused(prev.Usage) != paused(self.Usage) ||
-		claudeKey(prev.Claude) != claudeKey(self.Claude) || diskChanged || !slices.Equal(prevEnvFiles(prev), cleanEnvFiles(self.EnvFiles)) {
+		claudeKey(prev.Claude) != claudeKey(self.Claude) || agentsKey(prev.Agents) != agentsKey(self.Agents) || diskChanged || !slices.Equal(prevEnvFiles(prev), cleanEnvFiles(self.EnvFiles)) {
 		h.changed()
 	}
 	if h.OnReport != nil {
@@ -1151,6 +1203,63 @@ func cleanClaude(c claudecli.Status) *claudecli.Status {
 		c.Auth = &cp
 	}
 	return &c
+}
+
+// maxAgents caps the agents a runner reports.
+const maxAgents = 16
+
+// cleanAgents bounds what a runner reports about its agents: at most
+// maxAgents of them, each named once, with clipped text.
+func cleanAgents(list []AgentStatus) []AgentStatus {
+	var out []AgentStatus
+	for _, a := range list {
+		a.Name = textutil.Clip(strings.ToLower(strings.TrimSpace(a.Name)), 32)
+		if a.Name == "" || model.FindAgent(out, a.Name) != nil || len(out) >= maxAgents {
+			continue
+		}
+		a.Version = cleanVersion(a.Version)
+		a.Warnings = clipList(a.Warnings, 10, 500)
+		a.Features = clipList(a.Features, 16, 40)
+		out = append(out, a)
+	}
+	return out
+}
+
+// clipList keeps the first n of list, each clipped to size (nil: none).
+func clipList(list []string, n, size int) []string {
+	var out []string
+	for _, s := range list[:min(len(list), n)] {
+		out = append(out, textutil.Clip(s, size))
+	}
+	return out
+}
+
+// carryOverAgents keeps, for an agent the runner hasn't checked since it
+// started (no CheckedAt), what its earlier report (prev) found, as
+// carryOver does for Claude.
+func carryOverAgents(prev *Reported, agents []AgentStatus) []AgentStatus {
+	if prev == nil {
+		return agents
+	}
+	for i, a := range agents {
+		if !a.CheckedAt.IsZero() {
+			continue
+		}
+		if p := model.FindAgent(prev.Agents, a.Name); p != nil && !p.CheckedAt.IsZero() {
+			agents[i] = *p
+		}
+	}
+	return agents
+}
+
+// agentsKey is what of a runner's agents the runners list shows.
+func agentsKey(list []AgentStatus) string {
+	k := ""
+	for _, a := range list {
+		k += fmt.Sprintf("%s\x00%s\x00%t%t\x00%s\x00%s\x01", a.Name, a.Version, a.Installed, a.LoggedIn,
+			strings.Join(a.Warnings, "\x00"), strings.Join(a.Features, ","))
+	}
+	return k
 }
 
 // Account is the Claude account the runner last reported its CLI logged in

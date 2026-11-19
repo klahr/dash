@@ -269,6 +269,7 @@ func hubSettings(req dispatch.Link, mode string) func(*model.Project) {
 	folder := hubOrgFolder(req)
 	return func(x *model.Project) {
 		x.TaskInstructions, x.MergeMode, x.HubOrgFolder = req.TaskInstructions, mode, folder
+		x.Agent = req.Agent
 		// The hub's commands.
 		x.SetupCommand, x.TestCommand, x.RunCommand = req.SetupCommand, req.TestCommand, req.RunCommand
 		// Where it deploys: the hub sends the commands this runner may not

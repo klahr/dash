@@ -86,7 +86,7 @@ func (s *Server) runnerLinks(w http.ResponseWriter, r *http.Request) {
 			l.RunsOn = []string{}
 		}
 		if !l.Linked {
-			l.Missing = model.MissingLabels(x.AllLabels(), p.RunsOn)
+			l.Missing = model.MissingLabels(x.AllLabels(), p.RunnerLabels())
 		}
 		for _, t := range sv.data.ListTodos(p.ID) {
 			switch {
@@ -129,7 +129,7 @@ func (s *Server) linkToRunner(w http.ResponseWriter, r *http.Request) {
 			err = fmt.Errorf("%w: %s runs on no runner labels: set them in its Project settings → Runners", errBadRequest, res.Project.Name)
 		case !x.Serves(res.Project):
 			err = fmt.Errorf("%w: %s doesn't work on %s: it lacks the labels %s", errBadRequest, x.Name, res.Project.Name,
-				strings.Join(model.MissingLabels(x.AllLabels(), res.Project.RunsOn), ", "))
+				strings.Join(model.MissingLabels(x.AllLabels(), res.Project.RunnerLabels()), ", "))
 		}
 	case strings.Count(gh, "/") == 1:
 		res.Project, res.Created, err = sv.linkGitHubRepo(x, gh, req.Name, req.RunsOn)

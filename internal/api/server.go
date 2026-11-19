@@ -539,6 +539,11 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"version": s.version(), "release": buildinfo.Version})
 	})
+	// The agent CLIs this Dash can run tasks on, and what each can do: the
+	// project settings' agent choice, and the task actions it allows.
+	mux.HandleFunc("GET /api/agents", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, agent.Providers())
+	})
 	mux.Handle("GET /", s.static())
 	return mux.ServeMux
 }

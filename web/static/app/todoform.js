@@ -10,6 +10,7 @@ import { agoText, byPriority, title } from "./branches.js";
 import { editing, pickProject, showNewTasks } from "./todos.js";
 import { PRIORITY_LEVELS, levelPriority, priorityLevel } from "./dnd.js";
 import { servesProject } from "../groups.js";
+import { agentCan, cantSay } from "./agents.js";
 
 // ------------------------------------------------------------------ the task form
 export const promptEditor = mdEditor($("#todo-form").prompt);
@@ -78,7 +79,9 @@ export const buildOnPicker = (() => {
     sel.replaceChildren(...(opts || []));
     sel.value = id || "";
     const usable = !pickProject || projectKey(state.project) === $("#todo-form").project.value;
-    field.hidden = !usable || !opts;
+    // Building on a task continues its session: not offered for an agent that can't resume one.
+    field.hidden = !usable || !opts || (!id && !agentCan(state.project, "resume"));
+    field.title = agentCan(state.project, "resume") ? "" : cantSay(state.project, "resume");
   };
   $("#todo-form").project.addEventListener("change", () => reset(self, ""));
   return { reset, value: () => field.hidden ? "" : sel.value };

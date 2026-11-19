@@ -8,6 +8,7 @@ import { title } from "./branches.js";
 import { editable, openTodoForm, updateTodo } from "./todos.js";
 import { buildOnOptions, depOptions, draft, promptEditor, runOnOptions, setModelField, todoAttach } from "./todoform.js";
 import { levelPriority, priorityLevel } from "./dnd.js";
+import { agentCan, cantSay } from "./agents.js";
 import { openDetail, renderDetail } from "./detail.js";
 
 // ------------------------------------------------------------------ inline editing (desktop)
@@ -269,6 +270,11 @@ function renderMeta(t) {
   if (bopts) {
     const base = h("select", { class: "meta-select meta-buildon", "aria-label": "Build on", title: "A finished task whose Claude session this task's first run continues" }, bopts);
     base.value = t.builds_on || "";
+    if (!agentCan(state.project, "resume")) {
+      // Building on a task is continuing its session: left to clear, not to pick.
+      base.disabled = !t.builds_on;
+      base.title = `${cantSay(state.project, "resume")}: a task can't build on another's session`;
+    }
     base.addEventListener("change", save((t) => updateTodo(t, { builds_on: base.value }), (t) => { base.value = t.builds_on || ""; }));
     kids.push(h("label", { class: "meta-ctl" }, h("span", {}, "Build on"), base));
   }

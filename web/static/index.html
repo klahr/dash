@@ -1183,7 +1183,7 @@
             <button type="button" class="rail-item" data-rail="general">General</button>
             <button type="button" class="rail-item" data-rail="commands">Commands</button>
             <button type="button" class="rail-item" data-rail="repository">Repository</button>
-            <button type="button" class="rail-item" data-rail="claude">Claude</button>
+            <button type="button" class="rail-item" data-rail="claude">Agent</button>
             <button type="button" class="rail-item" data-rail="runners">Runners</button>
             <button type="button" class="rail-item" data-rail="board">Board</button>
           </div>
@@ -1242,6 +1242,8 @@
             <div id="settings-repo" class="repo-info" aria-live="polite"></div>
           </section>
           <section class="rail-section" data-section="claude">
+            <label class="field" id="settings-agent-field"><span>Agent <em>the agent CLI that runs this project's tasks</em></span><select name="agent" id="settings-agent"></select></label>
+            <p class="hint" id="settings-agent-hint" aria-live="polite"></p>
             <div class="claude-scope">
               <h3 class="claude-scope-head">In the repository <span class="scope-tag repo">repo files</span></h3>
               <p class="hint" id="claude-files-hint">Files Claude Code reads from the project. Edit opens them in the file editor; saving a tracked file opens a task to commit the change, files git doesn't track are saved straight to disk.</p>
