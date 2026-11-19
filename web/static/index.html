@@ -1176,7 +1176,7 @@
   <!-- Project settings: each field saves as it changes (app/settings.js, app/autosave.js) -->
   <dialog class="sheet rail-sheet" id="settings-sheet" aria-labelledby="settings-title">
     <form method="dialog" id="settings-form">
-      <header class="sheet-head"><h2 id="settings-title">Project settings</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
+      <header class="sheet-head"><h2 id="settings-title" tabindex="-1" autofocus>Project settings</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <div class="rail-layout">
         <nav class="rail-nav" aria-label="Settings sections">
           <div class="rail-group"><span class="rail-head">Project</span>
@@ -1195,7 +1195,7 @@
         </nav>
         <div class="rail-main">
           <section class="rail-section" data-section="general">
-            <label class="field"><span>Name <em>shown in the project lists</em></span><input name="name" required maxlength="200" autocomplete="off" spellcheck="false" autofocus></label>
+            <label class="field"><span>Name <em>shown in the project lists</em></span><input name="name" required maxlength="200" autocomplete="off" spellcheck="false"></label>
             <p class="hint">Only the name Dash shows: the repository and its folder keep theirs.</p>
             <!-- One picker: None, a few colors (app/settings.js adds them) or any other color. -->
             <fieldset class="field choice color-pick" id="settings-color">
