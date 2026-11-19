@@ -1154,8 +1154,10 @@ func TestBrowserOrgSheet(t *testing.T) {
 	b.until("show Wall view", `document.querySelector("#org-sheet-section-wall").classList.contains("current")`,
 		chromedp.Click(chromedp.ID("org-sheet-rail-wall")))
 	b.waitJS("the wall link", `document.querySelector("#wall-link")?.textContent.includes("/wall")`)
-	b.do("close Organization", chromedp.Click(chromedp.CSS(`#org-sheet .sheet-head button`)))
-	b.waitJS("closed", `!document.querySelector("#org-sheet").open`)
+	// Clicked until closed: a click lost while the sheet settles leaves it
+	// open (modal), and it takes every click after.
+	b.until("close Organization", `!document.querySelector("#org-sheet").open`,
+		chromedp.Click(chromedp.CSS(`#org-sheet .sheet-head button`)))
 	b.waitJS("Account has no wall view or Claude status", `!document.querySelector("#account-sheet .rail-item[data-rail=wall], #account-sheet .rail-item[data-rail=claudestatus]")`)
 	b.waitJS("the project menu's pause says it is this project's", `document.querySelector("#pm-pause").textContent.includes("this project")`)
 	b.waitJS("no Pause queue in Claude usage", `!document.querySelector("#usage-sheet #queue-toggle")`)
