@@ -109,7 +109,7 @@ function paletteCommands() {
     desktop.matches && [sideCollapsed() ? "Expand sidebar" : "Collapse sidebar", "minimize", () => setSideCollapsed(!sideCollapsed()), "[", "sidebar"],
     ["Refresh projects", "redo", loadProjects, ":refresh", "reload"],
     ["Keyboard shortcuts", "code", openKeys, "?", "help keys"],
-    ["Log out", "logout", logout, "", "sign out"],
+    ["Sign out", "logout", logout, "", "log out"],
   ].filter(Boolean).map(([label, icon, run, keys, words]) => ({ kind: "Command", label, icon, run, keys, text: `${label} ${words}` }));
 }
 

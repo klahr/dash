@@ -64,7 +64,7 @@ function connectEvents(m) {
     if (sockets.get(m.name) !== sock) return; // replaced: its successor is already connecting
     sock.live = false;
     refreshLive();
-    // Logged out: go to the login page. Server down or restarting: keep trying.
+    // Signed out: go to the login page. Server down or restarting: keep trying.
     const me = await fetch("/api/me").catch(() => null);
     if (me?.status === 401) { signIn(); return; }
     // A runner that went offline or was revoked is reconnected by

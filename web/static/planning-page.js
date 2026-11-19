@@ -3,7 +3,7 @@
 // as in the app's Planning view. This page adds the app's shell around it:
 // the sidebar on desktop (which the menu button collapses to its icons) and
 // the menu drawer on a phone, with Planning as the one section and the
-// account menu at the bottom (Account, org switch, Log out). It also keeps
+// account menu at the bottom (Account, org switch, Sign out). It also keeps
 // the live updates, whose stream sends a planner Planning's events only.
 // Anyone else is sent to the app, on its Planning view.
 import { $, $$, h, ico } from "./app/dom.js";

@@ -254,6 +254,13 @@ const np = { nameAuto: "", runsOnAuto: "", created: null, run: null };
 // labels, so it runs where its owner set them up, or "any" (any runner) while
 // it has none.
 const defaultRunsOn = (r) => r?.labels?.length ? r.labels : [LABEL_ANY];
+// runsOnText names the runners a project with these labels runs on, for a
+// hint: "any runner" for "any" alone, else "runners labelled gpu, linux".
+function runsOnText(labels) {
+  const named = labels.filter((l) => l.toLowerCase() !== LABEL_ANY);
+  if (!labels.length) return "no runner";
+  return named.length ? `runners labelled ${named.join(", ")}` : "any runner";
+}
 // The runner picked in the sheet, from state.runners.
 function sheetRunner() {
   const name = $("#new-project").machine.value;
@@ -361,8 +368,10 @@ function syncHubMode() {
       { lead: "Deploys on", none: "No runner above has these labels: deploys fail." });
   }
   hint.textContent = why || (mode === "local" ? "" : servesProject(r, { runs_on: runsOn })
-    ? `${where} clones it into its projects folder. It runs on runners with ${runsOn.join(", ")} (Advanced).`
-    : `It runs on runners with ${runsOn.join(", ") || "no labels"} (Advanced), which ${where} lacks: one of them clones it when it first gets work.`);
+    ? `${where} clones it into its projects folder. It runs on ${runsOnText(runsOn)} (Advanced).`
+    : runsOn.length
+      ? `It runs on ${runsOnText(runsOn)} (Advanced), which ${where} lacks: one of them clones it when it first gets work.`
+      : "It runs on no runner until you give it labels (Advanced).");
   hint.hidden = !hint.textContent || (mode === "gh" && !r?.mine);
   $("#new-project-github-hint").textContent = `An empty ${f.github_public.checked ? "public" : "private"} repository, created with ${where}'s GitHub login.`;
   $("#new-project-github-hint").hidden = !!why;

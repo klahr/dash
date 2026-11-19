@@ -128,7 +128,7 @@ A planner can:
 - see each card's linked work through its status and titles
 - use their own account: the account menu at the bottom of the sidebar (in the menu on a phone)
   switches orgs, and has **Account** (**Profile picture**, **Two-factor sign-in**, **Google
-  account** and **Your data**) and **Log out**
+  account** and **Your data**) and **Sign out**
 
 A planner can't see or use projects, tasks, goals, chats, terminals, runners, previews,
 scans, issues, the MCP tools or the organization's members. Every such request answers
