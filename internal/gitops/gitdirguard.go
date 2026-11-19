@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/klahr/dash/internal/fsutil"
 )
 
 // safeConfig is set for every git Dash runs, the way -c is: it wins over
@@ -76,7 +78,7 @@ func CheckGitDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrGitDir, err)
 	}
-	if within(wt, gitdir) {
+	if fsutil.Within(wt, gitdir) {
 		return fmt.Errorf("%w: %s is inside the worktree", ErrGitDir, gitdir)
 	}
 	c, err := os.ReadFile(filepath.Join(gitdir, "commondir"))
@@ -90,7 +92,7 @@ func CheckGitDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrGitDir, err)
 	}
-	if within(wt, common) || filepath.Dir(gitdir) != filepath.Join(common, "worktrees") {
+	if fsutil.Within(wt, common) || filepath.Dir(gitdir) != filepath.Join(common, "worktrees") {
 		return fmt.Errorf("%w: %s", ErrGitDir, gitdir)
 	}
 	back, err := os.ReadFile(filepath.Join(gitdir, "gitdir"))
@@ -112,12 +114,6 @@ func resolve(base, p string) (string, error) {
 		p = filepath.Join(base, p)
 	}
 	return filepath.EvalSymlinks(p)
-}
-
-// within reports whether p is dir or inside it (both cleaned, absolute).
-func within(dir, p string) bool {
-	rel, err := filepath.Rel(dir, p)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
 // GitDirState is what decides which git metadata git uses in dir: its .git
