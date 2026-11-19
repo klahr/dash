@@ -53,8 +53,10 @@ func (p Project) Command(kind string) string {
 		return p.RunCommand
 	case CmdTest:
 		return p.TestCommand
+	// Every environment's commands as one: changing any of them changes
+	// what a runner must have approved.
 	case CmdDeploy:
-		return p.DeployCommand
+		return DeployScripts(p.Environments)
 	case CmdSetup:
 		return p.SetupCommand
 	case CmdPreview:
@@ -71,7 +73,14 @@ func (p *Project) SetCommand(kind, cmd string) {
 	case CmdTest:
 		p.TestCommand = cmd
 	case CmdDeploy:
-		p.DeployCommand = cmd
+		// Only to hold them all (cmd ""): an environment's commands are
+		// set with the environment.
+		if cmd == "" {
+			p.Environments = CloneEnvironments(p.Environments) // shared with the stored copy
+			for i := range p.Environments {
+				p.Environments[i].DeployCommand, p.Environments[i].BuildCommand = "", ""
+			}
+		}
 	case CmdSetup:
 		p.SetupCommand = cmd
 	case CmdPreview:
@@ -91,13 +100,6 @@ func (p Project) CommandApproved(kind string, owner int64, shared bool) bool {
 // Held is, on a runner, why p's command of kind may not run here ("": it
 // may).
 func (p Project) Held(kind string) string { return p.HeldCommands[kind] }
-
-// DeploysOn reports whether a runner with the labels have may run p's
-// deploy command: p names no labels for it (DeployRunsOn), or have has
-// every one of them.
-func (p Project) DeploysOn(have []string) bool {
-	return len(p.DeployRunsOn) == 0 || LabelsMatch(have, p.DeployRunsOn)
-}
 
 // CleanScript puts a multi-line command (a bash script) in its stored
 // form: Windows line ends become "\n", so bash doesn't see a stray "\r"

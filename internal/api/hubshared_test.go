@@ -199,7 +199,14 @@ func TestRunnerRefusesOthersWorkUnlessShared(t *testing.T) {
 		return w
 	}
 	allowed = errors.New("its hub doesn't have Take other members' tasks on for it")
-	if w := proc(99, "deploy"); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "Take other members' tasks") {
+	if w := proc(99, "run"); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "Take other members' tasks") {
+		t.Errorf("another member's run: %d %s", w.Code, w.Body)
+	}
+	dr := httptest.NewRequest("POST", "/api/hub/projects/hub-p1/deploys", strings.NewReader(`{"id":"d1","environment":"production"}`))
+	dr.Header.Set("Content-Type", "application/json")
+	dr.Header.Set(tunnel.UserHeader, "99")
+	if w := httptest.NewRecorder(); func() bool { h.ServeHTTP(w, dr); return true }() &&
+		(w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "Take other members' tasks")) {
 		t.Errorf("another member's deploy: %d %s", w.Code, w.Body)
 	}
 	if w := proc(runnerOwnerID, "test"); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "last changed by c") {

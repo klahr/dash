@@ -32,6 +32,7 @@ import { pane, paneOverlays, projectChatFor, toggleChatPane, togglePin } from ".
 import { attached, openShell, shellBlocked, startProc, techFor, term } from "./terminal.js";
 import { closeCommit, commitScroller, moveCommit, stepCommitFile } from "./history.js";
 import { closeGoal, gp, openGoalSheet, stepGoal } from "./goals.js";
+import { closeDeploy, dp, stepDeploy } from "./deploys.js";
 import { cardOpen, closeCard } from "./planning.js";
 import { checklistKey } from "./checklist.js";
 import { focusTry, openTry } from "./try.js";
@@ -88,7 +89,8 @@ function paletteCommands() {
     p && ["Project settings", "settings", openSettings, ":settings", "configure commands"],
     p?.run_command && [serve.label || "Run", serve.icon || "play", () => startProc({ kind: "web", preset: "run" }), "R", `run web ${serve.icon || ""}`],
     p?.test_command && ["Run tests", "check", () => startProc({ kind: "task", preset: "test" }), "T", "test"],
-    p?.deploy_command && [deploy.label || "Deploy", deploy.icon || "rocket", () => startProc({ kind: "task", preset: "deploy" }), "D", `release ship ${deploy.icon || ""}`],
+    ["Deploys", "rocket", go("deploys"), "gd", "deploy environments production staging live release ship"],
+    p?.environments?.length && [deploy.label || "Deploy", deploy.icon || "rocket", go("deploys"), "D", `release ship environment `],
     p && !shellBlocked(p) && ["Open a shell", "terminal", () => openShell(), "!", "terminal pty"],
     p && state.unpushed > 0 && ["Push merged work", "push", pushDone, ":push", "git"],
     p && [p.paused ? "Resume this project" : "Pause this project", p.paused ? "play" : "pause", toggleProjectPause, "", "pause stop hold tasks"],
@@ -369,6 +371,7 @@ async function handleNormal(k, n, hadCount) {
     case "gs": return showView("run");
     case "gh": return showView("history");
     case "go": return showView("goals");
+    case "gd": return showView("deploys");
     case "gf": return showView("files");
     case "gl": return showView("checklist");
     case "gp": return showView("planning");
@@ -384,6 +387,7 @@ async function handleNormal(k, n, hadCount) {
       if (state.detail) return closeDetail();
       if (cp.sha) return closeCommit();
       if (gp.open) return closeGoal();
+      if (dp.open) return closeDeploy();
       if (cardOpen()) return closeCard();
       return;
     // Permission requests: y allow, A always allow, X deny. (Not n: n is
@@ -459,7 +463,7 @@ async function handleNormal(k, n, hadCount) {
         case "x": if (cur?.running) { await api("DELETE", `/api/processes/${cur.id}`); toast("Stopping"); } return;
         case "R": return startProc({ kind: "web", preset: "run" });
         case "T": return startProc({ kind: "task", preset: "test" });
-        case "D": return startProc({ kind: "task", preset: "deploy" });
+        case "D": return showView("deploys");
         case "!": return openShell();
       }
       return;
@@ -485,6 +489,13 @@ async function handleNormal(k, n, hadCount) {
         case "k": case "ArrowUp": return stepGoal(-n);
       }
       if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(gp.open ? $("#gd-body") : scroller(), k, n);
+      return;
+    case "deploys":
+      switch (k) {
+        case "j": case "ArrowDown": return stepDeploy(n);
+        case "k": case "ArrowUp": return stepDeploy(-n);
+      }
+      if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(dp.open ? $("#dd-body") : scroller(), k, n);
       return;
     case "checklist":
       return checklistKey(k, n, hadCount);

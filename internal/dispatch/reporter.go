@@ -35,6 +35,9 @@ type Reporter struct {
 	// Disk measures the runner's free disk space for every report
 	// (disk.Monitor.Status; optional).
 	Disk func() disk.Status
+	// EnvFiles lists the environments the runner has a secrets file for
+	// (deploy.EnvFiles; optional): the names go in every report.
+	EnvFiles func() []string
 	// Send posts the report (tunnel.Report with the runner's credentials).
 	Send func(ctx context.Context, r Report) error
 	// Every is the heartbeat (default 30s).
@@ -272,6 +275,9 @@ func (r *Reporter) Build(now time.Time) Report {
 	if r.Disk != nil {
 		d := r.Disk()
 		rep.Disk = &d
+	}
+	if r.EnvFiles != nil {
+		rep.EnvFiles = r.EnvFiles()
 	}
 	live := r.takeLive()
 	rep.Pushes = r.takePushes()

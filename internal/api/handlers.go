@@ -81,13 +81,18 @@ var colorRe = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 
 // projectRequest is the body of POST /api/projects.
 type projectRequest struct {
-	Name           string   `json:"name"`
-	Path           string   `json:"path"` // optional: adopt an existing directory/repo
-	DefaultBranch  string   `json:"default_branch"`
-	RunCommand     string   `json:"run_command"`
-	TestCommand    string   `json:"test_command"`
+	Name          string `json:"name"`
+	Path          string `json:"path"` // optional: adopt an existing directory/repo
+	DefaultBranch string `json:"default_branch"`
+	RunCommand    string `json:"run_command"`
+	TestCommand   string `json:"test_command"`
+	// Environments are where it deploys (model.Project.Environments).
+	Environments []model.Environment `json:"environments"`
+	// DeployCommand and DeployRunsOn are a shorthand for one environment,
+	// "production", that deploys with the command on the runners with the
+	// labels (as projects were made before environments).
 	DeployCommand  string   `json:"deploy_command"`
-	DeployRunsOn   []string `json:"deploy_runs_on"` // on the hub: see model.Project.DeployRunsOn
+	DeployRunsOn   []string `json:"deploy_runs_on"`
 	SetupCommand   string   `json:"setup_command"`
 	PreviewKind    string   `json:"preview_kind"`    // "web" (default) | "terminal"
 	PreviewCommand string   `json:"preview_command"` // terminal previews: runs in the worktree
@@ -136,8 +141,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.PreviewKind, req.PreviewCommand = kind, strings.TrimSpace(req.PreviewCommand)
-	req.DeployCommand = model.CleanScript(req.DeployCommand)
-	if req.DeployRunsOn, err = sv.checkDeployRunsOn(req.DeployRunsOn); err != nil {
+	if req.Environments, err = sv.requestEnvironments(req); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -205,9 +209,9 @@ func newProjectFromRequest(req projectRequest, base model.Project, gh bool) (mod
 	np := base
 	np.Name = strings.TrimSpace(req.Name)
 	np.DefaultBranch = cmp.Or(req.DefaultBranch, "main")
-	np.RunCommand, np.TestCommand, np.DeployCommand, np.SetupCommand = req.RunCommand, req.TestCommand, req.DeployCommand, req.SetupCommand
+	np.RunCommand, np.TestCommand, np.SetupCommand = req.RunCommand, req.TestCommand, req.SetupCommand
 	np.PreviewKind, np.PreviewCommand = req.PreviewKind, req.PreviewCommand
-	np.DeployRunsOn = req.DeployRunsOn
+	np.Environments = model.CloneEnvironments(req.Environments)
 	np.CopyFiles = cleanList(req.CopyFiles)
 	np.MaxAutoFixes = model.DefaultMaxAutoFixes
 	if req.MaxAutoFixes != nil {
@@ -261,7 +265,7 @@ func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
 	// Who set its commands: a runner runs them only if they are approved
 	// for it (model.Project.CommandApproved).
 	sv.recordCommands(&np, model.Project{}, projectUpdate{RunCommand: &np.RunCommand, TestCommand: &np.TestCommand,
-		DeployCommand: &np.DeployCommand, DeployRunsOn: &np.DeployRunsOn, SetupCommand: &np.SetupCommand, PreviewCommand: &np.PreviewCommand})
+		Environments: &np.Environments, SetupCommand: &np.SetupCommand, PreviewCommand: &np.PreviewCommand})
 	return sv.data.CreateProject(np)
 }
 
@@ -269,19 +273,14 @@ func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
 // sends (model.Project.CommandsBy): a command that changed from cur's is
 // the caller's now; one sent unchanged is approved by them for their own
 // runners (an org admin's for all of them). A command no one recorded
-// (from before) stays as it is. The labels the deploy command runs on are
-// part of it: changing them changes the deploy command, as they pick the
-// runners it runs on.
+// (from before) stays as it is. The environments are the deploy command
+// (model.DeployScripts): changing one, or the labels it runs on, changes it.
 func (sv *service) recordCommands(p *model.Project, cur model.Project, req projectUpdate) {
 	if !sv.s.hub() || sv.c.User == 0 {
 		return
 	}
-	sent := map[string]*string{model.CmdRun: req.RunCommand, model.CmdTest: req.TestCommand, model.CmdDeploy: req.DeployCommand,
+	sent := map[string]*string{model.CmdRun: req.RunCommand, model.CmdTest: req.TestCommand, model.CmdDeploy: req.deployScripts(),
 		model.CmdSetup: req.SetupCommand, model.CmdPreview: req.PreviewCommand}
-	deployMoved := req.DeployRunsOn != nil && !model.SameLabels(*req.DeployRunsOn, cur.DeployRunsOn)
-	if deployMoved && req.DeployCommand == nil {
-		sent[model.CmdDeploy] = &cur.DeployCommand
-	}
 	admin, name := sv.s.orgAdmin(sv.c), ""
 	if u, err := sv.s.Store.Accounts().User(sv.c.User); err == nil {
 		name = u.Username
@@ -292,7 +291,7 @@ func (sv *service) recordCommands(p *model.Project, cur model.Project, req proje
 		if v == nil {
 			continue
 		}
-		changed := strings.TrimSpace(*v) != strings.TrimSpace(cur.Command(kind)) || kind == model.CmdDeploy && deployMoved
+		changed := strings.TrimSpace(*v) != strings.TrimSpace(cur.Command(kind))
 		by, known := out[kind]
 		switch {
 		case strings.TrimSpace(*v) == "":
@@ -416,15 +415,13 @@ const maxTaskInstructions = 32 << 10
 
 // projectUpdate is a change to a project's settings; nil fields stay.
 type projectUpdate struct {
-	Name          *string `json:"name"`
-	RunCommand    *string `json:"run_command"`
-	TestCommand   *string `json:"test_command"`
-	DeployCommand *string `json:"deploy_command"`
-	// DeployRunsOn are, on the hub, the runner labels the deploy command
-	// runs on (replaces them; [] deploys on any of the project's runners).
-	// See model.Project.DeployRunsOn.
-	DeployRunsOn *[]string `json:"deploy_runs_on"`
-	SetupCommand *string   `json:"setup_command"`
+	Name        *string `json:"name"`
+	RunCommand  *string `json:"run_command"`
+	TestCommand *string `json:"test_command"`
+	// Environments replace the project's environments (model.Environment):
+	// where it deploys, how, and on which runners.
+	Environments *[]model.Environment `json:"environments"`
+	SetupCommand *string              `json:"setup_command"`
 	// PreviewKind is "web" (run_command, proxied) or "terminal"
 	// (preview_command, or a shell, in a terminal in the worktree).
 	PreviewKind    *string   `json:"preview_kind"`
@@ -487,9 +484,8 @@ func (sv *service) checkCommandChange(cur model.Project, req projectUpdate, runn
 	}
 	changed := func(v *string, was string) bool { return v != nil && strings.TrimSpace(*v) != strings.TrimSpace(was) }
 	if !changed(req.RunCommand, cur.RunCommand) && !changed(req.TestCommand, cur.TestCommand) &&
-		!changed(req.DeployCommand, cur.DeployCommand) && !changed(req.SetupCommand, cur.SetupCommand) &&
-		!changed(req.PreviewCommand, cur.PreviewCommand) &&
-		(req.DeployRunsOn == nil || model.SameLabels(*req.DeployRunsOn, cur.DeployRunsOn)) {
+		!changed(req.deployScripts(), cur.Command(model.CmdDeploy)) && !changed(req.SetupCommand, cur.SetupCommand) &&
+		!changed(req.PreviewCommand, cur.PreviewCommand) {
 		return nil
 	}
 	for _, run := range runners {
@@ -601,15 +597,12 @@ func (sv *service) normalizeProjectUpdate(ctx context.Context, req *projectUpdat
 		}
 		*req.TagFormat = f.String()
 	}
-	if req.DeployCommand != nil {
-		*req.DeployCommand = model.CleanScript(*req.DeployCommand)
-	}
-	if req.DeployRunsOn != nil {
-		labels, err := sv.checkDeployRunsOn(*req.DeployRunsOn)
+	if req.Environments != nil {
+		envs, err := sv.checkEnvironments(*req.Environments)
 		if err != nil {
 			return err
 		}
-		req.DeployRunsOn = &labels
+		req.Environments = &envs
 	}
 	if req.CloneURL != nil {
 		if !sv.s.hub() {
@@ -645,9 +638,8 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	set(&p.Name, req.Name)
 	set(&p.RunCommand, req.RunCommand)
 	set(&p.TestCommand, req.TestCommand)
-	set(&p.DeployCommand, req.DeployCommand)
-	if req.DeployRunsOn != nil {
-		p.DeployRunsOn = *req.DeployRunsOn
+	if req.Environments != nil {
+		p.Environments = model.CloneEnvironments(*req.Environments)
 	}
 	set(&p.SetupCommand, req.SetupCommand)
 	set(&p.PreviewKind, req.PreviewKind)
@@ -1604,11 +1596,16 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 	// project path, which isn't this clone's.
 	o := runner.Origin{Main: req.TodoID == ""}
 	if req.Command == "" {
+		if req.Preset == model.CmdDeploy {
+			// A deploy is a deploy record now, to one of the environments.
+			writeErr(w, fmt.Errorf("%w: deploy to an environment from the Deploys page (POST /api/projects/{id}/deploys)", errBadRequest))
+			return
+		}
 		if why := p.Held(req.Preset); why != "" {
 			writeError(w, http.StatusForbidden, why)
 			return
 		}
-		req.Command = map[string]string{"run": p.RunCommand, "test": p.TestCommand, "deploy": p.DeployCommand}[req.Preset]
+		req.Command = map[string]string{"run": p.RunCommand, "test": p.TestCommand}[req.Preset]
 		if req.Command != "" {
 			o.Preset = req.Preset
 		}

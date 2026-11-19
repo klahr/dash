@@ -87,6 +87,8 @@ type snapshot struct {
 	// coordinators' conversations.
 	Goals     map[string]*model.Goal         `json:"-"`
 	GoalChats map[string][]model.ChatMessage `json:"-"`
+	// Deploys are the projects' deploys, keyed by id, without their logs.
+	Deploys map[string]*model.Deploy `json:"-"`
 }
 
 type Store struct {
@@ -161,7 +163,8 @@ func open(db *sql.DB, path string, pub Publisher) (*Store, error) {
 	}
 	var projects []*model.Project
 	for _, p := range s.data.Projects {
-		if clean := CleanPath(p.Path); clean != p.Path {
+		moved := p.MigrateDeploy() // a state.json's: the SQL migration ran before it was imported
+		if clean := CleanPath(p.Path); clean != p.Path || moved {
 			p.Path = clean
 			projects = append(projects, p)
 		}
@@ -433,6 +436,11 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 			delete(s.data.GoalChats, gid)
 		}
 	}
+	for did, d := range s.data.Deploys {
+		if d.ProjectID == id {
+			delete(s.data.Deploys, did)
+		}
+	}
 	delete(s.data.Projects, id)
 	for owner := range s.data.ProjectChats {
 		if strings.HasPrefix(owner, id+":") {
@@ -451,7 +459,7 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 			}
 		}
 		for _, table := range []string{"todos", "issues", "scan_runs", "scan_settings", "scan_templates", "webhooks",
-			"tracker_projects", "tracker_links", "project_events", "goals"} {
+			"tracker_projects", "tracker_links", "project_events", "goals", "deploys"} {
 			if _, err := tx.Exec("DELETE FROM "+table+" WHERE project_id = ?", id); err != nil {
 				return err
 			}

@@ -2,7 +2,7 @@ import { h, ico } from "./dom.js";
 import { state } from "./state.js";
 import { LABEL_ANY, parseLabels, runnerLabels } from "../groups.js";
 
-// Runner labels picked as chips (Runs on, Deploy runs on, a runner's own
+// Runner labels picked as chips (Runs on, an environment's Runs on, a runner's own
 // labels): the labels that exist in the org are offered below the field,
 // and a new one can still be typed (Enter, comma or space adds it). The
 // picked labels live in a hidden input, comma-separated, so a form reads
@@ -21,7 +21,7 @@ export function knownLabels({ any = false } = {}) {
   const seen = new Map();
   const add = (l) => { if (l && !isAny(l) && !seen.has(lower(l))) seen.set(lower(l), l); };
   for (const r of state.runners || []) runnerLabels(r).forEach(add);
-  for (const p of state.projects || []) [...(p.runs_on || []), ...(p.deploy_runs_on || [])].forEach(add);
+  for (const p of state.projects || []) [...(p.runs_on || []), ...(p.environments || []).flatMap((e) => e.runs_on || [])].forEach(add);
   const list = [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
   return any ? [LABEL_ANY, ...list] : list;
 }

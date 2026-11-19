@@ -67,8 +67,9 @@ Listing and creating repositories use the runner owner's GitHub login, so only t
 can use those two (anyone can paste a URL); the hub has no GitHub login of its own. The **Name**
 shows once there is a repository, filled in with the repository's (change it to show the project
 under another name; Local only needs one). **Advanced** holds the [clone URL](#how-a-runner-reaches-github)
-and the start server, test and deploy commands, and **Deploy runs on** (see
-[Where deploys run](#where-deploys-run)); the commands can be set later in Project settings too. The button says what it will do (**Add owner/repo**, **Create repository and add**, **Add
+and the start server, test and deploy commands, and **Deploy runs on** (the deploy command becomes
+the environment `production`, see [Where deploys run](#where-deploys-run)); the commands and
+environments can be set later in Project settings too. The button says what it will do (**Add owner/repo**, **Create repository and add**, **Add
 project**, **Create local project**) and stays disabled until the choice has what it needs.
 
 Once you click it, the dialog shows the steps as they go: **Creating GitHub repository** (for a
@@ -436,25 +437,26 @@ only those, and a runner that was given `self-hosted` by hand loses it.
 
 ### Where deploys run
 
-By default **Deploy** runs on any runner the project runs on. To keep deploys to some of them (the
-one with the signing keys, or the one in the office network), give those runners a label of their
-own, such as `production`, and pick it in **Project settings → Commands → Deploy runs on**, beside
-the deploy command. A runner deploys only if it has every one of these labels, as well as the
-labels the project runs on. Below the field, the runners that would deploy show as you pick.
-**Add project → Advanced** has the same field.
+Each [environment](deploys.md) of a project deploys on any runner the project runs on, by default.
+To keep an environment's deploys to some of them (the one with the signing keys, or the one in the
+office network), give those runners a label of their own, such as `prod`, and pick it in the
+environment's **Runs on** in **Project settings → Deploy**. A runner deploys there only if it has
+every one of these labels, as well as the labels the project runs on. Below the field, the runners
+that would deploy show as you pick, with a warning when none of them has the environment's secrets
+file (`~/.dash/env/<environment>.env`, see [Secrets](deploys.md#secrets)).
 
-- **Deploy** (the button, `D` on the Shell page and in `dash-tui`) goes to an online runner with
-  those labels. If none has them, it fails with "no runner of this project has the labels it
+- **Deploy** (on the **Deploys** page) goes to an online runner with those labels that works for
+  you. If none has them, the deploy fails with "no runner of this project has the labels …
   deploys on"; if all of them are offline, it fails and names them. It never runs elsewhere.
-- A runner without the labels refuses to deploy even when asked: the hub holds the deploy command
-  back from it, as it does an [unapproved command](#project-commands-need-approval).
-- Empty, or `any`, deploys on any runner the project runs on, as before.
-- Changing the labels counts as changing the deploy command: only those who may change the
-  commands may change them (see [Project commands need approval](#project-commands-need-approval)).
+- A runner without the labels refuses to deploy there even when asked: the hub holds that
+  environment's commands back from it, as it does an [unapproved command](#project-commands-need-approval).
+- Empty, or `any`, deploys on any runner the project runs on.
+- Changing an environment, its labels included, counts as changing the deploy command: only those
+  who may change the commands may change it (see [Project commands need approval](#project-commands-need-approval)).
 
-The API field is `deploy_runs_on`, a list of labels (`[]` for none), on `PATCH
-/api/projects/{id}` and the `update_project` tool. A Dash that isn't a hub deploys on its own
-computer and refuses the field.
+The API field is `environments` on `PATCH /api/projects/{id}` and the `update_project` tool, each
+with its `runs_on`, a list of labels (`[]` for none). A Dash that isn't a hub deploys on its own
+computer and refuses labels.
 
 ### Whose work a runner does
 
@@ -546,8 +548,8 @@ each command. A runner runs a command only if an org admin set it, the runner's 
 was there before this rule, or the runner is a shared runner. Otherwise the step fails and says who
 changed the command: an org admin or the runner's owner must approve it with **Approve commands**
 in **Project settings → Commands**, shown while a command waits for them. An admin's approval counts
-for every runner, an owner's for their own runners. Changing **Deploy runs on** changes the deploy command too, since it
-picks the runners the command runs on.
+for every runner, an owner's for their own runners. The deploy command is all of the project's
+[environments](deploys.md): changing one, or the labels it runs on, changes it.
 
 #### Runners from before this rule
 
@@ -599,7 +601,7 @@ connection, to the clone of one of the project's runners that is online:
   (made and pushed by the runner), the default branch's state against origin, **Push**, pull
   requests from the working branch, release tags (**Tag release…** and the `create_release` tool);
 - the file browser and the `CLAUDE.md` and settings files;
-- the project's commands: **Run**, **Test** and **Deploy**, also in a task's worktree (they run on
+- the project's commands: **Run** and **Test**, also in a task's worktree (they run on
   that task's runner), for any member of the org. The runner always takes the shared project's
   commands from the hub (set in its settings on the hub), each time it takes the project up. Only an
   org admin, or the owner of every runner the project runs on, can change those commands;
@@ -787,8 +789,8 @@ one with the runner's own projects, and everything inside `<-projects>/<org>/` i
   checked-out branch of that folder. So while it has uncommitted changes to tracked files, a task
   you approved waits ("Waiting for you to commit or stash …") and lands once you commit or stash
   them; nothing is pushed meanwhile and your changes are never overwritten. Starting the project's
-  run or test command there warns about them; its deploy command is refused until they are
-  committed. Switching the working branch only makes branches; it doesn't touch the folder.
+  run or test command there warns about them. Deploys never run in it: they run in a checkout of
+  their own ([Where it runs](deploys.md#where-it-runs)). Switching the working branch only makes branches; it doesn't touch the folder.
 - **Clones from before, straight in `<-projects>/`** or in `<-projects>/<org>/` without the
   owner's folder, move into the owner's folder on their own, with the release that brings this: on the runner's start, or at the hub's next link
   of the project (before each task it sends, and whenever the hub shows its files, branches or

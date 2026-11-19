@@ -58,25 +58,18 @@ func (sv *service) projectRunnerFor(ctx context.Context, p model.Project, prefer
 	return sv.projectRunnerAmong(ctx, p, sv.s.onlineRunners(p), prefer, users)
 }
 
-// deployRunnerFor is projectRunnerFor for p's deploy command: among the
-// runners with every label it deploys on (model.Project.DeployRunsOn). With
-// none of them online, it fails saying so; the deploy never goes to
-// another runner.
-func (sv *service) deployRunnerFor(ctx context.Context, p model.Project, prefer string, users []int64) (tunnel.Runner, string, error) {
-	if len(p.DeployRunsOn) == 0 {
-		return sv.projectRunnerFor(ctx, p, prefer, users)
+// deployRunnerFor picks the runner that deploys p to e: among p's runners
+// with every label e deploys on (model.Environment.RunsOn), online, that
+// do work for users (nil: any). With none of them online it fails saying
+// so; a deploy never goes to another runner.
+func (sv *service) deployRunnerFor(ctx context.Context, p model.Project, e model.Environment, users []int64) (tunnel.Runner, string, error) {
+	all := slices.DeleteFunc(sv.s.projectRunners(p), func(r tunnel.Runner) bool { return !r.Deploys(p, e) })
+	if len(e.RunsOn) == 0 {
+		return sv.projectRunnerAmong(ctx, p, sv.s.onlineRunners(p), "", users)
 	}
-	labels := strings.Join(p.DeployRunsOn, ", ")
-	all := slices.DeleteFunc(sv.s.projectRunners(p), func(r tunnel.Runner) bool { return !r.Deploys(p) })
+	labels := strings.Join(e.RunsOn, ", ")
 	if len(all) == 0 {
-		return tunnel.Runner{}, "", fmt.Errorf("%w: no runner of this project has the labels it deploys on (%s): give one those labels in Runners, or change them in Project settings → General → Deploy runs on", errBadRequest, labels)
-	}
-	if prefer != "" && !slices.ContainsFunc(all, func(r tunnel.Runner) bool { return r.ID == prefer }) {
-		name := prefer
-		if r, ok := sv.s.fleet().Get(prefer); ok {
-			name = r.Name
-		}
-		return tunnel.Runner{}, "", fmt.Errorf("%w: this project deploys only on runners with the labels %s, and %s lacks them", errBadRequest, labels, name)
+		return tunnel.Runner{}, "", fmt.Errorf("%w: no runner of this project has the labels %s deploys on (%s): give one those labels in Runners, or change them in Project settings → Deploy", errBadRequest, e.Name, labels)
 	}
 	online := slices.DeleteFunc(slices.Clone(all), func(r tunnel.Runner) bool { return !r.Online })
 	if len(online) == 0 {
@@ -84,9 +77,9 @@ func (sv *service) deployRunnerFor(ctx context.Context, p model.Project, prefer 
 		for i, r := range all {
 			names[i] = r.Name
 		}
-		return tunnel.Runner{}, "", fmt.Errorf("%w (it deploys only on runners with the labels %s: %s, all offline)", errNoRunnerOnline, labels, strings.Join(names, ", "))
+		return tunnel.Runner{}, "", fmt.Errorf("%w (%s deploys only on runners with the labels %s: %s, all offline)", errNoRunnerOnline, e.Name, labels, strings.Join(names, ", "))
 	}
-	return sv.projectRunnerAmong(ctx, p, online, prefer, users)
+	return sv.projectRunnerAmong(ctx, p, online, "", users)
 }
 
 // projectRunnerAmong is projectRunnerFor among cands, p's online runners
@@ -556,12 +549,12 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 			}
 		}
 	}
-	pick := sv.projectRunnerFor
 	if preset, _ := req["preset"].(string); preset == model.CmdDeploy && !pty {
-		// A deploy runs only on a runner with the labels it deploys on.
-		pick = sv.deployRunnerFor
+		// A deploy is a deploy record now (deploys.go), never a process.
+		writeErr(w, fmt.Errorf("%w: deploy to an environment from the Deploys page (POST /api/projects/{id}/deploys)", errBadRequest))
+		return
 	}
-	run, rpid, err := pick(r.Context(), p, prefer, users)
+	run, rpid, err := sv.projectRunnerFor(r.Context(), p, prefer, users)
 	if err != nil {
 		writeErr(w, err)
 		return

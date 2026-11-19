@@ -135,11 +135,37 @@ func (r Runner) Serves(p model.Project) bool {
 	return r.OrgID() != 0 && r.OrgID() == p.OrgID && model.LabelsMatch(r.AllLabels(), p.RunsOn)
 }
 
-// Deploys reports whether the runner runs hub project p's deploy command:
-// it works on p and has every label p deploys on
-// (model.Project.DeploysOn).
-func (r Runner) Deploys(p model.Project) bool {
-	return r.Serves(p) && p.DeploysOn(r.AllLabels())
+// Deploys reports whether the runner runs hub project p's deploys to e:
+// it works on p and has every label e deploys on
+// (model.Environment.DeploysOn).
+func (r Runner) Deploys(p model.Project, e model.Environment) bool {
+	return r.Serves(p) && e.DeploysOn(r.AllLabels())
+}
+
+// cleanEnvFiles keeps the environment names a runner reports that could
+// name an environment, sorted, each once, at most a few dozen.
+func cleanEnvFiles(names []string) []string {
+	var out []string
+	for _, n := range names {
+		if model.ValidEnvName(n) && !slices.Contains(out, n) && len(out) < 64 {
+			out = append(out, n)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+func prevEnvFiles(r *Reported) []string {
+	if r == nil {
+		return nil
+	}
+	return r.EnvFiles
+}
+
+// HasEnvFile reports whether the runner said it has a secrets file for
+// environment env (~/.dash/env/<env>.env). The hub never sees what is in it.
+func (r Runner) HasEnvFile(env string) bool {
+	return r.Reported != nil && slices.Contains(r.Reported.EnvFiles, env)
 }
 
 // Serving are the runners in list that work on p (Runner.Serves).
@@ -193,7 +219,10 @@ type Reported struct {
 	// Disk is its free disk space, the largest folders in its cache folder
 	// when that is low, and its Go build cache (nil from an older runner).
 	Disk *disk.Status `json:"disk,omitempty"`
-	At   time.Time    `json:"at"`
+	// EnvFiles are the environments it has a secrets file for
+	// (~/.dash/env/<name>.env): the names only, never what is in them.
+	EnvFiles []string  `json:"env_files,omitempty"`
+	At       time.Time `json:"at"`
 }
 
 // record is a runner in runners.json. Its token is in the token table
@@ -977,6 +1006,7 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		ChatCommands bool              `json:"chat_commands"`
 		Claude       *claudecli.Status `json:"claude"`
 		Disk         *disk.Status      `json:"disk"`
+		EnvFiles     []string          `json:"env_files"`
 	}
 	if err := json.Unmarshal(body, &self); err != nil {
 		httpjson.Error(w, http.StatusBadRequest, "bad request")
@@ -995,7 +1025,7 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 	}
 	self.Claude, self.Usage = carryOver(prev, self.Claude, self.Usage, h.clock())
 	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, Terminals: self.Terminals, ChatCommands: self.ChatCommands, Claude: self.Claude,
-		Disk: self.Disk, At: h.clock()}
+		Disk: self.Disk, EnvFiles: cleanEnvFiles(self.EnvFiles), At: h.clock()}
 	var diskChanged bool
 	if prev != nil {
 		pl, pf := diskState(rec.Name, rec.Disk, prev.Disk)
@@ -1004,7 +1034,7 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Unlock()
 	if prev == nil || prev.Parallel != self.Parallel || prev.Terminals != self.Terminals || prev.ChatCommands != self.ChatCommands || paused(prev.Usage) != paused(self.Usage) ||
-		claudeKey(prev.Claude) != claudeKey(self.Claude) || diskChanged {
+		claudeKey(prev.Claude) != claudeKey(self.Claude) || diskChanged || !slices.Equal(prevEnvFiles(prev), cleanEnvFiles(self.EnvFiles)) {
 		h.changed()
 	}
 	if h.OnReport != nil {

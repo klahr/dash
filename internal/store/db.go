@@ -138,7 +138,7 @@ func migrate(db *sql.DB, backup func(from, to int) error) error {
 	return nil
 }
 
-var dataTables = []string{"projects", "todos", "issues", "scan_runs", "scan_settings", "scan_templates", "chat_messages", "goals"}
+var dataTables = []string{"projects", "todos", "issues", "scan_runs", "scan_settings", "scan_templates", "chat_messages", "goals", "deploys"}
 
 func dbEmpty(db *sql.DB) (bool, error) {
 	for _, t := range dataTables {
@@ -250,6 +250,7 @@ func load(db *sql.DB) (snapshot, error) {
 		MainChats:     map[string][]model.ChatMessage{},
 		Goals:         map[string]*model.Goal{},
 		GoalChats:     map[string][]model.ChatMessage{},
+		Deploys:       map[string]*model.Deploy{},
 	}
 	// The column, not the JSON, says which org a project is in.
 	if err := loadRows(db, "SELECT data, COALESCE(org_id, 0) FROM projects", func(p *model.Project, org int64) {
@@ -265,6 +266,9 @@ func load(db *sql.DB) (snapshot, error) {
 		return data, err
 	}
 	if err := loadRows(db, "SELECT data FROM goals", func(g *model.Goal, _ int64) { data.Goals[g.ID] = g }); err != nil {
+		return data, err
+	}
+	if err := loadRows(db, "SELECT data FROM deploys", func(d *model.Deploy, _ int64) { data.Deploys[d.ID] = d }); err != nil {
 		return data, err
 	}
 	if err := loadRows(db, "SELECT data FROM scan_runs", func(r *model.ScanRun, _ int64) { data.ScanRuns[r.ID] = r }); err != nil {

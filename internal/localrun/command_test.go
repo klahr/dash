@@ -73,6 +73,7 @@ func TestCommandRefusesOnHub(t *testing.T) {
 var execAllowed = map[string]string{
 	"internal/runner/runner.go":       "bash for project commands and terminals (localrun.Check)",
 	"internal/queue/shell.go":         "bash for project commands (localrun.Check)",
+	"internal/deploy/deploy.go":       "bash for environments' build and deploy commands (localrun.Check)",
 	"internal/api/handlers.go":        "the -editor command (localrun.Check)",
 	"internal/agent/executor.go":      "claude (agent's guard)",
 	"internal/agent/title.go":         "claude (agent's guard)",

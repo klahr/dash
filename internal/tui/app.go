@@ -1683,7 +1683,14 @@ func (a *App) procsKey(s string, n int) tea.Cmd {
 	case "T":
 		return a.startProc(StartProc{Kind: model.ProcTask, Preset: "test"})
 	case "D":
-		return a.startProc(StartProc{Kind: model.ProcTask, Preset: "deploy"})
+		// A deploy to the project's first environment, queued behind any
+		// other there; the web UI's Deploys page shows how it goes.
+		if a.proj == nil || len(a.proj.Environments) == 0 {
+			a.setFlash("no environments: add one in Project settings → Deploy", true)
+			return nil
+		}
+		pid, env := a.proj.ID, a.proj.Environments[0].Name
+		return a.action("deploy to "+env+" queued", func() error { _, err := a.c.Deploy(pid, env); return err })
 	case "!":
 		return a.startProc(StartProc{Kind: model.ProcPTY})
 	}

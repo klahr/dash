@@ -36,6 +36,15 @@ type Data interface {
 	GoalOrg(goalID string) (int64, bool)
 	ListGoals(projectID string) []model.Goal
 	GoalTodos(g model.Goal) []model.Todo
+	// The deploys serve their queue (deploys.go), a background engine:
+	// every org's deploys.
+	CreateDeploy(d model.Deploy) (model.Deploy, error)
+	GetDeploy(id string) (model.Deploy, error)
+	ListDeploys(projectID, env string) []model.Deploy
+	LiveDeploy(projectID, env string) (model.Deploy, bool)
+	UpdateDeploy(id string, fn func(*model.Deploy) error) (model.Deploy, error)
+	SetDeployLog(id, log string) error
+	CardsLinkedTo(todoIDs []string) ([]model.DeployShipped, error)
 	Accounts() *store.Accounts
 }
 

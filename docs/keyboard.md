@@ -35,6 +35,7 @@ page you are on.
 | `gs`       | **Shell**                      |
 | `gh`       | **History**                    |
 | `go`       | **Goals**                      |
+| `gd`       | **Deploys**                    |
 | `gf`       | **Files**                      |
 | `gl`       | **Checklist**                  |
 | `gp`       | **Planning** (the organization's) |
@@ -85,14 +86,15 @@ On the board the keys act on the task under the cursor; in an open task, on that
 | `x`           | stop what runs in it       |
 | `R`           | run the server             |
 | `T`           | run the tests              |
-| `D`           | deploy                     |
+| `D`           | open **Deploys**           |
 | `!`           | a new shell                |
 
-## History, Goals and Checklist
+## History, Goals, Deploys and Checklist
 
 - **History**: `j`/`k` next / previous commit, `gg`/`G` first / last, `n`/`p` next / previous
   changed file of the open commit, `q`/`Esc` close it.
 - **Goals**: `j`/`k` open the next / previous goal, `q`/`Esc` close it.
+- **Deploys**: `j`/`k` open the next / previous deploy, `q`/`Esc` close it.
 - **Checklist**: `j`/`k` move, `x`/`Space` check, `a` add, `e` edit, `dd` delete, `+`/`-` move up
   or down, `m` move to a draft task, `M` move and queue, `r` read TODO.md again.
 
@@ -109,3 +111,4 @@ Type `:` and a command: `:project name`, `:newproject name [path]`, `:task …`,
 - `a` only approves; a new task is `n`.
 - Deny is `X` (it was `n`, which is also a new task).
 - Draw on a preview is `P` (it was `D`, which is also Deploy on the Shell page).
+- `D` on the Shell page opens **Deploys** (it ran the deploy command, which is an environment now).

@@ -8,11 +8,12 @@
 //
 //   /                              no place named: the last view and project (localStorage)
 //   /p/{project}/{view}            a project's view: board, issues, scans, run, try,
-//                                  history, goals, files, checklist (/p/{project} is its board;
+//                                  history, goals, deploys, files, checklist (/p/{project} is its board;
 //                                  run and try are the Shell page at main and at a commit)
 //   /p/{project}/tasks/{id}        a task, open (over the board, after a reload)
 //   /p/{project}/goals/{id}        a goal, open on Goals
 //   /p/{project}/history/{sha}     a commit, open on History
+//   /p/{project}/deploys/{id}      a deploy, open on Deploys
 //   /p/{project}/issues/{id}       an issue, expanded on Issues
 //   /planning                      Planning (the org's, not one project's)
 //   /planning/cards/{id}           a Planning card, open
@@ -31,10 +32,10 @@
 //
 // Older links, /?project=<id>&task=<id> (also goal=, issue=), still open.
 
-export const VIEWS = ["board", "issues", "scans", "run", "try", "history", "goals", "files", "checklist", "planning"];
+export const VIEWS = ["board", "issues", "scans", "run", "try", "history", "goals", "deploys", "files", "checklist", "planning"];
 export const SHEETS = ["settings", "account", "org", "runners"];
-const ITEMS = { tasks: "task", goals: "goal", history: "sha", issues: "issue" };
-const ITEM_VIEW = { task: "board", goal: "goals", sha: "history", issue: "issues" };
+const ITEMS = { tasks: "task", goals: "goal", history: "sha", issues: "issue", deploys: "deploy" };
+const ITEM_VIEW = { task: "board", goal: "goals", sha: "history", issue: "issues", deploy: "deploys" };
 
 const dec = (s) => { try { return decodeURIComponent(s); } catch { return null; } };
 const enc = encodeURIComponent;
@@ -60,13 +61,13 @@ export function findProject(list, ref) {
 }
 
 // parse turns a URL (a Location or URL) into a route:
-//   { project: {id, machine} | null, view, task, goal, sha, issue, card,
+//   { project: {id, machine} | null, view, task, goal, sha, issue, deploy, card,
 //     board, plProject, plTag, sheet, section, named }
 // named is false for a plain / (no place in it: the saved one applies). A
 // path that isn't the app's parses as / with named false.
 export function parse(loc) {
   const q = new URLSearchParams(loc.search);
-  const r = { project: null, view: null, task: null, goal: null, sha: null, issue: null, card: null,
+  const r = { project: null, view: null, task: null, goal: null, sha: null, issue: null, deploy: null, card: null,
     board: q.get("board"), plProject: null, plTag: null, sheet: null, section: null, named: false };
   const sheet = q.get("sheet");
   if (SHEETS.includes(sheet)) { r.sheet = sheet; r.section = q.get("section"); }
@@ -120,6 +121,7 @@ export function href(r, p) {
     else if (r.goal) path = `${base}/goals/${enc(r.goal)}`;
     else if (r.sha) path = `${base}/history/${enc(r.sha)}`;
     else if (r.issue) path = `${base}/issues/${enc(r.issue)}`;
+    else if (r.deploy) path = `${base}/deploys/${enc(r.deploy)}`;
     else path = `${base}/${r.view || "board"}`;
     if (r.board && (r.task || (r.view || "board") === "board")) q.set("board", r.board);
   }

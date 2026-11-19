@@ -291,3 +291,27 @@ func CheckRefName(name string) error {
 	}
 	return nil
 }
+
+// CountBetween is how many commits to has that from hasn't (git rev-list
+// --count from..to). Both must be commit ids (IsSHA).
+func (g *Git) CountBetween(ctx context.Context, projectID, repo, from, to string) (int, error) {
+	if !IsSHA(from) || !IsSHA(to) {
+		return 0, fmt.Errorf("not commit ids: %q, %q", from, to)
+	}
+	out, err := g.run(ctx, false, projectID, repo, "git", "rev-list", "--count", from+".."+to, "--")
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(out))
+}
+
+// CheckoutDetached moves the detached worktree dir (AddDetachedWorktree)
+// to commit, dropping changes to tracked files and untracked files, but
+// keeping ignored ones (build caches, installed dependencies).
+func (g *Git) CheckoutDetached(ctx context.Context, projectID, dir, commit string) error {
+	if _, err := g.git(ctx, projectID, dir, "checkout", "--detach", "--force", commit); err != nil {
+		return err
+	}
+	_, err := g.git(ctx, projectID, dir, "clean", "-fdq")
+	return err
+}

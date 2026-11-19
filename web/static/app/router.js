@@ -7,6 +7,7 @@ import { selectProject } from "./projects.js";
 import { projectKey } from "./events.js";
 import { closeDetail, openDetail } from "./detail.js";
 import { closeGoal, gp, loadGoals, openGoal } from "./goals.js";
+import { closeDeploy, dp, loadDeploys, openDeploy } from "./deploys.js";
 import { closeCommit, selectCommit } from "./history.js";
 import { showIssue } from "./issues.js";
 import { cardError, cardId, closeCard, openCard, planningFilters, setPlanningFilters } from "./planning.js";
@@ -50,7 +51,7 @@ document.addEventListener("dash:route", (e) => {
 
 // current is the route of what the page shows now.
 function current() {
-  const r = { view: state.view, task: null, goal: null, sha: null, issue: null, card: null, board: null, plProject: "", plTag: "", sheet: null, section: null };
+  const r = { view: state.view, task: null, goal: null, sha: null, issue: null, deploy: null, card: null, board: null, plProject: "", plTag: "", sheet: null, section: null };
   if (state.view === "planning") {
     r.card = cardId();
     const f = planningFilters();
@@ -60,6 +61,7 @@ function current() {
     if (state.detail) r.task = state.detail;
     else if (state.view === "goals" && gp.open) r.goal = gp.open;
     else if (state.view === "history" && cp.sha) r.sha = cp.sha;
+    else if (state.view === "deploys" && dp.open) r.deploy = dp.open;
     r.board = currentBoard() || null;
   }
   // The sheet on top, if several are open (Runners can open over Settings).
@@ -164,7 +166,7 @@ async function apply(r, { startup = false, settle = !startup } = {}) {
       const p = findProject(state.projects, r.project);
       if (!p) {
         toast("That project isn't on this dashboard, or you can't see it.", { tone: "error" });
-        if (r.view !== "planning") r = { ...r, view: startup ? state.view : r.view, task: null, goal: null, sha: null, issue: null, sheet: null };
+        if (r.view !== "planning") r = { ...r, view: startup ? state.view : r.view, task: null, goal: null, sha: null, issue: null, deploy: null, sheet: null };
       } else if (projectKey(p) !== projectKey(state.project)) await selectProject(p);
     }
     for (const k of SHEETS) {
@@ -192,6 +194,14 @@ async function apply(r, { startup = false, settle = !startup } = {}) {
         else missing.push("goal");
       }
     } else if (gp.open) closeGoal();
+
+    if (r.deploy) {
+      if (dp.open !== r.deploy) {
+        if (!dp.loaded || dp.project?.id !== state.project?.id) await loadDeploys().catch(() => {});
+        if (dp.list.some((d) => d.id === r.deploy)) await openDeploy(r.deploy);
+        else missing.push("deploy");
+      }
+    } else if (dp.open) closeDeploy();
 
     if (r.sha) {
       if (cp.sha !== r.sha) {

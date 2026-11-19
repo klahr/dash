@@ -153,17 +153,19 @@ runners together. The others stay queued, and say why, until one finishes. A new
 starts at 5. Clear it for no limit of the project's own. The API field is `max_parallel` (`0` for
 no limit).
 
-**Deploy.** Set a **Deploy command** in **Project settings → Commands**. It is a bash script that
-runs in the project's checkout, so it can span several lines:
+**Deploy.** Add an environment, such as `production`, in **Project settings → Deploy**. Its deploy
+command is a bash script, so it can span several lines:
 
 ```sh
 set -e
 npm run build
-./deploy.sh production
+./deploy.sh "$DASH_ENV"
 ```
 
-Then press **Deploy** in the sidebar's **Actions** (or `D` on the **Shell** page). On a hub, **Deploy runs on** beside it picks the
-runners that deploy, by label: see [Where deploys run](docs/several-computers.md#where-deploys-run).
+Then press **Deploy** on its card on the **Deploys** page (`gd`). Dash runs the script on a
+runner, in a checkout of the commit, with the runner's secrets for that environment, and records
+what is live where. See [Deploys](docs/deploys.md), and on a hub
+[Where deploys run](docs/several-computers.md#where-deploys-run).
 
 **Who made a task.** The task's pane says who created it ("Created by Ana", or "Created by Dash"
 for a task Dash made itself). When your organization has more than one member, each card also
@@ -245,6 +247,7 @@ limit (see **Claude usage**).
 
 - [Chat](docs/chat.md): the general, project and task chats, and running shell commands from them with `!`
 - [Goals](docs/goals.md): a coordinator that plans, dispatches and reviews a goal's tasks, within a budget, and never merges
+- [Deploys](docs/deploys.md): environments, deploy records and the Deploys page; your scripts deploy, Dash tracks what is live where, and secrets stay on the runners
 - [Plan a new project](docs/plan-project.md): Claude interviews you about an idea, writes a brief, and Dash starts the project and a goal from it
 - [Planning](docs/planning.md): the org's plan for a product owner, cards from Ideas to Done that link to the tasks and goals carrying them out and show their status in plain words; planners see only this
 - [Users and organizations](docs/users.md): accounts, roles (including planners, who use Planning only), invitations, two-factor sign-in

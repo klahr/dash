@@ -85,15 +85,16 @@ type Project struct {
 	CloseNoChanges bool   `json:"close_no_changes"`
 	RunCommand     string `json:"run_command,omitempty"`  // e.g. "npm run dev" — gets $PORT
 	TestCommand    string `json:"test_command,omitempty"` // e.g. "go test ./..."
-	// DeployCommand deploys, e.g. "./deploy.sh" or "adb install …". It is
-	// a bash script and may span several lines.
-	DeployCommand string `json:"deploy_command,omitempty"`
-	// DeployRunsOn are, on a hub, the runner labels (see labels.go) the
-	// deploy command runs on: of the runners that work on the project
-	// (RunsOn), only those that have every one of them deploy it. Empty:
-	// any of them. A deploy with no such runner online fails; it never
-	// runs elsewhere. See DeploysOn.
-	DeployRunsOn []string `json:"deploy_runs_on,omitempty"`
+	// Environments are where the project is deployed, and how (see
+	// deploy.go). Each deploy to one is a Deploy record.
+	Environments []Environment `json:"environments,omitempty"`
+	// DeployCommand and DeployRunsOn are the single deploy command (and
+	// the runner labels it ran on) of a project from before environments.
+	// They are only read: the store moves them into an environment named
+	// DefaultEnvironment (MigrateDeploy), and so does a runner linked by
+	// an older hub.
+	DeployCommand string   `json:"deploy_command,omitempty"`
+	DeployRunsOn  []string `json:"deploy_runs_on,omitempty"`
 	// PreviewKind is how a task in review is previewed: PreviewWeb ("" too)
 	// runs RunCommand and proxies its port; PreviewTerminal opens a terminal
 	// in the task's worktree (for CLI tools, which open no port), running
@@ -1084,6 +1085,7 @@ const (
 	EvClaudeStatus   EventType = "claude.status"      // Claude's status page changed (internal/claudestatus); Data is its Status
 	EvScanTemplate   EventType = "scan.template"      // a Dash scan template was created, edited or deleted; Data is {"name": …, "deleted": bool}
 	EvGoalUpdated    EventType = "goal.updated"       // a goal was created or changed; Data is the Goal (without its log)
+	EvDeployUpdated  EventType = "deploy.updated"     // a deploy was queued, moved on or finished; Data is the Deploy (without its log)
 	EvProjectChat    EventType = "project.chat"       // a user's own chat about a project was saved or cleared, or a turn of it began or ended; Data is {"busy": bool} from a turn, nil from a save. Sent to that user only
 	EvPlanningCard   EventType = "planning.card"      // a planning card was created, changed, moved, commented, linked or deleted; Data is {"card": id, "deleted": bool}
 	EvPlanningWork   EventType = "planning.work"      // a task or goal linked to planning cards changed; Data is {"cards": [ids]}

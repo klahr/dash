@@ -63,7 +63,7 @@ func TestHubListsRunnerQuickActionsWithTheirPreset(t *testing.T) {
 
 	p, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, Path: "/hub/has/its/own/path",
 		RemoteURL: remote, DefaultBranch: "main", MergeMode: model.MergePR, RunsOn: []string{"any"},
-		TestCommand: "true", DeployCommand: "exit 3"})
+		TestCommand: "true"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,10 @@ func TestHubListsRunnerQuickActionsWithTheirPreset(t *testing.T) {
 	if test.Preset != "test" || !test.Main || test.ProjectID != p.ID || test.Dir == p.Path {
 		t.Errorf("started test run: %+v", test)
 	}
-	deploy := start(`{"kind":"task","preset":"deploy"}`)
+	// Deploys aren't processes any more: they go to an environment (deploys.go).
+	if w := call("POST", "/processes", `{"kind":"task","preset":"deploy"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("the deploy preset: %d %s", w.Code, w.Body)
+	}
 	own := start(`{"kind":"task","command":"true"}`) // not a quick action
 	if own.Preset != "" || !own.Main {
 		t.Errorf("own command: %+v", own)
@@ -109,14 +112,11 @@ func TestHubListsRunnerQuickActionsWithTheirPreset(t *testing.T) {
 	}
 	eventually(t, "the commands to finish", func() bool {
 		ps := list()
-		return len(ps) == 3 && !ps[test.ID].Running && !ps[deploy.ID].Running && !ps[own.ID].Running
+		return len(ps) == 2 && !ps[test.ID].Running && !ps[own.ID].Running
 	})
 	ps := list()
 	if x := ps[test.ID]; x.Preset != "test" || !x.Main || x.ExitCode == nil || *x.ExitCode != 0 {
 		t.Errorf("listed test run: %+v", x)
-	}
-	if x := ps[deploy.ID]; x.Preset != "deploy" || !x.Main || x.ExitCode == nil || *x.ExitCode != 3 {
-		t.Errorf("listed deploy: %+v", x)
 	}
 	if x := ps[own.ID]; x.Preset != "" {
 		t.Errorf("listed own command: %+v", x)
@@ -237,11 +237,11 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 		hub.mux().ServeHTTP(w, as(uid)(httptest.NewRequest("PATCH", "/api/projects/"+p.ID, strings.NewReader(body))))
 		return w
 	}
-	b, _ := json.Marshal(map[string]string{"deploy_command": "touch " + marker})
+	b, _ := json.Marshal(map[string]any{"environments": []model.Environment{{Name: "production", DeployCommand: "touch " + marker}}})
 	if w := patch(other, string(b)); w.Code != http.StatusForbidden {
 		t.Fatalf("deploy command set by another member: %d %s", w.Code, w.Body)
 	}
-	if w := patch(other, `{"deploy_command":"","color":"#3a7bd5"}`); w.Code != http.StatusOK {
+	if w := patch(other, `{"environments":[],"color":"#3a7bd5"}`); w.Code != http.StatusOK {
 		t.Fatalf("other settings, commands unchanged, by another member: %d %s", w.Code, w.Body)
 	}
 	time.Sleep(200 * time.Millisecond) // a command that got through would have run by now

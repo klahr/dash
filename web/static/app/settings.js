@@ -1,6 +1,6 @@
-import { $, dateText, h } from "./dom.js";
+import { $, $$, dateText, fill, h, ib } from "./dom.js";
 import { api } from "./api.js";
-import { attempt, fail } from "./dialogs.js";
+import { ask, attempt, fail } from "./dialogs.js";
 import { checked, fieldError, saveField, saveQueue } from "./autosave.js";
 import { uploadFile } from "./attachments.js";
 import { state } from "./state.js";
@@ -34,8 +34,6 @@ export function openSettings() {
   f.run_command.value = p.run_command || "";
   f.preview_kind.value = p.preview_kind || "web";
   f.preview_command.value = p.preview_command || "";
-  f.deploy_command.value = p.deploy_command || "";
-  setLabels(f.deploy_runs_on, p.deploy_runs_on || []);
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
   f.close_no_changes.checked = !!p.close_no_changes;
@@ -52,6 +50,7 @@ export function openSettings() {
   f.icon.value = p.icon || "";
   projectIcon(p, $("#settings-icon"));
   renderRunnerPicker(p);
+  renderEnvEditor(p);
   syncMergeHint();
   renderApprove();
   $("#webhook-secret").hidden = true;
@@ -77,23 +76,119 @@ function renderRunnerPicker(p) {
   $("#settings-runners-field").hidden = !hub && !p.runs_on?.length;
   shownRunsOn = labelKey(p.runs_on);
   setLabels($("#settings-runs-on"), p.runs_on || []);
-  // The deploy's own labels, beside the deploy command: a hub's only.
-  $("#settings-deploy-runs-on-row").hidden = $("#settings-runners-field").hidden;
   renderRunsOnPreview();
 }
 
-// renderDeployRunsOn shows which of the runners the project runs on its
-// deploy goes to, as the labels are picked.
-function renderDeployRunsOn() {
-  const hint = $("#settings-deploy-runs-on-hint");
-  hint.hidden = $("#settings-deploy-runs-on-row").hidden;
-  if (hint.hidden) return;
-  matchList(hint, deployRunners(typedRunsOn(), typedDeployRunsOn()), { lead: "Deploys on", none: "No runner the project runs on has these labels: deploys fail." });
-}
 // deployRunners are the runners a project on runsOn deploys on with deploy.
 export const deployRunners = (runsOn, deploy) =>
   (state.runners || []).filter((r) => servesProject(r, { runs_on: runsOn }) && (!deploy.length || servesProject(r, { runs_on: deploy })));
-const typedDeployRunsOn = () => parseLabels($("#settings-deploy-runs-on").value).filter((l) => l.toLowerCase() !== "any");
+
+// ------------------------------------------------------------------ environments
+// Project settings → Deploy: the project's environments, each with its name,
+// deploy and build commands, URL and (on a hub) the runner labels its
+// deploys run on, with the runners that would run them and whether any of
+// them has its secrets file (~/.dash/env/<name>.env; the hub only learns
+// whether it is there). The whole list saves when one of its fields
+// changes, once every environment has a name and a deploy command.
+let envDraft = [];    // the environments as edited
+let shownEnvs = "[]"; // as last loaded or saved (JSON of cleanEnvs)
+const envOnHub = () => !$("#settings-runners-field").hidden;
+const script = (s) => (s || "").replace(/\r\n?/g, "\n").trim();
+const cleanEnvs = (list) => list.map((e) => ({
+  name: (e.name || "").trim().toLowerCase(), deploy_command: script(e.deploy_command), build_command: script(e.build_command),
+  runs_on: (e.runs_on || []).filter((l) => l.toLowerCase() !== "any"), url: (e.url || "").trim(),
+}));
+
+function renderEnvEditor(p) {
+  envDraft = cleanEnvs(p.environments || []);
+  shownEnvs = JSON.stringify(envDraft);
+  fieldError($("#settings-envs"), "");
+  drawEnvs();
+}
+
+function drawEnvs() {
+  const list = $("#settings-envs");
+  list.replaceChildren(...(envDraft.length ? envDraft.map(envEditor) : [h("li", { class: "hint" }, "No environments: the project isn't deployed from Dash.")]));
+  renderEnvHints();
+}
+
+function envEditor(e, i) {
+  const field = (label, em, control) => h("label", { class: "field" }, h("span", {}, label, " ", h("em", {}, em)), control);
+  const text = (k, props) => h(props.rows ? "textarea" : "input", { ...props, value: e[k] || "", spellcheck: false, autocomplete: "off", autocapitalize: "off",
+    oninput: (ev) => { e[k] = ev.target.value; if (k === "name") renderEnvHints(); } });
+  const runsOn = envOnHub() ? labelPicker({ value: (e.runs_on || []).join(", "), label: `${e.name || "Environment"} runs on`, placeholder: "e.g. prod",
+    onChange: (ls) => { e.runs_on = ls; renderEnvHints(); saveEnvs(); } }) : null;
+  return h("li", { class: "env-edit" },
+    h("div", { class: "env-edit-head" },
+      field("Name", "a lowercase word", text("name", { placeholder: "production", maxlength: 32, pattern: "[a-z0-9][a-z0-9_\\-]*" })),
+      ib({ type: "button", class: "btn small danger", title: `Remove ${e.name || "this environment"}`, onclick: () => removeEnv(i) }, "trash", "Remove")),
+    field("Deploy command", "a bash script, one line or several", text("deploy_command", { rows: 4, class: "script-field", placeholder: "set -e\n./deploy.sh" })),
+    field("Build command", "optional; runs first, in the same checkout", text("build_command", { rows: 2, class: "script-field", placeholder: "npm ci && npm run build" })),
+    field("URL", "optional; checked once a deploy is done", text("url", { type: "url", placeholder: "https://example.com" })),
+    runsOn ? h("div", { class: "field" }, h("span", {}, "Runs on ", h("em", {}, "empty: any runner the project runs on")), runsOn.el) : null,
+    h("p", { class: "hint env-hint" }));
+}
+
+// renderEnvHints says, under each environment, where its deploys run and
+// whether its secrets file is there.
+function renderEnvHints() {
+  $$("#settings-envs .env-edit").forEach((li, i) => {
+    const e = envDraft[i], hint = $(".env-hint", li), name = (e?.name || "").trim().toLowerCase() || "<name>";
+    if (!e || !hint) return;
+    if (!envOnHub()) {
+      fill(hint, "Secrets: this computer's ", h("code", {}, `~/.dash/env/${name}.env`), ", if there.");
+      return;
+    }
+    const runners = deployRunners(typedRunsOn(), e.runs_on || []);
+    matchList(hint, runners, { lead: "Deploys on", none: "No runner the project runs on has these labels: deploys fail." });
+    if (runners.length && !runners.some((r) => r.reported?.env_files?.includes(name))) {
+      const where = e.runs_on?.length ? e.runs_on.join(", ") : "this project";
+      hint.append(h("span", { class: "warn" }, ` · No runner with ${where} has a ${name} env file (~/.dash/env/${name}.env): deploys run without its secrets.`));
+    }
+  });
+}
+
+function addEnv() {
+  const names = envDraft.map((e) => e.name);
+  const name = ["production", "staging", "preview"].find((n) => !names.includes(n)) || "";
+  envDraft.push({ name, deploy_command: "", build_command: "", runs_on: [], url: "" });
+  drawEnvs();
+  $$("#settings-envs .env-edit").at(-1)?.querySelector("textarea")?.focus();
+}
+
+async function removeEnv(i) {
+  const e = envDraft[i];
+  if (e.deploy_command && !await ask({ title: `Remove ${e.name || "this environment"}?`, body: "Its deploys stay in the list, but nothing deploys there from Dash any more.", ok: "Remove", danger: true })) return;
+  envDraft.splice(i, 1);
+  drawEnvs();
+  saveEnvs();
+}
+
+function saveEnvs() {
+  return queueSave(async () => {
+    const el = $("#settings-envs");
+    const v = cleanEnvs(envDraft), json = JSON.stringify(v);
+    if (json === shownEnvs) { fieldError(el, ""); return; }
+    if (v.some((e) => !e.name || !e.deploy_command)) {
+      fieldError(el, "Give each environment a name and a deploy command to save it.");
+      return;
+    }
+    await saveField(el, async () => {
+      const saved = await api("PATCH", `/api/projects/${state.project.id}`, { environments: v });
+      shownEnvs = JSON.stringify(cleanEnvs(saved.environments || []));
+      const cur = state.project;
+      state.project = { ...saved, machine: cur.machine, prefix: cur.prefix };
+      state.projects = state.projects.map((x) => (x === cur ? state.project : x));
+      renderProjectHeader();
+      renderApprove();
+    });
+  });
+}
+$("#settings-env-add").addEventListener("click", addEnv);
+$("#settings-envs").addEventListener("change", (e) => { if (e.target.matches("input:not([type=hidden]), textarea")) saveEnvs(); });
+// Enter in one of its one-line fields saves the list (the form's own handler keeps it from submitting).
+$("#settings-envs").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("input:not(.label-picker-input)")) saveEnvs(); });
+$("#settings-sheet").addEventListener("close", () => { if (JSON.stringify(cleanEnvs(envDraft)) !== shownEnvs) saveEnvs(); });
 
 // renderRunsOnPreview lists the org's runners as the typed labels would
 // have it: those that would work on the project first.
@@ -108,7 +203,7 @@ function renderRunsOnPreview() {
       h("span", { class: "hint" }, ok ? `works on it · ${r.mine ? "yours" : r.owner?.username || ""}`
         : want.runs_on.length ? `lacks ${missing.join(", ")}` : "no labels: runs nothing"));
   }));
-  renderDeployRunsOn();
+  renderEnvHints();
 }
 const typedRunsOn = () => parseLabels($("#settings-runs-on").value);
 // shownRunsOn is the project's labels as the field was last drawn with.
@@ -161,7 +256,6 @@ function syncMergeHint() {
 $("#settings-form").addEventListener("change", syncMergeHint);
 $("#settings-runs-on-help").append(" ", docsLabels());
 labelPicker({ input: $("#settings-runs-on"), any: true, label: "Runs on", onChange: () => { renderRunsOnPreview(); syncMergeHint(); } });
-labelPicker({ input: $("#settings-deploy-runs-on"), label: "Deploy runs on", placeholder: "e.g. production", onChange: renderDeployRunsOn });
 
 // The tag format is checked as it is typed: placeholders, a valid git tag,
 // and whether the repository's release workflows run for its tags.
@@ -239,7 +333,6 @@ const FIELDS = {
   run_command: { read: (f) => f.run_command.value.trim() },
   preview_kind: { read: (f) => f.preview_kind.value },
   preview_command: { read: (f) => f.preview_command.value.trim() },
-  deploy_command: { read: (f) => f.deploy_command.value.trim() },
   auto_push: { read: (f) => f.auto_push.checked },
   auto_approve: { read: (f) => f.auto_approve.checked },
   close_no_changes: { read: (f) => f.close_no_changes.checked },
@@ -257,7 +350,6 @@ const FIELDS = {
   color: { read: (f) => (f.color_pick.value === "custom" ? f.color.value : f.color_pick.value), el: () => $("#settings-color") },
   icon: { read: (f) => f.icon.value, el: () => $("#settings-icon-pick") },
   runs_on: { read: () => typedRunsOn(), skip: () => $("#settings-runners-field").hidden },
-  deploy_runs_on: { read: () => typedDeployRunsOn(), skip: () => $("#settings-deploy-runs-on-row").hidden },
 };
 // A form control's name → the field it saves.
 const FIELD_OF = { color_pick: "color" };
@@ -321,7 +413,7 @@ $("#settings-sheet").addEventListener("close", () => {
 // owner or someone it trusts set it (docs/several-computers.md). Saving a
 // command unchanged approves it; with no Save button that is this button,
 // shown while a command someone else set waits for your approval.
-const COMMAND_FIELDS = { run: "run_command", test: "test_command", deploy: "deploy_command", setup: "setup_command", preview: "preview_command" };
+const COMMAND_FIELDS = { run: "run_command", test: "test_command", deploy: "environments", setup: "setup_command", preview: "preview_command" };
 function unapproved() {
   const p = state.project, me = state.me?.user?.id, admin = ["owner", "admin"].includes(state.me?.org?.role);
   return Object.entries(p.commands_by || {}).filter(([, by]) => !by.admin && by.user !== me && (admin || !(by.approved || []).includes(me)));
@@ -337,7 +429,8 @@ function renderApprove() {
 }
 $("#settings-approve-commands").addEventListener("click", (e) => queueSave(() => saveField(e.currentTarget, async () => {
   const p = state.project;
-  const body = Object.fromEntries(unapproved().map(([k]) => [COMMAND_FIELDS[k], p[COMMAND_FIELDS[k]] || ""]).filter(([k]) => k));
+  // Saved again unchanged: the deploy command is the environments.
+  const body = Object.fromEntries(unapproved().map(([k]) => [COMMAND_FIELDS[k], p[COMMAND_FIELDS[k]] || (k === "deploy" ? [] : "")]).filter(([k]) => k));
   const saved = await api("PATCH", `/api/projects/${p.id}`, body);
   const cur = state.project;
   state.project = { ...saved, machine: cur.machine, prefix: cur.prefix };

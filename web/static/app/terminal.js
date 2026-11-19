@@ -267,6 +267,8 @@ const runPreset = attempt(async (e) => {
 $("#quick-actions").addEventListener("click", attempt(async (e) => {
   const spec = e.target.closest("[data-run]")?.dataset.run;
   if (!spec) return; // not a run button
+  // Deploy goes to the Deploys page: a deploy is to one of the environments there.
+  if (spec === "task:deploy") { closeDetail(); return showView("deploys"); }
   const proc = quickProc(spec);
   if (!proc?.running) return runPreset(e);
   if (spec === "web:run") {
@@ -280,7 +282,7 @@ $("#quick-actions").addEventListener("click", attempt(async (e) => {
 }));
 
 // The latest server/test/deploy process started from the project's own checkout (not a worktree).
-const quickCmd = (spec) => ({ "web:run": state.project?.run_command, "task:test": state.project?.test_command, "task:deploy": state.project?.deploy_command })[spec];
+const quickCmd = (spec) => ({ "web:run": state.project?.run_command, "task:test": state.project?.test_command, "task:deploy": state.project?.environments?.[0]?.deploy_command })[spec];
 // What a server or deploy command runs on, read from the command itself. First match wins; a rule without a label keeps the generic one.
 const TECH_RULES = {
   "web:run": [

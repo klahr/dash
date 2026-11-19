@@ -81,14 +81,20 @@ type Link struct {
 	MaxAutoFixes *int `json:"max_auto_fixes,omitempty"`
 	// The hub project's shell commands (setup, test, run, deploy), which
 	// the runner's clone takes.
-	SetupCommand  string `json:"setup_command,omitempty"`
-	TestCommand   string `json:"test_command,omitempty"`
-	RunCommand    string `json:"run_command,omitempty"`
-	DeployCommand string `json:"deploy_command,omitempty"`
-	// DeployRunsOn are the hub project's model.Project.DeployRunsOn: the
-	// runner labels its deploy command runs on. A runner without them gets
-	// the deploy command held (Held), so it refuses to deploy even if asked.
-	DeployRunsOn []string `json:"deploy_runs_on,omitempty"`
+	SetupCommand string `json:"setup_command,omitempty"`
+	TestCommand  string `json:"test_command,omitempty"`
+	RunCommand   string `json:"run_command,omitempty"`
+	// Environments are the hub project's model.Project.Environments: where
+	// it deploys and how. The commands of those the runner must not run
+	// are sent empty (Held: model.CmdDeploy for all of them, or
+	// model.HeldEnvKind for one whose runner labels it lacks), so it
+	// refuses to deploy there even if asked.
+	Environments []model.Environment `json:"environments,omitempty"`
+	// DeployCommand and DeployRunsOn are from hubs older than
+	// environments: the runner makes them its environment "production"
+	// (model.Project.MigrateDeploy).
+	DeployCommand string   `json:"deploy_command,omitempty"`
+	DeployRunsOn  []string `json:"deploy_runs_on,omitempty"`
 	// The hub project's preview settings (model.Project.PreviewKind and
 	// PreviewCommand), taken like its commands: a terminal preview is a shell.
 	PreviewKind    string `json:"preview_kind,omitempty"`
@@ -191,8 +197,11 @@ type Report struct {
 	// cache folder, when that is on another disk), the largest folders in
 	// that cache folder when space is low, and its Go build cache (nil
 	// from a runner older than this field).
-	Disk  *disk.Status `json:"disk,omitempty"`
-	Tasks []TaskState  `json:"tasks,omitempty"`
+	Disk *disk.Status `json:"disk,omitempty"`
+	// EnvFiles are the environments the runner has a secrets file for
+	// (~/.dash/env/<name>.env): their names, never what is in them.
+	EnvFiles []string    `json:"env_files,omitempty"`
+	Tasks    []TaskState `json:"tasks,omitempty"`
 	// Procs are the hub's projects whose processes (run/test/deploy
 	// commands, terminals) on the runner changed since the last report: the
 	// hub tells their dashboards to list them again.

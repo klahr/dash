@@ -24,6 +24,7 @@ import (
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/claudestatus"
+	"github.com/klahr/dash/internal/deploy"
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
@@ -148,6 +149,23 @@ type Server struct {
 	TryRoot string
 	tries   trySessions // on a hub: which runner each project's try session runs on
 
+	// DeployRoot is where this computer keeps its deploys' checkouts, one
+	// per environment (<data>/deploys; see deploys.go). EnvDir is where it
+	// keeps the environments' secrets files (default ~/.dash/env).
+	// DeployPoll is how often a running deploy is asked how it goes
+	// (default 2s; tests make it short).
+	DeployRoot string
+	EnvDir     string
+	DeployPoll time.Duration
+	// deployRuns are the deploys running on this computer; deploys runs
+	// each environment's queue (on a hub, or a Dash that isn't one).
+	deployRuns  deploy.Manager
+	deploysOnce sync.Once
+	deploys     *deployEngine
+	// deployStarts remembers what each deploy started here answered, for
+	// a hub that asks again (deploy id → deployStarted).
+	deployStarts sync.Map
+
 	reviewMu  sync.Mutex
 	reviewGen uint64
 	reviews   map[string]uint64 // todo id → the review turn that owns its Reviewing flag
@@ -237,6 +255,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	s.hubTaskRoutes(mux)
 	// Try: a terminal on a project at a commit, on a runner (try.go)
 	s.tryRoutes(mux)
+	// Deploys to the projects' environments (deploys.go)
+	s.deployRoutes(mux)
 
 	// Projects & git
 	mux.HandleFunc("GET /api/projects", s.listProjects)

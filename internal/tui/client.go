@@ -226,6 +226,11 @@ func (c *Client) StartProcess(pid string, req StartProc) (p model.Process, err e
 
 func (c *Client) StopProcess(id string) error { return c.do("DELETE", "/api/processes/"+id, nil, nil) }
 
+// Deploy queues a deploy of project pid's default branch to environment env.
+func (c *Client) Deploy(pid, env string) (d model.Deploy, err error) {
+	return d, c.do("POST", "/api/projects/"+pid+"/deploys", map[string]string{"environment": env}, &d)
+}
+
 // ---- WebSockets ----
 
 func (c *Client) dial(ctx context.Context, path string) (*websocket.Conn, error) {

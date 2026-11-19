@@ -208,6 +208,8 @@ func forgetUser(tx *sql.Tx, uid int64) error {
 	for _, q := range []string{
 		`UPDATE todos SET data = json_set(data, '$.created_by', ?2) WHERE json_extract(data, '$.created_by') = ?1`,
 		`UPDATE goals SET data = json_set(data, '$.owner', ?2) WHERE json_extract(data, '$.owner') = ?1`,
+		// A deploy they started stays, started by nobody named.
+		`UPDATE deploys SET data = json_remove(json_set(data, '$.by', ?2), '$.by_name') WHERE json_extract(data, '$.by') = ?1`,
 		`UPDATE chat_messages SET data = json_set(data, '$.created_by', ?2) WHERE kind != 'main' AND json_extract(data, '$.created_by') = ?1`,
 		`DELETE FROM chat_messages WHERE kind IN ('main', 'project') AND owner_id LIKE '%:' || ?1`,
 		`UPDATE project_events SET user_id = 0 WHERE user_id = ?1`,

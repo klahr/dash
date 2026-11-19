@@ -32,6 +32,7 @@ import { onPlanningEvent } from "./planning.js";
 import { renderBoardSettings } from "./boards.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
 import { goalTaskChanged, onGoalEvent, showGoal } from "./goals.js";
+import { onDeployEvent } from "./deploys.js";
 import { goalChatEvent, projectChatEvent } from "./chatpane.js";
 
 // ------------------------------------------------------------------ live events
@@ -223,6 +224,9 @@ function onEvent(ev, m = { name: "" }) {
     case "goal.updated":
       goalChatEvent(ev.data, m); // a wake-up added to the coordinator's conversation
       if (mine) onGoalEvent(ev);
+      break;
+    case "deploy.updated":
+      if (mine) onDeployEvent(ev);
       break;
     case "issue.updated":
     case "issue.deleted":

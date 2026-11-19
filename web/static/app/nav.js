@@ -13,6 +13,7 @@ import { loadIssues } from "./issues.js";
 import { loadScans } from "./scans.js";
 import { cl, flushChecklist, loadChecklist } from "./checklist.js";
 import { closeGoal, loadGoals } from "./goals.js";
+import { closeDeploy, loadDeploys } from "./deploys.js";
 import { closeCard, planningShown } from "./planning.js";
 import { changed, initial } from "./routes.js";
 
@@ -45,6 +46,8 @@ function applyView(name) {
   else closeCommit();
   if (name === "goals" && state.project) loadGoals().catch(fail);
   else closeGoal();
+  if (name === "deploys" && state.project) loadDeploys().catch(fail);
+  else closeDeploy();
   if (name === "planning") planningShown();
   else closeCard();
   if (name === "files" && state.project) loadFiles().catch(fail); // at startup the project (and the files code below) isn't ready yet

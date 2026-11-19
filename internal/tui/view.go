@@ -219,7 +219,7 @@ func (a *App) hints() string {
 	case tabChat:
 		return "i type · j/k scroll · t make last answer a task · x stop · :clear"
 	case tabProcs:
-		return "Enter attach · R run · T test · D deploy · ! shell · x stop · o open URL"
+		return "Enter attach · R run · T test · D deploy (first environment) · ! shell · x stop · o open URL"
 	}
 	return "j/k scroll · G bottom"
 }
@@ -759,7 +759,7 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Detail") + "        Tab/h/l cycle log → diff → tests · R reload · q back",
 	styleAccent.Render("Approvals") + "     P list Claude's permission requests · y allow · A always allow · n deny",
 	styleAccent.Render("Chat") + "          t make the last answer a task · i insert · Enter send · Alt+Enter newline · Esc normal · x stop · dd/:clear",
-	styleAccent.Render("Procs") + "         Enter attach (Ctrl-] detaches) · R run · T test · D deploy · ! shell · x stop · o open",
+	styleAccent.Render("Procs") + "         Enter attach (Ctrl-] detaches) · R run · T test · D deploy (first environment) · ! shell · x stop · o open",
 	styleAccent.Render("Form") + "          Tab field · Esc normal · :w draft · :wq/ZZ queue · :q! discard",
 	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :addclone <path> [name] · :task <prompt> · :new [prompt]",
 	"              :run <cmd> · :push · :pause / :resume the queue · :perms · :board :chat :procs · :clear",

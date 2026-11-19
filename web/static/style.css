@@ -861,7 +861,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .file-status.st-D { color: var(--failed); }
 .file-status:is(.st-R, .st-C) { color: var(--accent); }
 /* The close button: Back on a phone, ✕ on a desktop. A phone shows the whole message (its pane scrolls). */
-#cd-close .cd-x, #gd-close .cd-x, #pd-close .cd-x, .commit-message-more { display: none; }
+#cd-close .cd-x, #gd-close .cd-x, #dd-close .cd-x, #pd-close .cd-x, .commit-message-more { display: none; }
 .project-list button.menu-choice { flex-direction: row; align-items: center; gap: 10px; }
 .project-list button.menu-choice:disabled { opacity: .55; cursor: not-allowed; }
 .menu-choice .menu-note { font-style: normal; font-weight: 400; font-size: var(--fs-s); color: var(--muted); margin-left: auto; }
@@ -2115,7 +2115,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 
   /* Bottom nav: Board · Chat · Issues · Shell · Files. Scans and History are in the
      menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
-  .nav > button:is([data-view="scans"], [data-view="history"], [data-view="goals"], [data-view="planning"], [data-view="checklist"]), #pc-open { display: none; }
+  .nav > button:is([data-view="scans"], [data-view="history"], [data-view="goals"], [data-view="deploys"], [data-view="planning"], [data-view="checklist"]), #pc-open { display: none; }
   /* Open issues nobody has dealt with yet: a dot on the Issues icon (the count is in its title). */
   .nav #issue-badge {
     top: 10px; left: calc(50% + 8px); min-width: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%;
@@ -2310,6 +2310,10 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .chat-pinned.chat-open .goal-detail { width: min(820px, calc((100vw - var(--side-w) - var(--chat-pane-w)) * .62)); }
   /* With a goal open, the list moves over to stay beside it. */
   .app:has(#goal-detail:not([hidden])) .page.goals { margin-left: 0; max-width: min(860px, calc(100% - min(820px, 62%))); }
+  /* A deploy's pane lies beside the Deploys page the same way (app/deploys.js). */
+  .deploy-detail { width: min(820px, calc((100vw - var(--side-w)) * .58)); }
+  .chat-pinned.chat-open .deploy-detail { width: min(820px, calc((100vw - var(--side-w) - var(--chat-pane-w)) * .58)); }
+  .app:has(#deploy-detail:not([hidden])) .page.deploys { margin-left: 0; max-width: min(860px, calc(100% - min(820px, 58%))); }
   /* A planning card's pane lies beside the board (app/planning.js), headed like the goal's;
      the board keeps to the room left of it and scrolls sideways when that is narrow. */
   .card-detail { width: min(640px, calc((100vw - var(--side-w)) * .46)); }
@@ -2317,15 +2321,15 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .app:has(#card-detail:not([hidden])) .page.planning { margin-left: 0; max-width: calc(100% - min(640px, 46%)); }
   .card-detail .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
   .card-detail .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
-  :is(.commit-detail, .goal-detail, .card-detail) .detail-head { flex-direction: row-reverse; padding: 8px 8px 0 24px; border-bottom: 0; }
-  :is(#cd-close, #gd-close, #pd-close) .cd-back { display: none; }
-  :is(#cd-close, #gd-close, #pd-close) .cd-x { display: block; }
-  :is(.commit-detail, .goal-detail, .card-detail) .detail-titles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-top: 6px; }
-  :is(.commit-detail, .goal-detail, .card-detail) .detail-titles h2 { flex-basis: 100%; }
-  :is(.commit-detail, .goal-detail, .card-detail) .detail-meta { margin-top: 0; }
+  :is(.commit-detail, .goal-detail, .deploy-detail, .card-detail) .detail-head { flex-direction: row-reverse; padding: 8px 8px 0 24px; border-bottom: 0; }
+  :is(#cd-close, #gd-close, #dd-close, #pd-close) .cd-back { display: none; }
+  :is(#cd-close, #gd-close, #dd-close, #pd-close) .cd-x { display: block; }
+  :is(.commit-detail, .goal-detail, .deploy-detail, .card-detail) .detail-titles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-top: 6px; }
+  :is(.commit-detail, .goal-detail, .deploy-detail, .card-detail) .detail-titles h2 { flex-basis: 100%; }
+  :is(.commit-detail, .goal-detail, .deploy-detail, .card-detail) .detail-meta { margin-top: 0; }
   .commit-detail .commit-actions { margin: 0 0 0 auto; }
-  .goal-detail .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
-  .goal-detail .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
+  :is(.goal-detail, .deploy-detail) .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  :is(.goal-detail, .deploy-detail) .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
   /* Below the head: message and facts across, then the file list beside the diff, each scrolling on its own. */
   .commit-detail .detail-body {
     display: grid; grid-template-columns: clamp(240px, 28%, 380px) minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr);
@@ -3299,6 +3303,58 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .g-out_of_budget { --c: var(--failed); }
 
 .goal-detail { z-index: 34; } /* under a task opened from its plan, and the task's scrim */
+
+/* ---------- deploys ----------
+   The Deploys page (a .page like Goals): a card per environment, what is live
+   there and its Deploy button, then the deploys, newest first. One opens in
+   #deploy-detail, beside the page on a desktop and full screen on a phone. */
+.deploys .cl-head #deploy-settings { margin-left: auto; }
+.d-queued { --c: var(--accent); }
+.d-building, .d-deploying, .d-verifying { --c: var(--running); }
+.d-live { --c: var(--merged); }
+.d-failed { --c: var(--failed); }
+.d-rolled_back, .d-superseded { --c: var(--faint); }
+.env-cards { list-style: none; margin: 0 0 var(--sp-4); padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 10px; }
+.env-cards:empty { display: none; }
+.env-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.env-card.busy { border-color: color-mix(in srgb, var(--running) 55%, var(--line)); }
+.env-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.env-name { margin: 0; font-size: var(--fs-l, 1.05rem); }
+.env-url { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-s); }
+.env-deploy { margin-left: auto; }
+.env-live, .env-active { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.env-live:hover .env-subject, .env-active:hover { text-decoration: underline; }
+.env-live code, .deploy-row code { font-size: var(--fs-xs); color: var(--muted); }
+.env-subject { flex: 1 1 8em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.env-since { color: var(--muted); font-size: var(--fs-s); }
+.env-line { margin: 0; font-size: var(--fs-s); }
+.env-line.warn, .env-hint .warn { color: var(--running); }
+.env-active { align-items: center; color: var(--running); font-size: var(--fs-s); }
+.deploy-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.deploy-list:empty { display: none; }
+.deploy-open {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 10px 14px; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); transition: border-color .15s, background-color .15s;
+}
+.deploy-open:hover { border-color: var(--faint); }
+.deploy.selected .deploy-open { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); }
+.deploy-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.deploy-row .status { flex: none; font-size: var(--fs-s); }
+.deploy-env { flex: none; font-weight: 600; }
+.deploy-subject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deploy-sub { display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--muted); font-size: var(--fs-s); }
+.deploy-detail { z-index: 34; } /* under a task opened from what it shipped */
+.deploy-phases { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: var(--fs-s); }
+.deploy-phase { display: flex; gap: 10px; align-items: baseline; }
+.deploy-phase-name { min-width: 7em; font-weight: 600; color: var(--c, var(--muted)); }
+.deploy-shipped { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.deploy-log { margin: 0; max-height: 60vh; overflow: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--bg); font: var(--fs-xs)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Project settings → Deploy: an environment per card. */
+.env-edit-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 12px; }
+.env-edit { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.env-edit-head { display: flex; align-items: flex-end; gap: 10px; }
+.env-edit-head .field { flex: 1; margin-bottom: 0; }
+.env-edit .env-hint { margin: 6px 0 0; }
 .goal-actions .btn { min-height: 32px; }
 .goal-section { margin: 0 0 20px; }
 .goal-section .commit-files-head { margin-bottom: 8px; }

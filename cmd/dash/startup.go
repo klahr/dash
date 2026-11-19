@@ -670,6 +670,7 @@ func (a *app) buildServices() {
 		Editor:      o.editor,
 		UploadRoot:  uploads,
 		TryRoot:     tryRoot,
+		DeployRoot:  filepath.Join(o.dataDir, "deploys"),
 		CI:          a.builds,
 		Peers:       &peer.Hub{Self: o.machine},
 		Titler:      titler,
@@ -951,7 +952,7 @@ func (a *app) setupRunner() {
 	}}
 	apiSrv.Shared, a.todos.Shared, merges.Shared = shared, shared, shared
 	// The hub hears where its tasks are, and this computer's usage.
-	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli, Disk: disks.Status,
+	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli, Disk: disks.Status, EnvFiles: apiSrv.EnvFiles,
 		// As shellAllowed: the hub's "!" commands run only for a known owner,
 		// in a chat that runs commands (agent.ReadOnlyChat).
 		ChatCommands: creds.UserID != 0 && o.chatBackend == "claude-code" && o.chatTools == agent.ChatShell,
@@ -1130,6 +1131,8 @@ func (a *app) startWorkers() {
 	// Goals' coordinators wake on their tasks' events.
 	a.storeEvents.chain(a.apiSrv.ObserveGoals)
 	a.apiSrv.StartGoals(ctx)
+	// Deploys a restart cut short, and the queued ones.
+	a.apiSrv.StartDeploys(ctx)
 }
 
 // configureChat picks the chat backend. The chat runs on runners only: the

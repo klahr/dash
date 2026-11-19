@@ -109,6 +109,10 @@ func init() {
 		// worktree at one of them; checked in try.go and (terminals) hubCheck.
 		"GET /api/hub/projects/{hpid}/commits", "GET /api/hub/projects/{hpid}/try", "POST /api/hub/projects/{hpid}/try",
 		"DELETE /api/hub/projects/{hpid}/try", "GET /api/hub/projects/{hpid}/try/log", "GET /ws/hub/projects/{hpid}/try",
+		// Deploys of linked projects to their environments, with the
+		// commands the hub linked them with; checked in deploys.go.
+		"POST /api/hub/projects/{hpid}/deploys", "GET /api/hub/projects/{hpid}/deploys/{id}",
+		"DELETE /api/hub/projects/{hpid}/deploys/{id}", "POST /api/hub/projects/{hpid}/deploys/compare",
 		// gh for the hub's CI view of linked projects; checked in hubtasks.go.
 		"POST /api/hub/github/{hpid}",
 

@@ -270,20 +270,30 @@ func hubSettings(req dispatch.Link, mode string) func(*model.Project) {
 	return func(x *model.Project) {
 		x.TaskInstructions, x.MergeMode, x.HubOrgFolder = req.TaskInstructions, mode, folder
 		// The hub's commands.
-		x.SetupCommand, x.TestCommand, x.RunCommand, x.DeployCommand = req.SetupCommand, req.TestCommand, req.RunCommand, req.DeployCommand
-		x.DeployRunsOn = slices.Clone(req.DeployRunsOn) // for show: the hub holds the deploy where it may not run
+		x.SetupCommand, x.TestCommand, x.RunCommand = req.SetupCommand, req.TestCommand, req.RunCommand
+		// Where it deploys: the hub sends the commands this runner may not
+		// run empty. An older hub sends one deploy command, "production".
+		x.Environments, x.DeployCommand, x.DeployRunsOn = model.CloneEnvironments(req.Environments), req.DeployCommand, slices.Clone(req.DeployRunsOn)
+		x.MigrateDeploy()
 		if k, err := checkPreviewKind(req.PreviewKind); err == nil {
 			x.PreviewKind, x.PreviewCommand = k, strings.TrimSpace(req.PreviewCommand)
 		}
 		// Those it must not run: the steps that would fail, saying why.
 		x.HeldCommands = nil
 		for kind, why := range req.Held {
-			if slices.Contains(model.CommandKinds, kind) {
-				if x.HeldCommands == nil {
-					x.HeldCommands = map[string]string{}
+			env, isEnv := strings.CutPrefix(kind, model.CmdDeploy+":")
+			if !slices.Contains(model.CommandKinds, kind) && !(isEnv && model.ValidEnvName(env)) {
+				continue
+			}
+			if x.HeldCommands == nil {
+				x.HeldCommands = map[string]string{}
+			}
+			x.HeldCommands[kind] = textutil.Clip(why, 500)
+			x.SetCommand(kind, "")
+			for i, e := range x.Environments {
+				if isEnv && e.Name == env {
+					x.Environments[i].DeployCommand, x.Environments[i].BuildCommand = "", ""
 				}
-				x.HeldCommands[kind] = textutil.Clip(why, 500)
-				x.SetCommand(kind, "")
 			}
 		}
 		// The hub's review settings; an older hub that doesn't send them

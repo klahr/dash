@@ -171,8 +171,8 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, CloneURL: p.CloneURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
 		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, TaskInstructions: p.TaskInstructions,
 		AutoApprove: &p.AutoApprove, CloseNoChanges: &p.CloseNoChanges, MaxAutoFixes: &p.MaxAutoFixes,
-		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand, DeployCommand: p.DeployCommand,
-		DeployRunsOn: p.DeployRunsOn, PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand}
+		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand,
+		Environments: model.CloneEnvironments(p.Environments), PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand}
 	if d.Store != nil {
 		if o, err := d.Store.Accounts().Org(p.OrgID); err == nil {
 			link.OrgFolder = o.ProjectFolder()
@@ -187,11 +187,19 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 			case model.CmdTest:
 				link.TestCommand = ""
 			case model.CmdDeploy:
-				link.DeployCommand = ""
+				for i := range link.Environments {
+					link.Environments[i].DeployCommand, link.Environments[i].BuildCommand = "", ""
+				}
 			case model.CmdSetup:
 				link.SetupCommand = ""
 			case model.CmdPreview:
 				link.PreviewCommand = ""
+			default:
+				for i, e := range link.Environments {
+					if kind == model.HeldEnvKind(e.Name) {
+						link.Environments[i].DeployCommand, link.Environments[i].BuildCommand = "", ""
+					}
+				}
 			}
 		}
 	}
@@ -210,18 +218,19 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 	return out, nil
 }
 
-// DeployElsewhere is why runner r doesn't run p's deploy command: it
-// lacks labels p deploys on (model.Project.DeployRunsOn).
-func DeployElsewhere(p model.Project, r tunnel.Runner) string {
-	return fmt.Sprintf("this project deploys only on runners with the labels %s, and runner %s lacks %s (Project settings → General → Deploy runs on)",
-		strings.Join(p.DeployRunsOn, ", "), r.Name, strings.Join(model.MissingLabels(r.AllLabels(), p.DeployRunsOn), ", "))
+// DeployElsewhere is why runner r doesn't run p's deploys to e: it lacks
+// labels e deploys on (model.Environment.RunsOn).
+func DeployElsewhere(e model.Environment, r tunnel.Runner) string {
+	return fmt.Sprintf("the %s environment deploys only on runners with the labels %s, and runner %s lacks %s (Project settings → Deploy)",
+		e.Name, strings.Join(e.RunsOn, ", "), r.Name, strings.Join(model.MissingLabels(r.AllLabels(), e.RunsOn), ", "))
 }
 
 // HeldCommands are p's commands runner r must not run, by kind, each with
 // why (nil: none): set by a member who is neither an org admin nor r's
-// owner, on a runner that doesn't take other members' work, or p's deploy
-// command on a runner without the labels it deploys on (DeployElsewhere). Commands run
-// as r's owner, on their computer, and could run claude on their login.
+// owner, on a runner that doesn't take other members' work, or an
+// environment's deploys on a runner without the labels it deploys on
+// (model.HeldEnvKind, DeployElsewhere). Commands run as r's owner, on
+// their computer, and could run claude on their login.
 func HeldCommands(p model.Project, r tunnel.Runner) map[string]string {
 	shared, _ := r.TakesOthers()
 	var held map[string]string
@@ -244,11 +253,15 @@ func HeldCommands(p model.Project, r tunnel.Runner) map[string]string {
 		held[kind] = fmt.Sprintf("the project's %s command was last changed by %s, who is neither an org admin nor the owner of runner %s, "+
 			"so it doesn't run there: an org admin or %s must approve it (Approve commands in Project settings → General)", kind, who, r.Name, owner)
 	}
-	if _, ok := held[model.CmdDeploy]; !ok && p.DeployCommand != "" && !p.DeploysOn(r.AllLabels()) {
-		if held == nil {
-			held = map[string]string{}
+	if _, ok := held[model.CmdDeploy]; !ok {
+		for _, e := range p.Environments {
+			if e.HasCommands() && !e.DeploysOn(r.AllLabels()) {
+				if held == nil {
+					held = map[string]string{}
+				}
+				held[model.HeldEnvKind(e.Name)] = DeployElsewhere(e, r)
+			}
 		}
-		held[model.CmdDeploy] = DeployElsewhere(p, r)
 	}
 	return held
 }
