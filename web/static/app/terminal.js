@@ -203,13 +203,16 @@ function openShellOn(id = "") {
 let opening = false;
 let shellRefused = null; // { pid, id, msg }
 export function forgetShellRefusal() { shellRefused = null; }
-function renderShellNote(msg) {
+function renderShellNote(msg, title = "No terminal here") {
   $("#shell-note").hidden = !msg;
   $("#term-wrap").hidden = !!msg;
+  $("#shell-note-title").textContent = title;
   $("#shell-note-text").textContent = msg || "";
 }
 export function ensureShell() {
-  if (state.view !== "run" || !state.project || opening) return;
+  // No project (once the list is in): say so instead of a blank terminal.
+  if (!state.project) return state.projectsLoaded && renderShellNote("Select a project to open a shell in it.", "No project");
+  if (state.view !== "run" || opening) return;
   renderShellHead();
   // The runner picked for this project's shell: a shell elsewhere isn't kept
   // in view (it keeps running), though another process's output is.

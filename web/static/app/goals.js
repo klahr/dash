@@ -4,7 +4,7 @@ import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
-import { STATUS_LABEL, state } from "./state.js";
+import { STATUS_LABEL, projectFirst, state } from "./state.js";
 import { eventFor, latest, projectKey } from "./events.js";
 import { agoText, renderBoard, title } from "./branches.js";
 import { detailBackground, openDetail, renderDetail } from "./detail.js";
@@ -447,7 +447,7 @@ function talk(g) {
 // you. A new goal opens in the pane, planning; its first plan opens in the
 // Split into tasks sheet once the coordinator has one.
 export function openGoalSheet({ goal = null, title: t = "", description = "" } = {}) {
-  if (!state.project) throw new Error("Select a project first.");
+  if (!state.project) throw new Error(projectFirst());
   gp.editing = goal;
   const f = $("#goal-form");
   f.reset();

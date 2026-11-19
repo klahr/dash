@@ -100,7 +100,8 @@ export function renderFile() {
   const save = $("#file-save");
   save.lastChild.textContent = s?.isLocal ? "Save" : "Save as task";
   save.title = s?.isLocal ? "Save to disk (Ctrl+S)" : "Save as a task (Ctrl+S)";
-  $("#file-empty-title").textContent = s?.note === "binary" ? "Binary file" : s?.note === "large" ? "File too large" : "No file open";
+  $(".file-side").hidden = !s; // no project: no file list, just the note
+  $("#file-empty-title").textContent = !s ? "No project" : s.note === "binary" ? "Binary file" : s.note === "large" ? "File too large" : "No file open";
   $("#file-empty-text").textContent = s?.note === "binary" ? `${s.path} isn't text, so it can't be edited here.`
     : s?.note === "large" ? `${s.path} is ${Math.round(s.size / 1024)} KiB; the editor opens files up to 512 KiB.`
     : s ? "Pick a file on the left to view and edit it. Saving creates a task that goes to review like any other; local files git doesn't track, like .env, are saved straight to disk."

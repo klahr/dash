@@ -7,7 +7,7 @@ import { api, on } from "./api.js";
 import { changed, findProject, initial } from "./routes.js";
 import { start as startRouter } from "./router.js";
 import { attempt, busy, fail, railOf, reduceMotion, toast } from "./dialogs.js";
-import { state } from "./state.js";
+import { projectFirst, state } from "./state.js";
 import { showView } from "./nav.js";
 import { baseBranch, eventFor, latest, multi, projectKey, projectStatus, refreshLive } from "./events.js";
 import { restoreBoard } from "./boards.js";
@@ -66,7 +66,13 @@ export async function loadProjects() {
   // The first pick is the page loading, not a switch: Planning keeps its own
   // filter (the one saved, or All projects).
   if (projectKey(next) !== projectKey(state.project)) await selectProject(next, { follow: !first });
-  else { state.project = next; renderProjectHeader(); if (first && !next) renderBoard(); }
+  else {
+    state.project = next;
+    renderProjectHeader();
+    // No project from the start: selectProject didn't run, so the project
+    // views draw their "No project" states here.
+    if (first && !next) { renderBoard(); resetGoals(); renderProcs(); renderFileTree(); renderFile(); loadTry().catch(() => {}); loadChecklist().catch(fail); }
+  }
   renderProjectList();
   if (first) startRouter().catch(fail);
 }
@@ -176,7 +182,7 @@ function renderPaused(p) {
 // waits, keeping its worktree and Claude session) or resumes it.
 export async function toggleProjectPause() {
   const p = state.project;
-  if (!p) throw new Error("Select a project first (p).");
+  if (!p) throw new Error(projectFirst(" (p)"));
   if (p.paused) {
     await api("POST", `/api/projects/${p.id}/resume`);
     toast("Project resumed");
@@ -823,7 +829,7 @@ export const needsRunner = (p) => isHub() && !!p && !p.prefix && !(state.runners
 // uploads; never a task or its work) and then says what it removed, item by item.
 export async function cleanup() {
   const p = state.project;
-  if (!p) throw new Error("Select a project first (p).");
+  if (!p) throw new Error(projectFirst(" (p)"));
   toast("Cleaning up…", { icon: "broom" });
   const res = await api("POST", `/api/projects/${p.id}/cleanup`);
   toast(cleanupText(res.report) || res.summary, { tone: "ok", icon: "broom", head: cleanupHead(res.report, p), ms: 10000 });
@@ -842,7 +848,7 @@ export function cleanupText(r) {
 // repository, after the password is typed again.
 export function openDeleteProject() {
   const p = state.project;
-  if (!p) throw new Error("Select a project first (p).");
+  if (!p) throw new Error(projectFirst(" (p)"));
   const f = $("#delete-project");
   f.reset();
   $("#delete-project-title").textContent = `Delete ${p.name}`;

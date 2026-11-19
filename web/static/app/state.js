@@ -52,6 +52,9 @@ export const state = {
   comments: loadComments(), // todo id → [{file, line, side, code, text}] (diff review notes)
   collapsed: new Set(arrayOf(store.getJSON("dash.collapsed"))), // desktop: minimized lane keys
 };
+// projectFirst says what to do when an action needs a project and none is
+// selected: with none at all, selecting one can't help. hint: e.g. " (p)".
+export const projectFirst = (hint = "") => (state.projects.length ? `Select a project first${hint}.` : "Create a project first.");
 export const DAY = 24 * 3600 * 1000;
 // The History graph as last drawn, and the commit its pane shows (see "commit pane").
 export const hist = { commits: [], byHash: new Map(), remote: "" };

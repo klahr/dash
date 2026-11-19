@@ -2,7 +2,7 @@ import { $ } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { ask, attempt, railOf, toast } from "./dialogs.js";
-import { LANES, state } from "./state.js";
+import { LANES, projectFirst, state } from "./state.js";
 import { showView } from "./nav.js";
 import { cleanup, loadProjects, openProjects, selectProject } from "./projects.js";
 import { pushDone } from "./board.js";
@@ -149,7 +149,7 @@ export async function runCommand(line) {
   if (/^\d+$/.test(line)) { moveCursor(keys.cur.lane, Number(line) - 1); return; }
   const [name, ...rest] = line.split(/\s+/);
   const arg = rest.join(" ");
-  const need = () => { if (!state.project) throw new Error("Select a project first (p)."); return state.project; };
+  const need = () => { if (!state.project) throw new Error(projectFirst(" (p)")); return state.project; };
   switch (name) {
     case "q": case "q!": case "close": closeDetail(); openDialog()?.close(); return;
     case "b": case "board": return showView("board");

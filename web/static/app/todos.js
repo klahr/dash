@@ -2,7 +2,7 @@ import { $, $$, h } from "./dom.js";
 import { api, here } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { buildOnPicker, depPicker, runOnPicker, draft, draftKey, promptEditor, setModelField, split, todoAttach } from "./todoform.js";
-import { state } from "./state.js";
+import { projectFirst, state } from "./state.js";
 import { projectKey } from "./events.js";
 import { boardField } from "./boards.js";
 import { grouped, projectWhere } from "./projects.js";
@@ -105,7 +105,7 @@ function quickAddRow(after = null, text = "") {
   return ta;
 }
 export function openQuickAdd(texts = [""]) {
-  if (!state.project) return toast("Select a project first", true);
+  if (!state.project) return toast(projectFirst(), true);
   quick.rows.replaceChildren();
   showRunnerNeeded($("#quick-runner-note"), state.project);
   quick.sheet.returnValue = "";

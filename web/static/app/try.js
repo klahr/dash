@@ -2,7 +2,7 @@ import { $, $$, h, ib } from "./dom.js";
 import { desktop, wsURL } from "./viewport.js";
 import { api } from "./api.js";
 import { attempt, fail, openSheet, toast } from "./dialogs.js";
-import { state, tryState } from "./state.js";
+import { projectFirst, state, tryState } from "./state.js";
 import { showView } from "./nav.js";
 import { setMenu } from "./projects.js";
 import { closeDetail } from "./detail.js";
@@ -46,6 +46,7 @@ export async function loadTry() {
 const NOT_CLI = "Trying a commit is for CLI projects: set the preview to Terminal in the project's settings.";
 export function renderTryButton() {
   const p = state.project, s = tryState.session;
+  $(".shell-at").hidden = !p; // no project: the page is its "No project" note (ensureShell)
   $("#shell-at-branch").textContent = p?.default_branch || "main";
   const btn = $("#shell-at-commit");
   const can = tryProject();
@@ -57,7 +58,7 @@ export function renderTryButton() {
 }
 
 export function openTry() {
-  if (!state.project) throw new Error("Pick a project first.");
+  if (!state.project) throw new Error(projectFirst());
   if (!tryProject()) throw new Error(NOT_CLI);
   closeDetail();
   if (!desktop.matches) setMenu(false);
@@ -67,7 +68,7 @@ export function openTry() {
 // "commit…" on the Shell page: the commit picker (a running session shows
 // first, and the picker opens on it). Picking a commit opens the page there.
 async function pickCommit() {
-  if (!state.project) throw new Error("Pick a project first.");
+  if (!state.project) throw new Error(projectFirst());
   if (!tryProject()) throw new Error(NOT_CLI);
   if (state.view !== "try" && tryState.session) return showView("try");
   if (!tryState.loaded) await loadTry();

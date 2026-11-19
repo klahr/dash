@@ -1,7 +1,7 @@
 import { $, h, ib } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, busy, toast } from "./dialogs.js";
-import { state } from "./state.js";
+import { projectFirst, state } from "./state.js";
 import { ago, agoText, title } from "./branches.js";
 import { openDetail } from "./detail.js";
 
@@ -91,7 +91,7 @@ export function renderCI() {
 }
 
 export async function openCI() {
-  if (!state.project) throw new Error("Select a project first (p).");
+  if (!state.project) throw new Error(projectFirst(" (p)"));
   if (!state.project.remote_url) throw new Error("Connect a GitHub repository first (Projects → Create GitHub repository).");
   if (!state.ci) await loadCI();
   renderCI();
