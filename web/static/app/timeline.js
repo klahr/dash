@@ -184,7 +184,9 @@ function workerNode(parent, e) {
     case "result":
       cur.el.append(e.is_error
         ? h("p", { class: "tl-error" }, e.text)
-        : h("p", { class: "agent-meta" }, `${plural(e.turns, "turn")}${e.cost_usd ? ` · ≈$${e.cost_usd.toFixed(2)}` : ""}`));
+        // An agent that reports neither turns nor cost (Codex): just done.
+        : h("p", { class: "agent-meta" }, !e.turns && !e.cost_usd ? "Finished"
+          : `${plural(e.turns, "turn")}${e.cost_usd ? ` · ≈$${e.cost_usd.toFixed(2)}` : ""}`));
       worker.cur = null;
       break;
   }

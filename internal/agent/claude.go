@@ -22,6 +22,7 @@ var (
 	_ Resumer           = ClaudeCode{}
 	_ MCPConfigurer     = ClaudeCode{}
 	_ PermissionHook    = ClaudeCode{}
+	_ ToolRuler         = ClaudeCode{}
 	_ RateLimitReporter = (*ClaudeCode)(nil)
 	_ StatusReporter    = ClaudeCode{}
 )
@@ -41,12 +42,35 @@ func (ClaudeCode) CanMCP() bool { return true }
 // CanPromptPermissions: Claude Code asks --permission-prompt-tool.
 func (ClaudeCode) CanPromptPermissions() bool { return true }
 
+// CanRuleTools: Claude Code takes --allowedTools and --disallowedTools.
+func (ClaudeCode) CanRuleTools() bool { return true }
+
 // ReportRateLimits sets f to get the rate_limit_info of every
 // rate_limit_event of the runs and chats started after.
 func (c *ClaudeCode) ReportRateLimits(f func(json.RawMessage)) { c.OnRateLimit = f }
 
 // CLIMonitor is what Dash noticed about the installed Claude Code CLI.
 func (c ClaudeCode) CLIMonitor() *claudecli.Monitor { return c.CLI }
+
+// CLIChecker is CLI as a CLIChecker (nil without one).
+func (c ClaudeCode) CLIChecker() CLIChecker {
+	if c.CLI == nil {
+		return nil
+	}
+	return claudeChecker{c.CLI}
+}
+
+// claudeChecker is a Claude Code CLI monitor as a CLIChecker.
+type claudeChecker struct{ *claudecli.Monitor }
+
+func (c claudeChecker) CLIStatus() CLIStatus { return claudeCLIStatus(c.Status()) }
+
+// claudeCLIStatus is what a Claude Code CLI monitor found (c) as a
+// CLIStatus: logged out only when `claude auth status` said so.
+func claudeCLIStatus(c claudecli.Status) CLIStatus {
+	return CLIStatus{Version: c.Version, Warnings: c.Warnings, CheckedAt: c.CheckedAt,
+		LoggedOut: c.Auth != nil && c.Auth.Method == claudecli.AuthNone}
+}
 
 func (c ClaudeCode) bin() string {
 	if c.Bin == "" {

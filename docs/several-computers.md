@@ -277,7 +277,7 @@ Without the script (or to build from source), the dialog's **Manual** tab has th
    own service around `dash runner`, see [Run as a service](service.md)).
 
 A runner takes the same flags as `dash`, and its own: the flags about running work (`-projects`,
-`-parallel`, `-claude`, `-claude-args`, `-claude-sandbox`, `-chat`, `-editor`, …) only matter to a runner; the hub
+`-parallel`, `-claude`, `-claude-args`, `-codex`, `-codex-args`, `-claude-sandbox`, `-chat`, `-editor`, …) only matter to a runner; the hub
 accepts them, logs a warning that it ignores them, and leaves them out of `dash -h`. It doesn't
 listen on a port of its own unless you pass `-addr` (then it also needs `DASH_USERNAME` and
 `DASH_PASSWORD`, like a normal Dash).
@@ -420,7 +420,8 @@ project's work can go; whose tasks a runner then runs is the next section's rule
 - A project also needs its agent's label. Pick the agent in **Project settings → Agent**; it is
   Claude Code unless you change it. Its tasks then go only to runners where that agent is
   installed and logged in. If no online runner has it, the setting says so, and the tasks wait.
-  Actions the agent can't do are grayed out on its tasks, with a tooltip saying why.
+  Actions the agent can't do are grayed out on its tasks, with a tooltip saying why. To use
+  Codex, see [Codex](codex.md).
 
 Every labels field works the same way. The picked labels show as chips; **×** on a chip removes
 it. Below the field are the labels that already exist in the organization (on runners and

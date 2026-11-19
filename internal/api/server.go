@@ -50,14 +50,20 @@ import (
 type Server struct {
 	// Store is reached one org at a time (see Data); the engines below keep
 	// the whole store.
-	Store     Data
-	Git       *gitops.Git
-	Hub       *hub.Hub
-	Todos     *queue.TodoEngine
-	Merges    *queue.MergeQueue
-	Procs     *runner.Manager
-	Previews  *preview.Manager // live previews of todos in review (optional)
-	Chat      agent.Chatter
+	Store    Data
+	Git      *gitops.Git
+	Hub      *hub.Hub
+	Todos    *queue.TodoEngine
+	Merges   *queue.MergeQueue
+	Procs    *runner.Manager
+	Previews *preview.Manager // live previews of todos in review (optional)
+	Chat     agent.Chatter
+	// ChatFor, if set, is the chatter of a project's chats: its agent's
+	// (model.Project.AgentName). Nil, or nil for a project, is Chat.
+	ChatFor func(p model.Project) agent.Chatter
+	// Agents, if set, is what this runner found of each of its agent CLIs
+	// (agent.Set.Statuses), shown in Project settings → Agent.
+	Agents    func() []model.AgentStatus
 	Auth      *auth.Auth
 	Perms     *perm.Broker
 	Board     *mcptools.Tokens // chat runs' tokens for /mcp/dash
@@ -542,7 +548,16 @@ func (s *Server) buildMux() *http.ServeMux {
 	// The agent CLIs this Dash can run tasks on, and what each can do: the
 	// project settings' agent choice, and the task actions it allows.
 	mux.HandleFunc("GET /api/agents", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, agent.Providers())
+		list := agent.Providers()
+		if s.Agents != nil && !s.hub() {
+			// A runner says what it found of each CLI on this computer:
+			// installed, signed in (the hub has its runners' instead).
+			sts := s.Agents()
+			for i := range list {
+				list[i].Status = model.FindAgent(sts, list[i].Name)
+			}
+		}
+		writeJSON(w, http.StatusOK, list)
 	})
 	mux.Handle("GET /", s.static())
 	return mux.ServeMux

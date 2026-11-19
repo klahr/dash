@@ -14,11 +14,12 @@ type Set struct {
 	list []Provider // in ProviderNames order
 }
 
-// NewSet builds every registered provider from cfg.
-func NewSet(cfg Config) *Set {
+// NewSet builds every registered provider, each from its config in cfgs
+// (by provider name; none: the zero Config, the provider's defaults).
+func NewSet(cfgs map[string]Config) *Set {
 	s := &Set{}
 	for _, n := range ProviderNames() {
-		if p, err := NewProvider(n, cfg); err == nil {
+		if p, err := NewProvider(n, cfgs[n]); err == nil {
 			s.list = append(s.list, p)
 		}
 	}
@@ -60,17 +61,45 @@ func (s *Set) Statuses() []model.AgentStatus {
 }
 
 // Run checks every provider's CLI now and then every `every` until ctx
-// ends (claudecli.Monitor.Run), calling changed(p) when what was found
-// about p's changed. Providers without a monitor aren't checked.
+// ends (CLIChecker.Run), calling changed(p) when what was found about p's
+// changed. Providers without a checker aren't checked.
 func (s *Set) Run(ctx context.Context, every time.Duration, changed func(p Provider)) {
 	for _, p := range s.All() {
-		m := MonitorOf(p)
-		if m == nil {
+		c := CheckerOf(p)
+		if c == nil {
 			continue
 		}
 		if changed != nil {
-			m.OnChange(func() { changed(p) })
+			c.OnChange(func() { changed(p) })
 		}
-		go m.Run(ctx, every)
+		go c.Run(ctx, every)
 	}
+}
+
+// Prompter answers one-shot prompts (titles, summaries) on the default
+// provider while it is Ready, else on the first other provider that is:
+// a runner with only Codex signed in still names its tasks. With none
+// ready, the default answers (and says what is wrong).
+func (s *Set) Prompter() Prompter { return setPrompter{s} }
+
+type setPrompter struct{ s *Set }
+
+func (p setPrompter) Prompt(ctx context.Context, req PromptRequest) (string, error) {
+	return p.pick().Prompt(ctx, req)
+}
+
+func (p setPrompter) pick() Provider {
+	def := p.s.Get("")
+	if Ready(def) {
+		return def
+	}
+	for _, x := range p.s.All() {
+		if (def == nil || x.Name() != def.Name()) && Ready(x) {
+			return x
+		}
+	}
+	if def == nil {
+		return defaultPrompter().(Provider)
+	}
+	return def
 }

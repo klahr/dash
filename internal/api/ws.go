@@ -300,6 +300,17 @@ type chatSetup struct {
 	running func(delta int)
 }
 
+// chatFor is the chatter of project p's chats on this Dash: its agent's
+// (ChatFor), else Chat.
+func (s *Server) chatFor(p model.Project) agent.Chatter {
+	if s.Chat != nil && s.ChatFor != nil {
+		if c := s.ChatFor(p); c != nil {
+			return c
+		}
+	}
+	return s.Chat
+}
+
 // resolveChatTurn works out where msg's turn runs and how it is saved: on
 // this Dash or on one of the caller's runners, in a scratch directory, a
 // project's checkout or a task's worktree. Its error is the client's to see.
@@ -378,6 +389,7 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 		if msg.Project != "" {
 			p, _ := sv.hubProject(msg.Project) // found above
 			ct.dir, ct.mode, ct.pid = p.Path, p.ChatPermissionMode, p.ID
+			ct.chatter = s.chatFor(p)
 			if validChatMode(msg.Mode) {
 				ct.mode = msg.Mode // the hub's project settings are the ones its users edit
 			}
@@ -411,6 +423,7 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 			return ct, err
 		}
 		ct.dir, ct.mode, ct.pid = p.Path, ownMode(p.ChatPermissionMode), p.ID
+		ct.chatter = s.chatFor(p)
 		// The server keeps the conversation: the turn continues the saved
 		// one with what the client added, and saves only what it adds.
 		stored, err := sv.data.ProjectChat(p.ID, user)
@@ -478,6 +491,7 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 		var diff string
 		if p, err := sv.data.GetProject(t.ProjectID); err == nil {
 			ct.dir, ct.mode = p.Path, ownMode(p.ChatPermissionMode)
+			ct.chatter = s.chatFor(p)
 			runs := false
 			if s.todoChatOnRunner(p, t) {
 				// Claude runs on the caller's runner: the one that ran the

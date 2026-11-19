@@ -15,6 +15,8 @@ merge them one at a time.
     [Merge queue](docs/merge-queue.md#conflicts-found-early));
   - **[Claude Code](https://claude.com/claude-code)** (`claude`), installed and logged in: run
     `claude` once in a terminal there and sign in;
+  - or, for projects that pick it, the **[Codex CLI](https://github.com/openai/codex)**
+    (`codex`), installed and signed in ([Codex](docs/codex.md));
   - optional: **[`gh`](https://cli.github.com)**, logged in, to create GitHub repositories and
     open pull requests. Without it, GitHub projects merge on the default branch instead of opening
     pull requests.
@@ -254,6 +256,7 @@ limit (see **Claude usage**).
 ## Reference
 
 - [Chat](docs/chat.md): the general, project and task chats, and running shell commands from them with `!`
+- [Codex](docs/codex.md): run a project's tasks on OpenAI's Codex CLI instead of Claude Code, picked in **Project settings → Agent**, and what works differently
 - [Goals](docs/goals.md): a coordinator that plans, dispatches and reviews a goal's tasks, within a budget, and never merges
 - [Deploys](docs/deploys.md): environments, deploy records and the Deploys page; health checks, verify commands and rollback; roles, approvals, freezes, promotion and settings history; your scripts deploy, Dash tracks what is live where, and secrets stay on the runners
 - [Plan a new project](docs/plan-project.md): Claude interviews you about an idea, writes a brief, and Dash starts the project and a goal from it

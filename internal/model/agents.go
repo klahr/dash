@@ -29,6 +29,9 @@ const (
 	// FeaturePermissionHook: asks Dash before a tool call it isn't
 	// allowed to make outright (agent.PermissionHook).
 	FeaturePermissionHook = "permission-hook"
+	// FeatureToolRules: follows per-tool allow and deny rules, which
+	// scans need to keep their reads in the checkout (agent.ToolRuler).
+	FeatureToolRules = "tool-rules"
 	// FeatureUsage: reports its account's usage limits
 	// (agent.RateLimitReporter).
 	FeatureUsage = "usage"

@@ -64,7 +64,10 @@ func (s *Server) shellAllowed(r *http.Request, chatter agent.Chatter) error {
 	if s.hub() || !localrun.Allowed() {
 		return errors.New("this hub runs no commands itself: ! commands run on your runner linked to the project")
 	}
-	if agent.ReadOnlyChat(chatter) {
+	// The user's own commands follow how this Dash's chat is set up
+	// (chatCommands), not the project's agent: Codex's chat only reads,
+	// but a "!" command is the user's, not the agent's.
+	if agent.ReadOnlyChat(s.Chat) {
 		return errReadOnlyShell
 	}
 	if auth.FromHub(r.Context()) {

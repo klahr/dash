@@ -82,6 +82,7 @@ type options struct {
 	dataDir, projectRoot             string
 	parallel                         int
 	claudeBin, claudeArgs            string
+	codexBin, codexArgs              string
 	claudeSandbox                    string
 	signCommits                      bool
 	chatBackend, chatTools           string
@@ -154,6 +155,8 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.StringVar(&o.claudeBin, "claude", "claude", "Claude Code binary used to execute tasks")
 	f.StringVar(&o.claudeArgs, "claude-args", "--permission-mode acceptEdits --allowedTools Bash",
 		"extra flags for `claude -p` (space separated), e.g. --allowedTools / --model")
+	f.StringVar(&o.codexBin, "codex", "codex", "Codex CLI binary used to execute the tasks of projects whose agent is Codex (see docs/codex.md)")
+	f.StringVar(&o.codexArgs, "codex-args", "", "extra flags for `codex exec` (space separated), e.g. --model / -c key=value")
 	f.StringVar(&o.claudeSandbox, "claude-sandbox", "",
 		"a command (space separated) that runs Claude for tasks and scans, given claude and its flags, e.g. a script that runs it as a user with fewer rights or in a container (default $DASH_CLAUDE_SANDBOX; see docs/sandbox.md)")
 	f.BoolVar(&o.signCommits, "sign-commits", false, "GPG/SSH-sign commits Dash makes (needs a non-interactive signing agent)")
@@ -591,10 +594,14 @@ func (a *app) buildServices() {
 	if err := a.tracker.Keep(filepath.Join(o.dataDir, "usage.json")); err != nil {
 		slog.Warn("read usage.json", "err", err)
 	}
-	// The agent CLIs that run tasks: each project's tasks run on its agent
-	// (agent.Set.For), and a runner reports them all to its hub. Scans,
-	// chat and short calls use Claude Code, the default provider.
-	a.agents = agent.NewSet(agent.Config{Bin: o.claudeBin, Args: strings.Fields(o.claudeArgs), Sandbox: o.sandbox()})
+	// The agent CLIs that run tasks: each project's tasks and chat run on
+	// its agent (agent.Set.For), and a runner reports them all to its hub.
+	// Scans need per-tool rules (agent.ToolRuler), so they use Claude Code,
+	// the default provider; short calls (titles) the first one signed in.
+	a.agents = agent.NewSet(map[string]agent.Config{
+		agent.DefaultProvider: {Bin: o.claudeBin, Args: strings.Fields(o.claudeArgs), Sandbox: o.sandbox()},
+		agent.CodexProvider:   {Bin: o.codexBin, Args: strings.Fields(o.codexArgs), Sandbox: o.sandbox()},
+	})
 	prov := a.agents.Get(agent.DefaultProvider)
 	if prov == nil {
 		fatal("agent provider", "err", agent.ErrUnknownProvider)
@@ -639,7 +646,7 @@ func (a *app) buildServices() {
 	// Claude's short calls. Only a runner makes them: the hub has no tasks
 	// of its own to summarise, and asks the caller's runner for titles and
 	// clean-ups (Titler only says whether to name untitled tasks there).
-	a.small = agent.Titler{Prompter: prov, Model: o.titleModel}
+	a.small = agent.Titler{Prompter: a.agents.Prompter(), Model: o.titleModel}
 	if o.autoTitles && o.runnerMode {
 		a.todos.Summarizer = a.small
 	}
@@ -922,6 +929,7 @@ func (a *app) setupRunner() {
 	// The hub may run the general chat and Claude's short calls here for
 	// this runner's owner only, with this computer's `claude` login.
 	apiSrv.HubUser, apiSrv.Small, apiSrv.Refiner, apiSrv.Splitter = creds.UserID, a.small, a.small, a.small
+	apiSrv.Agents = a.agents.Statuses
 	apiSrv.ChatDir = filepath.Join(o.dataDir, "chat")
 	apiSrv.ChatCommandTimeout = o.chatCommandTimeout
 	apiSrv.SelfUpdate = a.update.Update // when the hub asks
@@ -1029,7 +1037,7 @@ func (a *app) setupRunner() {
 	// The hub hears of its agents' versions, logins and warnings at once.
 	// Agent CLIs (Claude Code) update themselves: checked every hour.
 	a.agents.Run(ctx, time.Hour, func(p agent.Provider) {
-		for _, w := range agent.MonitorOf(p).Warnings() {
+		for _, w := range agent.CheckerOf(p).CLIStatus().Warnings {
 			slog.Warn("agent cli", "agent", p.Name(), "warning", w)
 		}
 		reporter.Nudge()
@@ -1169,10 +1177,20 @@ func (a *app) configureChat() {
 		if o.chatTools == agent.ChatShell && !o.askPerms {
 			slog.Warn("-chat-tools shell without -permission-prompts: the chat can only use tools allowed with -chat-allow")
 		}
-		a.apiSrv.Chat = a.agent.Chat(agent.ChatConfig{
+		cfg := agent.ChatConfig{
 			Dir: o.home, Tools: o.chatTools, AllowedTools: o.chatAllow,
 			Perms: a.perms, PermURL: a.permURL, Board: a.apiSrv.Board, BoardURL: a.mcpURL,
-		})
+		}
+		a.apiSrv.Chat = a.agent.Chat(cfg)
+		// A project's chats (its own, its tasks', its goals') run on its
+		// agent; the general chat on the default one.
+		chats := map[string]agent.Chatter{agent.DefaultProvider: a.apiSrv.Chat}
+		for _, p := range a.agents.All() {
+			if _, ok := chats[p.Name()]; !ok {
+				chats[p.Name()] = p.Chat(cfg)
+			}
+		}
+		a.apiSrv.ChatFor = func(p model.Project) agent.Chatter { return chats[p.AgentName()] }
 	case chat == "api":
 		a.apiSrv.Chat = agent.NewChat()
 	default:

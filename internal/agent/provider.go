@@ -21,7 +21,7 @@ import (
 // Claude Code (ClaudeCode, registered as "claude") is the default.
 //
 // What only some agent CLIs can do is in the small interfaces below
-// (Resumer, MCPConfigurer, PermissionHook, RateLimitReporter,
+// (Resumer, MCPConfigurer, PermissionHook, ToolRuler, RateLimitReporter,
 // StatusReporter). Check for them with a type assertion, or the Can…
 // helpers, and work without them: a provider that lacks one is not an error.
 type Provider interface {
@@ -94,6 +94,15 @@ type PermissionHook interface {
 	CanPromptPermissions() bool
 }
 
+// ToolRuler is a provider that follows per-tool permission rules
+// (ExecRequest.AllowedTools, DeniedTools), so a run's file reads can be
+// confined to its directory. Without one, a run reads what its CLI's own
+// sandbox lets it: scans, which must not read the runner's credentials,
+// don't run on it.
+type ToolRuler interface {
+	CanRuleTools() bool
+}
+
 // RateLimitReporter is a provider that reports its account's rate limits
 // as they change: f gets each report, as the CLI sent it.
 type RateLimitReporter interface {
@@ -101,9 +110,30 @@ type RateLimitReporter interface {
 }
 
 // StatusReporter is a provider that checks its installed CLI (version,
-// accepted flags, login) and keeps what it found in a monitor.
+// accepted flags, login) and keeps what it found (a nil CLIChecker: none).
 type StatusReporter interface {
-	CLIMonitor() *claudecli.Monitor
+	CLIChecker() CLIChecker
+}
+
+// CLIChecker checks an agent's installed CLI now and then and keeps what
+// it found.
+type CLIChecker interface {
+	// Run checks now and then every `every` until ctx ends.
+	Run(ctx context.Context, every time.Duration)
+	// OnChange sets f to be called after what it found changed.
+	OnChange(f func())
+	// CLIStatus is what it found last.
+	CLIStatus() CLIStatus
+}
+
+// CLIStatus is what a CLIChecker found about an agent's CLI.
+type CLIStatus struct {
+	Version   string // "" when it isn't installed (or didn't say)
+	Warnings  []string
+	CheckedAt time.Time // zero: not checked yet
+	// LoggedOut: the CLI said it isn't signed in. A sign-in state Dash
+	// doesn't understand isn't LoggedOut, so it doesn't keep tasks away.
+	LoggedOut bool
 }
 
 // DisplayNamer is a provider with a name for people, e.g. "Claude Code".
@@ -130,21 +160,38 @@ func CanPromptPermissions(x any) bool {
 	return ok && p.CanPromptPermissions() && CanMCP(x)
 }
 
-// MonitorOf is x's CLI monitor (StatusReporter), or nil: a nil monitor
-// checks nothing and reports nothing.
-func MonitorOf(x any) *claudecli.Monitor {
+// CanRuleTools reports whether x follows per-tool permission rules
+// (ToolRuler).
+func CanRuleTools(x any) bool {
+	r, ok := x.(ToolRuler)
+	return ok && r.CanRuleTools()
+}
+
+// CheckerOf is x's CLI checker (StatusReporter), or nil.
+func CheckerOf(x any) CLIChecker {
 	if s, ok := x.(StatusReporter); ok {
-		return s.CLIMonitor()
+		return s.CLIChecker()
 	}
 	return nil
 }
 
-// Config is what every provider is built from (see NewProvider).
+// MonitorOf is x's Claude Code CLI monitor, or nil when x isn't Claude
+// Code: a nil monitor checks nothing and reports nothing. What only Claude
+// Code says (its account, how it signs in) is read from it.
+func MonitorOf(x any) *claudecli.Monitor {
+	if c, ok := x.(interface{ CLIMonitor() *claudecli.Monitor }); ok {
+		return c.CLIMonitor()
+	}
+	return nil
+}
+
+// Config is what a provider is built from (see NewProvider). Each provider
+// has its own: the flags of one CLI mean nothing to another.
 type Config struct {
 	// Bin is the CLI's binary; "" is the provider's default (e.g. "claude").
 	Bin string
-	// Args are extra flags for task runs (-claude-args); scans and other
-	// unattended runs go without them.
+	// Args are extra flags for task runs (-claude-args, -codex-args); scans
+	// and other unattended runs go without them.
 	Args []string
 	// Sandbox, if set, is a command that runs the CLI for Dash (see
 	// ClaudeCode.Sandbox and docs/sandbox.md).
@@ -231,7 +278,8 @@ func defaultPrompter() Prompter {
 }
 
 // Features are the optional abilities x has, by name (model.FeatureResume,
-// model.FeatureMCP, model.FeaturePermissionHook, model.FeatureUsage), as
+// model.FeatureMCP, model.FeaturePermissionHook, model.FeatureToolRules,
+// model.FeatureUsage), as
 // the interfaces above say: what a runner reports of each agent it has.
 func Features(x any) []string {
 	out := []string{}
@@ -243,6 +291,9 @@ func Features(x any) []string {
 	}
 	if CanPromptPermissions(x) {
 		out = append(out, model.FeaturePermissionHook)
+	}
+	if CanRuleTools(x) {
+		out = append(out, model.FeatureToolRules)
 	}
 	if _, ok := x.(RateLimitReporter); ok {
 		out = append(out, model.FeatureUsage)
@@ -261,36 +312,40 @@ func ProviderFeatures(name string) []string {
 }
 
 // StatusOf is what a runner reports of provider p: its name and features,
-// and what its CLI monitor (StatusReporter) last found. A provider without
-// a monitor can't say whether its CLI is installed: it is reported as not
+// and what its CLI checker (StatusReporter) last found. A provider without
+// a checker can't say whether its CLI is installed: it is reported as not
 // installed, with a warning, so no project's tasks are sent to it.
 func StatusOf(p Provider) model.AgentStatus {
 	s := model.AgentStatus{Name: p.Name(), Features: Features(p)}
-	m := MonitorOf(p)
-	if m == nil {
+	c := CheckerOf(p)
+	if c == nil {
 		s.Warnings = []string{"Dash can't check this agent's CLI"}
 		s.CheckedAt = time.Now()
 		return s
 	}
-	return withCLIStatus(s, m.Status())
+	return withCLIStatus(s, c.CLIStatus())
 }
 
 // ClaudeStatus is the agent status of Claude Code as a runner too old to
 // report agents described its CLI (c), for the hub to show and match.
 func ClaudeStatus(c claudecli.Status) model.AgentStatus {
-	return withCLIStatus(model.AgentStatus{Name: DefaultProvider, Features: ProviderFeatures(DefaultProvider)}, c)
+	return withCLIStatus(model.AgentStatus{Name: DefaultProvider, Features: ProviderFeatures(DefaultProvider)}, claudeCLIStatus(c))
 }
 
-// withCLIStatus fills s from what a CLI monitor found (c). It counts as
+// withCLIStatus fills s from what a CLI checker found (c). It counts as
 // logged in unless the CLI said it isn't: an auth status Dash doesn't
 // understand doesn't keep tasks from a runner.
-func withCLIStatus(s model.AgentStatus, c claudecli.Status) model.AgentStatus {
+func withCLIStatus(s model.AgentStatus, c CLIStatus) model.AgentStatus {
 	s.Version, s.CheckedAt = c.Version, c.CheckedAt
 	s.Warnings = slices.Clone(c.Warnings)
 	s.Installed = c.Version != ""
-	s.LoggedIn = s.Installed && (c.Auth == nil || c.Auth.Method != claudecli.AuthNone)
+	s.LoggedIn = s.Installed && !c.LoggedOut
 	return s
 }
+
+// Ready reports whether p can run work as far as Dash knows (StatusOf's
+// model.AgentStatus.Ready): installed and signed in, or not checked yet.
+func Ready(p Provider) bool { return p != nil && StatusOf(p).Ready() }
 
 // ProviderInfo is a registered provider as the dashboard shows it.
 type ProviderInfo struct {
@@ -298,6 +353,9 @@ type ProviderInfo struct {
 	Title    string   `json:"title"` // for people (DisplayNamer), else Name
 	Features []string `json:"features"`
 	Default  bool     `json:"default,omitempty"` // DefaultProvider
+	// Status is what this Dash found of its CLI, when it runs tasks itself
+	// (nil on a hub: its runners report theirs).
+	Status *model.AgentStatus `json:"status,omitempty"`
 }
 
 // Providers are the registered providers, by name.

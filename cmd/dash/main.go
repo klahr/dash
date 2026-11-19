@@ -134,7 +134,7 @@ func warnUnlinked(ps []model.Project) {
 // runnerFlags are about running tasks, Claude, scans and commands, which only
 // runners (`dash runner`) do: the hub accepts them, with a warning, and
 // ignores them (they are left out of its -h).
-var runnerFlags = []string{"projects", "parallel", "claude", "claude-args", "claude-sandbox", "sign-commits", "chat", "chat-tools", "chat-allow",
+var runnerFlags = []string{"projects", "parallel", "claude", "claude-args", "codex", "codex-args", "claude-sandbox", "sign-commits", "chat", "chat-tools", "chat-allow",
 	"permission-prompts", "editor", "title-model", "cleanup-days"}
 
 // hubOnlyFlags are about what only the hub does: signup and its email,

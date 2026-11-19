@@ -70,6 +70,7 @@ func TestSummary(t *testing.T) {
 		{model.RunEvent{Kind: "tool_use", Tool: "Write", Input: []byte(strings.Repeat("y", 300))}, "🔧 Write " + strings.Repeat("y", 200) + "…"},
 		{model.RunEvent{Kind: "tool_result", Text: "lots of output"}, ""},
 		{model.RunEvent{Kind: "result", Text: "Done.", Turns: 3, CostUSD: 0.5}, "✔ Claude finished (3 turns, ≈$0.50)\nDone."},
+		{model.RunEvent{Kind: "result", Text: "Done."}, "✔ Finished\nDone."}, // an agent that reports neither (Codex)
 		{model.RunEvent{Kind: "result", Text: "error_max_turns: out", IsError: true}, "✖ error_max_turns: out"},
 		{model.RunEvent{Kind: "run_start", Text: "Rework"}, ""},
 		{model.RunEvent{Kind: "prompt", Text: "Fix it"}, ""},

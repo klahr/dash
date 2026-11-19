@@ -116,28 +116,37 @@ func (c ClaudeCodeChat) system(dir string, coordinator bool) string {
 	if coordinator {
 		return CoordinatorSystem
 	}
+	var tools string
+	if c.shell() {
+		tools = " and have all of Claude Code's tools, e.g. Read, Grep, Glob, Bash, Edit, Write, web access and the user's MCP servers. " +
+			"The user approves each tool call their settings don't already allow in the chat before it runs; if they deny one, don't retry it, ask what to do instead."
+	} else {
+		tools = " and can read files with Read, Grep and Glob. You cannot edit files or run commands."
+	}
+	return chatSystem(dir, tools, c.Board != nil && c.BoardURL != "", c.shell())
+}
+
+// chatSystem is a chat's system prompt: where it runs (dir: a project's
+// checkout, else the home directory), what its tools can do (tools, a
+// sentence after "You run in …"), and, with board, the Dash task tools;
+// writes says whether it may change the checklist too.
+func chatSystem(dir, tools string, board, writes bool) string {
 	where := " You run in the user's home directory"
 	if dir != "" {
 		where = " You run in the project's checkout"
 	}
-	s := (&Chat{}).defaultSystem() + where
-	if c.shell() {
-		s += " and have all of Claude Code's tools, e.g. Read, Grep, Glob, Bash, Edit, Write, web access and the user's MCP servers. " +
-			"The user approves each tool call their settings don't already allow in the chat before it runs; if they deny one, don't retry it, ask what to do instead."
-	} else {
-		s += " and can read files with Read, Grep and Glob. You cannot edit files or run commands."
-	}
+	s := (&Chat{}).defaultSystem() + where + tools
 	if dir != "" {
 		s += " Look at the code before answering questions about it."
 	}
-	if c.Board != nil && c.BoardURL != "" {
+	if board {
 		s += " You can list, create, queue, change and delete Dash tasks with the " + mcptools.ServerName + " tools; create them as drafts and queue a draft (queue_todo) only when the user asks for it to run. " +
 			"Fix a task's title, prompt, priority or dependencies with update_todo; delete a task (delete_todo) only when the user asks to remove it. " +
 			"queue_todo also retries a failed task. Stop a queued or running task (stop_todo), or stop it, change its prompt and run it again (restart_todo), " +
 			"only when the user explicitly asks to stop, restart or rerun it. " +
 			"When the user decides to build or change something, create a Dash task for it instead of editing code yourself. " +
 			"The project's checklist is its TODO.md, the user's to-do list in the repository, separate from the task board: read it with read_checklist"
-		if c.shell() {
+		if writes {
 			s += ", and change it with add_checklist_item, check_checklist_item, edit_checklist_item, delete_checklist_item and reorder_checklist_item (each change is committed right away). " +
 				"When the user says to add something to the todo list, the to-do list or TODO.md, add a checklist item, not a task; " +
 				"move_checklist_item_to_task turns an item into a draft task and removes it from TODO.md (queue: true only when the user asks for it to run)."
@@ -219,24 +228,9 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	// The tools and permission prompts act as the user the turn runs for, in
 	// their org; a turn without one (no signed-in user) gets neither.
 	caller, hasCaller := mcptools.CallerFrom(ctx)
-	if c.Board != nil && c.BoardURL != "" && hasCaller {
-		pid, _ := ctx.Value(projectKey{}).(string)
-		var token string
-		var release func()
-		goal := mcptools.GoalFrom(ctx)
-		hp, hub := mcptools.HubFrom(ctx)
-		switch {
-		case hub && goal != "":
-			token, release = c.Board.RegisterHubGoal(caller, hp, goal)
-		case hub:
-			token, release = c.Board.RegisterHub(caller, hp) // a turn for this runner's hub uses the hub's board
-		case goal != "":
-			token, release = c.Board.RegisterGoal(caller, pid, goal)
-		default:
-			token, release = c.Board.Register(caller, pid)
-		}
+	if cfg, release := chatBoard(ctx, c.Board, c.BoardURL); cfg != nil {
 		defer release()
-		servers[mcptools.ServerName] = mcptools.ServerConfig(c.BoardURL, token)
+		servers[mcptools.ServerName] = cfg
 	}
 	if ask := approverFrom(ctx); c.shell() && ask != nil && c.Perms != nil && c.PermURL != "" && hasCaller {
 		token, release := c.Perms.RegisterFunc(caller, ask)
@@ -375,6 +369,32 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	emit(usageDelta(*usage))
 	emit(ChatDelta{Kind: "done"})
 	return nil
+}
+
+// chatBoard is the config of the Dash task tools' server for a chat turn
+// run with ctx, acting as its caller (in its project, goal or hub), and
+// the release of its token; nil without a board or a caller.
+func chatBoard(ctx context.Context, board *mcptools.Tokens, url string) (map[string]any, func()) {
+	caller, ok := mcptools.CallerFrom(ctx)
+	if board == nil || url == "" || !ok {
+		return nil, nil
+	}
+	pid, _ := ctx.Value(projectKey{}).(string)
+	var token string
+	var release func()
+	goal := mcptools.GoalFrom(ctx)
+	hp, hub := mcptools.HubFrom(ctx)
+	switch {
+	case hub && goal != "":
+		token, release = board.RegisterHubGoal(caller, hp, goal)
+	case hub:
+		token, release = board.RegisterHub(caller, hp) // a turn for this runner's hub uses the hub's board
+	case goal != "":
+		token, release = board.RegisterGoal(caller, pid, goal)
+	default:
+		token, release = board.Register(caller, pid)
+	}
+	return mcptools.ServerConfig(url, token), release
 }
 
 // maxToolOutput caps the tool output sent to the chat per call.

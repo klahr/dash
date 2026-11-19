@@ -519,7 +519,7 @@ func (s *Server) coordinatorChatter(sv *service, p model.Project, g model.Goal, 
 	if s.Chat == nil {
 		return nil, "", errChatUnavailable
 	}
-	return s.Chat, p.Path, nil
+	return s.chatFor(p), p.Path, nil
 }
 
 // coordinatorHistory is how many of a coordinator's earlier messages it

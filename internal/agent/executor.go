@@ -245,6 +245,10 @@ func Summary(e model.RunEvent) string {
 		if e.IsError {
 			return "✖ " + e.Text
 		}
+		if e.Turns == 0 && e.CostUSD == 0 {
+			// An agent that reports neither (Codex).
+			return "✔ Finished\n" + e.Text
+		}
 		return fmt.Sprintf("✔ Claude finished (%d turns, ≈$%.2f)\n%s", e.Turns, e.CostUSD, e.Text)
 	}
 	return "" // tool results and run boundaries are noise for the text log

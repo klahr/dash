@@ -16,7 +16,8 @@ function runParts(r) {
   const parts = [`${fmtTokens(input)} in${input && cached ? ` (${Math.round(100 * cached / input)}% cached)` : ""}`,
     `${fmtTokens(r.output_tokens || 0)} out`];
   if (r.turns) parts.push(plural(r.turns, "turn"));
-  parts.push(`$${(r.cost_usd || 0).toFixed(2)}`);
+  // An agent that reports neither (Codex) has no cost to show.
+  if (r.turns || r.cost_usd) parts.push(`$${(r.cost_usd || 0).toFixed(2)}`);
   return parts;
 }
 

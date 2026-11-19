@@ -42,7 +42,10 @@ const ResumeMaxAge = 24 * time.Hour
 type Runner struct {
 	Store *store.Store
 	Git   *gitops.Git
-	Exec  agent.Executor
+	// Exec runs every scan, whatever agent the project's tasks use: it must
+	// follow per-tool rules (agent.CanRuleTools), which keep a scan's reads
+	// in its checkout (RunRequest). Claude Code does; Codex reads anywhere.
+	Exec agent.Executor
 	// Root holds the throwaway worktrees (Root/worktrees) and run logs
 	// (Root/logs). Keep it apart from the tasks' worktrees, whose cleanup
 	// removes directories no task knows.

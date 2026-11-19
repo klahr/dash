@@ -11,7 +11,7 @@ import (
 
 func TestFeatures(t *testing.T) {
 	c, _ := NewProvider(DefaultProvider, Config{})
-	want := []string{model.FeatureResume, model.FeatureMCP, model.FeaturePermissionHook, model.FeatureUsage}
+	want := []string{model.FeatureResume, model.FeatureMCP, model.FeaturePermissionHook, model.FeatureToolRules, model.FeatureUsage}
 	if got := Features(c); !slices.Equal(got, want) {
 		t.Errorf("Claude Code: %v, want %v", got, want)
 	}
@@ -48,7 +48,7 @@ func TestStatusOf(t *testing.T) {
 	} {
 		s := ClaudeStatus(x.st)
 		if s.Name != "claude" || s.Version != x.st.Version || s.Installed != x.installed || s.LoggedIn != x.loggedIn ||
-			!slices.Equal(s.Warnings, x.st.Warnings) || !s.CheckedAt.Equal(now) || len(s.Features) != 4 {
+			!slices.Equal(s.Warnings, x.st.Warnings) || !s.CheckedAt.Equal(now) || len(s.Features) != 5 {
 			t.Errorf("%+v: %+v", x.st, s)
 		}
 		if s.Ready() != (x.installed && x.loggedIn) {
@@ -60,18 +60,26 @@ func TestStatusOf(t *testing.T) {
 func TestSet(t *testing.T) {
 	RegisterProvider("bare", func(Config) Provider { return bareProvider{} })
 	defer UnregisterProvider("bare")
-	s := NewSet(Config{Bin: "/opt/claude"})
-	if names := []string{s.All()[0].Name(), s.All()[1].Name()}; len(s.All()) != 2 || !slices.Equal(names, []string{"bare", "claude"}) {
+	s := NewSet(map[string]Config{"claude": {Bin: "/opt/claude"}})
+	var names []string
+	for _, p := range s.All() {
+		names = append(names, p.Name())
+	}
+	if !slices.Equal(names, []string{"bare", "claude", "codex"}) {
 		t.Fatalf("set %v", names)
 	}
 	if c, ok := s.Get("").(*ClaudeCode); !ok || c.Bin != "/opt/claude" || s.Get("claude") != Provider(c) {
 		t.Errorf("default %T", s.Get(""))
 	}
-	if s.For(model.Project{}) != s.Get("claude") || s.For(model.Project{Agent: "bare"}).Name() != "bare" || s.For(model.Project{Agent: "codex"}) != nil {
+	if s.For(model.Project{}) != s.Get("claude") || s.For(model.Project{Agent: "bare"}).Name() != "bare" || s.For(model.Project{Agent: "nobody"}) != nil {
 		t.Error("For picks the wrong provider")
 	}
+	// Each provider gets its own config: Codex doesn't get Claude's binary.
+	if x, ok := s.For(model.Project{Agent: "codex"}).(*Codex); !ok || x.Bin != "" || x.bin() != "codex" {
+		t.Errorf("codex %+v", s.For(model.Project{Agent: "codex"}))
+	}
 	st := s.Statuses()
-	if len(st) != 2 || st[0].Name != "bare" || st[1].Name != "claude" || st[0].Installed {
+	if len(st) != 3 || st[0].Name != "bare" || st[1].Name != "claude" || st[2].Name != "codex" || st[0].Installed {
 		t.Errorf("statuses %+v", st)
 	}
 	var none *Set
@@ -80,7 +88,7 @@ func TestSet(t *testing.T) {
 	}
 	infos := Providers()
 	i := slices.IndexFunc(infos, func(p ProviderInfo) bool { return p.Name == "claude" })
-	if i < 0 || infos[i].Title != "Claude Code" || !infos[i].Default || len(infos[i].Features) != 4 {
+	if i < 0 || infos[i].Title != "Claude Code" || !infos[i].Default || len(infos[i].Features) != 5 {
 		t.Errorf("providers %+v", infos)
 	}
 }

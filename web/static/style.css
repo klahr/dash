@@ -1576,6 +1576,11 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .copy-text .nobreak { white-space: nowrap; }
 .copy-row .btn { flex: none; }
 .hint.warn { color: var(--running); }
+/* Project settings → Agent: the warning on its own line, what the agent
+   can't do below it in the hint's own color. */
+#settings-agent-hint > span { display: block; }
+#settings-agent-hint > span + span { margin-top: 4px; }
+#settings-agent-hint .agent-note { color: var(--muted); }
 
 /* ---------- palette (Ctrl-k) ---------- */
 .palette { display: none; flex-direction: column; padding-bottom: var(--safe-b); }

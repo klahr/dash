@@ -14,7 +14,7 @@ import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
 import { renderBoardSettings } from "./boards.js";
 import { agentRunners, missingLabels, parseLabels, projectAgent, servesProject } from "../groups.js";
-import { FEATURES, agentTitle, loadAgents } from "./agents.js";
+import { FEATURES, NOTES, SETUP, agentTitle, loadAgents } from "./agents.js";
 import { docsLabels, labelPicker, matchList, setLabels } from "./labelpicker.js";
 
 // ------------------------------------------------------------------ project settings
@@ -104,20 +104,30 @@ function renderAgentHint() {
   const name = $("#settings-agent").value || projectAgent(state.project);
   const info = (state.agents || []).find((a) => a.name === name);
   const lacks = info ? Object.keys(FEATURES).filter((f) => !(info.features || []).includes(f)) : [];
-  const parts = [];
-  if (lacks.length) parts.push(`${agentTitle(name)} can't ${lacks.map((f) => FEATURES[f].does).join(", or ")}.`);
+  // warns are why its tasks won't run, on a line of their own; notes what
+  // it can't do, below them, in the hint's own color.
+  const warns = [], notes = [];
+  if (lacks.length) notes.push(`${agentTitle(name)} can't ${lacks.map((f) => FEATURES[f].does).join(", or ")}.`);
+  if (NOTES[name]) notes.push(NOTES[name]);
   const hint = $("#settings-agent-hint");
-  let warn = false;
+  // A runner's own page: what this computer found of the CLI.
+  const st = info?.status;
+  if (st?.checked_at && !(st.installed && st.logged_in)) {
+    const setup = SETUP[name];
+    warns.push(!st.installed
+      ? `${agentTitle(name)} isn't installed on this computer: ${setup?.install || "install its CLI"}, then sign in with \`${setup?.login || name}\`.`
+      : `${agentTitle(name)} isn't signed in on this computer: run \`${setup?.login || name}\`.`);
+  }
   if (Array.isArray(state.runners) && !state.project.prefix) {
     const { ready, why } = agentRunners(state.runners, name);
     if (!ready.length) {
-      warn = true;
-      parts.unshift(`No online runner has ${agentTitle(name)} installed and logged in: this project's tasks wait until one does.${why.length ? ` ${why.join("; ")}.` : ""}`);
+      warns.push(`No online runner has ${agentTitle(name)} installed and logged in: this project's tasks wait until one does.${why.length ? ` ${why.join("; ")}.` : ""}`);
     }
   }
-  hint.textContent = parts.join(" ");
-  hint.hidden = !parts.length;
-  hint.classList.toggle("warn", warn);
+  hint.replaceChildren(...warns.map((w) => h("span", { class: "agent-warn" }, w)),
+    ...(notes.length ? [h("span", { class: "agent-note" }, notes.join(" "))] : []));
+  hint.hidden = !warns.length && !notes.length;
+  hint.classList.toggle("warn", warns.length > 0);
 }
 
 // deployRunners are the runners a project on runsOn deploys on with deploy.
