@@ -258,7 +258,7 @@ func (sv *service) tasksForIssues(ctx context.Context, pid string, ids []string,
 		if g.title != "" {
 			title = g.title
 		}
-		t, err := sv.data.CreateTodo(model.Todo{ProjectID: pid, CreatedBy: sv.c.User, Title: title, Prompt: prompt})
+		t, err := sv.data.CreateTodo(model.Todo{ProjectID: pid, CreatedBy: sv.c.author(), Title: title, Prompt: prompt})
 		if err != nil {
 			return out, err
 		}

@@ -424,3 +424,40 @@ func TestEveryProxiedRouteIsOnTheAllowlist(t *testing.T) {
 		}
 	}
 }
+
+// A task the hub creates in a runner's own project for its signed-in user
+// is that user's (tunnel.UserHeader), not Dash's own work; one the hub
+// doesn't say whom it is for stays Dash's.
+func TestRunnerRecordsTheHubsUserAsTaskCreator(t *testing.T) {
+	parallel(t)
+
+	s, h, p := runnerServer(t)
+	create := func(user string) model.Todo {
+		t.Helper()
+		r := httptest.NewRequest("POST", "/api/projects/"+p.ID+"/todos", strings.NewReader(`{"title":"x","prompt":"do it"}`))
+		r.Header.Set("Content-Type", "application/json")
+		if user != "" {
+			r.Header.Set(tunnel.UserHeader, user)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusCreated && w.Code != http.StatusOK {
+			t.Fatalf("create: %d %s", w.Code, w.Body)
+		}
+		var td model.Todo
+		if err := json.Unmarshal(w.Body.Bytes(), &td); err != nil {
+			t.Fatal(err)
+		}
+		got, err := raw(s).GetTodo(td.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := create("42"); got.CreatedBy != 42 {
+		t.Errorf("created_by = %d, want the hub's user 42", got.CreatedBy)
+	}
+	if got := create(""); got.CreatedBy != 0 {
+		t.Errorf("created_by = %d with no user named, want 0 (Dash)", got.CreatedBy)
+	}
+}

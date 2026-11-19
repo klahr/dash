@@ -56,6 +56,20 @@ type Caller struct {
 	// Machine: the hub calling over this runner's tunnel. It acts for this Dash's default org (a runner keeps all its
 	// projects there) and checked its own user's rights.
 	Machine bool
+	// HubUser is the hub's user a Machine request is made for (the hub's
+	// tunnel.UserHeader; 0 when it doesn't say). It is only recorded as who
+	// did something (author); it grants nothing: rights stay the Machine's.
+	HubUser int64
+}
+
+// author is who to record as having done what c asks (a task's creator, a
+// chat message's sender): the signed-in user, or the hub's user a request
+// from the hub is made for. 0 is Dash itself.
+func (c Caller) author() int64 {
+	if c.User != 0 {
+		return c.User
+	}
+	return c.HubUser
 }
 
 var (
@@ -79,7 +93,7 @@ func (s *Server) caller(r *http.Request) (Caller, error) {
 		if err != nil {
 			return Caller{}, fmt.Errorf("this Dash has no default organization: %w", err)
 		}
-		return Caller{Org: org.ID, OrgFolder: org.ProjectFolder(), PlatformAdmin: true, Machine: true}, nil
+		return Caller{Org: org.ID, OrgFolder: org.ProjectFolder(), PlatformAdmin: true, Machine: true, HubUser: hubUser(r)}, nil
 	}
 	return Caller{}, errLogin
 }
@@ -170,7 +184,7 @@ func (s *Server) adminOnly(w http.ResponseWriter, r *http.Request) bool {
 
 // addTodo creates a draft, or queues it when enqueue is set, and names it if untitled.
 func (sv *service) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
-	t.CreatedBy = sv.c.User
+	t.CreatedBy = sv.c.author()
 	m, err := model.CleanModel(t.Model)
 	if err != nil {
 		return t, fmt.Errorf("%w: %v", errBadRequest, err)

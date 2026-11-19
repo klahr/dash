@@ -588,7 +588,7 @@ func (s *Server) resolveGoalChat(sv *service, msg chatRequest, shell bool, relay
 	if asked.At == nil {
 		asked.At = ptr(now())
 	}
-	asked.CreatedBy = sv.c.User
+	asked.CreatedBy = sv.c.author()
 	ct.history = append(slices.Clip(stored), asked)
 	ct.prompt = withAttachments(s.coordinatorPrompt(sv, g, stored, asked))
 	known := len(stored)

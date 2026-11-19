@@ -1061,7 +1061,7 @@ func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
 	if title != "" {
 		title += " (copy)"
 	}
-	t, err := sv.data.CreateTodo(model.Todo{ProjectID: src.ProjectID, CreatedBy: sv.c.User, Title: title, Prompt: src.Prompt,
+	t, err := sv.data.CreateTodo(model.Todo{ProjectID: src.ProjectID, CreatedBy: sv.c.author(), Title: title, Prompt: src.Prompt,
 		Priority: src.Priority, Attachments: src.Attachments, Edits: src.Edits, DependsOn: src.DependsOn, BuildsOn: src.BuildsOn, Model: src.Model, RunOn: src.RunOn, Board: src.Board})
 	if err != nil {
 		writeErr(w, err)
