@@ -3339,6 +3339,11 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .d-rolled_back, .d-superseded, .d-rejected { --c: var(--faint); }
 .d-awaiting_approval { --c: var(--review); }
 .env-awaiting { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+/* Deploy's tag picker and History's "Deploy to…": a scrolling list of choices. */
+.tag-pick .choice { max-height: min(55vh, 28em); overflow-y: auto; margin-top: 8px; }
+.tag-pick .radio span { overflow-wrap: anywhere; }
+.tag-pick .radio em { display: block; font-style: normal; font-weight: 400; color: var(--muted); }
+.tag-pick .radio:has(input:disabled) { opacity: .65; }
 .env-awaiting li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .env-awaiting .env-subject { flex: 1 1 8em; }
 .env-actions { display: flex; flex-wrap: wrap; gap: 6px; }

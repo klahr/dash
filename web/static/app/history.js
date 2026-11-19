@@ -10,6 +10,7 @@ import { baseBranch, projectKey } from "./events.js";
 import { detailBackground } from "./detail.js";
 import { diffImages, diffLines, isDiffImage, parseDiff } from "./drawmode.js";
 import { openRelease } from "./releases.js";
+import { deployCommit } from "./deploys.js";
 import { changed } from "./routes.js";
 
 // ------------------------------------------------------------------ history
@@ -237,6 +238,8 @@ function renderCommitHead() {
   fill($("#cd-actions"),
     ib({ type: "button", class: "btn small", disabled: !!why, title: why || "Tag a release at this commit", onclick: () => openRelease(commitRef()).catch(fail) }, "tag", "Tag release…"),
     why ? h("em", { class: "menu-note" }, why) : null,
+    p.environments?.length ? ib({ type: "button", class: "btn small", title: "Deploy this commit to one of the project's environments",
+      onclick: () => deployCommit(commitRef()).catch(fail) }, "rocket", "Deploy to…") : null,
     ib({ type: "button", class: "btn small", onclick: () => copy(commitRef().sha, "SHA copied") }, "copy", "Copy SHA"),
     gh ? h("a", { class: "btn small", href: `${gh}/commit/${ref.sha}`, target: "_blank", rel: "noopener" }, ico("external"), "Open on GitHub") : null);
 }

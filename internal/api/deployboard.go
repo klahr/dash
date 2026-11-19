@@ -16,7 +16,7 @@ import (
 
 // deployRow is d as the deploy tools show it.
 func deployRow(d model.Deploy) mcptools.DeployRow {
-	r := mcptools.DeployRow{ID: d.ID, Environment: d.Environment, Status: string(d.Status), Commit: d.Commit, Subject: d.Subject,
+	r := mcptools.DeployRow{ID: d.ID, Environment: d.Environment, Status: string(d.Status), Commit: d.Commit, Tag: d.Tag, Subject: d.Subject,
 		Version: d.Version, Trigger: d.Trigger, TriggerRef: d.TriggerRef, By: d.ByName, Rollback: d.Rollback, PromotedEnv: d.PromotedEnv,
 		Error: d.Error, CreatedAt: d.CreatedAt}
 	if d.Status == model.DeployAwaiting {
@@ -62,7 +62,7 @@ func (b board) Environments(projectID string) ([]mcptools.EnvRow, error) {
 	out := []mcptools.EnvRow{}
 	for i, e := range p.Environments {
 		deploys := b.sv.data.ListDeploys(p.ID, e.Name)
-		row := mcptools.EnvRow{Name: e.Name, Trigger: e.WithDefaults().Trigger, WhoDeploys: e.WhoDeploys(), NeedsApproval: e.WhoApproves(),
+		row := mcptools.EnvRow{Name: e.Name, Trigger: e.WithDefaults().Trigger, ReleaseTagsOnly: e.ReleaseTagsOnly, WhoDeploys: e.WhoDeploys(), NeedsApproval: e.WhoApproves(),
 			AgentMayDeploy: s.mayDeploy(b.sv.c, e) == nil}
 		var live *model.Deploy
 		for _, d := range deploys {

@@ -29,16 +29,35 @@ A project that had a **Deploy command** before environments now has one environm
 
 Open **Deploys** in the sidebar (`gd`). Each environment has a card:
 
-- what is live there, since when, and its version;
+- what is live there, since when, and its version. A deploy of a release tag shows the tag and
+  its commit, such as `1.4.0 (a1b2c3d4)`;
 - what deploys there on its own: "Deploys each merge to the default branch" or "Deploys each
   release tag";
 - how far it is ahead of the others ("staging is 3 commits ahead of production");
 - a deploy that is running or queued;
 - on a hub, the runners its deploys may run on, and a warning when none of them can.
 
-Press **Deploy** on a card. Dash deploys the tip of the default branch, as origin has it.
-**Deploy again** in a deploy's pane deploys that deploy's commit again. When **Deploy** is greyed
-out, the card says why: your role, a freeze, or a requirement.
+Press **Deploy…** on a card to pick a release tag. The picker lists the project's release tags,
+newest first, with the newest chosen. Each shows its commit and how far it is from what the
+environment runs now, such as "4 commits ahead of production", "2 commits behind production" or
+"live on production now". Press **Deploy** to deploy it.
+
+With no release tag yet, the picker says so and offers **Tag release…**, which tags the tip of the
+default branch as origin has it (see [Tag a release](github.md#tag-a-release)). Release tags are
+the tags in the project's tag format.
+
+**Deploy again** in a deploy's pane deploys that deploy's commit again. When **Deploy…** is greyed
+out, the card says why: your role, or a freeze. A requirement the tag doesn't meet refuses the
+deploy, with the reason.
+
+### Deploy a commit from History
+
+To deploy a commit that isn't a release, open it in **History** and press **Deploy to…** in its
+pane. Pick an environment. An environment you may not deploy to, or one that only deploys release
+tags while the commit has none, is listed as unavailable, with the reason. Dash then asks you to
+confirm. For a tagged commit it names the tag ("Deploy 1.4.0 (a1b2c3d4) to production?"). For an
+untagged one it says so: "a1b2c3d4 isn't tagged; deploy it to production anyway?". This is the only
+place in the app to deploy an untagged commit.
 
 **Promote to <environment>** on a card deploys what is live there to the next environment: the
 same commit, and the same artifact in `DASH_ARTIFACT`. The build command doesn't run. The next
@@ -52,7 +71,8 @@ One deploy runs at a time per environment. The others wait in the queue in order
 Below the cards are the deploys, newest first. A deploy opens in a pane beside the list (full
 screen with **Back** on a phone; `Esc` closes it, `j`/`k` step through the list). The pane shows:
 
-- the commit, and the deploy it replaced;
+- the commit, with its release tag when it has one (`1.4.0 (a1b2c3d4)`), and the deploy it
+  replaced;
 - who or what started it ("by ana", "by Claude for ana", "after a merge", "for release 1.4.0"),
   with the task a merge or Claude deployed for, the runner it ran on, its exit code;
 - its phases and how long each took: **Awaiting approval** (when it needs one), **Queued**, **Building**, **Deploying**, **Verifying**,
@@ -105,6 +125,23 @@ it.
 
 On a hub, the hub triggers the deploys: it keeps the records. A typical setup deploys `staging` on
 each merge and `production` on each release tag, with **Live on first** set to `staging`.
+
+## Release tags only
+
+Tick **Deploys: release tags only** under **Who and when** to have an environment take only
+commits with a release tag. It is off by default. While it is on, Dash refuses any other commit,
+whatever asks: **Deploy again**, History's **Deploy to…**, **Promote**, the API and the `deploy`
+tool. The error says why: "production only deploys release tags; a1b2c3d4 isn't tagged".
+
+- **A release tag's own deploy** (**Deploys on its own → On each release tag**) always goes.
+- **Roll back** goes when the commit it goes back to has a release tag. A commit deployed before
+  the setting was on may have none: then the rollback is refused, and the error says so. Deploy a
+  release tag instead.
+- **Deploys after a merge** don't start while it is on, even with **On each merge to the default
+  branch** set. The settings and the environment's card say so.
+
+The runner checks again when a deploy starts, so a deploy queued before the setting was on doesn't
+go either.
 
 ## Requirements and freezes
 
@@ -295,10 +332,16 @@ The hub never sees the values. A runner only tells it which environments it has 
 - `GET /api/projects/{id}/deploys/live`: what is live where. `environments` has each
   environment's live `commit`, `deploy` and `since`; `tasks` maps a task id to the environments
   it is live in (`{"environment", "since"}`).
-- `POST /api/projects/{id}/deploys` with `{"environment": "production", "commit": ""}`: queue a
-  deploy. An empty `commit` deploys the tip of the default branch. With `"promote_from":
-  "staging"` instead of `commit`, it promotes what is live there. A deploy that needs an approval
-  has the status `awaiting_approval`. A blocked one gets `409` with the reason.
+- `GET /api/projects/{id}/deploys/tags?environment=production`: the release tags, newest first
+  (at most 30), as `{"tag", "commit", "compared", "ahead", "behind"}`: the commits the tag has that
+  the environment's live commit (`live`) hasn't, and the other way round. With `?commit=<sha>`
+  instead, `commit` is the full commit and `commit_tags` its release tags.
+- `POST /api/projects/{id}/deploys` with `{"environment": "production", "commit": "<sha>"}`: queue
+  a deploy. `commit` may also be a tag. An empty `commit` deploys the tip of the default branch.
+  With `"promote_from": "staging"` instead of `commit`, it promotes what is live there. A deploy
+  that needs an approval has the status `awaiting_approval`. A blocked one, or an untagged commit
+  for an environment that only deploys release tags, gets `409` with the reason. A deploy's `tag`
+  is the release tag on its commit, if any.
 - `POST /api/deploys/{id}/approve`, and `POST /api/deploys/{id}/reject` with `{"note": ""}`:
   decide on a deploy awaiting approval.
 - `GET /api/projects/{id}/environments/history`: the settings history, newest first.
@@ -312,7 +355,7 @@ The environments are the `environments` field of `PATCH /api/projects/{id}` and 
 `update_project` tool: a list of `{"name", "deploy_command", "build_command", "runs_on", "url",
 "health_path", "health_status", "health_timeout", "verify_command", "soak", "auto_rollback",
 "deploy_role", "approve_role", "settings_role", "require_tests", "require_live_on", "freezes",
-"time_zone", "trigger"}`, which replaces the project's environments. Roles are `member`, `admin` or
+"time_zone", "trigger", "release_tags_only"}`, which replaces the project's environments. Roles are `member`, `admin` or
 `owner` (`approve_role` also `none`). `freezes` is a list of `{"from", "to", "note"}`. `trigger` is
 `manual` (the default), `merge` or `release`.
 

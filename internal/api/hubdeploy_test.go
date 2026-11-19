@@ -207,6 +207,25 @@ func TestHubDeploysOnlyOnRunnersWithItsLabels(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &deploys); err != nil || len(deploys) != 3 || deploys[0].ID != next.ID || deploys[0].Log != "" {
 		t.Errorf("deploys: %v %s", err, w.Body)
 	}
+	// Release tags come from the runner's clone, which fetches origin's:
+	// Deploy's picker, compared with what is live, and a commit's own.
+	git(t, remote, "tag", "1.0.0", next.Commit)
+	w = call(owner.User, "GET", pp+"/deploys/tags?environment=production", "")
+	var tags deployTags
+	if err := json.Unmarshal(w.Body.Bytes(), &tags); err != nil || w.Code != http.StatusOK || len(tags.Tags) != 1 ||
+		tags.Tags[0].Tag != "1.0.0" || tags.Tags[0].Commit != next.Commit || tags.Live != next.Commit || !tags.Tags[0].Compared {
+		t.Errorf("tags on the hub: %d %s", w.Code, w.Body)
+	}
+	w = call(owner.User, "GET", pp+"/deploys/tags?commit="+next.Commit, "")
+	tags = deployTags{}
+	if err := json.Unmarshal(w.Body.Bytes(), &tags); err != nil || strings.Join(tags.CommitTags, ",") != "1.0.0" {
+		t.Errorf("a commit's tags on the hub: %d %s", w.Code, w.Body)
+	}
+	// A deploy started there records its tag.
+	if tagged := finished(deployNow().ID); tagged.Status != model.DeployLive || tagged.Tag != "1.0.0" {
+		t.Errorf("the tag of a deploy on the runner: %+v", tagged)
+	}
+
 	// The old way to deploy is gone.
 	if w := call(owner.User, "POST", pp+"/processes", `{"kind":"task","preset":"deploy"}`); w.Code != http.StatusBadRequest {
 		t.Errorf("the deploy preset: %d %s", w.Code, w.Body)

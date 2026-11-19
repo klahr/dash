@@ -25,6 +25,8 @@ function tagFormat(fmt) {
 let release = null; // { commit, info, format, seq } while the sheet is open
 let releaseSeq = 0;
 
+// c is the commit: { sha, short, subject }; sha "" tags the tip of origin's
+// default branch (as the server resolves it).
 export async function openRelease(c) {
   const p = state.project;
   const seq = ++releaseSeq;
@@ -49,6 +51,11 @@ export async function openRelease(c) {
     return;
   }
   if (release?.seq !== seq) return;
+  if (!c.sha) {
+    // Asked for the branch's tip (Deploy's picker, with no tag yet): tag the commit it is now.
+    Object.assign(c, { sha: info.sha, short: info.sha.slice(0, 7) });
+    $("#release-commit").replaceChildren(gh ? h("a", { href: `${gh}/commit/${c.sha}`, target: "_blank", rel: "noopener" }, h("code", {}, c.short)) : h("code", {}, c.short), ` ${c.subject}`);
+  }
   release.info = info;
   release.format = tagFormat(info.format);
   renderRelease();

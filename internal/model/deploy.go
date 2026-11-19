@@ -83,6 +83,11 @@ type Environment struct {
 	// triggered deploy goes through the queue, the requirements, the
 	// approvals and the freezes like any other. "": manual.
 	Trigger string `json:"trigger,omitempty"`
+	// ReleaseTagsOnly: a deploy here must be of a commit with a release tag
+	// (in the project's tag format), whatever asks for it; a rollback too.
+	// Merges deploy nothing while it is on (MergeDeploysHeld), and a release
+	// tag's own deploy always may.
+	ReleaseTagsOnly bool `json:"release_tags_only,omitempty"`
 }
 
 // Environment.Trigger.
@@ -92,8 +97,15 @@ const (
 	EnvTriggerRelease = "release"
 )
 
-// DeploysOnMerge reports whether e deploys each merge to the default branch.
-func (e Environment) DeploysOnMerge() bool { return e.Trigger == EnvTriggerMerge }
+// DeploysOnMerge reports whether e deploys each merge to the default branch
+// (not while it takes release tags only: see MergeDeploysHeld).
+func (e Environment) DeploysOnMerge() bool { return e.Trigger == EnvTriggerMerge && !e.ReleaseTagsOnly }
+
+// MergeDeploysHeld reports whether e is set to deploy each merge but takes
+// release tags only, so its merges deploy nothing.
+func (e Environment) MergeDeploysHeld() bool {
+	return e.Trigger == EnvTriggerMerge && e.ReleaseTagsOnly
+}
 
 // DeploysOnRelease reports whether e deploys each release tag.
 func (e Environment) DeploysOnRelease() bool { return e.Trigger == EnvTriggerRelease }
@@ -387,6 +399,9 @@ type Deploy struct {
 	// Ref is what was asked for: a commit, or "" for the tip of the
 	// project's branch as origin has it when the deploy starts.
 	Ref string `json:"ref,omitempty"`
+	// Tag is the release tag (in the project's tag format) on Commit when
+	// the deploy started, "" for none.
+	Tag string `json:"tag,omitempty"`
 	// PrevCommit and PrevDeploy are the deploy that was live in the
 	// environment when this one started: what it replaces.
 	PrevCommit string `json:"prev_commit,omitempty"`

@@ -254,8 +254,9 @@ Dash's chats' `dash_board` reads and starts a project's [deploys](deploys.md):
   since when, the trigger, who may deploy (`claude_may_deploy` says whether Claude may), what a
   deploy needs and what blocks one now, where `promote` goes and what `rollback` would go back to;
   and the latest deploys (default 20), newest first.
-- `deploy(project?, environment, commit?)`: deploy a commit (default: the tip of the default
-  branch, as origin has it).
+- `deploy(project?, environment, commit?)`: deploy a commit or a release tag (default: the tip of
+  the default branch, as origin has it). An environment with `release_tags_only` refuses a commit
+  without a release tag.
 - `rollback(project?, environment)`: roll back what the environment runs now to its last good
   deploy.
 - `promote(project?, from, to?)`: deploy what is live on `from` to `to` (default: `from`'s next

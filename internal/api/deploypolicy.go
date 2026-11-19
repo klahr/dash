@@ -359,6 +359,9 @@ func (s *Server) policyFor(c Caller, p model.Project, i int, deploys []model.Dep
 	if e.RequireLiveOn != "" {
 		out.Needs = append(out.Needs, "live on "+e.RequireLiveOn+" first")
 	}
+	if e.ReleaseTagsOnly {
+		out.Needs = append(out.Needs, "a release tag")
+	}
 	for _, d := range deploys {
 		if d.Status == model.DeployAwaiting {
 			out.Awaiting = append(out.Awaiting, d)

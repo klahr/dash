@@ -21,6 +21,9 @@ type EnvRow struct {
 	// Trigger: manual, merge (each merge to the default branch) or release
 	// (each release tag).
 	Trigger string `json:"trigger"`
+	// ReleaseTagsOnly: only commits with a release tag deploy here (a
+	// rollback too); merges don't.
+	ReleaseTagsOnly bool `json:"release_tags_only,omitempty"`
 	// WhoDeploys is the lowest org role that may deploy there; Claude may
 	// only where it is member (AgentMayDeploy).
 	WhoDeploys     string `json:"who_may_deploy"`
@@ -48,6 +51,7 @@ type DeployRow struct {
 	Environment string     `json:"environment"`
 	Status      string     `json:"status"`
 	Commit      string     `json:"commit,omitempty"`
+	Tag         string     `json:"tag,omitempty"` // the release tag on the commit
 	Subject     string     `json:"subject,omitempty"`
 	Version     string     `json:"version,omitempty"`
 	Trigger     string     `json:"trigger"`
@@ -121,8 +125,8 @@ func DeployTools(b Board, d Deployer, o Options) []Tool {
 			}},
 		{"deploy", "Deploy a commit of the project to one of its environments, with the environment's own scripts. " +
 			"It is queued behind other deploys there; where the environment needs an approval it waits for a person to approve it (Claude can't), " +
-			"and a freeze or an unmet requirement refuses it, with the reason." + agentRule,
-			[]Param{pProject, pEnv, {"commit", "string", "The commit to deploy (default: the tip of the default branch, as origin has it).", false}},
+			"and a freeze or an unmet requirement refuses it, with the reason. Prefer a release tag's commit; an environment with release_tags_only takes nothing else." + agentRule,
+			[]Param{pProject, pEnv, {"commit", "string", "The commit to deploy, or a release tag (default: the tip of the default branch, as origin has it).", false}},
 			func(a Args) (any, error) {
 				p, err := project(b, a)
 				if err != nil {

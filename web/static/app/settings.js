@@ -165,7 +165,7 @@ const cleanEnvs = (list) => list.map((e) => ({
   verify_command: script(e.verify_command), soak: num(e.soak), auto_rollback: !!e.auto_rollback,
   ...roleDefaults(e), require_tests: !!e.require_tests, require_live_on: (e.require_live_on || "").trim().toLowerCase(),
   freezes: (e.freezes || []).map((f) => ({ from: (f.from || "").trim(), to: (f.to || "").trim(), note: (f.note || "").trim() })).filter((f) => f.from || f.to || f.note),
-  time_zone: (e.time_zone || "").trim(), trigger: e.trigger || "manual",
+  time_zone: (e.time_zone || "").trim(), trigger: e.trigger || "manual", release_tags_only: !!e.release_tags_only,
 }));
 const TRIGGER_OPTS = [["manual", "No, only when someone deploys"], ["merge", "On each merge to the default branch"], ["release", "On each release tag"]];
 const ROLE_OPTS = [["member", "Members"], ["admin", "Admins"], ["owner", "Owners"]];
@@ -188,7 +188,7 @@ const ENV_FIELD = {
   health_status: "Expected status", health_timeout: "Health check timeout", verify_command: "Verify command", soak: "Soak time",
   auto_rollback: "Roll back on its own", deploy_role: "Who may deploy", approve_role: "Needs approval from", settings_role: "Who may change settings",
   require_tests: "Tests must pass", require_live_on: "Live on first", freezes: "Freeze windows", time_zone: "Time zone",
-  trigger: "Deploys on its own",
+  trigger: "Deploys on its own", release_tags_only: "Deploys: release tags only",
 };
 const ENV_ACTION = { added: "added", changed: "changed", removed: "removed" };
 
@@ -249,7 +249,14 @@ function envEditor(e, i) {
 // needs first and e's freeze windows (the hub enforces them).
 function envPolicy(e, field) {
   Object.assign(e, roleDefaults(e));
-  const select = (k, opts) => h("select", { onchange: (ev) => { e[k] = ev.target.value; } },
+  // Merges deploy nothing while only release tags may: say so where both are set.
+  const mergeNote = h("p", { class: "hint warn env-merge-note" });
+  const syncMergeNote = () => {
+    mergeNote.hidden = !(e.trigger === "merge" && e.release_tags_only);
+    mergeNote.textContent = "Merges deploy nothing while “Deploys: release tags only” is on: deploy release tags, or set it to deploy on each release tag.";
+  };
+  syncMergeNote();
+  const select = (k, opts) => h("select", { onchange: (ev) => { e[k] = ev.target.value; syncMergeNote(); } },
     ...opts.map(([v, label]) => h("option", { value: v, selected: e[k] === v }, label)));
   const liveOn = h("select", { class: "env-live-on", onchange: (ev) => { e.require_live_on = ev.target.value; } });
   fillLiveOn(liveOn, e);
@@ -269,6 +276,10 @@ function envPolicy(e, field) {
       field("Needs approval from", "not their own deploy", select("approve_role", [["none", "No one"], ...ROLE_OPTS])),
       field("Who may change settings", "of this environment", select("settings_role", ROLE_OPTS))),
     field("Deploys on its own", "through the approvals, requirements and freezes below, like any deploy", select("trigger", TRIGGER_OPTS)),
+    h("label", { class: "toggle" },
+      h("input", { type: "checkbox", checked: !!e.release_tags_only, onchange: (ev) => { e.release_tags_only = ev.target.checked; syncMergeNote(); } }),
+      h("span", {}, "Deploys: release tags only ", h("em", {}, "a commit without a release tag is refused, whoever asks (a rollback too); a new release tag always deploys"))),
+    mergeNote,
     h("label", { class: "toggle" },
       h("input", { type: "checkbox", checked: !!e.require_tests, onchange: (ev) => { e.require_tests = ev.target.checked; } }),
       h("span", {}, "Tests must pass on the commit ", h("em", {}, "Dash runs the test command first unless they passed already"))),

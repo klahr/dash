@@ -113,6 +113,7 @@ func init() {
 		// commands the hub linked them with; checked in deploys.go.
 		"POST /api/hub/projects/{hpid}/deploys", "GET /api/hub/projects/{hpid}/deploys/{id}",
 		"DELETE /api/hub/projects/{hpid}/deploys/{id}", "POST /api/hub/projects/{hpid}/deploys/compare",
+		"POST /api/hub/projects/{hpid}/deploys/tags",
 		// gh for the hub's CI view of linked projects; checked in hubtasks.go.
 		"POST /api/hub/github/{hpid}",
 

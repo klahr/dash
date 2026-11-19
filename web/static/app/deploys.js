@@ -1,6 +1,6 @@
 import { $, $$, dateTimeText, fill, h, ib, plural } from "./dom.js";
 import { api } from "./api.js";
-import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
+import { ask, attempt, busy, copy, fail, openSheet, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
 import { state } from "./state.js";
 import { projectKey } from "./events.js";
@@ -8,6 +8,7 @@ import { agoText } from "./branches.js";
 import { detailBackground, openDetail } from "./detail.js";
 import { openSettings } from "./settings.js";
 import { changed, linkTo } from "./routes.js";
+import { openRelease } from "./releases.js";
 
 // ------------------------------------------------------------------ deploys
 // The Deploys page: one card per environment of the project (what is live
@@ -50,6 +51,13 @@ export const dp = {
 
 const prefix = () => dp.project?.prefix || "";
 const short = (sha) => (sha || "").slice(0, 7);
+
+// commitLabel is how a deploy's commit reads: "v1.4.0 (a1b2c3d)" when it
+// has a release tag, else just the short commit.
+export const commitLabel = (d) => {
+  const c = short(d.commit || d.ref);
+  return d.tag ? (c && d.tag !== c ? `${d.tag} (${c})` : d.tag) : c;
+};
 
 // loadDeploys reads the project's environments and deploys.
 export async function loadDeploys() {
@@ -104,8 +112,8 @@ function envCard(e) {
   const live = e.live, active = e.active, pol = e.policy || {};
   const blocked = pol.blocked || [];
   const deployTitle = !pol.can_deploy ? `Only ${ROLE_WORD[e.deploy_role] || "some roles"} may deploy to ${e.name}`
-    : blocked.length ? blocked.join("; ")
-    : `Deploy the tip of ${state.project?.default_branch || "the default branch"} to ${e.name}${pol.needs?.some((n) => n.startsWith("approval")) ? " (once approved)" : ""}`;
+    : pol.frozen ? pol.frozen
+    : `Pick a release tag to deploy to ${e.name}${pol.needs?.some((n) => n.startsWith("approval")) ? " (once approved)" : ""}`;
   const promote = live && pol.promote_to ? ib({ type: "button", class: "btn small", disabled: pol.promote_blocked?.length ? true : null,
     title: pol.promote_blocked?.length ? pol.promote_blocked.join("; ") : `Deploy ${short(live.commit)}${live.artifact ? ` (artifact ${live.artifact})` : ""} to ${pol.promote_to}, with no build`,
     onclick: attempt((ev) => busy(ev.currentTarget, () => promoteTo(e.name, pol.promote_to, live))) }, "push", `Promote to ${pol.promote_to}`) : null;
@@ -115,12 +123,12 @@ function envCard(e) {
     h("div", { class: "env-head" },
       h("h3", { class: "env-name" }, e.name),
       url ? h("a", { class: "env-url", href: url, target: "_blank", rel: "noopener" }, url.replace(/^https?:\/\//, "")) : null,
-      ib({ type: "button", class: "btn small primary env-deploy", title: deployTitle, disabled: !pol.can_deploy || blocked.length ? true : null,
-        onclick: attempt((ev) => busy(ev.currentTarget, () => deployTo(e.name))) }, "rocket", "Deploy")),
+      ib({ type: "button", class: "btn small primary env-deploy", title: deployTitle, disabled: !pol.can_deploy || pol.frozen ? true : null,
+        onclick: attempt(() => pickTag(e)) }, "rocket", "Deploy…")),
     live
       ? h("button", { type: "button", class: "env-live", onclick: () => openDeploy(live.id).catch(fail), title: "Open the deploy that is live" },
         h("span", { class: "status d-live" }, "Live"),
-        h("code", {}, short(live.commit)),
+        h("code", {}, commitLabel(live)),
         h("span", { class: "env-subject" }, live.subject || ""),
         h("span", { class: "env-since", title: dateTimeText(liveSince(live)) }, `since ${agoText(liveSince(live))}`))
       : h("p", { class: "hint" }, "Nothing deployed here yet."),
@@ -129,7 +137,9 @@ function envCard(e) {
     active ? h("button", { type: "button", class: "env-line env-active", onclick: () => openDeploy(active.id).catch(fail) },
       h("span", { class: "act-spin", "aria-hidden": "true" }), `${DEPLOY_STATUS[active.status]} ${short(active.commit)}…`) : null,
     e.queued ? h("p", { class: "env-line hint" }, `${plural(e.queued, "deploy")} queued`) : null,
-    ENV_TRIGGER[e.trigger] ? h("p", { class: "env-line hint" }, `${ENV_TRIGGER[e.trigger]}.`) : null,
+    e.trigger === "merge" && e.release_tags_only ? h("p", { class: "env-line hint warn" }, "Set to deploy each merge, but it only deploys release tags: merges deploy nothing here.")
+      : ENV_TRIGGER[e.trigger] ? h("p", { class: "env-line hint" }, `${ENV_TRIGGER[e.trigger]}.`) : null,
+    e.release_tags_only ? h("p", { class: "env-line hint" }, "Deploys release tags only.") : null,
     pol.awaiting?.length ? h("ul", { class: "env-line env-awaiting", "aria-label": `Deploys to ${e.name} awaiting approval` }, ...pol.awaiting.map((d) => h("li", {},
       h("button", { type: "button", class: "link", onclick: () => openDeploy(d.id).catch(fail) }, statusTag(d)),
       h("code", {}, short(d.ref || d.commit) || "tip"),
@@ -170,7 +180,7 @@ function renderList() {
   list.replaceChildren(...dp.list.map((d) => h("li", { class: `deploy${d.id === dp.open ? " selected" : ""}`, "data-id": d.id },
     h("button", { type: "button", class: "deploy-open", "aria-controls": "deploy-detail", "aria-current": d.id === dp.open ? "true" : null, onclick: () => openDeploy(d.id).catch(fail) },
       h("span", { class: "deploy-row" }, statusTag(d), h("span", { class: "deploy-env" }, d.environment),
-        d.commit ? h("code", {}, short(d.commit)) : h("span", { class: "hint" }, d.ref ? short(d.ref) : "tip"),
+        d.commit ? h("code", {}, commitLabel(d)) : h("span", { class: "hint" }, d.ref ? commitLabel(d) : "tip"),
         h("span", { class: "deploy-subject" }, d.subject || "")),
       h("span", { class: "deploy-sub" },
         h("time", { datetime: d.created_at, title: dateTimeText(d.created_at) }, agoText(d.created_at)),
@@ -199,12 +209,117 @@ async function rollBack(env, of, to) {
 
 const ROLE_WORD = { member: "members", admin: "admins", owner: "owners" };
 
-// deployTo queues a deploy of the default branch's tip (or of commit); one
-// whose environment needs an approval waits for it.
-async function deployTo(env, commit = "") {
+// deployTo queues a deploy of commit (named tag, if it has one); one whose
+// environment needs an approval waits for it.
+export async function deployTo(env, commit, { project = dp.project || state.project, tag = "" } = {}) {
+  const d = await api("POST", `/api/projects/${project.id}/deploys`, { environment: env, commit }, project.prefix || "");
+  if (dp.project?.id === project.id) queued(d, `Deploy of ${tag ? `${tag} (${short(commit)})` : short(commit)} to ${env}`);
+  else toast("", { tone: "ok", head: `Deploy of ${tag || short(commit)} to ${env} ${d.status === "awaiting_approval" ? "awaits approval" : "queued"}` });
+  return d;
+}
+
+// tagDistance says how far release tag t is from what env runs (live: its
+// commit): "4 commits ahead of production", "2 commits behind", "same".
+export function tagDistance(t, env, live) {
+  if (!live) return `nothing is live on ${env} yet`;
+  if (!t.compared) return "";
+  if (t.commit === live) return `live on ${env} now`;
+  if (!t.ahead && !t.behind) return `same as ${env}`;
+  if (!t.behind) return `${plural(t.ahead, "commit")} ahead of ${env}`;
+  if (!t.ahead) return `${plural(t.behind, "commit")} behind ${env}`;
+  return `${plural(t.ahead, "commit")} ahead of and ${t.behind} behind ${env}`;
+}
+
+// deployCommit is History's "Deploy to…" on commit c ({ sha, short,
+// subject }): a picker of the project's environments (those the caller may
+// not deploy to, and those that deploy release tags only when c has none,
+// are there but unavailable, with why), then a confirmation that names c's
+// release tag, or says it has none. The one place to deploy any commit.
+export async function deployCommit(c) {
+  const p = state.project;
+  if (!p) return;
+  const body = h("div", { class: "tag-pick" }, h("p", { class: "hint" }, "Loading environments…"));
+  const ok = ib({ class: "btn primary", value: "ok", disabled: true }, "rocket", "Next");
+  const { form, closed } = openSheet({ title: `Deploy ${c.short} to…`, body: [body], footer: ok });
+  let envs, tags;
+  try {
+    [envs, tags] = await Promise.all([
+      api("GET", `/api/projects/${p.id}/environments`, null, p.prefix || ""),
+      api("GET", `/api/projects/${p.id}/deploys/tags?commit=${encodeURIComponent(c.sha)}`, null, p.prefix || ""),
+    ]);
+  } catch (err) {
+    fill(body, h("p", { class: "err-text" }, err.message));
+    return;
+  }
+  const tag = tags.commit_tags?.[0] || "";
+  const sha = tags.commit || c.sha;
+  const why = (e) => {
+    const pol = e.policy || {};
+    if (!pol.can_deploy) return `only ${ROLE_WORD[e.deploy_role] || "some roles"} may deploy to ${e.name}`;
+    if (e.release_tags_only && !tag) return `${e.name} only deploys release tags`;
+    return pol.frozen || "";
+  };
+  const live = (e) => e.live?.commit === sha ? "live there now" : e.live ? `runs ${commitLabel(e.live)}` : "nothing deployed yet";
+  const first = (envs || []).findIndex((e) => !why(e));
+  fill(body,
+    h("p", {}, tag ? ["Release ", h("strong", {}, tag), " ", h("code", {}, short(sha)), c.subject ? ` ${c.subject}` : ""]
+      : [h("code", {}, short(sha)), ` isn't tagged${c.subject ? ` (${c.subject})` : ""}. Deploy a release tag from the Deploys page when you can.`]),
+    envs?.length ? h("fieldset", { class: "field choice" }, h("legend", {}, "Environment"),
+      ...envs.map((e, i) => h("label", { class: "radio" },
+        h("input", { type: "radio", name: "env", value: e.name, disabled: why(e) ? true : null, checked: i === first ? true : null }),
+        h("span", {}, e.name, h("em", {}, why(e) ? `Unavailable: ${why(e)}.` : `${live(e)}${e.policy?.needs?.some((n) => n.startsWith("approval")) ? " · needs an approval" : ""}`)))))
+      : h("p", { class: "hint" }, "The project has no environments (Project settings → Deploy)."));
+  ok.disabled = first < 0;
+  body.querySelector("input:checked")?.focus();
+  if ((await closed) !== "ok") return;
+  const env = new FormData(form).get("env");
+  if (!env) return;
+  const sure = tag
+    ? await ask({ title: `Deploy ${tag} (${short(sha)}) to ${env}?`, body: c.subject || "", ok: "Deploy" })
+    : await ask({ title: `${short(sha)} isn't tagged; deploy it to ${env} anyway?`, body: `${c.subject ? `“${c.subject}”. ` : ""}It has no release tag, so it isn't a release.`, ok: "Deploy anyway" });
+  if (!sure) return;
+  await deployTo(env, sha, { project: p, tag });
+}
+
+// pickTag is Deploy on an environment's card: a picker of the project's
+// release tags, newest first (the newest chosen), each with its commit and
+// how far it is from what the environment runs; the chosen one deploys.
+// With no release tag yet it offers Tag release… instead.
+async function pickTag(e) {
   const p = dp.project || state.project;
-  const d = await api("POST", `/api/projects/${p.id}/deploys`, { environment: env, commit }, prefix());
-  queued(d, `Deploy to ${env}`);
+  const body = h("div", { class: "tag-pick" }, h("p", { class: "hint" }, "Fetching release tags…"));
+  const ok = ib({ class: "btn primary", value: "ok", disabled: true }, "rocket", "Deploy");
+  const { form, closed } = openSheet({ title: `Deploy to ${e.name}`, body: [body], footer: ok });
+  let res;
+  try {
+    res = await api("GET", `/api/projects/${p.id}/deploys/tags?environment=${encodeURIComponent(e.name)}`, null, prefix());
+  } catch (err) {
+    fill(body, h("p", { class: "err-text" }, err.message));
+    return;
+  }
+  if (!res.tags?.length) {
+    fill(body,
+      h("p", {}, `${p.name} has no release tags yet${res.format ? ` (tag format ${res.format})` : ""}. Deploys ship release tags: tag one first.`),
+      h("p", {}, ib({ type: "button", class: "btn small", onclick: () => {
+        form.closest("dialog").close();
+        const branch = p.default_branch || "main";
+        openRelease({ sha: "", short: branch, subject: `the tip of origin/${branch}` }).catch(fail);
+      } }, "tag", "Tag release…")),
+      h("p", { class: "hint" }, "To deploy a commit that isn't tagged, open it in History and choose Deploy to…."));
+    return;
+  }
+  const row = (t, i) => h("label", { class: "radio tag-pick-row" },
+    h("input", { type: "radio", name: "tag", value: t.tag, checked: i === 0 }),
+    h("span", {}, t.tag, " ", h("code", { class: "hint" }, short(t.commit)),
+      h("em", {}, [i === 0 ? "newest" : "", tagDistance(t, e.name, res.live)].filter(Boolean).join(" · "))));
+  fill(body,
+    h("fieldset", { class: "field choice" }, h("legend", { class: "sr-only" }, "Release tag"), ...res.tags.map(row)),
+    e.policy?.needs?.some((n) => n.startsWith("approval")) ? h("p", { class: "hint" }, "It waits for an approval before it runs.") : null);
+  ok.disabled = false;
+  body.querySelector("input:checked")?.focus();
+  if ((await closed) !== "ok") return;
+  const t = res.tags.find((x) => x.tag === new FormData(form).get("tag"));
+  if (t) await deployTo(e.name, t.commit, { project: p, tag: t.tag });
 }
 
 function queued(d, what) {
@@ -364,7 +479,7 @@ function renderDeploy() {
   if (!d || $("#deploy-detail").hidden) return;
   $("#dd-title").textContent = `${d.rollback ? "Rollback" : "Deploy"} to ${d.environment}`;
   fill($("#dd-meta"), statusTag(d),
-    d.commit ? h("code", { title: d.commit }, short(d.commit)) : null,
+    d.commit ? h("code", { title: d.commit }, commitLabel(d)) : null,
     h("span", { title: dateTimeText(d.created_at) }, `queued ${agoText(d.created_at)}`),
     startedBy(d) ? h("span", {}, startedBy(d)) : null);
   renderDeployActions(d);
@@ -373,7 +488,7 @@ function renderDeploy() {
   const row = (label, ...value) => [h("dt", {}, label), h("dd", {}, ...value)];
   const prev = d.prev_deploy ? h("button", { type: "button", class: "link", onclick: () => openDeploy(d.prev_deploy).catch(fail) }, short(d.prev_commit)) : null;
   fill($("#dd-facts"), ...[
-    d.subject ? row("Commit", h("code", {}, short(d.commit)), " ", d.subject) : null,
+    d.commit || d.subject ? row("Commit", h("code", { title: d.commit || "" }, commitLabel(d)), " ", d.subject || "") : null,
     prev ? row("Replaces", prev, d.commits ? h("span", { class: "hint" }, ` · ${plural(d.commits, "commit")} since`) : null) : null,
     d.version ? row("Version", h("code", {}, d.version)) : null,
     d.artifact ? row("Artifact", h("code", {}, d.artifact)) : null,
@@ -449,7 +564,7 @@ function renderDeployActions(d) {
     d.status === "queued" || d.status === "awaiting_approval" ? btn("x", "Cancel", () => stopDeploy(d), "btn small danger", "Take it off the queue") : null,
     running ? btn("stop", "Stop", () => stopDeploy(d), "btn small danger", "Stop its script on the runner") : null,
     d.rollback_target ? rollbackButton(d.environment, d.id, d.rollback_target) : null,
-    !running && !["queued", "awaiting_approval"].includes(d.status) && d.commit && pol?.can_deploy ? btn("redo", "Deploy again", () => deployTo(d.environment, d.commit), "btn small", `Deploy ${short(d.commit)} to ${d.environment} again`) : null,
+    !running && !["queued", "awaiting_approval"].includes(d.status) && d.commit && pol?.can_deploy ? btn("redo", "Deploy again", () => deployTo(d.environment, d.commit, { tag: d.tag }), "btn small", `Deploy ${commitLabel(d)} to ${d.environment} again`) : null,
     btn("link", "Copy link", () => copy(linkTo({ view: "deploys", deploy: d.id }, state.project), "Link copied"), "btn small", "Copy a link that opens this deploy"));
 }
 

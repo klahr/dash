@@ -164,13 +164,15 @@ npm run build
 ./deploy.sh "$DASH_ENV"
 ```
 
-Then press **Deploy** on its card on the **Deploys** page (`gd`). Dash runs the script on a
-runner, in a checkout of the commit, with the runner's secrets for that environment, and records
+Then tag a release (**Tag release…** in **History**) and press **Deploy…** on the environment's card
+on the **Deploys** page (`gd`) to pick it. To deploy a commit that isn't tagged, use **Deploy to…**
+on it in **History**. Dash runs the script on a runner, in a checkout of the commit, with the runner's secrets for that environment, and records
 what is live where. A health check and a verify command decide whether a deploy is live;
 **Roll back to <commit>** goes back to the last good deploy, by hand or on its own when the checks
 fail. A failed deploy notifies you and leaves a draft task to fix it. Per environment you set who
 may deploy and who must approve (production: admins), passing tests, a commit live on staging
-first, freeze windows, and whether it deploys on its own on each merge or release tag; **Promote**
+first, freeze windows, release tags only, and whether it deploys on its own on each merge or release
+tag; **Promote**
 sends what is live on staging to production with no rebuild, and **History** keeps every settings
 change. History marks the commit each environment runs, and tasks and planning cards say **Live in
 production since …**. The chat deploys too, where any member may (`deploy`, `rollback`, `promote`,

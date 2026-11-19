@@ -61,6 +61,49 @@ func (g *Git) Tags(ctx context.Context, projectID, repo string) ([]string, error
 	return strings.Split(out, "\n"), nil
 }
 
+// TagRef is a tag and the commit it points at.
+type TagRef struct {
+	Name   string
+	Commit string
+}
+
+// TagCommits lists the repository's tags with the commit each points at
+// (an annotated tag's target, peeled).
+func (g *Git) TagCommits(ctx context.Context, projectID, repo string) ([]TagRef, error) {
+	out, err := g.run(ctx, false, projectID, repo, "git", "for-each-ref", "--format=%(refname:strip=2)%09%(objectname)%09%(*objectname)", "refs/tags")
+	if err != nil || out == "" {
+		return nil, err
+	}
+	var refs []TagRef
+	for _, l := range strings.Split(out, "\n") {
+		// The output is trimmed: the last line's empty third field may be gone.
+		parts := strings.Split(strings.TrimSpace(l), "\t")
+		if len(parts) < 2 || parts[0] == "" {
+			continue
+		}
+		c := parts[1] // lightweight: the commit itself
+		if len(parts) > 2 && parts[2] != "" {
+			c = parts[2] // annotated: the commit it tags
+		}
+		refs = append(refs, TagRef{Name: parts[0], Commit: c})
+	}
+	return refs, nil
+}
+
+// CommitsApart counts the commits head has that base hasn't (ahead) and
+// those base has that head hasn't (behind). Both must be commit ids.
+func (g *Git) CommitsApart(ctx context.Context, projectID, repo, base, head string) (ahead, behind int, err error) {
+	if !IsSHA(base) || !IsSHA(head) {
+		return 0, 0, fmt.Errorf("not commit ids: %q, %q", base, head)
+	}
+	out, err := g.run(ctx, false, projectID, repo, "git", "rev-list", "--left-right", "--count", base+"..."+head, "--")
+	if err != nil {
+		return 0, 0, err
+	}
+	behind, ahead, err = ParseAheadBehind(out) // left: base's own; right: head's
+	return ahead, behind, err
+}
+
 // TagsContaining lists the local repository's tags whose commit has sha in
 // its history: the releases that shipped it.
 func (g *Git) TagsContaining(ctx context.Context, projectID, repo, sha string) ([]string, error) {

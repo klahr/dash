@@ -39,6 +39,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/release"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/tunnel"
@@ -50,6 +51,7 @@ func (s *Server) deployRoutes(mux routeMux) {
 	mux.HandleFunc("GET /api/projects/{pid}/environments/history", s.envHistory)
 	mux.HandleFunc("GET /api/projects/{pid}/deploys", s.listDeploys)
 	mux.HandleFunc("GET /api/projects/{pid}/deploys/live", s.liveDeploys)
+	mux.HandleFunc("GET /api/projects/{pid}/deploys/tags", s.deployTagsRoute)
 	mux.HandleFunc("POST /api/projects/{pid}/deploys", s.createDeploy)
 	mux.HandleFunc("GET /api/deploys/{id}", s.getDeploy)
 	mux.HandleFunc("DELETE /api/deploys/{id}", s.cancelDeploy)
@@ -61,6 +63,7 @@ func (s *Server) deployRoutes(mux routeMux) {
 	mux.HandleFunc("GET /api/hub/projects/{hpid}/deploys/{id}", s.hubDeployState)
 	mux.HandleFunc("DELETE /api/hub/projects/{hpid}/deploys/{id}", s.hubDeployStop)
 	mux.HandleFunc("POST /api/hub/projects/{hpid}/deploys/compare", s.hubDeployCompare)
+	mux.HandleFunc("POST /api/hub/projects/{hpid}/deploys/tags", s.hubDeployTags)
 }
 
 // ---- settings ----
@@ -292,8 +295,9 @@ func (s *Server) listDeploys(w http.ResponseWriter, r *http.Request) {
 // behind any other deploy to that environment, or waiting for an approval
 // when the environment needs one. With "promote_from": another
 // environment, it deploys what is live there (its commit and artifact)
-// with no build. The caller needs the environment's deploy role, and the
-// deploy must not be blocked (deployBlocks).
+// with no build. The caller needs the environment's deploy role, the
+// deploy must not be blocked (deployBlocks), and an environment that
+// deploys release tags only needs a tagged commit (tagsOnlyCheck).
 func (s *Server) createDeploy(w http.ResponseWriter, r *http.Request) {
 	sv, p, ok := s.project(w, r)
 	if !ok {
@@ -326,8 +330,10 @@ type deployAsk struct {
 
 // requestDeploy checks and queues the deploy a asks of p for sv's caller:
 // they need the environment's deploy role (an agent: the member role, see
-// agentMayDeploy), and the deploy must not be blocked (deployBlocks). It
-// waits for an approval when the environment needs one.
+// agentMayDeploy), the deploy must not be blocked (deployBlocks), and an
+// environment that deploys release tags only takes only a tagged commit
+// (but always a release tag's own deploy). It waits for an approval when
+// the environment needs one.
 func (sv *service) requestDeploy(p model.Project, a deployAsk) (model.Deploy, error) {
 	s := sv.s
 	e, ok := p.Environment(strings.TrimSpace(a.Environment))
@@ -351,6 +357,19 @@ func (sv *service) requestDeploy(p model.Project, a deployAsk) (model.Deploy, er
 			return model.Deploy{}, fmt.Errorf("%w: nothing is live on %q to promote", errConflict, from)
 		}
 		d.Ref, d.Artifact, d.Promote, d.PromotedFrom, d.PromotedEnv = src.Commit, src.Artifact, true, src.ID, from
+	}
+	if a.Trigger != model.DeployByRelease {
+		what := ""
+		if d.Promote {
+			what = "live on " + d.PromotedEnv
+		}
+		tag, err := sv.tagsOnlyCheck(p, e, d.Ref, what)
+		if err != nil {
+			return model.Deploy{}, err
+		}
+		d.Tag = tag
+	} else {
+		d.Tag = a.TriggerRef
 	}
 	if whys := s.deployBlocks(p, e, d.Ref, time.Now()); len(whys) > 0 {
 		return model.Deploy{}, blockedErr(whys)
@@ -474,7 +493,20 @@ func (s *Server) queueRollback(c Caller, bad model.Deploy, trigger, ref string) 
 	if !ok {
 		return model.Deploy{}, fmt.Errorf("%w: %s has no earlier good deploy of another commit to roll back to", errConflict, bad.Environment)
 	}
-	return s.queueDeploy(c, model.Deploy{ProjectID: bad.ProjectID, Environment: bad.Environment, Ref: to.Commit, Artifact: to.Artifact,
+	// Release tags only: the commit rolled back to needs one too. One
+	// deployed before the setting was turned on may have none.
+	tag := to.Tag
+	if p, err := s.deployProject(bad.ProjectID); err == nil {
+		if e, ok := p.Environment(bad.Environment); ok && e.ReleaseTagsOnly {
+			if tag, err = s.as(Caller{Org: p.OrgID, User: c.User}).tagsOnlyCheck(p, e, to.Commit, "the deploy to roll back to"); err != nil {
+				if errors.As(err, new(untaggedError)) {
+					err = fmt.Errorf("%w; it was deployed before \"Deploys: release tags only\" was turned on, so it can't be rolled back to: deploy a release tag instead", err)
+				}
+				return model.Deploy{}, err
+			}
+		}
+	}
+	return s.queueDeploy(c, model.Deploy{ProjectID: bad.ProjectID, Environment: bad.Environment, Ref: to.Commit, Artifact: to.Artifact, Tag: tag,
 		Rollback: true, RollbackOf: bad.ID, RollbackTo: to.ID, Trigger: trigger, TriggerRef: ref})
 }
 
@@ -631,6 +663,12 @@ type deployRun struct {
 	Tests bool `json:"tests,omitempty"`
 	// SkipBuild: a promotion, which deploys an artifact built already.
 	SkipBuild bool `json:"skip_build,omitempty"`
+	// TagFormat is the project's tag format: the release tag on the commit
+	// is reported (deployStarted.Tag). ReleaseTagsOnly: a commit without
+	// one isn't deployed (the environment's setting; never for a release
+	// tag's own deploy).
+	TagFormat       string `json:"tag_format,omitempty"`
+	ReleaseTagsOnly bool   `json:"release_tags_only,omitempty"`
 }
 
 // deployStarted is the answer to a deployRun: what it deploys, and the
@@ -638,6 +676,8 @@ type deployRun struct {
 type deployStarted struct {
 	Commit  string `json:"commit"`
 	Subject string `json:"subject,omitempty"`
+	// Tag is the release tag on Commit ("" none, or not asked).
+	Tag     string `json:"tag,omitempty"`
 	Commits int    `json:"commits"`
 	// Todos are the ids in those commits' "Dash-Todo:" trailers.
 	Todos []string `json:"todos,omitempty"`
@@ -728,7 +768,11 @@ func (s *Server) startDeploy(ctx context.Context, p model.Project, env model.Env
 	prev, hasPrev := s.Store.LiveDeploy(p.ID, env.Name)
 	known := env.RequireTests && !d.Rollback && s.testsKnown(p, d.Ref)
 	req := deployRun{ID: d.ID, Environment: env.Name, Commit: d.Ref, Artifact: d.Artifact, Rollback: d.Rollback,
-		Tests: env.RequireTests && !d.Rollback && !known, SkipBuild: d.Promote}
+		Tests: env.RequireTests && !d.Rollback && !known, SkipBuild: d.Promote,
+		TagFormat: p.TagFormat, ReleaseTagsOnly: env.ReleaseTagsOnly && d.Trigger != model.DeployByRelease}
+	if req.TagFormat == "" {
+		req.TagFormat = release.DefaultFormat
+	}
 	if hasPrev {
 		req.PrevCommit = prev.Commit
 	}
@@ -761,6 +805,14 @@ func (s *Server) startDeploy(ctx context.Context, p model.Project, env model.Env
 			return errDeployCancelled // while it was being started
 		}
 		x.Commit, x.Subject, x.Commits, x.Shipped = started.Commit, started.Subject, started.Commits, shipped
+		switch {
+		case started.Tag != "":
+			x.Tag = started.Tag
+		case x.Trigger == model.DeployByRelease && x.TriggerRef != "":
+			x.Tag = x.TriggerRef // a runner that doesn't report it
+		case x.Tag != "" && !sameCommit(x.Commit, x.Ref):
+			x.Tag = "" // asked for by branch: the tag looked up was another commit's
+		}
 		x.Runner, x.RunnerID = runner, at.run.ID
 		if hasPrev {
 			x.PrevCommit, x.PrevDeploy = prev.Commit, prev.ID
@@ -1161,6 +1213,25 @@ func (s *Server) startDeployHere(ctx context.Context, p model.Project, req deplo
 		return out, fmt.Errorf("%w: no commit %s in %s here", errBadRequest, ref, p.Name)
 	}
 	out.Commit, out.Subject = c.SHA, c.Subject
+
+	// Its release tag; an environment that deploys release tags only takes
+	// nothing else (checked again here: it may have been queued before).
+	if f, err := release.ParseFormat(req.TagFormat); err == nil && req.TagFormat != "" {
+		if refs, err := s.Git.TagCommits(ctx, p.ID, p.Path); err == nil {
+			tags := releaseTagsAt(f, refs, c.SHA)
+			if len(tags) == 0 && req.ReleaseTagsOnly && s.fetchTagsNow(ctx, p) {
+				if refs, err = s.Git.TagCommits(ctx, p.ID, p.Path); err == nil {
+					tags = releaseTagsAt(f, refs, c.SHA)
+				}
+			}
+			if len(tags) > 0 {
+				out.Tag = tags[0]
+			}
+		}
+	}
+	if req.ReleaseTagsOnly && out.Tag == "" {
+		return out, untaggedErr(e, c.SHA, "")
+	}
 
 	// Its checkout, kept between deploys so ignored files (dependencies,
 	// build caches) stay.
