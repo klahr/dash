@@ -27,15 +27,19 @@ func TestBrowserLabelChips(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`#side-runner-list .side-runner:not(.side-runner-more)`)))
 	b.do("type a label", chromedp.SendKeys(`#runner-detail .runner-own-labels .label-picker-input`, "gpu"+kb.Enter))
 	b.waitJS("its chip", `[...document.querySelectorAll("#runner-detail .runner-own-labels .label-chip")].map((c) => c.textContent).join() === "gpu"`)
-	var list struct {
-		Runners []struct {
-			Labels []string `json:"labels"`
-		} `json:"runners"`
-	}
-	h.api.must("GET", "/api/runners", nil, http.StatusOK, &list)
-	if len(list.Runners) != 1 || !slices.Equal(list.Runners[0].Labels, []string{"gpu"}) {
-		t.Fatalf("runners after picking gpu: %+v", list.Runners)
-	}
+	// The chip shows as soon as it's picked; the save follows it.
+	waitFor(t, nil, "the runner to have gpu", func() bool {
+		var list struct {
+			Runners []struct {
+				Labels []string `json:"labels"`
+			} `json:"runners"`
+		}
+		h.api.must("GET", "/api/runners", nil, http.StatusOK, &list)
+		if len(list.Runners) != 1 {
+			t.Fatalf("runners after picking gpu: %+v", list.Runners)
+		}
+		return slices.Equal(list.Runners[0].Labels, []string{"gpu"})
+	})
 	b.until("close the Runners sheet", `!document.querySelector("#runners-sheet").open`, chromedp.KeyEvent(kb.Escape))
 
 	// The project's Runs on: any, as it was made.
