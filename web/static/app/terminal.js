@@ -17,47 +17,74 @@ export const TERM_OPTS = {
   fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, cursorBlink: true,
   theme: { background: "#0a0f17", foreground: "#e6ecf5", cursor: "#8aa4ff", selectionBackground: "#2a384d" },
 };
-export const term = new window.Terminal(TERM_OPTS);
-const fit = new window.FitAddon.FitAddon();
-term.loadAddon(fit);
-term.open($("#term"));
+// procTerminal makes an xterm.js terminal in el for a process's WebSocket
+// (procWS's protocol: binary frames are output; text frames are JSON, such as
+// {type:"exit", code}; it takes {type:"input"} and {type:"resize"}). The terminal
+// refits when observe changes size, while visible() says it shows.
+// connect(url, { onClose }) attaches it to a socket (closing the one before) and
+// returns the socket; onClose({ got }) runs when the socket closes by itself
+// (not by close() or another connect), got saying whether anything came.
+export function procTerminal(el, { observe = el, visible = () => true } = {}) {
+  const term = new window.Terminal(TERM_OPTS);
+  const fitter = new window.FitAddon.FitAddon();
+  term.loadAddon(fitter);
+  term.open(el);
+  let ws = null;
+  const send = (msg) => { if (ws?.readyState === 1) ws.send(JSON.stringify(msg)); };
+  const fit = () => {
+    if (!visible()) return;
+    try { fitter.fit(); send({ type: "resize", cols: term.cols, rows: term.rows }); } catch {}
+  };
+  new ResizeObserver(fit).observe(observe);
+  term.onData((data) => send({ type: "input", data }));
+  // Ctrl-] leaves the terminal and returns to normal mode, like detaching in the TUI.
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type === "keydown" && e.ctrlKey && e.key === "]") { term.blur(); setMode(); return false; }
+    return true;
+  });
+  const close = () => { const old = ws; ws = null; old?.close(); };
+  const connect = (url, { onClose } = {}) => {
+    close();
+    term.reset();
+    const sock = new WebSocket(url);
+    ws = sock;
+    let got = false;
+    sock.binaryType = "arraybuffer";
+    sock.onopen = fit;
+    sock.onmessage = (m) => {
+      got = true;
+      if (typeof m.data !== "string") return term.write(new Uint8Array(m.data));
+      const msg = JSON.parse(m.data);
+      if (msg.type === "exit") term.write(`\r\n\x1b[90mExited with code ${msg.code}\x1b[0m\r\n`);
+    };
+    sock.onclose = () => {
+      if (ws !== sock) return; // closed on purpose
+      ws = null;
+      onClose?.({ got });
+    };
+    return sock;
+  };
+  return { term, fit, send, connect, close };
+}
+
+const shell = procTerminal($("#term"), { visible: () => state.view === "run" });
+export const term = shell.term;
+export const fitTerm = shell.fit;
 export let termWS = null;
 export let attached = null;
 let attachedProc = null; // the process attached, as started or listed, and its project
 let attachedIn = null;
 
-const sendSize = () => termWS?.readyState === 1 && termWS.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
-export function fitTerm() { if (state.view === "run") { try { fit.fit(); sendSize(); } catch {} } }
-new ResizeObserver(fitTerm).observe($("#term"));
-term.onData((data) => termWS?.readyState === 1 && termWS.send(JSON.stringify({ type: "input", data })));
-// Ctrl-] leaves the terminal and returns to normal mode, like detaching in the TUI.
-term.attachCustomKeyEventHandler((e) => {
-  if (e.type === "keydown" && e.ctrlKey && e.key === "]") { term.blur(); setMode(); return false; }
-  return true;
-});
-
 export function attach(p) {
   renderShellNote();
-  termWS?.close();
   attached = p.id;
   attachedProc = p;
   attachedIn = state.project?.id;
   renderShellHead();
-  term.reset();
+  termWS = shell.connect(wsURL(on(here(), `/ws/proc/${p.id}`)));
   // Piped (non-PTY) output has bare \n with no tty driver to add the \r.
   term.options.convertEol = p.kind !== "pty";
   requestAnimationFrame(fitTerm);
-  termWS = new WebSocket(wsURL(on(here(), `/ws/proc/${p.id}`)));
-  termWS.binaryType = "arraybuffer";
-  termWS.onopen = sendSize;
-  termWS.onmessage = (m) => {
-    if (typeof m.data === "string") {
-      const msg = JSON.parse(m.data);
-      if (msg.type === "exit") term.write(`\r\n\x1b[90mProcess exited with code ${msg.code}\x1b[0m\r\n`);
-    } else {
-      term.write(new Uint8Array(m.data));
-    }
-  };
   renderProcs();
   if (p.kind === "pty") term.focus();
 }

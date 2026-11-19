@@ -7,8 +7,7 @@ import { state } from "./state.js";
 import { renderBoard } from "./branches.js";
 import { openDetail, renderActions } from "./detail.js";
 import { canRework, draw, endDraw, menu, previewsSheet, renderPreviewsBtn, reworkTodo, startDraw } from "./drawmode.js";
-import { TERM_OPTS } from "./terminal.js";
-import { setMode } from "./vim.js";
+import { procTerminal } from "./terminal.js";
 
 // ------------------------------------------------------------------ live preview
 // A task in review can run the project's server (run_command) in its worktree.
@@ -161,53 +160,27 @@ function renderLog() {
 
 // A terminal preview (CLI projects) is the preview's PTY in xterm.js, over
 // the WebSocket in its terminal_url (procWS's protocol). Made on first use.
+let pvT = null; // procTerminal's { term, fit, send, connect, close }
 let pvTerm = null;
-let pvFit = null;
-const pvSend = (msg) => pv.term?.readyState === 1 && pv.term.send(JSON.stringify(msg));
-function fitPvTerm() {
-  if (!pvTerm || $("#pv-term").hidden) return;
-  try { pvFit.fit(); pvSend({ type: "resize", cols: pvTerm.cols, rows: pvTerm.rows }); } catch {}
-}
+const pvSend = (msg) => pvT?.send(msg);
 function pvTermOnce() {
-  if (pvTerm) return pvTerm;
-  pvTerm = new window.Terminal(TERM_OPTS);
-  pvFit = new window.FitAddon.FitAddon();
-  pvTerm.loadAddon(pvFit);
-  pvTerm.open($("#pv-term"));
-  new ResizeObserver(fitPvTerm).observe($("#pv-term"));
-  pvTerm.onData((data) => pvSend({ type: "input", data }));
-  // Ctrl-] leaves the terminal, as in the Shell view.
-  pvTerm.attachCustomKeyEventHandler((e) => {
-    if (e.type === "keydown" && e.ctrlKey && e.key === "]") { pvTerm.blur(); setMode(); return false; }
-    return true;
-  });
-  return pvTerm;
+  pvT ||= procTerminal($("#pv-term"), { visible: () => !$("#pv-term").hidden });
+  pvTerm = pvT.term;
+  return pvT;
 }
 
 function disconnectTerm() {
-  pv.term?.close();
+  pvT?.close();
   pv.term = null;
   pv.termProc = null;
 }
 
 export function connectTerm(p) {
   disconnectTerm();
-  const term = pvTermOnce();
+  const t = pvTermOnce();
   pv.termProc = p.process_id;
-  term.reset();
-  const ws = new WebSocket(wsURL(on(p.prefix, p.terminal_url || `/ws/todos/${encodeURIComponent(p.todo_id)}/preview`)));
-  ws.binaryType = "arraybuffer";
-  ws.onopen = fitPvTerm;
-  ws.onmessage = (m) => {
-    if (typeof m.data === "string") {
-      const msg = JSON.parse(m.data);
-      if (msg.type === "exit") term.write(`\r\n\x1b[90mExited with code ${msg.code}\x1b[0m\r\n`);
-    } else {
-      term.write(new Uint8Array(m.data));
-    }
-  };
-  pv.term = ws;
-  requestAnimationFrame(() => { fitPvTerm(); if (desktop.matches) term.focus(); });
+  pv.term = t.connect(wsURL(on(p.prefix, p.terminal_url || `/ws/todos/${encodeURIComponent(p.todo_id)}/preview`)));
+  requestAnimationFrame(() => { t.fit(); if (desktop.matches) t.term.focus(); });
 }
 
 // The last n lines of the terminal on screen and in its scrollback.

@@ -9,8 +9,7 @@ import { closeDetail } from "./detail.js";
 import { PV_ARROWS, PV_KEYS } from "./preview.js";
 import { agoText } from "./branches.js";
 import { pane, renderTryBack, toggleChatPane } from "./chatpane.js";
-import { TERM_OPTS, ensureShell, renderQuick } from "./terminal.js";
-import { setMode } from "./vim.js";
+import { ensureShell, procTerminal, renderQuick } from "./terminal.js";
 
 // ------------------------------------------------------------------ try: the project's CLI on a runner
 // (tryState is declared with state, near the top: views render before this runs.)
@@ -22,7 +21,7 @@ import { setMode } from "./vim.js";
 // with read_try_terminal, and files what the user finds as issues or draft tasks.
 function tryProject(p = state.project) { return !!p && p.preview_kind === "terminal" && !p.prefix; }
 function shortSHA(sha) { return (sha || "").slice(0, 7); }
-function trySend(msg) { if (tryState.ws?.readyState === 1) tryState.ws.send(JSON.stringify(msg)); }
+function trySend(msg) { tryT?.send(msg); }
 
 export async function loadTry() {
   const p = state.project;
@@ -127,63 +126,36 @@ async function stopTry() {
   toast("Stopped trying the commit", { icon: "stop" });
 }
 
-export function fitTryTerm() {
-  if (!tryTerm || state.view !== "try" || $("#try-term-wrap").hidden) return;
-  try { tryFit.fit(); trySend({ type: "resize", cols: tryTerm.cols, rows: tryTerm.rows }); } catch {}
-}
-// The Try terminal, once made.
+export function fitTryTerm() { tryT?.fit(); }
+// The Try terminal (procTerminal's { term, fit, send, connect, close }), once made.
+let tryT = null;
 let tryTerm = null;
-let tryFit = null;
 function tryTermOnce() {
-  if (tryTerm) return tryTerm;
-  tryTerm = new window.Terminal(TERM_OPTS);
-  tryFit = new window.FitAddon.FitAddon();
-  tryTerm.loadAddon(tryFit);
-  tryTerm.open($("#try-term"));
-  new ResizeObserver(fitTryTerm).observe($("#try-term-wrap"));
-  tryTerm.onData((data) => trySend({ type: "input", data }));
-  tryTerm.attachCustomKeyEventHandler((e) => {
-    if (e.type === "keydown" && e.ctrlKey && e.key === "]") { tryTerm.blur(); setMode(); return false; }
-    return true;
-  });
-  return tryTerm;
+  tryT ||= procTerminal($("#try-term"), { observe: $("#try-term-wrap"), visible: () => state.view === "try" && !$("#try-term-wrap").hidden });
+  tryTerm = tryT.term;
+  return tryT;
 }
 
 function disconnectTry() {
-  const ws = tryState.ws;
   tryState.ws = null;
   tryState.proc = null;
-  ws?.close();
+  tryT?.close();
 }
 
 function connectTry(s) {
   disconnectTry();
-  const term = tryTermOnce();
-  term.reset();
+  const t = tryTermOnce();
   tryState.proc = s.process_id;
-  tryState.got = false;
-  const ws = new WebSocket(wsURL(s.terminal_url));
-  ws.binaryType = "arraybuffer";
-  ws.onopen = fitTryTerm;
-  ws.onmessage = (m) => {
-    tryState.got = true;
-    if (typeof m.data === "string") {
-      const msg = JSON.parse(m.data);
-      if (msg.type === "exit") term.write(`\r\n\x1b[90mExited with code ${msg.code}\x1b[0m\r\n`);
-    } else {
-      term.write(new Uint8Array(m.data));
-    }
-  };
-  ws.onclose = () => {
-    if (tryState.ws !== ws) return; // closed on purpose
-    tryState.ws = null;
-    tryState.proc = null;
-    // Never attached (the runner refused): don't keep trying the same one.
-    if (!tryState.got) tryState.refused = s.process_id;
-    loadTry().catch(() => renderTry()); // it exited, went idle, or the runner left
-  };
-  tryState.ws = ws;
-  requestAnimationFrame(() => { fitTryTerm(); if (desktop.matches) term.focus(); });
+  tryState.ws = t.connect(wsURL(s.terminal_url), {
+    onClose: ({ got }) => {
+      tryState.ws = null;
+      tryState.proc = null;
+      // Never attached (the runner refused): don't keep trying the same one.
+      if (!got) tryState.refused = s.process_id;
+      loadTry().catch(() => renderTry()); // it exited, went idle, or the runner left
+    },
+  });
+  requestAnimationFrame(() => { t.fit(); if (desktop.matches) t.term.focus(); });
 }
 
 function renderTry() {
