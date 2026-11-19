@@ -11,6 +11,9 @@ export const LANES = [
   { key: "done", label: "Merged", statuses: ["merged"], empty: "Merged tasks show up here." },
 ];
 export const STATUS_LABEL = { draft: "Draft", queued: "Queued", in_progress: "Running", review: "Ready for review", merging: "Merging", merged: "Merged", failed: "Failed" };
+// statusLabel is task t's status in words: one closed without changes is
+// Merged on the server, but nothing was merged.
+export const statusLabel = (t) => t.status === "merged" && t.no_changes && !t.merged_commit ? "Closed · no changes" : STATUS_LABEL[t.status] || t.status;
 
 // The project's Try session (see "try" below).
 export const tryState = {

@@ -5,7 +5,7 @@ import { fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { grouped, loadProjects, projectWhere, renderSideProjects, selectProject } from "./projects.js";
 import { loadUnpushed } from "./board.js";
-import { renderBoard, title, updateLiveLine } from "./branches.js";
+import { closedNoChanges, renderBoard, title, updateLiveLine } from "./branches.js";
 import { trackActivity } from "./activity.js";
 import { activityAfterStatus } from "../activityclear.js";
 import { closeDetail, loadDiff, openDetail, openTodo, renderActions, renderDetail } from "./detail.js";
@@ -206,7 +206,8 @@ function onEvent(ev, m = { name: "" }) {
         if (prev && prev.status !== ev.data.status) {
           if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data, "", !here(), "task.review"); }
           if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error, !here(), "task.failed"); }
-          if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); }
+          if (ev.data.status === "merged" && closedNoChanges(ev.data)) { toast(title(ev.data), { tone: "ok", head: "Closed · no changes", icon: "check" }); notify("Closed", ev.data); }
+          else if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); }
         }
         if (prev && prev.revert?.commit !== ev.data.revert?.commit) loadUnpushed().catch(fail);
         if (prev && !prev.revert && ev.data.revert) {

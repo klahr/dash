@@ -468,8 +468,8 @@ func TestNoChangesExplainedInChat(t *testing.T) {
 	}
 	// Approving a task without changes closes it.
 	h.approve(a.ID)
-	if got := h.waitFor(a.ID, model.StatusMerged); got.MergedCommit != "" {
-		t.Fatalf("want no commit for a task without changes, got %q", got.MergedCommit)
+	if got := h.waitFor(a.ID, model.StatusMerged); got.MergedCommit != "" || !got.NoChanges {
+		t.Fatalf("want no commit and no_changes for a task without changes, got %q, no_changes=%v", got.MergedCommit, got.NoChanges)
 	}
 }
 

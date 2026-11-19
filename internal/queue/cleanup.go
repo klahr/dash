@@ -106,7 +106,7 @@ func (m *MergeQueue) cleanup(ctx context.Context, p model.Project) (CleanupRepor
 		m.Log.Line(t, fmt.Sprintf("🧹 worktree removed after %s unused; a retry starts from scratch", humanDuration(m.CleanupAfter)))
 		_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 			x.Worktree, x.SessionID, x.FeedbackSent, x.MergeMain = nil, "", 0, false
-			x.Checks, x.DiffFiles, x.DiffAdd, x.DiffDel = nil, 0, 0, 0
+			x.Checks, x.DiffFiles, x.DiffAdd, x.DiffDel, x.NoChanges = nil, 0, 0, 0, false
 			return nil
 		})
 	}

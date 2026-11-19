@@ -109,9 +109,16 @@ var looks = map[model.NotifyEvent]struct {
 	model.NotifyTest:       {"Test notification", ":wave:", "wave", false},
 }
 
+// ClosedNoChanges is the message of a task.merged notification for a task
+// closed without changes: nothing was merged.
+const ClosedNoChanges = "No changes: nothing was merged"
+
 // Head is the event's short heading, e.g. "Ready for review".
 func (n Notification) Head() string {
 	h := looks[n.Type].head
+	if n.Type == model.NotifyMerged && n.Message == ClosedNoChanges {
+		h = "Closed"
+	}
 	if n.Type == model.NotifyGoal && n.Goal != nil {
 		h = goalHeads[n.Goal.Status]
 	}

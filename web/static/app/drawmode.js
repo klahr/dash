@@ -9,7 +9,7 @@ import { attachThumb, uploadFile } from "./attachments.js";
 import { saveComments, state } from "./state.js";
 import { baseBranch, multi, projectKey } from "./events.js";
 import { selectProject } from "./projects.js";
-import { agoText, title } from "./branches.js";
+import { agoText, closable, title } from "./branches.js";
 import { renderActions } from "./detail.js";
 import { PV_LABEL, hidePreview, isTermPreview, previewOf, previewTodo, pv, renderPreview } from "./preview.js";
 import { canEditDiff, openDiffEdit } from "./diffedit.js";
@@ -460,17 +460,21 @@ export function reviewTodo() {
 }
 
 export const canRework = (t) => !!t?.worktree && ["review", "failed"].includes(t.status);
+// reworkLabel: for a task that changed no files Rework is asking for changes.
+export const reworkLabel = (t) => closable(t) ? "Ask for changes…" : "Rework…";
 // text prefills the notes, e.g. from the task chat. Pictures added from the
 // preview's draw mode (and their notes) come along. Resolves true once sent.
 export async function reworkTodo(t, text = "") {
   const shot = shots.get(t.id);
   const value = [shot?.text.trim(), text].filter(Boolean).join("\n\n");
-  const res = await ask({ title: "Rework", body: "Claude continues in the same worktree with your rework notes. Paste or attach a screenshot to show what's wrong.", input: true, value, placeholder: "What should change?", ok: "Rework", attach: true, attachments: shot?.items || [] });
+  const res = closable(t)
+    ? await ask({ title: "Ask for changes", body: "Claude continues in the same worktree with your message and runs again. Paste or attach a screenshot if it helps.", input: true, value, placeholder: "What should Claude do?", ok: "Send", attach: true, attachments: shot?.items || [] })
+    : await ask({ title: "Rework", body: "Claude continues in the same worktree with your rework notes. Paste or attach a screenshot to show what's wrong.", input: true, value, placeholder: "What should change?", ok: "Rework", attach: true, attachments: shot?.items || [] });
   if (res === null) return false;
   await api("POST", `/api/todos/${t.id}/rework`, { feedback: res.text, attachments: res.attachments });
   shots.delete(t.id);
   renderReworkBox();
-  toast("Sent for rework");
+  toast(closable(t) ? "Sent to Claude" : "Sent for rework");
   return true;
 }
 

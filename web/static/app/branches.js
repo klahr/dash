@@ -508,7 +508,7 @@ export const doneAt = (t) => (t.status === "merged" || t.status === "failed") ? 
 export function doneMeta(t) {
   const at = doneAt(t);
   if (!at || isNaN(new Date(at))) return null;
-  const word = t.status === "merged" ? "Merged" : "Failed";
+  const word = closedNoChanges(t) ? "Closed" : t.status === "merged" ? "Merged" : "Failed";
   const text = Date.now() - new Date(at) > 7 * DAY ? dateTimeText(at) : agoText(at);
   return h("time", { datetime: at, title: dateTimeText(at) }, `${word} ${text}`);
 }
@@ -517,7 +517,7 @@ export function doneMeta(t) {
 // runners, merging is pushing).
 function isPushed(t) {
   const p = state.project;
-  if (t.status !== "merged" || !p?.remote_url) return false;
+  if (t.status !== "merged" || closedNoChanges(t) || !p?.remote_url) return false;
   if (landsOnGitHub(p)) return true;
   return !!state.unpushedTodos && !state.unpushedTodos.has(t.id);
 }
@@ -671,6 +671,8 @@ export function todoRow(t, li = -1, ri = -1) {
   let sub = t.prompt.replace(/\s+/g, " ");
   let subClass = "todo-sub";
   if (t.summary && t.status === "merged") sub = t.summary;
+  // Claude's answer, readable on the card, so it can be closed unopened.
+  if (t.summary && closable(t)) sub = t.summary;
   const fixing = t.sent_back && ["queued", "in_progress"].includes(t.status) ? t.sent_back : "";
   if (fixing && t.status === "queued") sub = `${/^review /.test(fixing) ? "Sent back from GitHub" : "Sent back from merge"}: ${fixing}`;
   if (t.status === "in_progress") { sub = state.lastLine.get(t.id) || "Working…"; subClass += " progress"; }
@@ -709,6 +711,8 @@ export function todoRow(t, li = -1, ri = -1) {
     h("span", { class: "todo-side" },
       checkTag,
       t.status === "failed" ? h("span", { class: "failed-tag" }, "Failed") : null,
+      t.no_changes && t.status === "review" ? h("span", { class: "nochange-tag", title: "Claude finished without changing any files" }, "No changes") : null,
+      closedNoChanges(t) ? h("span", { class: "nochange-tag", title: "Closed without changes: nothing was merged" }, "Closed · no changes") : null,
       t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,
       t.runner && ["in_progress", "review", "merging", "failed"].includes(t.status) ? h("span", { class: "runner-tag", title: "Runs on this runner" }, runnerName(t.runner)) : null,
       t.reviewing ? h("span", { class: "reviewing-tag" }, "Reviewing") : null,
@@ -726,13 +730,14 @@ export function todoRow(t, li = -1, ri = -1) {
       ["review", "merging", "merged", "failed"].includes(t.status) ? tokenTag(t) : null,
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
       previewTag(t),
-      t.status === "merged" && doneAt(t) ? h("span", { class: "done-ago", title: `Merged ${dateTimeText(doneAt(t))}` }, ago(doneAt(t))) : null,
+      t.status === "merged" && doneAt(t) ? h("span", { class: "done-ago", title: `${closedNoChanges(t) ? "Closed" : "Merged"} ${dateTimeText(doneAt(t))}` }, ago(doneAt(t))) : null,
       t.status === "review" && t.finished_at ? h("span", { title: waitsOnGitHub(t) ? "Waiting on GitHub since" : "Waiting for review" }, ago(t.finished_at)) : null,
       t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
       t.run_on ? runOnTag(t.run_on) : null,
       hasPriority(t) ? h("span", { class: `prio-tag prio-${priorityLevel(t.priority)}`, title: `${PRIORITY_LEVELS[priorityLevel(t.priority)]} priority: runs before tasks without one` }, PRIORITY_LEVELS[priorityLevel(t.priority)]) : null,
       creatorEl(t),
-      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), askClaudeChip(t), approvable(t) ? approveChip(t) : canMergePR(t) ? mergeChip(t) : null) : null,
+      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, closable(t) ? null : reviewChip(t), closable(t) ? null : askClaudeChip(t),
+        closable(t) ? closeChip(t) : approvable(t) ? approveChip(t) : canMergePR(t) ? mergeChip(t) : null) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null,
       paced ? h("span", { class: "card-actions" }, startNowChip(t)) : null));
 }
@@ -753,6 +758,23 @@ export function waitsOnGitHub(t) {
 // or pushing its pull request failed (its error says so) and approving retries.
 export function approvable(t) {
   return t.status === "review" && (!waitsOnGitHub(t) || !!t.error);
+}
+
+// Whether Close applies instead of Approve: a task in review that changed
+// no files has nothing to merge, only an answer to read.
+export function closable(t) {
+  return t.status === "review" && !!t.no_changes && !t.pr;
+}
+
+// A task closed without changes: Merged, but nothing was merged.
+export function closedNoChanges(t) {
+  return t.status === "merged" && !!t.no_changes && !t.merged_commit;
+}
+
+// closeTodo closes task t, in review without changes.
+export async function closeTodo(t) {
+  await api("POST", `/api/todos/${t.id}/close`);
+  toast("Closed");
 }
 
 // Whether Merge pull request applies: its pull request is open and ready
@@ -888,6 +910,17 @@ function approveChip(t) {
       attempt(async () => { await api("POST", `/api/todos/${t.id}/approve`); toast("Approved — merging"); })();
     },
   }, ico("check"), "Approve");
+}
+
+function closeChip(t) {
+  return h("button", {
+    type: "button", class: "approve-chip", title: "Close the task: it changed no files, so there is nothing to merge",
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => {
+      e.stopPropagation();
+      attempt(() => closeTodo(t))();
+    },
+  }, ico("check"), "Close");
 }
 
 function enqueueChip(t) {

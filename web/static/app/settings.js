@@ -38,6 +38,7 @@ export function openSettings() {
   setLabels(f.deploy_runs_on, p.deploy_runs_on || []);
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
+  f.close_no_changes.checked = !!p.close_no_changes;
   f.merge_mode.value = p.merge_mode || "local";
   f.merge_method.value = p.merge_method || "";
   f.merge_batch.value = p.merge_batch > 1 ? p.merge_batch : 1;
@@ -241,6 +242,7 @@ const FIELDS = {
   deploy_command: { read: (f) => f.deploy_command.value.trim() },
   auto_push: { read: (f) => f.auto_push.checked },
   auto_approve: { read: (f) => f.auto_approve.checked },
+  close_no_changes: { read: (f) => f.close_no_changes.checked },
   merge_mode: { read: (f) => f.merge_mode.value },
   merge_method: { read: (f) => f.merge_method.value },
   merge_batch: { read: (f) => Math.min(10, Math.max(1, Math.round(Number(f.merge_batch.value) || 1))) },

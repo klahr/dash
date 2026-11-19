@@ -4,7 +4,7 @@ import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
-import { STATUS_LABEL, projectFirst, state } from "./state.js";
+import { statusLabel, projectFirst, state } from "./state.js";
 import { eventFor, latest, projectKey } from "./events.js";
 import { agoText, renderBoard, title } from "./branches.js";
 import { detailBackground, openDetail, renderDetail } from "./detail.js";
@@ -358,7 +358,7 @@ function renderPlan(g) {
       h("button", { type: "button", class: "goal-task-open", title: "Open the task", onclick: () => openDetail(t.id).catch(fail) },
         h("span", { class: "goal-task-title" }, title({ title: t.title, prompt: t.prompt || t.title || t.id })),
         h("span", { class: "goal-task-sub" },
-          h("span", { class: "status" }, t.paused ? "Paused" : STATUS_LABEL[t.status] || t.status),
+          h("span", { class: "status" }, t.paused ? "Paused" : statusLabel(t)),
           after.length ? h("span", {}, `after ${after.join(", ")}`) : null)));
   });
   const waiting = g.waiting_for === "plan" ? (g.plan || []) : [];

@@ -55,7 +55,7 @@ func init() {
 		"POST /api/todos/{tid}/enqueue", "POST /api/todos/{tid}/start-now", "POST /api/todos/{tid}/cancel", "POST /api/todos/{tid}/pause",
 		"POST /api/todos/{tid}/resume", "GET /api/todos/{tid}/diff", "GET /api/todos/{tid}/log",
 		"GET /api/todos/{tid}/image", // images in its diff (diffimage.go)
-		"GET /api/todos/{tid}/events", "POST /api/todos/{tid}/approve", "POST /api/todos/{tid}/rework",
+		"GET /api/todos/{tid}/events", "POST /api/todos/{tid}/approve", "POST /api/todos/{tid}/close", "POST /api/todos/{tid}/rework",
 		"POST /api/todos/{tid}/test", "POST /api/todos/{tid}/duplicate", "POST /api/todos/{tid}/open",
 		"POST /api/todos/{tid}/revert", "POST /api/todos/{tid}/merge-pr",
 		// Editing a task's changes in review (todofile.go).

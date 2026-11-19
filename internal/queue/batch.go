@@ -455,7 +455,7 @@ func (m *MergeQueue) landBatch(ctx context.Context, p model.Project, base, tip s
 	}
 	for _, b := range passed {
 		if b.commit == "" {
-			m.landed(ctx, b.t, p, "", "✔ closed; nothing to merge")
+			_, _ = m.closeNoChanges(ctx, b.t, p, nil) // nothing to merge
 			continue
 		}
 		msg := "✔ merged into " + p.Base()

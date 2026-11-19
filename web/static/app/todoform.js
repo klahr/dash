@@ -3,7 +3,7 @@ import { $, $$, h, ib, plural, setModelField } from "./dom.js";
 import { api, here } from "./api.js";
 import { ask, attempt, busy, toast } from "./dialogs.js";
 import { attachBox } from "./attachments.js";
-import { STATUS_LABEL, state } from "./state.js";
+import { statusLabel, state } from "./state.js";
 import { projectKey } from "./events.js";
 import { boardField } from "./boards.js";
 import { agoText, byPriority, title } from "./branches.js";
@@ -27,7 +27,7 @@ export function depOptions(t, ids = []) {
     .map((x) => h("label", { class: `dep-option s-${x.status}` },
       h("input", { type: "checkbox", name: "dep", value: x.id, checked: sel.has(x.id) }),
       h("span", { class: "dep-title" }, title(x)),
-      h("span", { class: "dep-status" }, STATUS_LABEL[x.status] || x.status)));
+      h("span", { class: "dep-status" }, statusLabel(x))));
 }
 
 export const depPicker = (() => {
@@ -62,7 +62,7 @@ export function buildOnOptions(t, id = "") {
     .sort((a, b) => finishedAt(b) - finishedAt(a))
     .slice(0, 20);
   if (!recent.length && !id) return null;
-  const opt = (x) => h("option", { value: x.id }, `#${x.id} ${title(x)} · ${STATUS_LABEL[x.status] || x.status}`);
+  const opt = (x) => h("option", { value: x.id }, `#${x.id} ${title(x)} · ${statusLabel(x)}`);
   return [
     h("option", { value: "" }, "Nothing: start fresh"),
     ...(cur ? [opt(cur)] : id ? [h("option", { value: id }, `#${id}`)] : []),

@@ -48,9 +48,9 @@ On the board the keys act on the task under the cursor; in an open task, on that
 |----------------------|-------------------------------------------------------------------|
 | `h` `j` `k` `l`      | move the cursor (board); `h`/`l` switch timeline and changes (open task) |
 | `w` `b`              | next / previous lane with tasks                                   |
-| `Enter`              | approve a task in Review (open its pull request when GitHub reviews it), queue a draft, else open it |
+| `Enter`              | approve a task in Review (close it when it changed no files; open its pull request when GitHub reviews it), queue a draft, else open it |
 | `Space`              | open the task                                                     |
-| `a`                  | approve (a task in Review)                                        |
+| `a`                  | approve (a task in Review), or close one that changed no files    |
 | `s`                  | queue                                                             |
 | `x`                  | stop, or cancel to drafts                                         |
 | `z`                  | pause / resume                                                    |

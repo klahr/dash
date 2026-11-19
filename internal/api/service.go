@@ -429,7 +429,7 @@ func (sv *service) startOver(ctx context.Context, id string) (model.Todo, error)
 		x.Runner, x.RemoteID, x.Resumable = "", "", false
 		x.Worktree, x.SessionID, x.Feedback, x.FeedbackSent = nil, "", nil, 0
 		x.MergeMain, x.EditsApplied = false, false
-		x.Checks, x.DiffFiles, x.DiffAdd, x.DiffDel = nil, 0, 0, 0
+		x.Checks, x.DiffFiles, x.DiffAdd, x.DiffDel, x.NoChanges = nil, 0, 0, 0, false
 		x.AutoFixes, x.AutoMerge, x.SentBack = 0, false, ""
 		x.Conflicts, x.ConflictNoted = nil, nil
 		return nil
@@ -566,6 +566,17 @@ func (sv *service) approve(id string) (model.Todo, error) {
 	if sv.s.hub() {
 		return cur, fmt.Errorf("%w, so it has no work to merge; queue it instead", errNotRunYet)
 	}
+	// A task that changed nothing is closed: nothing to merge or test.
+	// Edited since, it has changes after all and is merged as usual.
+	if cur.NoChanges && sv.s.Merges != nil {
+		t, err := sv.s.Merges.Close(context.Background(), id)
+		if !errors.Is(err, queue.ErrHasChanges) {
+			if errors.Is(err, queue.ErrNotClosable) {
+				err = fmt.Errorf("%w: only tasks in review (or a failed merge) can be approved", errBadRequest)
+			}
+			return t, err
+		}
+	}
 	t, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		if t.Status != model.StatusReview && t.Status != model.StatusFailed {
 			return fmt.Errorf("%w: only tasks in review (or a failed merge) can be approved", errBadRequest)
@@ -587,6 +598,24 @@ func (sv *service) approve(id string) (model.Todo, error) {
 		return t, err
 	}
 	return t, nil
+}
+
+// closeTodo closes task id, in Review without changes (model.Todo.NoChanges):
+// it is Merged with no commit. A task with changes is refused; approve it.
+// It is approve for such a task, which an older client's Approve does too.
+func (sv *service) closeTodo(id string) (model.Todo, error) {
+	cur, err := sv.data.GetTodo(id)
+	if err != nil {
+		return cur, err
+	}
+	if !cur.NoChanges {
+		return cur, fmt.Errorf("%w: this task changes files; approve it to merge them", errBadRequest)
+	}
+	t, err := sv.approve(id)
+	if errors.Is(err, queue.ErrHasChanges) {
+		err = fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	return t, err
 }
 
 // mergePR merges task t's open pull request on GitHub, with method
@@ -636,6 +665,8 @@ func (sv *service) revert(ctx context.Context, t model.Todo) error {
 		return fmt.Errorf("%w: only merged tasks can be reverted", errBadRequest)
 	case t.Revert != nil:
 		return fmt.Errorf("%w: this task was already reverted", errBadRequest)
+	case t.NoChanges && t.MergedCommit == "":
+		return fmt.Errorf("%w: this task was closed without changes, so there is nothing to revert", errBadRequest)
 	case t.OnRunner():
 		return sv.revertOnRunner(ctx, t)
 	case sv.s.hub():

@@ -291,6 +291,9 @@ func hubSettings(req dispatch.Link, mode string) func(*model.Project) {
 		if req.AutoApprove != nil {
 			x.AutoApprove = *req.AutoApprove
 		}
+		if req.CloseNoChanges != nil {
+			x.CloseNoChanges = *req.CloseNoChanges
+		}
 		if req.MaxAutoFixes != nil {
 			x.MaxAutoFixes = max(0, *req.MaxAutoFixes)
 		}

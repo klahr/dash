@@ -300,6 +300,8 @@ func FollowUpPrompt(t, parent model.Todo) string {
 	switch {
 	case parent.Status == model.StatusMerged && parent.Revert != nil:
 		b.WriteString(": its changes were merged and later reverted, so they are not in the default branch.")
+	case parent.Status == model.StatusMerged && parent.NoChanges && parent.MergedCommit == "":
+		b.WriteString(" and closed: it changed no files, so nothing was merged.")
 	case parent.Status == model.StatusMerged:
 		b.WriteString(" and merged: its changes are in the default branch.")
 	default:

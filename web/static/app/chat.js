@@ -10,7 +10,7 @@ import { showView } from "./nav.js";
 import { projectKey } from "./events.js";
 import { duration } from "./activity.js";
 import { closeDetail, openTodo } from "./detail.js";
-import { canRework, reworkTodo, takeReviewNext } from "./drawmode.js";
+import { canRework, reworkLabel, reworkTodo, takeReviewNext } from "./drawmode.js";
 import { describePerm } from "./review.js";
 import { loadTodoChat, renderChatBadge, renderChatDots, renderChatPane, viewingChat } from "./chatpane.js";
 import { timeline } from "./timeline.js";
@@ -948,7 +948,7 @@ export const todoChat = makeChat({
         await api("PATCH", `/api/todos/${t.id}`, { prompt: answer });
         toast("Instructions updated");
       }) }, "draft", "Use as instructions…") : null,
-      canRework(t) ? ib({ class: "link", onclick: attempt(() => reworkTodo(t, answer)) }, "redo", "Rework…") : null,
+      canRework(t) ? ib({ class: "link", onclick: attempt(() => reworkTodo(t, answer)) }, "redo", reworkLabel(t)) : null,
       ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
   },
 });

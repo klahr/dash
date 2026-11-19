@@ -930,13 +930,28 @@ func (r *todoRun) commitAndCheck() (step, error) {
 	}
 	files, add, del, derr := e.Git.DiffStat(ctx, p.ID, wt.Path, p.Base())
 	if derr == nil {
-		_ = r.update(func(x *model.Todo) { x.DiffFiles, x.DiffAdd, x.DiffDel = files, add, del })
+		_ = r.update(func(x *model.Todo) { x.DiffFiles, x.DiffAdd, x.DiffDel, x.NoChanges = files, add, del, files == 0 })
 	}
 	if derr == nil && files == 0 {
 		// An answer, an investigation or "it already works": nothing to
-		// test or merge, but not a failure. Review it; approving closes it.
+		// test or merge, but not a failure. Review it, where it is closed,
+		// or close it now when the project says so.
+		autoClose := p.CloseNoChanges && e.Merges != nil
+		noteNoChanges(e.Store, r.t.ID, r.report, autoClose)
+		if autoClose {
+			r.log("✔ finished without changing any files")
+			if _, err := e.Merges.closeNoChanges(ctx, r.t, p, func(x *model.Todo) error {
+				if x.Status != model.StatusInProgress {
+					return fmt.Errorf("task is %s", x.Status)
+				}
+				return nil
+			}); err == nil {
+				return stepDone, nil
+			} else {
+				slog.Error("close", "todo", r.t.ID, "err", err)
+			}
+		}
 		r.log("✔ finished without changing any files; ready for review")
-		noteNoChanges(e.Store, r.t.ID, r.report)
 		if _, err := e.Store.SetStatus(r.t.ID, model.StatusReview, ""); err != nil {
 			slog.Error("set review", "todo", r.t.ID, "err", err)
 		}
@@ -1184,10 +1199,14 @@ func noteFailure(s *store.Store, todoID, why, report string) {
 }
 
 // noteNoChanges says in the todo's chat that Claude changed nothing,
-// quoting its final message: usually the answer or the reason.
-func noteNoChanges(s *store.Store, todoID, report string) {
+// quoting its final message: usually the answer or the reason. closed says the task is closed already (the project's "Close tasks that
+// change no files").
+func noteNoChanges(s *store.Store, todoID, report string, closed bool) {
 	now := time.Now()
-	msg := "**Claude finished without changing any files.** Approve to close the task, or rework it to ask for changes."
+	msg := "**Claude finished without changing any files.** Close the task, or ask for changes to keep going."
+	if closed {
+		msg = "**Claude finished without changing any files, so the task is closed.** To ask for more, add a task that builds on it."
+	}
 	if report != "" {
 		msg += "\n\nClaude's last message:\n\n" + report
 	}

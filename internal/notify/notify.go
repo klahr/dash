@@ -428,6 +428,9 @@ func (n *Notifier) classify(ev model.Event) (Notification, bool) {
 			kind, message = model.NotifyFailed, t.Error
 		case model.StatusMerged:
 			kind = model.NotifyMerged
+			if t.NoChanges && t.MergedCommit == "" {
+				message = ClosedNoChanges
+			}
 		default:
 			return Notification{}, false
 		}

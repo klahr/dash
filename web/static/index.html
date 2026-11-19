@@ -1216,6 +1216,8 @@
             <p class="hint" id="settings-runners-hint" hidden></p>
           </section>
           <section class="rail-section" data-section="board">
+            <label class="toggle"><input type="checkbox" name="close_no_changes"><span>Close tasks that change no files</span></label>
+            <p class="hint">A task Claude finishes without changing any files (an answer, an investigation) skips Review and is closed at once, with Claude's answer in its chat. Off, it waits in Review, where you close it or ask for changes.</p>
             <!-- The project's boards (app/boards.js). Saved as they change, by their own API. -->
             <fieldset class="field choice" id="settings-boards">
               <legend>Boards <em>a project's tasks can be split over several boards; the board shows one at a time</em></legend>
@@ -1762,9 +1764,9 @@
                 <tr><th scope="row"><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd></th><td>Move the cursor between lanes and tasks</td></tr>
                 <tr><th scope="row"><kbd>w</kbd> <kbd>b</kbd></th><td>Next / previous lane with tasks</td></tr>
                 <tr><th scope="row"><kbd>gg</kbd> <kbd>G</kbd></th><td>First / last task in the lane</td></tr>
-                <tr><th scope="row"><kbd>Enter</kbd></th><td>Approve a task in Review (open its pull request when it is reviewed on GitHub); queue a draft; else open it</td></tr>
+                <tr><th scope="row"><kbd>Enter</kbd></th><td>Approve a task in Review (close it when it changed no files; open its pull request when it is reviewed on GitHub); queue a draft; else open it</td></tr>
                 <tr><th scope="row"><kbd>Space</kbd></th><td>Open the task</td></tr>
-                <tr><th scope="row"><kbd>a</kbd></th><td>Approve the task under the cursor (in Review)</td></tr>
+                <tr><th scope="row"><kbd>a</kbd></th><td>Approve the task under the cursor (in Review), or close it when it changed no files</td></tr>
                 <tr><th scope="row"><kbd>Ctrl-d</kbd> <kbd>Ctrl-u</kbd></th><td>Scroll half a page</td></tr>
                 <tr><td colspan="2" class="hint">The task keys below work on the task under the cursor too</td></tr>
               </tbody>
@@ -1777,7 +1779,7 @@
                 <tr><th scope="row"><kbd>s</kbd></th><td>Queue</td></tr>
                 <tr><th scope="row"><kbd>x</kbd></th><td>Stop, or cancel to drafts</td></tr>
                 <tr><th scope="row"><kbd>z</kbd></th><td>Pause / resume</td></tr>
-                <tr><th scope="row"><kbd>a</kbd></th><td>Approve (in Review)</td></tr>
+                <tr><th scope="row"><kbd>a</kbd></th><td>Approve (in Review), or Close when it changed no files</td></tr>
                 <tr><th scope="row"><kbd>r</kbd></th><td>Rework</td></tr>
                 <tr><th scope="row"><kbd>e</kbd></th><td>Edit (<kbd>Ctrl-Enter</kbd>/<kbd>Ctrl-s</kbd> save, <kbd>Esc</kbd> cancel)</td></tr>
                 <tr><th scope="row"><kbd>dd</kbd></th><td>Delete</td></tr>

@@ -2,7 +2,7 @@ import { renderMarkdown } from "../editor.js";
 import { $, $$, h, ib, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, toast } from "./dialogs.js";
-import { STATUS_LABEL, state } from "./state.js";
+import { statusLabel, state } from "./state.js";
 import { projectKey } from "./events.js";
 import { showView } from "./nav.js";
 import { agoText, title } from "./branches.js";
@@ -36,7 +36,7 @@ function issueTask(i) {
   const rank = (t) => ({ in_progress: 0, merging: 1, review: 2, queued: 3, draft: 4, failed: 5, merged: 6 })[t.status] ?? 7;
   return ts.sort((a, b) => rank(a) - rank(b))[0] || null;
 }
-const taskLabel = (t) => !t ? "Task" : t.paused ? "Paused" : STATUS_LABEL[t.status] || t.status;
+const taskLabel = (t) => !t ? "Task" : t.paused ? "Paused" : statusLabel(t);
 export const iss = {
   list: [],
   loaded: false,      // list holds the project's issues (scan reports read their status from it)

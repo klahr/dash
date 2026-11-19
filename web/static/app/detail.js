@@ -4,8 +4,8 @@ import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
-import { STATUS_LABEL, state } from "./state.js";
-import { approvable, buildsOnMeta, canMergePR, doneMeta, conflictMeta, mergePR, depMeta, hasPriority, prChecksEl, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
+import { statusLabel, state } from "./state.js";
+import { approvable, buildsOnMeta, closable, closeTodo, closedNoChanges, canMergePR, doneMeta, conflictMeta, mergePR, depMeta, hasPriority, prChecksEl, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
 import { goalChip } from "./goals.js";
 import { editable, openTodoForm } from "./todos.js";
 import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.js";
@@ -123,7 +123,7 @@ export function renderDetail() {
   if (!t) return;
   $("#d-title").textContent = title(t);
   $("#d-meta").replaceChildren(...[
-    h("span", { class: `status s-${t.status}` }, STATUS_LABEL[t.status] || t.status),
+    h("span", { class: `status s-${t.status}` }, statusLabel(t)),
     t.worktree ? h("span", { class: "branch" }, t.worktree.branch) : null,
     doneMeta(t),
     goalChip(t),
@@ -197,6 +197,12 @@ export function renderActions(t) {
         btns.push(h("span", { class: "btn grow reviewing" }, ico("eye"), "Claude is reviewing…"));
         break;
       }
+      // Changed no files: nothing to merge. Ask for changes · Close.
+      if (closable(t)) {
+        btns.push(b("redo", "Ask for changes…", rework));
+        btns.push(b("check", "Close", attempt(() => closeTodo(t)), "review grow"));
+        break;
+      }
       // Preview · Rework · Approve (Claude's review is on the card and in ⋯)
       if (canPreview(t)) btns.push(previewButton(t));
       if (commentsFor(t.id).length) {
@@ -225,7 +231,7 @@ export function renderActions(t) {
         : retryButton(t, b, post));
       break;
     case "merged":
-      if (!t.revert) btns.push(b("undo", "Revert…", attempt(() => revertTodo(t)), "grow"));
+      if (!t.revert && !closedNoChanges(t)) btns.push(b("undo", "Revert…", attempt(() => revertTodo(t)), "grow"));
       break;
   }
   $("#d-actions").replaceChildren(...btns.filter(Boolean));
@@ -272,7 +278,7 @@ $("#d-more").addEventListener("click", attempt(async () => {
   }
   if (canStartNow(t)) choices.push(["play", "Start now", () => startNow(t)]);
   if (t.pr) choices.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
-  if (t.status === "merged" && !t.revert && here) choices.push(["undo", "Revert…", () => revertTodo(t)]);
+  if (t.status === "merged" && !t.revert && !closedNoChanges(t) && here) choices.push(["undo", "Revert…", () => revertTodo(t)]);
   if (!["in_progress", "merging"].includes(t.status)) {
     if (t.worktree && here && state.project?.test_command) choices.push(["check", "Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
     if (hasPriority(t)) choices.push(["x", "Clear priority", () => clearPriority(t)]);

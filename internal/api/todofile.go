@@ -112,6 +112,7 @@ func (s *Server) saveTodoFile(w http.ResponseWriter, r *http.Request) {
 			// The runner reports the task's new size too; show it right away.
 			t, err = sv.data.UpdateTodo(t.ID, func(x *model.Todo) error {
 				x.DiffFiles, x.DiffAdd, x.DiffDel = res.DiffFiles, res.DiffAdd, res.DiffDel
+				x.NoChanges = x.NoChanges && res.DiffFiles == 0 // edited: it has changes now
 				return nil
 			})
 		}
@@ -241,6 +242,7 @@ func (sv *service) commitTodoFile(ctx context.Context, t model.Todo, e todoFileE
 		res.DiffFiles, res.DiffAdd, res.DiffDel = files, add, del
 		_, _ = sv.data.UpdateTodo(t.ID, func(x *model.Todo) error {
 			x.DiffFiles, x.DiffAdd, x.DiffDel = files, add, del
+			x.NoChanges = x.NoChanges && files == 0 // edited: it has changes now
 			return nil
 		})
 	}

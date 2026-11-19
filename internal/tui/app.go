@@ -1304,6 +1304,10 @@ func (a *App) todoAction(s string) tea.Cmd {
 		}
 		return a.action("paused", func() error { return a.c.TodoAction(t.ID, "pause", nil) })
 	case "a":
+		if t.NoChanges && t.Status == model.StatusReview {
+			// Nothing to merge: approving closes it.
+			return a.action("closed (no changes)", func() error { return a.c.TodoAction(t.ID, "approve", nil) })
+		}
 		return a.action("approved → merge queue", func() error { return a.c.TodoAction(t.ID, "approve", nil) })
 	case "r":
 		a.ask("rework feedback: ", func(fb string) tea.Cmd {
@@ -1341,7 +1345,7 @@ func (a *App) todoAction(s string) tea.Cmd {
 	case "E":
 		return a.action("opening in your editor", func() error { return a.c.OpenEditor(t.ID) })
 	case "u":
-		if t.Status != model.StatusMerged || t.Revert != nil {
+		if t.Status != model.StatusMerged || t.Revert != nil || (t.NoChanges && t.MergedCommit == "") {
 			a.setFlash("only merged tasks can be reverted", true)
 			return nil
 		}

@@ -37,7 +37,7 @@ const (
 var transitions = map[TodoStatus][]TodoStatus{
 	StatusDraft:      {StatusQueued},
 	StatusQueued:     {StatusDraft, StatusInProgress, StatusReview, StatusMerging, StatusMerged, StatusFailed}, // → review…failed: a hub's task its runner finished while the hub had it queued
-	StatusInProgress: {StatusReview, StatusFailed, StatusQueued, StatusMerging},                                // → merging: auto-merge after a conflict fix
+	StatusInProgress: {StatusReview, StatusFailed, StatusQueued, StatusMerging, StatusMerged},                  // → merging: auto-merge after a conflict fix; → merged: closed with no changes
 	StatusReview:     {StatusMerging, StatusQueued, StatusDraft, StatusMerged, StatusFailed},                   // → merged/failed: its PR was merged/closed on GitHub
 	StatusMerging:    {StatusMerged, StatusFailed, StatusReview, StatusQueued},                                 // → queued: conflict sent back to Claude
 	StatusFailed:     {StatusQueued, StatusDraft, StatusReview, StatusMerged, StatusMerging},
@@ -79,9 +79,12 @@ type Project struct {
 	AutoPush bool   `json:"auto_push"` // push DefaultBranch after every merge
 	// AutoApprove: finished todos whose tests pass skip review. In "pr"
 	// mode their pull requests merge without an approving review on GitHub.
-	AutoApprove bool   `json:"auto_approve"`
-	RunCommand  string `json:"run_command,omitempty"`  // e.g. "npm run dev" — gets $PORT
-	TestCommand string `json:"test_command,omitempty"` // e.g. "go test ./..."
+	AutoApprove bool `json:"auto_approve"`
+	// CloseNoChanges: finished todos that change no files skip review and
+	// are closed (Merged with NoChanges), Claude's answer in their chat.
+	CloseNoChanges bool   `json:"close_no_changes"`
+	RunCommand     string `json:"run_command,omitempty"`  // e.g. "npm run dev" — gets $PORT
+	TestCommand    string `json:"test_command,omitempty"` // e.g. "go test ./..."
 	// DeployCommand deploys, e.g. "./deploy.sh" or "adb install …". It is
 	// a bash script and may span several lines.
 	DeployCommand string `json:"deploy_command,omitempty"`
@@ -513,9 +516,14 @@ type Todo struct {
 	// status can't change until the review finishes.
 	Reviewing bool `json:"reviewing,omitempty"`
 	// Size of the change against the default branch, after the latest run.
-	DiffFiles int     `json:"diff_files,omitempty"`
-	DiffAdd   int     `json:"diff_add,omitempty"`
-	DiffDel   int     `json:"diff_del,omitempty"`
+	DiffFiles int `json:"diff_files,omitempty"`
+	DiffAdd   int `json:"diff_add,omitempty"`
+	DiffDel   int `json:"diff_del,omitempty"`
+	// NoChanges is set when Claude's latest run left the branch with no
+	// changes against the default branch (an answer, an investigation, "it
+	// already works"). In Review such a task is closed rather than approved;
+	// once Merged it was closed with no commit (MergedCommit is empty).
+	NoChanges bool    `json:"no_changes,omitempty"`
 	CostUSD   float64 `json:"cost_usd,omitempty"` // API-equivalent cost reported by Claude Code
 	Runs      int     `json:"runs,omitempty"`
 	// RunStats has one record per Claude run, oldest first: its kind,

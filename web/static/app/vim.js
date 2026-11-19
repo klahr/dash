@@ -6,7 +6,7 @@ import { LANES, projectFirst, state } from "./state.js";
 import { showView } from "./nav.js";
 import { cleanup, loadProjects, openProjects, selectProject } from "./projects.js";
 import { pushDone } from "./board.js";
-import { hasPriority, laneItems, renderBoard, title, toggleMine } from "./branches.js";
+import { closable, closeTodo, hasPriority, laneItems, renderBoard, title, toggleMine } from "./branches.js";
 import { multiMember } from "./people.js";
 import { boardField } from "./boards.js";
 import { openTodoForm } from "./todos.js";
@@ -106,7 +106,7 @@ export async function todoKey(t, k) {
     case "s": return post("enqueue", null, "Added to queue");
     case "x": return post("cancel", null, t.status === "in_progress" ? "Stopping" : "Moved to drafts");
     case "z": return t.paused ? post("resume", null, "Resumed") : post("pause", null, t.status === "in_progress" ? "Pausing" : "Paused");
-    case "a": return post("approve", null, "Approved — merging");
+    case "a": return closable(t) ? closeTodo(t) : post("approve", null, "Approved — merging");
     case "r": return reworkTodo(t);
     case "u": return revertTodo(t);
     case "gx":

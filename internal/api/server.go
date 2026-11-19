@@ -296,6 +296,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/todos/{tid}/file", s.todoFile)
 	mux.HandleFunc("PUT /api/todos/{tid}/file", s.saveTodoFile)
 	mux.HandleFunc("POST /api/todos/{tid}/approve", s.approveTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/close", s.closeTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/rework", s.reworkTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/test", s.retestTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/duplicate", s.duplicateTodo)

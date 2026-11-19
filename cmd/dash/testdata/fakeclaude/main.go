@@ -99,6 +99,12 @@ func main() {
 			os.Exit(1)
 		}
 		hold()
+		// A question: the run answers and changes no file.
+		if strings.Contains(string(stdin), "answer only") {
+			line(map[string]any{"type": "system", "subtype": "init", "session_id": "fake-session"})
+			result("The answer is 42.")
+			return
+		}
 		files := map[string]string{"done-by-runner.txt": "done\n"}
 		if strings.Contains(string(stdin), "ask permission") {
 			out, err := callTool(args, "dash", "permission_prompt", map[string]any{

@@ -437,6 +437,7 @@ type projectUpdate struct {
 	MaxAutoFixes   *int      `json:"max_auto_fixes"`
 	AutoPush       *bool     `json:"auto_push"`
 	AutoApprove    *bool     `json:"auto_approve"`
+	CloseNoChanges *bool     `json:"close_no_changes"`
 	MergeMode      *string   `json:"merge_mode"`
 	MergeMethod    *string   `json:"merge_method"`
 	MergeBatch     *int      `json:"merge_batch"`
@@ -655,6 +656,7 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	}
 	set(&p.AutoPush, req.AutoPush)
 	set(&p.AutoApprove, req.AutoApprove)
+	set(&p.CloseNoChanges, req.CloseNoChanges)
 	set(&p.Color, req.Color)
 	set(&p.Icon, req.Icon)
 	set(&p.ChatPermissionMode, req.ChatMode)
@@ -1387,6 +1389,21 @@ func (s *Server) approveTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, t)
+}
+
+// closeTodo closes a task in review that changed no files: it is merged
+// with no commit (no_changes set), without the merge queue.
+func (s *Server) closeTodo(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	t, err := sv.closeTodo(r.PathValue("tid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
 }
 
 // reworkTodo sends a reviewed (or failed) todo back to the queue with

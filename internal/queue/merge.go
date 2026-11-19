@@ -416,6 +416,13 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	if m.Git.AbortStaleMerge(ctx, p.ID, wt.Path) {
 		log("↺ undid a merge of " + p.Base() + " left unfinished; starting it over")
 	}
+	// A task that changed nothing has nothing to merge or test: it closes.
+	if t.NoChanges {
+		if files, _, _, err := m.Git.DiffStat(ctx, p.ID, wt.Path, p.Base()); err == nil && files == 0 {
+			_, err := m.closeNoChanges(ctx, t, p, nil)
+			return err
+		}
+	}
 
 	// A shared project's merge counts once origin has it; when origin moves
 	// between the sync and the push (another runner, someone's push), the
@@ -438,8 +445,8 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 		// 3. Land it; a task that changed nothing is simply closed (there is no
 		// commit to squash, and GitHub refuses a pull request without one).
 		if files, _, _, err := m.Git.DiffStat(ctx, p.ID, wt.Path, p.Base()); err == nil && files == 0 {
-			m.landed(ctx, t, p, "", "✔ closed; nothing to merge")
-			return nil
+			_, err := m.closeNoChanges(ctx, t, p, nil)
+			return err
 		}
 		// A pull request opened before the project switched to merging
 		// locally is followed until it closes, rather than landed twice.
@@ -660,16 +667,27 @@ func (m *MergeQueue) originMovedFrom(ctx context.Context, p model.Project, old s
 // landed marks a todo merged and removes its worktree.
 func (m *MergeQueue) landed(ctx context.Context, t model.Todo, p model.Project, sha, msg string) {
 	if _, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
-		now := time.Now()
-		x.Status, x.Error, x.MergedCommit, x.FinishedAt = model.StatusMerged, "", sha, &now
-		if x.PR != nil {
-			x.PR.State = "MERGED"
-		}
+		markLanded(x, sha)
 		return nil
 	}); err != nil {
 		slog.Error("mark merged", "todo", t.ID, "err", err)
 		return
 	}
+	m.afterLanding(ctx, t, p, msg)
+}
+
+// markLanded sets x Merged by commit sha ("" when nothing was merged).
+func markLanded(x *model.Todo, sha string) {
+	now := time.Now()
+	x.Status, x.Error, x.MergedCommit, x.FinishedAt = model.StatusMerged, "", sha, &now
+	if x.PR != nil {
+		x.PR.State = "MERGED"
+	}
+}
+
+// afterLanding is what follows a todo t becoming Merged: msg in its log,
+// the queue kicked for the todos waiting on it, its worktree removed.
+func (m *MergeQueue) afterLanding(ctx context.Context, t model.Todo, p model.Project, msg string) {
 	m.Log.Line(t, msg)
 	if m.Kick != nil {
 		m.Kick() // todos waiting on this one may start now
@@ -682,6 +700,76 @@ func (m *MergeQueue) landed(ctx context.Context, t model.Todo, p model.Project, 
 	if m.Perms != nil {
 		m.Perms.Forget(t.ID)
 	}
+}
+
+// closedNote is the task log's line for a task closed without changes.
+const closedNote = "✔ closed; no changes, nothing to merge"
+
+// closeNoChanges closes t, whose branch changes no files: it is Merged
+// with NoChanges and no commit, and its worktree goes. check, when set,
+// may refuse the change, seeing the task as it is now.
+func (m *MergeQueue) closeNoChanges(ctx context.Context, t model.Todo, p model.Project, check func(*model.Todo) error) (model.Todo, error) {
+	nt, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if check != nil {
+			if err := check(x); err != nil {
+				return err
+			}
+		}
+		markLanded(x, "")
+		x.NoChanges, x.DiffFiles, x.DiffAdd, x.DiffDel = true, 0, 0, 0
+		return nil
+	})
+	if err != nil {
+		return nt, err
+	}
+	m.afterLanding(ctx, t, p, closedNote)
+	return nt, nil
+}
+
+// ErrHasChanges is Close's error for a task whose branch changes files.
+var ErrHasChanges = errors.New("this task changes files now; approve it to merge them")
+
+// ErrNotClosable is Close's error for a task that isn't waiting in Review.
+var ErrNotClosable = errors.New("only a task in review that changed no files can be closed")
+
+// Close closes todo id, waiting in Review (or Failed) with no changes: it
+// becomes Merged with NoChanges and no commit, without going through the
+// merge queue (nothing is merged, no tests run). When its branch changes
+// files after all (edited since), it returns ErrHasChanges and the task
+// is left as it was, NoChanges cleared.
+func (m *MergeQueue) Close(ctx context.Context, id string) (model.Todo, error) {
+	t, err := m.Store.GetTodo(id)
+	if err != nil {
+		return t, err
+	}
+	closable := func(x *model.Todo) error {
+		if !x.NoChanges || (x.Status != model.StatusReview && x.Status != model.StatusFailed) || x.Reviewing || x.OnRunner() {
+			return ErrNotClosable
+		}
+		return nil
+	}
+	if err := closable(&t); err != nil {
+		return t, err
+	}
+	p, err := m.Store.GetProject(t.ProjectID)
+	if err != nil {
+		return t, err
+	}
+	p = p.For(t)
+	if t.Worktree != nil {
+		files, add, del, err := m.Git.DiffStat(ctx, p.ID, t.Worktree.Path, p.Base())
+		if err != nil {
+			return t, err
+		}
+		if files > 0 {
+			nt, _ := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+				x.NoChanges, x.DiffFiles, x.DiffAdd, x.DiffDel = false, files, add, del
+				return nil
+			})
+			return nt, ErrHasChanges
+		}
+	}
+	return m.closeNoChanges(ctx, t, p, closable)
 }
 
 // refreshRemote picks up an origin added (or changed) after the project was created.

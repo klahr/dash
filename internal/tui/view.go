@@ -317,6 +317,11 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 		sub = t.Error
 	case t.Status == model.StatusFailed:
 		sub = "failed"
+	case t.Status == model.StatusMerged && t.NoChanges && t.MergedCommit == "":
+		sub = "Closed · no changes"
+		if t.Summary != "" {
+			sub += " · " + t.Summary
+		}
 	case t.Status == model.StatusMerged && t.Summary != "":
 		sub = t.Summary
 	default:

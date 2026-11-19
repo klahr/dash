@@ -71,6 +71,10 @@ type Link struct {
 	// tasks whose tests pass skip review and go straight to merging. It is
 	// nil from hubs that predate it; the runner then keeps its own setting.
 	AutoApprove *bool `json:"auto_approve,omitempty"`
+	// CloseNoChanges is the hub project's model.Project.CloseNoChanges:
+	// finished tasks that change no files are closed without review. Nil
+	// from hubs that predate it; the runner then keeps its own setting.
+	CloseNoChanges *bool `json:"close_no_changes,omitempty"`
 	// MaxAutoFixes is the hub project's model.Project.MaxAutoFixes: how many
 	// times failing tests or merge conflicts go back to Claude on their own.
 	// Nil (older hubs) keeps the runner's setting.
@@ -263,16 +267,18 @@ type OriginMoved struct {
 
 // TaskState is where one of the hub's tasks is on the runner.
 type TaskState struct {
-	HubTodoID string             `json:"hub_todo_id"`
-	ID        string             `json:"id"`
-	Status    model.TodoStatus   `json:"status"`
-	Paused    bool               `json:"paused,omitempty"`
-	Error     string             `json:"error,omitempty"`
-	Summary   string             `json:"summary,omitempty"`
-	Branch    string             `json:"branch,omitempty"`
-	DiffFiles int                `json:"diff_files,omitempty"`
-	DiffAdd   int                `json:"diff_add,omitempty"`
-	DiffDel   int                `json:"diff_del,omitempty"`
+	HubTodoID string           `json:"hub_todo_id"`
+	ID        string           `json:"id"`
+	Status    model.TodoStatus `json:"status"`
+	Paused    bool             `json:"paused,omitempty"`
+	Error     string           `json:"error,omitempty"`
+	Summary   string           `json:"summary,omitempty"`
+	Branch    string           `json:"branch,omitempty"`
+	DiffFiles int              `json:"diff_files,omitempty"`
+	DiffAdd   int              `json:"diff_add,omitempty"`
+	DiffDel   int              `json:"diff_del,omitempty"`
+	// NoChanges is model.Todo.NoChanges: the task changed no files.
+	NoChanges bool               `json:"no_changes,omitempty"`
 	CostUSD   float64            `json:"cost_usd,omitempty"`
 	Runs      int                `json:"runs,omitempty"`
 	RunStats  []model.TodoRun    `json:"run_stats,omitempty"`
@@ -304,7 +310,7 @@ type TaskState struct {
 func StateOf(t model.Todo) TaskState {
 	s := TaskState{
 		HubTodoID: t.HubTodoID, ID: t.ID, Status: t.Status, Paused: t.Paused, Error: t.Error, Summary: t.Summary,
-		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, CostUSD: t.CostUSD, Runs: t.Runs, RunStats: t.RunStats,
+		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, NoChanges: t.NoChanges, CostUSD: t.CostUSD, Runs: t.Runs, RunStats: t.RunStats,
 		Checks: t.Checks, PR: t.PR, MergedCommit: t.MergedCommit, Revert: t.Revert, RevertConflict: t.RevertConflict,
 		Conflicts: t.Conflicts, Links: t.Links, Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
 	}

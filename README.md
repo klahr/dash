@@ -139,6 +139,12 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    back to Claude; once it is approved and its checks pass, you merge it, on GitHub or with
    **Merge pull request** in Dash (Dash never merges one on its own). See [GitHub](docs/github.md).
 
+   A task Claude finishes without changing any files (an answer, an investigation) has nothing to
+   merge. Its card in *Review* says *No changes* and shows Claude's answer. Click **Close** to
+   close it, or **Ask for changes…** to send Claude a message and have it run again. A closed task
+   is in *Merged*, marked *Closed · no changes*, with no commit. To skip Review for these tasks,
+   see [Close tasks that change no files](docs/boards.md#close-tasks-that-change-no-files).
+
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
 **Limit a project's tasks at once.** In **Project settings → Commands**, set **Tasks at once**.

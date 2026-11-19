@@ -5,7 +5,7 @@ import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { draft, promptEditor } from "./todoform.js";
-import { LANES, STATUS_LABEL, cp, hist, state } from "./state.js";
+import { LANES, STATUS_LABEL, statusLabel, cp, hist, state } from "./state.js";
 import { navView, showView } from "./nav.js";
 import { baseBranch, projectKey } from "./events.js";
 import { cleanup, grouped, loadProjects, menuOpen, notifyLabel, openDeleteProject, openNewProject, openPlanner, openProjects, projectWhere, selectProject, setMenu, setPicker, setSideCollapsed, sideCollapsed, stepProject, toggleProjectPause } from "./projects.js";
@@ -124,7 +124,7 @@ function paletteProjects() {
 function paletteTodos() {
   const all = [...state.todos.values()];
   return LANES.flatMap((l) => all.filter((t) => l.statuses.includes(t.status)).sort(byPriority).map((t) => ({
-    kind: "Task", label: title(t), icon: "draft", hint: t.paused ? "Paused" : STATUS_LABEL[t.status] || t.status,
+    kind: "Task", label: title(t), icon: "draft", hint: t.paused ? "Paused" : statusLabel(t),
     text: `${title(t)} ${t.prompt} ${t.id} ${STATUS_LABEL[t.status] || ""}`, run: () => { showView("board"); return openDetail(t.id); },
   })));
 }

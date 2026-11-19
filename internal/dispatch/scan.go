@@ -170,7 +170,7 @@ func (d *Dispatcher) link(ctx context.Context, r tunnel.Runner, p model.Project)
 func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Linked, error) {
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, CloneURL: p.CloneURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
 		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, TaskInstructions: p.TaskInstructions,
-		AutoApprove: &p.AutoApprove, MaxAutoFixes: &p.MaxAutoFixes,
+		AutoApprove: &p.AutoApprove, CloseNoChanges: &p.CloseNoChanges, MaxAutoFixes: &p.MaxAutoFixes,
 		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand, DeployCommand: p.DeployCommand,
 		DeployRunsOn: p.DeployRunsOn, PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand}
 	if d.Store != nil {

@@ -99,7 +99,7 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | ------------------- | ------------------------------------------------------------ |
 | `task.review`       | a task is ready for review                                   |
 | `task.failed`       | a task failed                                                |
-| `task.merged`       | a task's work landed                                         |
+| `task.merged`       | a task's work landed, or it was closed with no changes       |
 | `permission.needed` | Claude waits for you to approve a tool                       |
 | `goal.attention`    | a [goal](goals.md) waits for you, is done or out of budget   |
 | `issue.new`         | a [scan](scans.md) or Claude (`report_issue`) finds a new issue (off by default) |

@@ -896,7 +896,7 @@ func copyReport(x *model.Todo, ts TaskState, to model.TodoStatus, runnerName str
 	x.Status = to
 	x.Summary, x.CostUSD, x.Runs, x.Checks, x.PR = ts.Summary, ts.CostUSD, ts.Runs, ts.Checks, ts.PR
 	x.RunStats = ts.RunStats
-	x.DiffFiles, x.DiffAdd, x.DiffDel = ts.DiffFiles, ts.DiffAdd, ts.DiffDel
+	x.DiffFiles, x.DiffAdd, x.DiffDel, x.NoChanges = ts.DiffFiles, ts.DiffAdd, ts.DiffDel, ts.NoChanges
 	x.Conflicts = hubConflicts(ts.Conflicts)
 	x.Links = hubLinks(x.Links, ts.Links)
 	x.RemoteID = ts.ID

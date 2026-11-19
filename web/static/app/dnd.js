@@ -3,7 +3,7 @@ import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { EASE, ask, fail, leave, reduceMotion, toast } from "./dialogs.js";
 import { LANES, state } from "./state.js";
-import { approvable, hasPriority, laneItems, renderBoard } from "./branches.js";
+import { approvable, closable, hasPriority, laneItems, renderBoard } from "./branches.js";
 import { hoverCard } from "./hovercard.js";
 import { dropBefore, edgeScroller, glide, restRect } from "./glide.js";
 
@@ -28,6 +28,8 @@ function dropAction(t, lane) {
   if (lane === "draft" && ["queued", "review", "failed"].includes(from)) {
     return go("cancel", t.pr?.state === "OPEN" ? `Moved to drafts; pull request #${t.pr.number} closed` : "Moved to drafts");
   }
+  // A task that changed no files is closed: nothing to merge.
+  if (["merging", "done"].includes(lane) && closable(t)) return { ...go("close", "Closed"), status: "merged" };
   // A task whose pull request is open is approved (and merged) on GitHub.
   if (lane === "merging" && from === "review" && approvable(t)) return go("approve", "Approved — merging");
   return null;
@@ -104,13 +106,13 @@ function startDrag(x, y) {
 
 // On phones the other lanes are off-screen, so a drag shows a bar of large
 // drop targets for exactly the moves this card allows.
-const DROP_LABEL = { enqueue: "Queue", cancel: "Move to drafts", approve: "Approve" };
+const DROP_LABEL = { enqueue: "Queue", cancel: "Move to drafts", approve: "Approve", close: "Close" };
 function showDropBar() {
   if (desktop.matches) return;
   const zones = LANES.map((l) => [l, dropAction(drag.t, l.key)])
     .filter(([l, a]) => a && a.kind !== "reorder")
     .map(([l, a]) => h("div", { class: `drop-zone s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key },
-      a.kind === "rework" ? "Rework…" : DROP_LABEL[a.verb] || l.label));
+      a.kind === "rework" ? (closable(drag.t) ? "Ask for changes…" : "Rework…") : DROP_LABEL[a.verb] || l.label));
   const bar = h("div", { class: "drop-bar", id: "drop-bar" },
     zones.length ? zones : h("div", { class: "drop-zone none" }, "Drag up or down to reorder"));
   document.body.append(bar);
@@ -215,14 +217,16 @@ async function endDrag() {
       await reorder(t, target.lane, target.index, true);
     } else if (target.action.kind === "rework") {
       renderBoard();
-      const feedback = await ask({ title: "Rework", body: "Claude continues in the same worktree with your rework notes.", input: true, placeholder: "What should change?", ok: "Rework" });
+      const feedback = closable(t)
+        ? await ask({ title: "Ask for changes", body: "Claude continues in the same worktree with your message and runs again.", input: true, placeholder: "What should Claude do?", ok: "Send" })
+        : await ask({ title: "Rework", body: "Claude continues in the same worktree with your rework notes.", input: true, placeholder: "What should change?", ok: "Rework" });
       if (feedback === null) return;
       await api("POST", `/api/todos/${t.id}/rework`, { feedback });
-      toast("Sent for rework");
+      toast(closable(t) ? "Sent to Claude" : "Sent for rework");
     } else {
       // Optimistic: show it in the new lane right away; the server event confirms.
       const lane = LANES.find((l) => l.key === target.lane);
-      state.todos.set(t.id, { ...t, status: lane.statuses[0] });
+      state.todos.set(t.id, { ...t, status: target.action.status || lane.statuses[0] });
       renderBoard();
       await api("POST", `/api/todos/${t.id}/${target.action.verb}`);
       toast(target.action.label);
