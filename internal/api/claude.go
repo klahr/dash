@@ -303,8 +303,11 @@ func (s *Server) projectChatOnRunner(model.Project) bool { return s.hub() }
 
 // projectChatRunner picks c's runner to run p's chat on: want if it is one
 // of c's linked to p, else the first of those online. Only a runner p is
-// linked to has a clone of it.
+// linked to has a clone of it. The chat runs on Claude Code whatever agent
+// p's tasks run on, so it needs a runner with Claude Code's label
+// (model.Project.OnDefaultAgent).
 func (s *Server) projectChatRunner(c Caller, p model.Project, want string) (tunnel.Runner, error) {
+	p = p.OnDefaultAgent()
 	var linked []tunnel.Runner
 	for _, r := range s.claudeRunners(c) {
 		if r.Serves(p) {

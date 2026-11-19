@@ -112,6 +112,15 @@ func (p Project) RunnerLabels() []string {
 	return out
 }
 
+// OnDefaultAgent is p for work that always runs on Claude Code
+// (DefaultAgent) whatever agent p's tasks run on, such as scans and
+// project chat: its RunnerLabels need DefaultAgent's label, not p's
+// agent's.
+func (p Project) OnDefaultAgent() Project {
+	p.Agent = ""
+	return p
+}
+
 // CleanAgent checks a project's agent provider name: "" (the default) or
 // a name of up to 32 lowercase letters, digits and dashes, as provider
 // names are. Whether it is a known provider is the caller's to check.

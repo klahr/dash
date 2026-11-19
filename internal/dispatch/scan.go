@@ -100,8 +100,10 @@ func (d *Dispatcher) Scan(ctx context.Context, p model.Project, job scan.Job, h 
 
 // scanRunner picks the runner for a scan of p: the least busy of p's
 // runners that are online and not paused. linked is false when p has none
-// at all.
+// at all. A scan runs on Claude Code whatever agent p's tasks run on, so it
+// needs a runner with Claude Code's label (model.Project.OnDefaultAgent).
 func (d *Dispatcher) scanRunner(p model.Project, users []int64) (r *tunnel.Runner, why string, linked bool) {
+	p = p.OnDefaultAgent()
 	var cands []tunnel.Runner
 	var reasons, notFor []string
 	for _, x := range tunnel.Serving(d.Fleet.List(), p) {

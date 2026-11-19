@@ -60,6 +60,29 @@ func TestDispatchSendsTasksToRunnersWithTheProjectsAgent(t *testing.T) {
 	}
 }
 
+// Scans run on Claude Code whatever agent the project's tasks run on, so
+// they go to a runner with Claude Code, not one with only the project's
+// agent.
+func TestScanRunnerNeedsClaudeCodeNotTheProjectsAgent(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	fx.fleet.set(withAgents(runnerOf("claude-box", fx.orgA, true), "claude"))
+	fx.fleet.set(withAgents(runnerOf("codex-box", fx.orgA, true), "codex"))
+	p := fx.project(t, fx.orgA, "claude-box", "codex-box")
+	p.Agent = "codex"
+	r, why, linked := fx.d.scanRunner(p, []int64{1})
+	if r == nil || r.ID != "claude-box" || !linked {
+		t.Fatalf("scan runner = %v (%q, linked %v), want claude-box", r, why, linked)
+	}
+
+	// No runner has Claude Code: no runner takes the scan.
+	fx.fleet.set(withAgents(runnerOf("claude-box", fx.orgA, true), "codex"))
+	if r, why, _ := fx.d.scanRunner(p, []int64{1}); r != nil {
+		t.Fatalf("scan went to %s, which has no Claude Code (%q)", r.ID, why)
+	}
+}
+
 // A runner reports its agents, and still its Claude Code status for hubs
 // older than agent reports.
 func TestReportCarriesAgentsAndClaude(t *testing.T) {
