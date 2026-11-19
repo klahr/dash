@@ -45,6 +45,8 @@ type Data interface {
 	UpdateDeploy(id string, fn func(*model.Deploy) error) (model.Deploy, error)
 	SetDeployLog(id, log string) error
 	CardsLinkedTo(todoIDs []string) ([]model.DeployShipped, error)
+	// AddEnvChanges records the environments' settings history.
+	AddEnvChanges(projectID string, uid int64, name string, at time.Time, changes []model.EnvChange) error
 	Accounts() *store.Accounts
 }
 

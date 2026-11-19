@@ -139,6 +139,30 @@ func TestRunFails(t *testing.T) {
 	}
 }
 
+// A deploy that needs passing tests runs them first: failing, nothing is
+// built or deployed; passing, the state says so.
+func TestRunTestsFirst(t *testing.T) {
+	t.Parallel()
+	m := &Manager{}
+	dir := t.TempDir()
+	if err := m.Start(context.Background(), "p/t", Job{ID: "f", Dir: dir, Test: "exit 4", Build: "touch built", Deploy: "touch deployed", Env: os.Environ()}); err != nil {
+		t.Fatal(err)
+	}
+	st := wait(t, m, "f")
+	if st.Phase != model.DeployFailed || st.TestsPassed || !strings.Contains(st.Error, "the tests exited with 4") || !strings.Contains(st.Log, "testing: exit 4") {
+		t.Errorf("failed tests: %+v", st)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "built")); err == nil {
+		t.Error("built after the tests failed")
+	}
+	if err := m.Start(context.Background(), "p/t", Job{ID: "ok", Dir: dir, Test: "true", Deploy: "touch deployed", Env: os.Environ()}); err != nil {
+		t.Fatal(err)
+	}
+	if st := wait(t, m, "ok"); st.Phase != model.DeployLive || !st.TestsPassed {
+		t.Errorf("passing tests: %+v", st)
+	}
+}
+
 // Once deployed, the health check asks for its path on the URL and wants
 // its status; then the verify command runs with DASH_URL (its exit code
 // decides); then the deploy soaks, its health checked again. Each check is

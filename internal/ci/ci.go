@@ -289,6 +289,31 @@ func summarize(runs []gitops.Run) (state, sha string) {
 	return state, sha
 }
 
+// PassedOn reports whether st's runs passed on commit sha (a full sha, or
+// one of at least 7 characters): every workflow's newest run of it is done
+// and none failed.
+func (st Status) PassedOn(sha string) bool {
+	if len(sha) < 7 {
+		return false
+	}
+	for _, r := range st.Runs {
+		if strings.HasPrefix(r.SHA, sha) {
+			sha = r.SHA
+			break
+		}
+	}
+	runs := latestPerWorkflow(st.Runs, sha)
+	if len(runs) == 0 {
+		return false
+	}
+	for _, r := range runs {
+		if !r.Done() || r.Failed() {
+			return false
+		}
+	}
+	return true
+}
+
 // latestPerWorkflow keeps the newest run of each workflow, optionally only for one commit.
 func latestPerWorkflow(runs []gitops.Run, sha string) []gitops.Run {
 	seen := map[string]bool{}

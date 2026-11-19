@@ -19,6 +19,7 @@ import { changed, linkTo } from "./routes.js";
 export const DEPLOY_STATUS = {
   queued: "Queued", building: "Building", deploying: "Deploying", verifying: "Verifying",
   live: "Live", failed: "Failed", rolled_back: "Rolled back", superseded: "Replaced",
+  awaiting_approval: "Awaiting approval", rejected: "Rejected",
 };
 const ACTIVE = ["building", "deploying", "verifying"];
 const TRIGGER = { user: "", merge: "after a merge", release: "for a release", goal: "for a goal", auto_rollback: "automatically, its checks failed" };
@@ -84,16 +85,25 @@ function openDeploySettings() {
   $('#settings-sheet .rail-item[data-rail="deploy"]')?.click();
 }
 
-// An environment's card: what is live, what is on its way, and Deploy.
+// An environment's card: what is live, what is on its way, Deploy and
+// Promote (when the caller's role allows them and nothing blocks them), what
+// a deploy needs, and the deploys waiting for an approval.
 function envCard(e) {
-  const live = e.live, active = e.active;
+  const live = e.live, active = e.active, pol = e.policy || {};
+  const blocked = pol.blocked || [];
+  const deployTitle = !pol.can_deploy ? `Only ${ROLE_WORD[e.deploy_role] || "some roles"} may deploy to ${e.name}`
+    : blocked.length ? blocked.join("; ")
+    : `Deploy the tip of ${state.project?.default_branch || "the default branch"} to ${e.name}${pol.needs?.some((n) => n.startsWith("approval")) ? " (once approved)" : ""}`;
+  const promote = live && pol.promote_to ? ib({ type: "button", class: "btn small", disabled: pol.promote_blocked?.length ? true : null,
+    title: pol.promote_blocked?.length ? pol.promote_blocked.join("; ") : `Deploy ${short(live.commit)}${live.artifact ? ` (artifact ${live.artifact})` : ""} to ${pol.promote_to}, with no build`,
+    onclick: attempt((ev) => busy(ev.currentTarget, () => promoteTo(e.name, pol.promote_to, live))) }, "push", `Promote to ${pol.promote_to}`) : null;
   const ahead = Object.entries(e.ahead || {}).map(([other, n]) => `${plural(n, "commit")} ahead of ${other}`);
   const url = live?.url || e.url;
   return h("li", { class: `env-card${active ? " busy" : ""}`, "data-env": e.name },
     h("div", { class: "env-head" },
       h("h3", { class: "env-name" }, e.name),
       url ? h("a", { class: "env-url", href: url, target: "_blank", rel: "noopener" }, url.replace(/^https?:\/\//, "")) : null,
-      ib({ type: "button", class: "btn small primary env-deploy", title: `Deploy the tip of ${state.project?.default_branch || "the default branch"} to ${e.name}`,
+      ib({ type: "button", class: "btn small primary env-deploy", title: deployTitle, disabled: !pol.can_deploy || blocked.length ? true : null,
         onclick: attempt((ev) => busy(ev.currentTarget, () => deployTo(e.name))) }, "rocket", "Deploy")),
     live
       ? h("button", { type: "button", class: "env-live", onclick: () => openDeploy(live.id).catch(fail), title: "Open the deploy that is live" },
@@ -107,6 +117,15 @@ function envCard(e) {
     active ? h("button", { type: "button", class: "env-line env-active", onclick: () => openDeploy(active.id).catch(fail) },
       h("span", { class: "act-spin", "aria-hidden": "true" }), `${DEPLOY_STATUS[active.status]} ${short(active.commit)}…`) : null,
     e.queued ? h("p", { class: "env-line hint" }, `${plural(e.queued, "deploy")} queued`) : null,
+    pol.awaiting?.length ? h("ul", { class: "env-line env-awaiting", "aria-label": `Deploys to ${e.name} awaiting approval` }, ...pol.awaiting.map((d) => h("li", {},
+      h("button", { type: "button", class: "link", onclick: () => openDeploy(d.id).catch(fail) }, statusTag(d)),
+      h("code", {}, short(d.ref || d.commit) || "tip"),
+      h("span", { class: "env-subject hint" }, d.by_name ? `by ${d.by_name}` : ""),
+      ...approveButtons(d, pol)))) : null,
+    promote ? h("div", { class: "env-line env-actions" }, promote) : null,
+    pol.frozen ? h("p", { class: "env-line warn" }, pol.frozen) : null,
+    blocked.filter((b) => b !== pol.frozen).map((b) => h("p", { class: "env-line hint" }, b)),
+    pol.needs?.length ? h("p", { class: "env-line hint" }, `Deploys need ${pol.needs.join(", ")}.`) : null,
     e.rollback ? h("div", { class: "env-line env-rollback" },
       rollbackButton(e.name, e.rollback.of, e.rollback.to)) : null,
     e.runners?.length ? h("p", { class: "env-line hint" }, "Runs on ", e.runners.map((r) => `${r.name}${r.online ? "" : " (offline)"}`).join(", ")) : null,
@@ -166,12 +185,55 @@ async function rollBack(env, of, to) {
   toast(`Rollback of ${env} to ${short(to.commit)} queued`, { action: { label: "Open", run: () => openDeploy(d.id).catch(fail) } });
 }
 
-// deployTo queues a deploy of the default branch's tip (or of commit).
+const ROLE_WORD = { member: "members", admin: "admins", owner: "owners" };
+
+// deployTo queues a deploy of the default branch's tip (or of commit); one
+// whose environment needs an approval waits for it.
 async function deployTo(env, commit = "") {
   const p = dp.project || state.project;
   const d = await api("POST", `/api/projects/${p.id}/deploys`, { environment: env, commit }, prefix());
+  queued(d, `Deploy to ${env}`);
+}
+
+function queued(d, what) {
   mergeDeploy(d);
-  toast(`Deploy to ${env} queued`, { action: { label: "Open", run: () => openDeploy(d.id).catch(fail) } });
+  const waits = d.status === "awaiting_approval";
+  toast(waits ? `It needs an approval from ${ROLE_WORD[d.needs_approval] ? `one of the ${ROLE_WORD[d.needs_approval]}` : "someone"} before it runs.` : "",
+    { head: `${what} ${waits ? "awaits approval" : "queued"}`, action: { label: "Open", run: () => openDeploy(d.id).catch(fail) } });
+}
+
+// promoteTo deploys what is live on from (its commit and artifact) to to,
+// with no build.
+async function promoteTo(from, to, live) {
+  if (!await ask({ title: `Promote ${short(live.commit)} to ${to}?`,
+    body: `What is live on ${from}${live.subject ? `, “${live.subject}”` : ""}, is deployed to ${to} as it is: ${live.artifact ? `its artifact ${live.artifact} goes in $DASH_ARTIFACT` : "no artifact was recorded, so the deploy command gets only the commit"}, and the build command doesn't run.`,
+    ok: "Promote" })) return;
+  const p = dp.project || state.project;
+  const d = await api("POST", `/api/projects/${p.id}/deploys`, { environment: to, promote_from: from }, prefix());
+  queued(d, `Promotion to ${to}`);
+}
+
+// approveButtons are Approve and Reject for deploy d awaiting approval,
+// when the caller's role may approve deploys to its environment.
+function approveButtons(d, pol) {
+  if (d.status !== "awaiting_approval" || !pol?.can_approve) return [];
+  return [
+    ib({ type: "button", class: "btn small primary", title: "Queue it: it runs when its turn comes", onclick: attempt((ev) => busy(ev.currentTarget, () => decide(d, true))) }, "check", "Approve"),
+    ib({ type: "button", class: "btn small danger", title: "Refuse it: it doesn't run", onclick: attempt((ev) => busy(ev.currentTarget, () => decide(d, false))) }, "x", "Reject"),
+  ];
+}
+
+async function decide(d, approve) {
+  let body = null;
+  if (!approve) {
+    const note = await ask({ title: `Reject the deploy to ${d.environment}?`, body: "It won't run. Say why, if you like:", input: true, placeholder: "e.g. wait for the release notes", ok: "Reject", danger: true });
+    if (note == null) return;
+    body = { note };
+  }
+  const x = await api("POST", `/api/deploys/${d.id}/${approve ? "approve" : "reject"}`, body, prefix());
+  mergeDeploy(x);
+  toast(approve ? `Deploy to ${d.environment} approved` : `Deploy to ${d.environment} rejected`);
+  loadEnvs().catch(() => {});
 }
 
 // ------------------------------------------------------------------ live updates
@@ -306,6 +368,11 @@ function renderDeploy() {
     d.url ? row("URL", h("a", { href: d.url, target: "_blank", rel: "noopener" }, d.url)) : null,
     d.runner ? row("Ran on", d.runner) : null,
     d.exit_code != null ? row("Exit code", String(d.exit_code)) : null,
+    d.promoted_from ? row("Promoted from", d.promoted_env || "", " ", openLink(d.promoted_from)) : null,
+    d.needs_approval && !d.approval ? row("Needs approval", `from ${ROLE_WORD[d.needs_approval] ? `one of the ${ROLE_WORD[d.needs_approval]}` : d.needs_approval}`) : null,
+    d.approval ? row(d.approval.approved ? "Approved by" : "Rejected by", d.approval.by_name || "someone", " ",
+      h("span", { class: "hint", title: dateTimeText(d.approval.at) }, agoText(d.approval.at)), d.approval.note ? ` · ${d.approval.note}` : "") : null,
+    d.tests_passed ? row("Tests", "passed on this commit") : null,
     d.rollback_of ? row("Rolls back", openLink(d.rollback_of)) : null,
     d.rolled_back_by ? row("Rolled back by", openLink(d.rolled_back_by)) : null,
     d.fix_task ? row("Fix", h("button", { type: "button", class: "link", onclick: () => openDetail(d.fix_task).catch(fail) }, `Fix failed deploy to ${d.environment}`)) : null,
@@ -315,7 +382,8 @@ function renderDeploy() {
   renderShipped(d);
   const log = $("#dd-log");
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
-  log.textContent = d.log || (d.status === "queued" ? "Waiting for its turn…" : ACTIVE.includes(d.status) ? "Starting…" : "No output.");
+  log.textContent = d.log || (d.status === "queued" ? "Waiting for its turn…" : d.status === "awaiting_approval" ? "Waiting for an approval…"
+    : ACTIVE.includes(d.status) ? "Starting…" : "No output.");
   if (atEnd) log.scrollTop = log.scrollHeight;
 }
 
@@ -361,16 +429,18 @@ function renderShipped(d) {
 function renderDeployActions(d) {
   const btn = (icon, label, run, cls = "btn small", title = "") => ib({ type: "button", class: cls, title, onclick: attempt((e) => busy(e.currentTarget, run)) }, icon, label);
   const running = ACTIVE.includes(d.status);
+  const pol = dp.envs.find((e) => e.name === d.environment)?.policy;
   fill($("#dd-actions"),
-    d.status === "queued" ? btn("x", "Cancel", () => stopDeploy(d), "btn small danger", "Take it off the queue") : null,
+    ...approveButtons(d, pol),
+    d.status === "queued" || d.status === "awaiting_approval" ? btn("x", "Cancel", () => stopDeploy(d), "btn small danger", "Take it off the queue") : null,
     running ? btn("stop", "Stop", () => stopDeploy(d), "btn small danger", "Stop its script on the runner") : null,
     d.rollback_target ? rollbackButton(d.environment, d.id, d.rollback_target) : null,
-    !running && d.status !== "queued" && d.commit ? btn("redo", "Deploy again", () => deployTo(d.environment, d.commit), "btn small", `Deploy ${short(d.commit)} to ${d.environment} again`) : null,
+    !running && !["queued", "awaiting_approval"].includes(d.status) && d.commit && pol?.can_deploy ? btn("redo", "Deploy again", () => deployTo(d.environment, d.commit), "btn small", `Deploy ${short(d.commit)} to ${d.environment} again`) : null,
     btn("link", "Copy link", () => copy(linkTo({ view: "deploys", deploy: d.id }, state.project), "Link copied"), "btn small", "Copy a link that opens this deploy"));
 }
 
 async function stopDeploy(d) {
-  const queued = d.status === "queued";
+  const queued = d.status === "queued" || d.status === "awaiting_approval";
   if (!queued && !await ask({ title: `Stop the deploy to ${d.environment}?`, body: "Its script is stopped where it runs, part way through: the environment may be left half deployed.", ok: "Stop deploy", danger: true })) return;
   await api("DELETE", `/api/deploys/${d.id}`, null, prefix());
   toast(queued ? "Deploy cancelled" : "Stopping the deploy");

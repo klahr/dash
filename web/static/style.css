@@ -3313,7 +3313,12 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .d-building, .d-deploying, .d-verifying { --c: var(--running); }
 .d-live { --c: var(--merged); }
 .d-failed { --c: var(--failed); }
-.d-rolled_back, .d-superseded { --c: var(--faint); }
+.d-rolled_back, .d-superseded, .d-rejected { --c: var(--faint); }
+.d-awaiting_approval { --c: var(--review); }
+.env-awaiting { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.env-awaiting li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.env-awaiting .env-subject { flex: 1 1 8em; }
+.env-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .env-cards { list-style: none; margin: 0 0 var(--sp-4); padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 10px; }
 .env-cards:empty { display: none; }
 .env-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
@@ -3367,6 +3372,26 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .env-check-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
 .env-checks .toggle { margin: 4px 0 8px; }
 @media (max-width: 640px) { .env-check-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .env-check-row > :first-child { grid-column: 1 / -1; } }
+.env-policy { margin-top: 10px; }
+.env-role-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.env-policy select { width: 100%; }
+.env-freezes { list-style: none; margin: 4px 0 6px; padding: 0; display: grid; gap: 6px; }
+.env-freezes:empty { display: none; }
+.env-freeze { display: grid; grid-template-columns: minmax(0, 8em) auto minmax(0, 8em) minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.env-freeze input { min-width: 0; }
+.env-history-head { margin: 20px 0 6px; font-size: 14px; }
+.env-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.env-change { padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-s); font-size: 13px; min-width: 0; }
+.env-diff { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.env-diff-field { color: var(--muted); }
+.env-diff del { color: var(--failed); }
+.env-diff ins { text-decoration: none; color: var(--merged); }
+@media (max-width: 640px) {
+  .env-role-row { grid-template-columns: minmax(0, 1fr); }
+  .env-role-row > :first-child { grid-column: auto; }
+  .env-freeze { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }
+  .env-freeze .env-freeze-note { grid-column: 1 / -2; grid-row: 2; }
+}
 .goal-actions .btn { min-height: 32px; }
 .goal-section { margin: 0 0 20px; }
 .goal-section .commit-files-head { margin-bottom: 8px; }

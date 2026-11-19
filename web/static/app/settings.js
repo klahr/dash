@@ -95,18 +95,65 @@ let shownEnvs = "[]"; // as last loaded or saved (JSON of cleanEnvs)
 const envOnHub = () => !$("#settings-runners-field").hidden;
 const script = (s) => (s || "").replace(/\r\n?/g, "\n").trim();
 const num = (v) => Math.max(0, parseInt(v, 10) || 0);
+// An environment's roles, as the hub fills them in when it has none
+// (model.Environment.WithDefaults): production is admins', the rest members'.
+const isProd = (name) => name === "production" || name === "prod";
+const roleDefaults = (e) => {
+  const name = (e.name || "").trim().toLowerCase();
+  return {
+    deploy_role: e.deploy_role || (isProd(name) ? "admin" : "member"),
+    approve_role: e.approve_role || (isProd(name) ? "admin" : "none"),
+    settings_role: e.settings_role || "admin",
+  };
+};
 const cleanEnvs = (list) => list.map((e) => ({
   name: (e.name || "").trim().toLowerCase(), deploy_command: script(e.deploy_command), build_command: script(e.build_command),
   runs_on: (e.runs_on || []).filter((l) => l.toLowerCase() !== "any"), url: (e.url || "").trim(),
   health_path: (e.health_path || "").trim(), health_status: num(e.health_status), health_timeout: num(e.health_timeout),
   verify_command: script(e.verify_command), soak: num(e.soak), auto_rollback: !!e.auto_rollback,
+  ...roleDefaults(e), require_tests: !!e.require_tests, require_live_on: (e.require_live_on || "").trim().toLowerCase(),
+  freezes: (e.freezes || []).map((f) => ({ from: (f.from || "").trim(), to: (f.to || "").trim(), note: (f.note || "").trim() })).filter((f) => f.from || f.to || f.note),
+  time_zone: (e.time_zone || "").trim(),
 }));
+const ROLE_OPTS = [["member", "Members"], ["admin", "Admins"], ["owner", "Owners"]];
+const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; } };
 
 function renderEnvEditor(p) {
   envDraft = cleanEnvs(p.environments || []);
   shownEnvs = JSON.stringify(envDraft);
   fieldError($("#settings-envs"), "");
   drawEnvs();
+  $("#settings-env-history").replaceChildren();
+  loadEnvHistory().catch(() => {});
+}
+
+// ------------------------------------------------------------------ settings history
+// History, under the environments: each change to one, who made it, when,
+// and each setting before and after.
+const ENV_FIELD = {
+  deploy_command: "Deploy command", build_command: "Build command", runs_on: "Runs on", url: "URL", health_path: "Health check path",
+  health_status: "Expected status", health_timeout: "Health check timeout", verify_command: "Verify command", soak: "Soak time",
+  auto_rollback: "Roll back on its own", deploy_role: "Who may deploy", approve_role: "Needs approval from", settings_role: "Who may change settings",
+  require_tests: "Tests must pass", require_live_on: "Live on first", freezes: "Freeze windows", time_zone: "Time zone",
+};
+const ENV_ACTION = { added: "added", changed: "changed", removed: "removed" };
+
+async function loadEnvHistory() {
+  const p = state.project;
+  if (!p) return;
+  const list = await api("GET", `/api/projects/${p.id}/environments/history`, null, p.prefix || "");
+  if (state.project !== p) return;
+  const el = $("#settings-env-history");
+  $("#settings-env-history-head").hidden = !list?.length;
+  const short = (v) => (v.length > 120 ? `${v.slice(0, 120)}…` : v);
+  el.replaceChildren(...(list || []).map((c) => h("li", { class: "env-change" },
+    h("div", { class: "env-change-head" },
+      h("strong", {}, c.by_name || "someone"), ` ${ENV_ACTION[c.action] || c.action} `, h("code", {}, c.environment), " ",
+      h("time", { class: "hint", datetime: c.at, title: dateText(c.at) }, agoText(c.at))),
+    c.diff?.length ? h("ul", { class: "env-diff" }, ...c.diff.map((d) => h("li", {},
+      h("span", { class: "env-diff-field" }, ENV_FIELD[d.field] || d.field), " ",
+      d.from ? h("del", {}, short(d.from)) : null, d.from && d.to ? " → " : null, d.to ? h("ins", {}, short(d.to)) : null,
+      !d.from && !d.to ? h("span", { class: "hint" }, "cleared") : null))) : null)));
 }
 
 function drawEnvs() {
@@ -140,7 +187,54 @@ function envEditor(e, i) {
       h("label", { class: "toggle" },
         h("input", { type: "checkbox", checked: !!e.auto_rollback, onchange: (ev) => { e.auto_rollback = ev.target.checked; } }),
         h("span", {}, "Roll back on its own when the checks fail ", h("em", {}, "to the last good deploy")))),
+    envPolicy(e, field),
     h("p", { class: "hint env-hint" }));
+}
+
+// envPolicy edits who may deploy, approve and change e, what a deploy
+// needs first and e's freeze windows (the hub enforces them).
+function envPolicy(e, field) {
+  Object.assign(e, roleDefaults(e));
+  const select = (k, opts) => h("select", { onchange: (ev) => { e[k] = ev.target.value; } },
+    ...opts.map(([v, label]) => h("option", { value: v, selected: e[k] === v }, label)));
+  const liveOn = h("select", { class: "env-live-on", onchange: (ev) => { e.require_live_on = ev.target.value; } });
+  fillLiveOn(liveOn, e);
+  const freezes = h("ul", { class: "env-freezes" });
+  const drawFreezes = () => freezes.replaceChildren(...(e.freezes || []).map((f, i) => h("li", { class: "env-freeze" },
+    h("input", { value: f.from || "", placeholder: "fri 15:00", "aria-label": "Frozen from", spellcheck: false, oninput: (ev) => { f.from = ev.target.value; } }),
+    h("span", { "aria-hidden": "true" }, "→"),
+    h("input", { value: f.to || "", placeholder: "mon 07:00", "aria-label": "Frozen until", spellcheck: false, oninput: (ev) => { f.to = ev.target.value; } }),
+    h("input", { value: f.note || "", placeholder: "why, e.g. weekend", "aria-label": "Why", class: "env-freeze-note", oninput: (ev) => { f.note = ev.target.value; } }),
+    ib({ type: "button", class: "btn small ghost", title: "Remove this freeze window", "aria-label": "Remove this freeze window", onclick: () => { e.freezes.splice(i, 1); drawFreezes(); saveEnvs(); } }, "x", ""))));
+  drawFreezes();
+  const zone = h("input", { value: e.time_zone || "", placeholder: browserZone() || "UTC", spellcheck: false, autocomplete: "off", oninput: (ev) => { e.time_zone = ev.target.value; } });
+  return h("fieldset", { class: "env-checks env-policy" },
+    h("legend", {}, "Who and when ", h("em", {}, "the hub enforces these")),
+    h("div", { class: "env-check-row env-role-row" },
+      field("Who may deploy", "and roll back", select("deploy_role", ROLE_OPTS)),
+      field("Needs approval from", "not their own deploy", select("approve_role", [["none", "No one"], ...ROLE_OPTS])),
+      field("Who may change settings", "of this environment", select("settings_role", ROLE_OPTS))),
+    h("label", { class: "toggle" },
+      h("input", { type: "checkbox", checked: !!e.require_tests, onchange: (ev) => { e.require_tests = ev.target.checked; } }),
+      h("span", {}, "Tests must pass on the commit ", h("em", {}, "Dash runs the test command first unless they passed already"))),
+    field("Live on first", "a deploy's commit must have been live there", liveOn),
+    h("div", { class: "field" }, h("span", {}, "Freeze windows ", h("em", {}, "nothing deploys then; rollbacks still do. Weekly (fri 15:00 → mon 07:00) or dates (2026-12-23 12:00)")),
+      freezes,
+      ib({ type: "button", class: "btn small", onclick: () => {
+        (e.freezes ||= []).push({ from: "fri 15:00", to: "mon 07:00", note: "" });
+        if (!e.time_zone) { e.time_zone = browserZone(); zone.value = e.time_zone; }
+        drawFreezes();
+        saveEnvs();
+      } }, "plus", "Add freeze window")),
+    field("Time zone", "freeze windows are read in it; empty: UTC", zone));
+}
+
+// fillLiveOn lists the other environments in sel, with e's choice picked.
+function fillLiveOn(sel, e) {
+  const others = envDraft.map((x) => (x.name || "").trim().toLowerCase()).filter((n) => n && n !== (e.name || "").trim().toLowerCase());
+  sel.replaceChildren(h("option", { value: "" }, "No requirement"),
+    ...others.map((n) => h("option", { value: n, selected: e.require_live_on === n }, n)));
+  if (e.require_live_on && !others.includes(e.require_live_on)) sel.append(h("option", { value: e.require_live_on, selected: true }, e.require_live_on));
 }
 
 // renderEnvHints says, under each environment, where its deploys run and
@@ -149,6 +243,8 @@ function renderEnvHints() {
   $$("#settings-envs .env-edit").forEach((li, i) => {
     const e = envDraft[i], hint = $(".env-hint", li), name = (e?.name || "").trim().toLowerCase() || "<name>";
     if (!e || !hint) return;
+    const liveOn = $(".env-live-on", li);
+    if (liveOn) fillLiveOn(liveOn, e);
     if (!envOnHub()) {
       fill(hint, "Secrets: this computer's ", h("code", {}, `~/.dash/env/${name}.env`), ", if there.");
       return;
@@ -195,11 +291,12 @@ function saveEnvs() {
       state.projects = state.projects.map((x) => (x === cur ? state.project : x));
       renderProjectHeader();
       renderApprove();
+      loadEnvHistory().catch(() => {});
     });
   });
 }
 $("#settings-env-add").addEventListener("click", addEnv);
-$("#settings-envs").addEventListener("change", (e) => { if (e.target.matches("input:not([type=hidden]), textarea")) saveEnvs(); });
+$("#settings-envs").addEventListener("change", (e) => { if (e.target.matches("input:not([type=hidden]), textarea, select")) saveEnvs(); });
 // Enter in one of its one-line fields saves the list (the form's own handler keeps it from submitting).
 $("#settings-envs").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("input:not(.label-picker-input)")) saveEnvs(); });
 $("#settings-sheet").addEventListener("close", () => { if (JSON.stringify(cleanEnvs(envDraft)) !== shownEnvs) saveEnvs(); });

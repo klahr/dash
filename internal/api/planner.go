@@ -71,10 +71,18 @@ var plannerRoutes = map[string]bool{
 	"GET /api/planning/projects":                       true,
 	"GET /api/planning/projects/{pid}/icon":            true,
 	"GET /api/planning/people":                         true,
+
+	// Deploys, to look at: what is live where, the deploys and the
+	// environments' settings history. Deploying, approving and changing
+	// settings stay refused (and their roles rank a planner below them all).
+	"GET /api/projects/{pid}/environments":         true,
+	"GET /api/projects/{pid}/environments/history": true,
+	"GET /api/projects/{pid}/deploys":              true,
+	"GET /api/deploys/{id}":                        true,
 }
 
 // errPlanner is what a planner gets for any other route.
-const errPlanner = "planners can use Planning and their own account only"
+const errPlanner = "planners can use Planning and their own account, and see deploys, only"
 
 // planner reports whether r is a planner's (a session or token of someone
 // whose role in the org they work in is planner).

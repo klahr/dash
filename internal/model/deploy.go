@@ -59,6 +59,24 @@ type Environment struct {
 	// AutoRollback rolls a deploy whose checks failed back to the last good
 	// deploy at once (see RollbackTarget).
 	AutoRollback bool `json:"auto_rollback,omitempty"`
+
+	// Who may do what (see deploypolicy.go): the lowest org role that may
+	// deploy (DeployRole), that must approve a deploy before it runs
+	// (ApproveRole; RoleNone: no approval) and that may change these
+	// settings (SettingsRole). "": the default (DefaultRoles).
+	DeployRole   string `json:"deploy_role,omitempty"`
+	ApproveRole  string `json:"approve_role,omitempty"`
+	SettingsRole string `json:"settings_role,omitempty"`
+	// RequireTests: a deploy runs only once the project's tests passed on
+	// its commit (Dash runs them first when it doesn't know they did).
+	RequireTests bool `json:"require_tests,omitempty"`
+	// RequireLiveOn names another environment a deploy's commit must have
+	// been live on first ("staging"), "" none.
+	RequireLiveOn string `json:"require_live_on,omitempty"`
+	// Freezes are when nothing deploys here (rollbacks still do), read in
+	// TimeZone (an IANA name; "": UTC).
+	Freezes  []Freeze `json:"freezes,omitempty"`
+	TimeZone string   `json:"time_zone,omitempty"`
 }
 
 // Limits of an environment's checks.
@@ -142,6 +160,9 @@ func CleanEnvironments(envs []Environment) ([]Environment, error) {
 		if err := e.cleanChecks(); err != nil {
 			return nil, fmt.Errorf("environment %s: %v", e.Name, err)
 		}
+		if err := e.cleanPolicy(); err != nil {
+			return nil, fmt.Errorf("environment %s: %v", e.Name, err)
+		}
 		labels := make([]string, 0, len(e.RunsOn))
 		for _, l := range e.RunsOn {
 			if l = strings.TrimSpace(l); l != "" && !strings.EqualFold(l, LabelAny) && !slices.ContainsFunc(labels, func(x string) bool { return strings.EqualFold(x, l) }) {
@@ -156,6 +177,14 @@ func CleanEnvironments(envs []Environment) ([]Environment, error) {
 			e.RunsOn = nil
 		}
 		out = append(out, e)
+	}
+	for _, e := range out {
+		if e.RequireLiveOn == "" {
+			continue
+		}
+		if e.RequireLiveOn == e.Name || !seen[e.RequireLiveOn] {
+			return nil, fmt.Errorf("environment %s: \"live on first\" must name another of the project's environments", e.Name)
+		}
 	}
 	return out, nil
 }
@@ -201,6 +230,7 @@ func CloneEnvironments(envs []Environment) []Environment {
 	out := slices.Clone(envs)
 	for i := range out {
 		out[i].RunsOn = slices.Clone(out[i].RunsOn)
+		out[i].Freezes = slices.Clone(out[i].Freezes)
 	}
 	return out
 }
@@ -260,6 +290,8 @@ func (p Project) DeployHeld(env string) string {
 
 // DeployStatus is where a deploy is in its life:
 //
+//	awaiting_approval ──▶ queued (approved), or ──▶ rejected
+//
 //	queued ──▶ building ──▶ deploying ──▶ verifying ──▶ live ──▶ superseded
 //	   │           │            │             │           │
 //	   └───────────┴────────────┴─────────────┴──▶ failed └──▶ rolled_back
@@ -278,6 +310,10 @@ const (
 	DeployFailed     DeployStatus = "failed"
 	DeployRolledBack DeployStatus = "rolled_back" // it was live and a rollback replaced it
 	DeploySuperseded DeployStatus = "superseded"  // it was live and a newer deploy replaced it
+	// DeployAwaiting: its environment needs an approval before it is
+	// queued (Environment.ApproveRole); DeployRejected: it was refused.
+	DeployAwaiting DeployStatus = "awaiting_approval"
+	DeployRejected DeployStatus = "rejected"
 )
 
 // Active reports whether a deploy in status s holds its environment: it
@@ -287,7 +323,7 @@ func (s DeployStatus) Active() bool {
 }
 
 // Done reports whether a deploy in status s has finished, one way or another.
-func (s DeployStatus) Done() bool { return s != DeployQueued && !s.Active() }
+func (s DeployStatus) Done() bool { return s != DeployQueued && s != DeployAwaiting && !s.Active() }
 
 // What started a deploy (Deploy.Trigger).
 const (
@@ -369,6 +405,20 @@ type Deploy struct {
 	Checks []DeployCheck `json:"checks,omitempty"`
 	// Cancelled: someone took it off the queue or stopped it.
 	Cancelled bool `json:"cancelled,omitempty"`
+	// Promote: it deploys what is live on another environment (PromotedFrom,
+	// that deploy; PromotedEnv, its environment) again here: the same
+	// commit and artifact, with no build.
+	Promote      bool   `json:"promote,omitempty"`
+	PromotedFrom string `json:"promoted_from,omitempty"`
+	PromotedEnv  string `json:"promoted_env,omitempty"`
+	// Approval is who approved it, or rejected it, when its environment
+	// needs that (nil: it doesn't, or nobody has yet).
+	Approval *DeployApproval `json:"approval,omitempty"`
+	// NeedsApproval is the role that must approve it (set when it waits).
+	NeedsApproval string `json:"needs_approval,omitempty"`
+	// TestsPassed: the project's tests passed on its commit (Dash ran them
+	// with the deploy, or knew they had passed).
+	TestsPassed bool `json:"tests_passed,omitempty"`
 	// FixTask is the draft task made when it failed.
 	FixTask string `json:"fix_task,omitempty"`
 	// Phases are when it entered each status, in order: its timings.

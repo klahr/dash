@@ -54,9 +54,15 @@ func TestBrowserDeploys(t *testing.T) {
 	b.waitJS("a card per environment", `[...document.querySelectorAll("#env-cards .env-card .env-name")].map((e) => e.textContent).join() === "production,staging"`)
 	b.waitJS("nothing deployed yet", `document.querySelector('#env-cards [data-env="production"]').textContent.includes("Nothing deployed here yet")`)
 
-	// Deploy production: it runs on the runner and goes live.
-	b.until("deploy production", `document.querySelector("#deploy-list li")`,
+	// Deploy production: it needs an admin's approval (the owner is the
+	// org's only admin, so their own will do); approved, it runs on the
+	// runner and goes live.
+	b.waitJS("production needs an approval", `document.querySelector('#env-cards [data-env="production"]').textContent.includes("Deploys need approval from an admin")`)
+	b.until("deploy production", `document.querySelector('#env-cards [data-env="production"] .env-awaiting button.primary')`,
 		chromedp.Click(chromedp.CSS(`#env-cards [data-env="production"] .env-deploy`)))
+	b.waitJS("it awaits approval in the list", `document.querySelector("#deploy-list li .status.d-awaiting_approval")`)
+	shot("deploys-approval-wide")
+	b.do("approve it", chromedp.Click(chromedp.CSS(`#env-cards [data-env="production"] .env-awaiting button.primary`)))
 	b.waitJS("the deploy live in the list", `document.querySelector("#deploy-list li .status.d-live")`)
 	b.waitJS("the card shows it live", `document.querySelector('#env-cards [data-env="production"] .env-live .status.d-live')`)
 	shot("deploys-wide")
@@ -65,9 +71,10 @@ func TestBrowserDeploys(t *testing.T) {
 	b.until("open the deploy", `!document.querySelector("#deploy-detail").hidden`,
 		chromedp.Click(chromedp.CSS(`#deploy-list li .deploy-open`)))
 	b.waitJS("its title and log", `document.querySelector("#dd-title").textContent === "Deploy to production" && document.querySelector("#dd-log").textContent.includes("deploying production at ")`)
-	b.waitJS("its phases", `[...document.querySelectorAll("#dd-phases .deploy-phase-name")].map((e) => e.textContent).join() === "Queued,Deploying,Verifying,Live" || [...document.querySelectorAll("#dd-phases .deploy-phase-name")].map((e) => e.textContent).join() === "Queued,Deploying,Live"`)
+	b.waitJS("its phases", `[...document.querySelectorAll("#dd-phases .deploy-phase-name")].map((e) => e.textContent).join() === "Awaiting approval,Queued,Deploying,Verifying,Live" || [...document.querySelectorAll("#dd-phases .deploy-phase-name")].map((e) => e.textContent).join() === "Awaiting approval,Queued,Deploying,Live"`)
 	b.waitJS("the list still beside it", `document.querySelector("#deploy-list").getBoundingClientRect().right <= document.querySelector("#deploy-detail").getBoundingClientRect().left + 1`)
 	b.waitJS("the address names it", `location.pathname.includes("/deploys/")`)
+	b.waitJS("who approved it", `document.querySelector("#dd-facts").textContent.includes("Approved by")`)
 	shot("deploy-pane-wide")
 	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`document.activeElement?.blur(), true`)); err != nil {
 		t.Fatal(err)
@@ -112,6 +119,8 @@ func TestBrowserDeploys(t *testing.T) {
 	b.waitJS("the Deploy section shown", `!document.querySelector('#settings-sheet .rail-section[data-section="deploy"]').hidden`)
 	b.waitJS("where each deploys", `document.querySelector("#settings-envs .env-hint").textContent.includes("Deploys on")`)
 	b.waitJS("their checks", `[...document.querySelectorAll("#settings-envs .env-checks textarea")].map((e) => e.value).join() === ',test -n "$DASH_COMMIT"'`)
+	b.waitJS("who may deploy", `[...document.querySelectorAll("#settings-envs .env-role-row select")].map((e) => e.value).join() === "admin,admin,admin,member,none,admin"`)
+	b.waitJS("the settings history", `[...document.querySelectorAll("#settings-env-history .env-change")].length === 2 && document.querySelector("#settings-env-history").textContent.includes("added")`)
 	shot("settings-deploy-wide")
 	b.do("a phone's screen again", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the checks fit the phone", `[...document.querySelectorAll("#settings-envs .env-checks")].every((e) => e.scrollWidth <= e.clientWidth + 1 && e.getBoundingClientRect().right <= innerWidth)`)

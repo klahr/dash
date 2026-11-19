@@ -530,8 +530,16 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 	if err := sv.checkUnlink(cur, gone); err != nil {
 		return cur, err
 	}
+	var envsBefore []model.Environment
 	p, err := sv.data.UpdateProject(id, func(p *model.Project) error {
 		before := *p
+		if req.Environments != nil {
+			// Each environment says who may change it (deploypolicy.go).
+			if err := sv.s.checkEnvSettings(sv.c, before.Environments, *req.Environments); err != nil {
+				return err
+			}
+			envsBefore = model.CloneEnvironments(before.Environments)
+		}
 		if err := applyProjectUpdate(p, req, remote, runsOn, gh); err != nil {
 			return err
 		}
@@ -543,6 +551,9 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 	})
 	if err != nil {
 		return p, err
+	}
+	if req.Environments != nil && !sv.c.Machine {
+		sv.s.recordEnvChanges(sv.c, p.ID, envsBefore, p.Environments)
 	}
 	sv.s.unlinkLater([]model.Project{p}, gone)
 	if req.RunsOn != nil {

@@ -86,7 +86,8 @@ func TestHubDeploysOnlyOnRunnersWithItsLabels(t *testing.T) {
 	// C:\Users\... loses its backslashes as escapes: forward slashes, quoted.
 	target := "'" + filepath.ToSlash(marker) + "'"
 	script := "set -e\r\necho $DASH_ENV $DASH_PREV_COMMIT > " + target + "\r\n\r\n  echo token $API_TOKEN >> " + target + "\r\ncat built.txt\r\necho token $API_TOKEN\r\n"
-	envs := []model.Environment{{Name: " Production ", DeployCommand: script, BuildCommand: "echo built $DASH_COMMIT > built.txt", RunsOn: []string{" gpu ", "any", "GPU"}}}
+	envs := []model.Environment{{Name: " Production ", DeployCommand: script, BuildCommand: "echo built $DASH_COMMIT > built.txt", RunsOn: []string{" gpu ", "any", "GPU"},
+		ApproveRole: model.RoleNone}}
 	b, _ := json.Marshal(map[string]any{"environments": envs})
 	w := call(owner.User, "PATCH", pp, string(b))
 	if w.Code != http.StatusOK {
@@ -241,11 +242,16 @@ func TestEnvironmentsRoundTrip(t *testing.T) {
 		t.Errorf("loaded %+v", got.Environments)
 	}
 	for _, bad := range []string{
-		`{"environments":[{"name":"prod","deploy_command":"x","runs_on":["gpu"]}]}`,              // labels on a Dash of its own
-		`{"environments":[{"name":"../etc","deploy_command":"x"}]}`,                              // not a name
-		`{"environments":[{"name":"a","deploy_command":"x"},{"name":"A","deploy_command":"y"}]}`, // twice
-		`{"environments":[{"name":"a","deploy_command":""}]}`,                                    // nothing to run
-		`{"environments":[{"name":"a","deploy_command":"x","url":"ftp://example.com"}]}`,         // not a web address
+		`{"environments":[{"name":"prod","deploy_command":"x","runs_on":["gpu"]}]}`,                                     // labels on a Dash of its own
+		`{"environments":[{"name":"../etc","deploy_command":"x"}]}`,                                                     // not a name
+		`{"environments":[{"name":"a","deploy_command":"x"},{"name":"A","deploy_command":"y"}]}`,                        // twice
+		`{"environments":[{"name":"a","deploy_command":""}]}`,                                                           // nothing to run
+		`{"environments":[{"name":"a","deploy_command":"x","url":"ftp://example.com"}]}`,                                // not a web address
+		`{"environments":[{"name":"a","deploy_command":"x","deploy_role":"planner"}]}`,                                  // not a role a policy names
+		`{"environments":[{"name":"a","deploy_command":"x","require_live_on":"a"}]}`,                                    // itself
+		`{"environments":[{"name":"a","deploy_command":"x","require_live_on":"b"}]}`,                                    // no such environment
+		`{"environments":[{"name":"a","deploy_command":"x","time_zone":"Mars/Base"}]}`,                                  // no such zone
+		`{"environments":[{"name":"a","deploy_command":"x","freezes":[{"from":"fri 15:00","to":"2026-12-24 00:00"}]}]}`, // mixed
 	} {
 		if w := patch(bad); w.Code != http.StatusBadRequest {
 			t.Errorf("%s: %d %s", bad, w.Code, w.Body)

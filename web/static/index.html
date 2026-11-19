@@ -1235,6 +1235,8 @@
             <p class="hint">Each environment is a place the project is deployed to, with the script that deploys it. Dash runs the script on a runner, in a checkout of the commit, and records what is live where on the <strong>Deploys</strong> page. The script gets <code>$DASH_ENV</code>, <code>$DASH_COMMIT</code> and <code>$DASH_PREV_COMMIT</code>, and the secrets in the runner's <code>~/.dash/env/&lt;environment&gt;.env</code>. More in the docs: <code>docs/deploys.md</code>.</p>
             <ul class="env-edit-list" id="settings-envs"></ul>
             <button class="btn small" type="button" id="settings-env-add" data-icon="plus">Add environment</button>
+            <h3 class="env-history-head" id="settings-env-history-head" hidden>History</h3>
+            <ul class="env-history" id="settings-env-history" aria-labelledby="settings-env-history-head"></ul>
           </section>
           <section class="rail-section" data-section="repository">
             <div id="settings-repo" class="repo-info" aria-live="polite"></div>

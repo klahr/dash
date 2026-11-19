@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -28,7 +29,8 @@ func putDeploy(tx *sql.Tx, d *model.Deploy) error {
 }
 
 // CreateDeploy queues a deploy: d's project, environment, ref and trigger
-// are the caller's, its id, status and times the store's.
+// are the caller's, its id, status and times the store's. It is queued,
+// or awaits approval when d's status says so (model.DeployAwaiting).
 func (s *Store) CreateDeploy(d model.Deploy) (model.Deploy, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -40,9 +42,13 @@ func (s *Store) CreateDeploy(d model.Deploy) (model.Deploy, error) {
 		return d, ErrNotFound
 	}
 	now := time.Now()
+	first := model.DeployQueued
+	if d.Status == model.DeployAwaiting {
+		first = model.DeployAwaiting
+	}
 	d.ID, d.CreatedAt, d.Status, d.Phases, d.Log = NewID(), now, "", nil, ""
 	d.StartedAt, d.FinishedAt, d.ExitCode = nil, nil, nil
-	d.SetStatus(model.DeployQueued, now)
+	d.SetStatus(first, now)
 	d = cloneDeploy(d)
 	if s.data.Deploys == nil {
 		s.data.Deploys = map[string]*model.Deploy{}
@@ -214,11 +220,63 @@ func cloneDeploy(d model.Deploy) model.Deploy {
 	d.Phases = slices.Clone(d.Phases)
 	d.Shipped = slices.Clone(d.Shipped)
 	d.Checks = slices.Clone(d.Checks)
+	if d.Approval != nil {
+		a := *d.Approval
+		d.Approval = &a
+	}
 	if d.ExitCode != nil {
 		c := *d.ExitCode
 		d.ExitCode = &c
 	}
 	return d
+}
+
+// ---- environment settings history ----
+
+// AddEnvChanges records changes to a project's environments, made by uid
+// (named name) at at.
+func (s *Store) AddEnvChanges(projectID string, uid int64, name string, at time.Time, changes []model.EnvChange) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	at = at.UTC().Truncate(time.Second)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writeLocked(func(tx *sql.Tx) error {
+		for _, c := range changes {
+			c.ID, c.ProjectID, c.By, c.ByName, c.At = 0, projectID, uid, name, at
+			if err := put(tx, "INSERT INTO environment_changes (project_id, org_id, user_id, at, data) VALUES (?, "+projectOrg+", ?, ?, ?)",
+				c, projectID, projectID, uid, at.Unix()); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// EnvChanges are a project's latest environment changes (at most limit),
+// newest first.
+func (s *Store) EnvChanges(projectID string, limit int) ([]model.EnvChange, error) {
+	rows, err := s.db.Query("SELECT id, user_id, data FROM environment_changes WHERE project_id = ? ORDER BY id DESC LIMIT ?", projectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.EnvChange{}
+	for rows.Next() {
+		var c model.EnvChange
+		var id, uid int64
+		var data string
+		if err := rows.Scan(&id, &uid, &data); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(data), &c); err != nil {
+			continue
+		}
+		c.ID, c.ProjectID, c.By = id, projectID, uid
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 // ---- in one org ----
@@ -248,4 +306,12 @@ func (o *OrgStore) LiveDeploy(projectID, env string) (model.Deploy, bool) {
 		return model.Deploy{}, false
 	}
 	return o.s.LiveDeploy(projectID, env)
+}
+
+// EnvChanges are one of the org's projects' latest environment changes.
+func (o *OrgStore) EnvChanges(projectID string, limit int) ([]model.EnvChange, error) {
+	if !o.ownsProject(projectID) {
+		return nil, ErrNotFound
+	}
+	return o.s.EnvChanges(projectID, limit)
 }

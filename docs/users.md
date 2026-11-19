@@ -10,6 +10,9 @@ role in each:
 | Member  | use Dash in the org, see who else is in it, and leave it                     |
 | Planner | use [Planning](planning.md) and their own account, nothing else (see [Planners](#planners)) |
 
+Each deploy environment also says which of these roles may deploy, approve and change its
+settings (see [Roles and approvals](deploys.md#roles-and-approvals)).
+
 An org always keeps at least one owner. Separately from org roles, an account can be a
 **platform admin** of the Dash instance: it can create new orgs, and use what belongs to
 the whole instance rather than to one org (see below). With [open signup](signup.md) on,
@@ -126,6 +129,8 @@ A planner can:
 - see, add, edit, move and delete the org's planning cards, and comment on them
 - press **Start** on a card, which makes a task or a goal in a project and links it
 - see each card's linked work through its status and titles
+- see deploys through the API, read only: what is live where, the deploys (without their
+  logs) and the environments' settings history (see [Deploys](deploys.md#api))
 - use their own account: the account menu at the bottom of the sidebar (in the menu on a phone)
   switches orgs, and has **Account** (**Profile picture**, **Two-factor sign-in**, **Google
   account** and **Your data**) and **Sign out**

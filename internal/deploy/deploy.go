@@ -161,6 +161,10 @@ type Job struct {
 	// Build, Deploy and Verify are the environment's commands (Build and
 	// Verify optional). Verify runs once deployed, with DASH_URL.
 	Build, Deploy, Verify string
+	// Test, if any, is the project's test command, run first (building)
+	// when the environment needs passing tests and Dash doesn't know they
+	// passed on the commit: a deploy whose tests fail stops there.
+	Test string
 	// Env is the commands' environment: this process's (or a shared
 	// runner's), the secrets and the DASH_* variables (model.DeployVar…).
 	// DASH_OUTPUT is added.
@@ -204,6 +208,8 @@ type State struct {
 	Deployed bool `json:"deployed,omitempty"`
 	// Checks are how the checks went, in the order they ran.
 	Checks []model.DeployCheck `json:"checks,omitempty"`
+	// TestsPassed: the job ran the tests (Job.Test) and they passed.
+	TestsPassed bool `json:"tests_passed,omitempty"`
 }
 
 // Manager runs jobs, one at a time per Key (an environment of a project),
@@ -389,13 +395,18 @@ func (m *Manager) run(ctx context.Context, r *job, j Job) {
 	steps := []struct {
 		phase model.DeployStatus
 		cmd   string
-	}{{model.DeployBuilding, j.Build}, {model.DeployDeploying, j.Deploy}}
-	for _, st := range steps {
+		what  string
+	}{{model.DeployBuilding, j.Test, "the tests"}, {model.DeployBuilding, j.Build, "the build command"}, {model.DeployDeploying, j.Deploy, "the deploy command"}}
+	for i, st := range steps {
 		if st.cmd == "" {
 			continue
 		}
 		r.phase(st.phase)
-		r.say("%s: %s", st.phase, firstLine(st.cmd))
+		label := string(st.phase)
+		if i == 0 {
+			label = "testing"
+		}
+		r.say("%s: %s", label, firstLine(st.cmd))
 		code, err := runScript(ctx, j.Dir, st.cmd, env, r)
 		if ctx.Err() != nil {
 			r.say("stopped")
@@ -407,13 +418,14 @@ func (m *Manager) run(ctx context.Context, r *job, j Job) {
 			return
 		}
 		if *code != 0 {
-			what := "the deploy command"
-			if st.phase == model.DeployBuilding {
-				what = "the build command"
-			}
-			r.say("%s exited with %d", what, *code)
-			finish(model.DeployFailed, code, fmt.Sprintf("%s exited with %d", what, *code))
+			r.say("%s exited with %d", st.what, *code)
+			finish(model.DeployFailed, code, fmt.Sprintf("%s exited with %d", st.what, *code))
 			return
+		}
+		if i == 0 {
+			r.mu.Lock()
+			r.state.TestsPassed = true
+			r.mu.Unlock()
 		}
 	}
 	zero := 0

@@ -16,6 +16,8 @@ them in **Project settings → Deploy**. Each has:
 - **Runs on** (on a hub): the runner labels its deploys run on. Empty runs on any runner the
   project runs on. See [Where deploys run](several-computers.md#where-deploys-run).
 - **Checks** (optional): what decides that a deploy is live. See [Checks](#checks).
+- **Who and when**: who may deploy, approve and change settings, what a deploy needs first, and
+  freeze windows. See [Roles and approvals](#roles-and-approvals).
 
 The environments are settings kept by Dash. Nothing goes in the repository.
 
@@ -33,7 +35,15 @@ Open **Deploys** in the sidebar (`gd`). Each environment has a card:
   its secrets file.
 
 Press **Deploy** on a card. Dash deploys the tip of the default branch, as origin has it.
-**Deploy again** in a deploy's pane deploys that deploy's commit again.
+**Deploy again** in a deploy's pane deploys that deploy's commit again. When **Deploy** is greyed
+out, the card says why: your role, a freeze, or a requirement.
+
+**Promote to <environment>** on a card deploys what is live there to the next environment: the
+same commit, and the same artifact in `DASH_ARTIFACT`. The build command doesn't run. The next
+environment is the one that needs this one's commits live first, else the one below it in
+**Project settings → Deploy**. Nothing is promoted from `production`. Have the build or deploy
+script report its artifact (see [The script contract](#the-script-contract)), so a promotion
+deploys the very same build.
 
 One deploy runs at a time per environment. The others wait in the queue in order.
 
@@ -42,7 +52,7 @@ screen with **Back** on a phone; `Esc` closes it, `j`/`k` step through the list)
 
 - the commit, and the deploy it replaced;
 - who started it, the runner it ran on, its exit code;
-- its phases and how long each took: **Queued**, **Building**, **Deploying**, **Verifying**,
+- its phases and how long each took: **Awaiting approval** (when it needs one), **Queued**, **Building**, **Deploying**, **Verifying**,
   then **Live** or **Failed**. A live deploy becomes **Replaced** when the next one goes live, or
   **Rolled back** when a rollback replaces it;
 - how its checks went;
@@ -50,6 +60,62 @@ screen with **Back** on a phone; `Esc` closes it, `j`/`k` step through the list)
 - its log, with secrets masked.
 
 **Stop** stops a running deploy where it runs. **Cancel** takes a queued one off the queue.
+You may stop or cancel your own deploys, and others' where you may deploy.
+
+## Roles and approvals
+
+Each environment says, in **Project settings → Deploy → Who and when**, who may do what. The roles
+are the org's: owner, admin, member. Planners only look.
+
+| Setting                     | Default for `production` | Default for the others |
+|-----------------------------|--------------------------|------------------------|
+| **Who may deploy**          | admins                   | members                |
+| **Needs approval from**     | admins                   | no one                 |
+| **Who may change settings** | admins                   | admins                 |
+
+Each lets that role and the roles above it. Dash checks them on the hub, whatever sends the request.
+
+- **Who may deploy** also may roll back. A rollback needs no approval, and a freeze or a
+  requirement doesn't stop it.
+- **Needs approval from**: a deploy waits as **Awaiting approval** on the environment's card and in
+  the list. Someone with that role presses **Approve** (it is queued) or **Reject** (it doesn't
+  run; they may say why). You can't approve your own deploy, unless the org has only one admin.
+- **Who may change settings**: changing or removing an environment needs it. You can't set a role
+  above your own.
+
+## Requirements and freezes
+
+Also under **Who and when**:
+
+- **Tests must pass on the commit**: Dash knows they did when a deploy of the commit ran them, or
+  the project's GitHub Actions passed on it. Otherwise the deploy runs the project's **Test
+  command** first, in its checkout; if they fail, nothing is built or deployed.
+- **Live on first**: another environment the commit must have been live on, such as `staging`.
+  Deploy to it with **Promote** from that environment, or **Deploy again** on a deploy of a commit
+  that was live there.
+- **Freeze windows**: when nothing deploys. Weekly, as a day and a time:
+
+  ```text
+  fri 15:00 → mon 07:00
+  ```
+
+  or once, as dates:
+
+  ```text
+  2026-12-23 12:00 → 2027-01-02 00:00
+  ```
+
+  Add a note to say why. **Time zone** is where the times are read, such as `Europe/Stockholm`.
+  Adding a freeze window fills in your browser's. Empty is UTC.
+
+A blocked deploy is refused, with the reason: "production is frozen until Mon 23 Nov 07:00
+(Europe/Stockholm): weekend". Approving one is refused the same way. A deploy whose turn comes
+during a freeze fails with the reason.
+
+## Settings history
+
+Each change to an environment is kept: who made it, when, and each setting before and after.
+See **History** at the bottom of **Project settings → Deploy**.
 
 ## Checks
 
@@ -127,7 +193,7 @@ The build and deploy commands get these environment variables:
 | `DASH_ENV`         | the environment's name                                       |
 | `DASH_COMMIT`      | the commit deployed                                          |
 | `DASH_PREV_COMMIT` | the commit live before (empty for the first deploy)          |
-| `DASH_ARTIFACT`    | the artifact to deploy again, on a rollback; else empty      |
+| `DASH_ARTIFACT`    | the artifact to deploy again, on a rollback or a promotion   |
 | `DASH_DEPLOY_ID`   | the deploy's id                                              |
 | `DASH_ROLLBACK`    | `1` on a rollback; unset otherwise                           |
 | `DASH_URL`         | the environment's URL (the verify command: the deploy's)     |
@@ -172,10 +238,16 @@ a production env file".
 ## API
 
 - `GET /api/projects/{id}/environments`: each environment with what is live, what runs, how far
-  it is ahead of the others, and (on a hub) its runners.
+  it is ahead of the others, (on a hub) its runners, and in `policy` what you may do there, what
+  blocks a deploy, the deploys awaiting approval and where **Promote** goes.
 - `GET /api/projects/{id}/deploys?environment=`: the deploys, newest first, without logs.
 - `POST /api/projects/{id}/deploys` with `{"environment": "production", "commit": ""}`: queue a
-  deploy. An empty `commit` deploys the tip of the default branch.
+  deploy. An empty `commit` deploys the tip of the default branch. With `"promote_from":
+  "staging"` instead of `commit`, it promotes what is live there. A deploy that needs an approval
+  has the status `awaiting_approval`. A blocked one gets `409` with the reason.
+- `POST /api/deploys/{id}/approve`, and `POST /api/deploys/{id}/reject` with `{"note": ""}`:
+  decide on a deploy awaiting approval.
+- `GET /api/projects/{id}/environments/history`: the settings history, newest first.
 - `GET /api/deploys/{id}`: one deploy, with its log.
 - `DELETE /api/deploys/{id}`: cancel a queued deploy, or stop a running one.
 - `POST /api/deploys/{id}/rollback`: roll back deploy `{id}` to the last good deploy before it.
@@ -184,5 +256,9 @@ a production env file".
 
 The environments are the `environments` field of `PATCH /api/projects/{id}` and of the
 `update_project` tool: a list of `{"name", "deploy_command", "build_command", "runs_on", "url",
-"health_path", "health_status", "health_timeout", "verify_command", "soak", "auto_rollback"}`,
-which replaces the project's environments.
+"health_path", "health_status", "health_timeout", "verify_command", "soak", "auto_rollback",
+"deploy_role", "approve_role", "settings_role", "require_tests", "require_live_on", "freezes",
+"time_zone"}`, which replaces the project's environments. Roles are `member`, `admin` or `owner`
+(`approve_role` also `none`). `freezes` is a list of `{"from", "to", "note"}`.
+
+Planners may use the `GET` routes above, without the deploys' logs.

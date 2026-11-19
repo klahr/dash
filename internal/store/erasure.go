@@ -213,6 +213,10 @@ func forgetUser(tx *sql.Tx, uid int64) error {
 		`UPDATE chat_messages SET data = json_set(data, '$.created_by', ?2) WHERE kind != 'main' AND json_extract(data, '$.created_by') = ?1`,
 		`DELETE FROM chat_messages WHERE kind IN ('main', 'project') AND owner_id LIKE '%:' || ?1`,
 		`UPDATE project_events SET user_id = 0 WHERE user_id = ?1`,
+		// An environment change they made stays, made by nobody named.
+		`UPDATE environment_changes SET user_id = 0, data = json_remove(json_remove(data, '$.by'), '$.by_name') WHERE user_id = ?1`,
+		// So does their approval of a deploy.
+		`UPDATE deploys SET data = json_remove(json_set(data, '$.approval.by', ?2), '$.approval.by_name') WHERE json_extract(data, '$.approval.by') = ?1`,
 		// About them: who, the address and the details (an email address,
 		// say) go; that it happened stays in the org's log.
 		`UPDATE auth_events SET user_id = NULL, detail = '', ip = '' WHERE user_id = ?1`,

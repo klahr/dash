@@ -47,11 +47,14 @@ import (
 func (s *Server) deployRoutes(mux routeMux) {
 	// The UI's.
 	mux.HandleFunc("GET /api/projects/{pid}/environments", s.listEnvironments)
+	mux.HandleFunc("GET /api/projects/{pid}/environments/history", s.envHistory)
 	mux.HandleFunc("GET /api/projects/{pid}/deploys", s.listDeploys)
 	mux.HandleFunc("POST /api/projects/{pid}/deploys", s.createDeploy)
 	mux.HandleFunc("GET /api/deploys/{id}", s.getDeploy)
 	mux.HandleFunc("DELETE /api/deploys/{id}", s.cancelDeploy)
 	mux.HandleFunc("POST /api/deploys/{id}/rollback", s.rollbackDeploy)
+	mux.HandleFunc("POST /api/deploys/{id}/approve", s.approveDeploy)
+	mux.HandleFunc("POST /api/deploys/{id}/reject", s.rejectDeploy)
 	// A runner's: only its hub asks.
 	mux.HandleFunc("POST /api/hub/projects/{hpid}/deploys", s.hubDeployStart)
 	mux.HandleFunc("GET /api/hub/projects/{hpid}/deploys/{id}", s.hubDeployState)
@@ -123,6 +126,8 @@ type envStatus struct {
 	Warning string `json:"warning,omitempty"`
 	// Rollback is what "Roll back" would do now, if anything.
 	Rollback *rollbackOption `json:"rollback,omitempty"`
+	// Policy is what its policy means for the one who asks.
+	Policy envPolicy `json:"policy"`
 }
 
 // rollbackOption is a rollback that may be started: of deploy Of (live, or
@@ -179,10 +184,13 @@ func (s *Server) listEnvironments(w http.ResponseWriter, r *http.Request) {
 	if !s.hub() {
 		have = deploy.EnvFiles(s.envDir())
 	}
-	for _, e := range p.Environments {
-		st := envStatus{Environment: e}
+	now := time.Now()
+	for i, e := range p.Environments {
+		st := envStatus{Environment: e.WithDefaults()}
 		deploys := sv.data.ListDeploys(p.ID, e.Name)
-		st.Rollback = rollbackFor(deploys)
+		if s.mayDeploy(sv.c, e) == nil {
+			st.Rollback = rollbackFor(deploys)
+		}
 		for _, d := range deploys {
 			switch {
 			case d.Status == model.DeployLive && st.Live == nil:
@@ -193,6 +201,7 @@ func (s *Server) listEnvironments(w http.ResponseWriter, r *http.Request) {
 				st.Queued++
 			}
 		}
+		st.Policy = s.policyFor(sv.c, p, i, deploys, st.Live, now)
 		if s.hub() {
 			st.Runners, st.Warning = s.envRunners(p, e)
 		} else {
@@ -290,7 +299,11 @@ func (s *Server) listDeploys(w http.ResponseWriter, r *http.Request) {
 // createDeploy handles POST /api/projects/{pid}/deploys {"environment":
 // name, "commit": sha}: a deploy of commit ("" for the tip of the
 // project's branch, as origin has it when the deploy starts), queued
-// behind any other deploy to that environment.
+// behind any other deploy to that environment, or waiting for an approval
+// when the environment needs one. With "promote_from": another
+// environment, it deploys what is live there (its commit and artifact)
+// with no build. The caller needs the environment's deploy role, and the
+// deploy must not be blocked (deployBlocks).
 func (s *Server) createDeploy(w http.ResponseWriter, r *http.Request) {
 	sv, p, ok := s.project(w, r)
 	if !ok {
@@ -299,6 +312,7 @@ func (s *Server) createDeploy(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Environment string `json:"environment"`
 		Commit      string `json:"commit"`
+		PromoteFrom string `json:"promote_from"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
@@ -314,7 +328,31 @@ func (s *Server) createDeploy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: %q isn't a commit", errBadRequest, req.Commit))
 		return
 	}
-	d, err := s.queueDeploy(sv.c, model.Deploy{ProjectID: p.ID, Environment: e.Name, Ref: req.Commit, Trigger: model.DeployByUser})
+	if err := s.mayDeploy(sv.c, e); err != nil {
+		writeErr(w, err)
+		return
+	}
+	d := model.Deploy{ProjectID: p.ID, Environment: e.Name, Ref: req.Commit, Trigger: model.DeployByUser}
+	if from := strings.TrimSpace(req.PromoteFrom); from != "" {
+		src, ok := sv.data.LiveDeploy(p.ID, from)
+		switch {
+		case from == e.Name:
+			writeErr(w, fmt.Errorf("%w: promote from another environment", errBadRequest))
+			return
+		case !ok || src.Commit == "":
+			writeErr(w, fmt.Errorf("%w: nothing is live on %q to promote", errConflict, from))
+			return
+		}
+		d.Ref, d.Artifact, d.Promote, d.PromotedFrom, d.PromotedEnv = src.Commit, src.Artifact, true, src.ID, from
+	}
+	if whys := s.deployBlocks(p, e, d.Ref, time.Now()); len(whys) > 0 {
+		writeErr(w, blockedErr(whys))
+		return
+	}
+	if need := e.WhoApproves(); need != "" {
+		d.Status, d.NeedsApproval = model.DeployAwaiting, need
+	}
+	d, err := s.queueDeploy(sv.c, d)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -334,7 +372,7 @@ func (s *Server) queueDeploy(c Caller, d model.Deploy) (model.Deploy, error) {
 	if err != nil {
 		return d, err
 	}
-	slog.Info("deploy: queued", "project", d.ProjectID, "environment", d.Environment, "id", d.ID, "by", d.ByName)
+	slog.Info("deploy: queued", "project", d.ProjectID, "environment", d.Environment, "id", d.ID, "by", d.ByName, "status", d.Status)
 	s.kickDeploys(d.ProjectID, d.Environment)
 	return d, nil
 }
@@ -358,7 +396,19 @@ func (s *Server) getDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := deployDetail{Deploy: d}
-	if rb := rollbackFor(sv.data.ListDeploys(d.ProjectID, d.Environment)); rb != nil && rb.Of == d.ID {
+	if sv.c.Planner {
+		out.Log = "" // a planner sees what shipped where, not the scripts' output
+	}
+	p, err := sv.data.GetProject(d.ProjectID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	e, ok := p.Environment(d.Environment)
+	if ok && s.mayDeploy(sv.c, e) != nil {
+		ok = false // they may not roll it back
+	}
+	if rb := rollbackFor(sv.data.ListDeploys(d.ProjectID, d.Environment)); ok && rb != nil && rb.Of == d.ID {
 		out.RollbackTo = &rb.To
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -366,7 +416,9 @@ func (s *Server) getDeploy(w http.ResponseWriter, r *http.Request) {
 
 // rollbackDeploy handles POST /api/deploys/{id}/rollback: a rollback of
 // deploy id (live, or deployed and failed) to the last good deploy before
-// it, queued ahead of other deploys to its environment.
+// it, queued ahead of other deploys to its environment. It needs the
+// environment's deploy role, and no approval; freezes and requirements
+// don't hold it back.
 func (s *Server) rollbackDeploy(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -377,9 +429,16 @@ func (s *Server) rollbackDeploy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if _, err := sv.data.GetProject(d.ProjectID); err != nil {
+	p, err := sv.data.GetProject(d.ProjectID)
+	if err != nil {
 		writeErr(w, err)
 		return
+	}
+	if e, ok := p.Environment(d.Environment); ok {
+		if err := s.mayDeploy(sv.c, e); err != nil {
+			writeErr(w, err)
+			return
+		}
 	}
 	rb, err := s.queueRollback(sv.c, d, model.DeployByUser)
 	if err != nil {
@@ -419,14 +478,25 @@ func (s *Server) cancelDeploy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if d.By != sv.c.User || sv.c.User == 0 {
+		// Someone else's: only who may deploy there stops it.
+		if p, err := sv.data.GetProject(d.ProjectID); err == nil {
+			if e, ok := p.Environment(d.Environment); ok {
+				if err := s.mayDeploy(sv.c, e); err != nil {
+					writeErr(w, err)
+					return
+				}
+			}
+		}
+	}
 	who := "someone"
 	if u, err := s.Store.Accounts().User(sv.c.User); err == nil {
 		who = u.Username
 	}
 	switch {
-	case d.Status == model.DeployQueued:
+	case d.Status == model.DeployQueued || d.Status == model.DeployAwaiting:
 		_, err = s.Store.UpdateDeploy(d.ID, func(x *model.Deploy) error {
-			if x.Status != model.DeployQueued {
+			if x.Status != model.DeployQueued && x.Status != model.DeployAwaiting {
 				return fmt.Errorf("%w: it has started meanwhile; stop it again", errConflict)
 			}
 			x.Error, x.Cancelled = "cancelled by "+who, true
@@ -542,6 +612,11 @@ type deployRun struct {
 	PrevCommit  string `json:"prev_commit,omitempty"`
 	Artifact    string `json:"artifact,omitempty"`
 	Rollback    bool   `json:"rollback,omitempty"`
+	// Tests: run the project's test command first (the environment needs
+	// passing tests, and the hub doesn't know they passed on the commit).
+	Tests bool `json:"tests,omitempty"`
+	// SkipBuild: a promotion, which deploys an artifact built already.
+	SkipBuild bool `json:"skip_build,omitempty"`
 }
 
 // deployStarted is the answer to a deployRun: what it deploys, and the
@@ -609,6 +684,13 @@ func (s *Server) runDeploy(ctx context.Context, id string) {
 	}
 	at := deployWhere{by: d.By}
 	if d.Status == model.DeployQueued {
+		if !d.Rollback {
+			// Its turn may come after a freeze began, or what it needed changed.
+			if whys := s.deployBlocks(p, env, d.Ref, time.Now()); len(whys) > 0 {
+				fail("blocked: " + strings.Join(whys, "; "))
+				return
+			}
+		}
 		if at, err = s.startDeploy(ctx, p, env, d); err != nil {
 			fail(err.Error())
 			return
@@ -630,7 +712,9 @@ func (s *Server) runDeploy(ctx context.Context, id string) {
 func (s *Server) startDeploy(ctx context.Context, p model.Project, env model.Environment, d model.Deploy) (deployWhere, error) {
 	at := deployWhere{by: d.By}
 	prev, hasPrev := s.Store.LiveDeploy(p.ID, env.Name)
-	req := deployRun{ID: d.ID, Environment: env.Name, Commit: d.Ref, Artifact: d.Artifact, Rollback: d.Rollback}
+	known := env.RequireTests && !d.Rollback && s.testsKnown(p, d.Ref)
+	req := deployRun{ID: d.ID, Environment: env.Name, Commit: d.Ref, Artifact: d.Artifact, Rollback: d.Rollback,
+		Tests: env.RequireTests && !d.Rollback && !known, SkipBuild: d.Promote}
 	if hasPrev {
 		req.PrevCommit = prev.Commit
 	}
@@ -667,8 +751,9 @@ func (s *Server) startDeploy(ctx context.Context, p model.Project, env model.Env
 		if hasPrev {
 			x.PrevCommit, x.PrevDeploy = prev.Commit, prev.ID
 		}
+		x.TestsPassed = known
 		first := model.DeployDeploying
-		if env.BuildCommand != "" {
+		if env.BuildCommand != "" && !req.SkipBuild || req.Tests {
 			first = model.DeployBuilding
 		}
 		x.SetStatus(first, time.Now())
@@ -765,9 +850,10 @@ func (s *Server) followDeploy(ctx context.Context, p model.Project, id string, a
 			}
 			if st.Phase.Active() {
 				_, _ = s.Store.UpdateDeploy(id, func(x *model.Deploy) error {
-					if x.Status == st.Phase && x.Deployed == st.Deployed && len(x.Checks) == len(st.Checks) {
+					if x.Status == st.Phase && x.Deployed == st.Deployed && len(x.Checks) == len(st.Checks) && (x.TestsPassed || !st.TestsPassed) {
 						return errUnchanged
 					}
+					x.TestsPassed = x.TestsPassed || st.TestsPassed
 					if x.Status != st.Phase {
 						x.SetStatus(st.Phase, time.Now())
 					}
@@ -810,6 +896,7 @@ func (s *Server) finishDeploy(id string, st deploy.State, log string) {
 			x.URL = st.URL
 		}
 		x.Deployed, x.Checks = x.Deployed || st.Deployed, st.Checks
+		x.TestsPassed = x.TestsPassed || st.TestsPassed
 		if st.Phase == model.DeployLive {
 			x.SetStatus(model.DeployLive, now)
 		} else {
@@ -1093,6 +1180,19 @@ func (s *Server) startDeployHere(ctx context.Context, p model.Project, req deplo
 		}
 	}
 
+	test := ""
+	if req.Tests {
+		if why := p.HeldCommands[model.CmdTest]; why != "" {
+			return out, fmt.Errorf("%w: %s needs passing tests, and the test command may not run here: %s", errForbidden, e.Name, why)
+		}
+		if test = model.CleanScript(p.TestCommand); test == "" {
+			return out, fmt.Errorf("%w: %s needs passing tests, and the project has no test command", errBadRequest, e.Name)
+		}
+	}
+	build := e.BuildCommand
+	if req.SkipBuild {
+		build = "" // a promotion: the artifact is built already
+	}
 	secrets, err := deploy.ReadEnvFile(s.envDir(), e.Name)
 	if err != nil {
 		return out, fmt.Errorf("%w: the %s env file: %v", errBadRequest, e.Name, err)
@@ -1114,7 +1214,7 @@ func (s *Server) startDeployHere(ctx context.Context, p model.Project, req deplo
 		vars = append(vars, model.DeployVarRollback+"=1")
 	}
 	env := append(append(base, secrets...), vars...)
-	job := deploy.Job{ID: req.ID, Dir: dir, Build: e.BuildCommand, Deploy: e.DeployCommand, Verify: e.VerifyCommand, Env: env, Secrets: secrets,
+	job := deploy.Job{ID: req.ID, Dir: dir, Test: test, Build: build, Deploy: e.DeployCommand, Verify: e.VerifyCommand, Env: env, Secrets: secrets,
 		URL: e.URL, HealthPath: e.HealthPath, HealthStatus: e.HealthStatus, HealthWait: e.HealthWait(), Soak: time.Duration(e.Soak) * time.Second}
 	// It runs on, whoever asked; Dash stopping stops it.
 	if err := s.deployRuns.Start(context.WithoutCancel(ctx), key, job); err != nil {
