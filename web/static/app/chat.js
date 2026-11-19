@@ -3,13 +3,13 @@ import { $, chatSuggestOn, entering, h, ib } from "./dom.js";
 import * as store from "./store.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on, request } from "./api.js";
-import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
+import { ask, attempt, copy, fail, toast } from "./dialogs.js";
 import { attachBox, attachThumb } from "./attachments.js";
 import { state } from "./state.js";
 import { showView } from "./nav.js";
 import { projectKey } from "./events.js";
 import { duration } from "./activity.js";
-import { closeDetail, openTodo } from "./detail.js";
+import { closeDetail } from "./detail.js";
 import { canRework, reworkLabel, reworkTodo, takeReviewNext } from "./drawmode.js";
 import { describePerm } from "./review.js";
 import { loadTodoChat, renderChatBadge, renderChatDots, renderChatPane, viewingChat } from "./chatpane.js";
@@ -755,24 +755,8 @@ function chatPermCard(p, decide) {
       ib({ class: "btn danger", onclick: answer("deny") }, "x", "Deny")));
 }
 
-// "Draft task" saves the answer as a draft right away, its instructions
-// cleaned up first (as the form's Clean up does); if that fails the answer is
-// kept as it is. key: the project a project chat is about; its tasks go there
-// even when another project is selected. The general chat's go to the selected project.
-export const chatActions = (pick, key) => (answer) => h("div", { class: "msg-actions" },
-  ib({ class: "link", onclick: attempt(async (e) => {
-    const p = (key && state.projects?.find((x) => projectKey(x) === key)) || (!key && state.project);
-    if (!p) return toast(pick && !state.projects?.length ? "Create a project first" : "Select a project first", true);
-    await busy(e.currentTarget, async () => {
-      let prompt = answer.trim(), cleaned = true;
-      try { prompt = (await api("POST", "/api/refine", { prompt })).prompt?.trim() || prompt; } catch { cleaned = false; }
-      const t = await api("POST", `/api/projects/${p.id}/todos`, { title: "", prompt, enqueue: false }, p.prefix || "");
-      const other = projectKey(p) !== projectKey(state.project);
-      if (!other) state.lane = "draft";
-      toast(`Saved as draft${other ? ` in ${p.name}` : ""}${cleaned ? "" : " (instructions not cleaned up)"}`,
-        { tone: "ok", action: other || !t?.id ? undefined : openTodo(t.id) });
-    }, { label: "Saving draft…" });
-  }) }, "plus", "Draft task"),
+// The row under a chat answer (general, project and goal chats).
+export const chatActions = (answer) => h("div", { class: "msg-actions" },
   ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
 
 // Where the general chat runs. The hub never runs Claude: the chat runs on
@@ -857,7 +841,7 @@ export const chat = makeChat({
   target: () => { const runner = chatRunner.choice(); return runner ? { runner } : {}; },
   onRunner: (name) => chatRunner.render(name),
   clear: () => api("DELETE", "/api/chat"),
-  actions: chatActions(true),
+  actions: chatActions,
   cwd: $("#chat-cwd"),
   resume: true,
   onState: paneChatState("general", () => chat),

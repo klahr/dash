@@ -2,7 +2,7 @@ import { $, $$, h, ib, ico, resizeHandle } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { api, request } from "./api.js";
-import { attempt, copy, fail, toast } from "./dialogs.js";
+import { attempt, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { chatPage, renderNavActive } from "./nav.js";
 import { baseBranch, projectKey } from "./events.js";
@@ -79,7 +79,7 @@ export function projectChatFor(p) {
     saved: () => { if (!pc.chat.busy) loadProjectChat(proj(), true).catch(fail); },
     // Sent from an out-of-date copy: the server's is the one to show.
     stale: () => loadProjectChat(proj(), true).catch(fail),
-    actions: chatActions(false, key),
+    actions: chatActions,
     // Changes saved from elsewhere during a turn here load once it ends.
     onState: () => {
       paneState();
@@ -162,7 +162,7 @@ function goalChatFor(t) {
     clear: async () => { throw new Error("A goal's conversation can't be cleared: it is what its coordinator remembers."); },
     cwd: panel.querySelector(".chat-cwd"),
     saved: () => { if (!gc.chat.busy) { gc.loaded = false; loadGoalChat(gc).catch(fail); } },
-    actions: (answer) => h("div", { class: "msg-actions" }, ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy")),
+    actions: chatActions,
     onState: paneChatState(t.key, () => gc.chat),
   });
   goalChats.set(t.key, gc);
