@@ -1550,6 +1550,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 /* A value to copy, with its Copy button (the claude.ai connector, a wall's link). */
 .copy-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
 .copy-text { flex: 1; min-width: 0; margin: 0; padding: 8px 10px; border-radius: var(--r-s); border: 1px solid var(--line); background: var(--bg); font: var(--fs-s)/1.5 var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; }
+.copy-text .nobreak { white-space: nowrap; }
 .copy-row .btn { flex: none; }
 .hint.warn { color: var(--running); }
 
