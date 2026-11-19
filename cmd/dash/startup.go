@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -221,7 +222,9 @@ func parseFlags(args []string, runnerMode bool) *options {
 		f.Usage = func() {
 			fmt.Fprintf(f.Output(), "usage: dash runner [flags]          run this computer as a runner of a hub\n"+
 				"       dash runner %s [-h]\n\nflags:\n", strings.Join(runnerctl.Commands, "|"))
-			printFlags(f, func(name string) bool { return name == "hub-commands" || name == "pause-at" })
+			printFlags(f, func(name string) bool {
+				return slices.Contains(hubOnlyFlags, name) || slices.Contains(removedFlags, name) || name == "hub-commands" || name == "pause-at"
+			})
 		}
 		f.StringVar(&o.hubServer, "server", "", "the hub's URL, e.g. https://dash.example.com (saved after registering)")
 		f.StringVar(&o.regCode, "code", "", "registration code from the hub's Runners page (only the first time, or to register again)")
@@ -302,6 +305,8 @@ type app struct {
 	reporter                            *dispatch.Reporter // runner
 	update                              *selfUpdate        // runner
 	mcpURL, permURL                     string
+	ln                                  net.Listener // -addr, bound before any state is made
+	madeUpUser                          bool         // a runner's "runner" account, which nobody signs in with
 }
 
 // start starts Dash with the options and serves until it is stopped. A
@@ -311,6 +316,13 @@ func start(o *options) *selfUpdate {
 	a := &app{o: o}
 	if o.runnerMode {
 		a.update = newSelfUpdate(o.dataDir) // first: a binary that crashes on start is put back
+	}
+	// Bind -addr before making the data directory, the database or the
+	// first account, so a busy port stops Dash before it changes anything.
+	// A runner without -addr listens only through its tunnel.
+	if !o.runnerMode || o.addrSet {
+		a.ln = listen(o.addr)
+		defer a.ln.Close()
 	}
 	a.openState()
 	defer a.st.Close()
@@ -400,6 +412,7 @@ func (a *app) openState() {
 		// Nobody signs in to a runner without a listener of its own; the hub
 		// reaches it through the tunnel.
 		a.user, a.pass = "runner", rand.Text()
+		a.madeUpUser = true
 	}
 	// A hub and a runner on one computer each have their own data directory.
 	if o.runnerMode {
@@ -420,7 +433,9 @@ func (a *app) openState() {
 	a.events.ProjectOrg = st.ProjectOrg // dashboards get only their org's events
 	// The first start makes DASH_USERNAME / DASH_PASSWORD the first user;
 	// later starts keep that user's name and password in step with them.
-	if err := st.Accounts().Bootstrap(a.user, a.pass); err != nil {
+	accounts := st.Accounts()
+	accounts.Quiet = a.madeUpUser // not an account anyone set up or signs in with
+	if err := accounts.Bootstrap(a.user, a.pass); err != nil {
 		fatal("accounts", "err", err) // refuse to run open: Dash executes commands
 	}
 	a.authn = auth.New(st.Accounts())
@@ -429,6 +444,11 @@ func (a *app) openState() {
 	if a.authn.Lockout, err = lockoutConfig(o.loginPerIP, o.loginGlobal, o.loginWindow); err != nil {
 		fatal("sign-in lockout", "err", err)
 	}
+	l, level := a.authn.Lockout, slog.LevelInfo
+	if a.madeUpUser {
+		level = slog.LevelDebug // nobody signs in to this runner
+	}
+	slog.Log(context.Background(), level, "sign-in lockout", "per_ip", l.PerIP, "global", l.Global, "window", l.Window)
 	days, err := authLogDays(o.authLogDays)
 	if err != nil {
 		fatal("sign-in log", "err", err)
@@ -1220,12 +1240,40 @@ func (a *app) serve() {
 	slog.Info("dash listening", "url", scheme+"://"+o.addr, "data", o.dataDir)
 	var err error
 	if a.useTLS {
-		err = srv.ListenAndServeTLS(o.tlsCert, o.tlsKey)
+		err = srv.ServeTLS(a.ln, o.tlsCert, o.tlsKey)
 	} else {
-		err = srv.ListenAndServe()
+		err = srv.Serve(a.ln)
 	}
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fatal("server", "err", err)
 	}
-	<-shutDown // ListenAndServe returns at once; Shutdown waits for the requests
+	<-shutDown // Serve returns at once; Shutdown waits for the requests
+}
+
+// listen binds addr (-addr), or exits with what to do when it can't.
+func listen(addr string) net.Listener {
+	ln, err := net.Listen("tcp", addr)
+	if err == nil {
+		return ln
+	}
+	if addrInUse(err) {
+		port := addr
+		if _, p, splitErr := net.SplitHostPort(addr); splitErr == nil {
+			port = p
+		}
+		fatal("port "+port+" is in use: is another Dash running? Choose another with -addr", "err", err)
+	}
+	fatal("listen", "addr", addr, "err", err)
+	return nil
+}
+
+// addrInUse reports whether err is a bind to an address something else
+// already listens on. Windows reports WSAEADDRINUSE, which isn't
+// syscall.EADDRINUSE there, so its message is matched too.
+func addrInUse(err error) bool {
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "address already in use") || strings.Contains(msg, "Only one usage of each socket address")
 }

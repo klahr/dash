@@ -137,6 +137,15 @@ func warnUnlinked(ps []model.Project) {
 var runnerFlags = []string{"projects", "parallel", "claude", "claude-args", "claude-sandbox", "sign-commits", "chat", "chat-tools", "chat-allow",
 	"permission-prompts", "editor", "title-model", "cleanup-days"}
 
+// hubOnlyFlags are about what only the hub does: signup and its email,
+// billing, organization domains and dispatching to runners. A runner
+// accepts them and ignores them, so `dash runner -h` leaves them out. (A
+// runner with an -addr of its own serves pages with sign-in, so the
+// sign-in, proxy and branding flags stay.)
+var hubOnlyFlags = []string{"signup", "smtp-host", "smtp-port", "smtp-user", "smtp-from",
+	"stripe-secret-key", "stripe-webhook-secret", "stripe-price", "billing-trial-days", "billing-grace",
+	"org-domain", "org-reserved", "runner-grace"}
+
 // printFlags is fs.PrintDefaults without the flags hide picks.
 func printFlags(fs *flag.FlagSet, hide func(name string) bool) {
 	shown := flag.NewFlagSet(fs.Name(), flag.ContinueOnError)
@@ -226,7 +235,6 @@ func lockoutConfig(perIP, global int, window time.Duration) (auth.Lockout, error
 	if l.Global > 0 && l.Global < l.PerIP {
 		slog.Warn("sign-in lockout: the global limit is below the per-address one, so one address can lock everyone out", "global", l.Global, "per_ip", l.PerIP)
 	}
-	slog.Info("sign-in lockout", "per_ip", l.PerIP, "global", l.Global, "window", l.Window)
 	return l, nil
 }
 

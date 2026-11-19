@@ -343,12 +343,10 @@ func startHub(t *testing.T, bin string, env []string, args ...string) (*proc, st
 			code, _ := api.try("GET", "/api/version", nil)
 			return code != 0
 		})
+		// The hub binds before it says "dash listening", so a lost port
+		// shows before it.
 		if !lostPort() {
-			// A failed bind follows "dash listening" at once.
-			time.Sleep(200 * time.Millisecond)
-			if !lostPort() {
-				return p, addr, api
-			}
+			return p, addr, api
 		}
 		t.Logf("another process took %s before the hub bound it; trying another port", addr)
 		p.stop()

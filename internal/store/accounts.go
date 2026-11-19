@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -24,6 +25,9 @@ import (
 type Accounts struct {
 	db *sql.DB
 	s  *Store // reloaded when Bootstrap moves records between orgs
+	// Quiet logs the first account's creation at debug level: a runner's
+	// made-up account, which nobody set up or signs in with.
+	Quiet bool
 }
 
 // Accounts returns the store's accounts.
@@ -288,7 +292,11 @@ func (a *Accounts) Bootstrap(username, password string) error {
 		if err != nil {
 			return fmt.Errorf("create the first account: %w", err)
 		}
-		slog.Info("created the first account from DASH_USERNAME", "username", username)
+		level := slog.LevelInfo
+		if a.Quiet {
+			level = slog.LevelDebug
+		}
+		slog.Log(context.Background(), level, "created the first account from DASH_USERNAME", "username", username)
 	case username != "" && password != "":
 		if err := a.syncEnvUser(username, password, now); err != nil {
 			return err
