@@ -54,7 +54,9 @@ export async function openDetail(id, { pane = "timeline" } = {}) {
   $("#detail").hidden = false;
   $("#scrim").hidden = !desktop.matches;
   renderDetail();
-  if (state.pane === "timeline") todoChat.input.focus();
+  // On a phone, focus in the composer would raise the keyboard and hide the
+  // action bar (Approve, Close…): focus Back there instead.
+  if (state.pane === "timeline") (desktop.matches ? todoChat.input : $("#d-close")).focus();
   else $("#d-diff")?.focus({ preventScroll: true });
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
   $(`.todo[data-id="${id}"]`)?.classList.add("selected");
