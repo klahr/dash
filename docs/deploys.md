@@ -34,8 +34,7 @@ Open **Deploys** in the sidebar (`gd`). Each environment has a card:
   release tag";
 - how far it is ahead of the others ("staging is 3 commits ahead of production");
 - a deploy that is running or queued;
-- on a hub, the runners its deploys may run on, and a warning when none of them can, or none has
-  its secrets file.
+- on a hub, the runners its deploys may run on, and a warning when none of them can.
 
 Press **Deploy** on a card. Dash deploys the tip of the default branch, as origin has it.
 **Deploy again** in a deploy's pane deploys that deploy's commit again. When **Deploy** is greyed
@@ -263,8 +262,9 @@ ignores all of this still works.
 
 ## Secrets
 
-Secrets stay on the runners. Put an environment's secrets in a file on each runner that deploys
-it:
+Secrets stay on the runners. An environment that needs secrets gets a file on each runner that
+deploys it. The file is optional: with none, deploys run with no extra secrets, and Dash doesn't
+warn.
 
 ```sh
 mkdir -p ~/.dash/env
@@ -282,9 +282,7 @@ lines and `#` comments are skipped. The file is named after the environment.
 The build and deploy commands get these as environment variables. The runner masks their values
 (those of 4 characters or more) in the log before it sends it to the hub.
 
-The hub never sees the values. A runner only tells it which environments it has a file for, so
-**Project settings → Deploy** and the Deploys page can warn, for example: "No runner with prod has
-a production env file".
+The hub never sees the values. A runner only tells it which environments it has a file for.
 
 ## API
 

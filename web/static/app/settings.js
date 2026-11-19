@@ -293,7 +293,7 @@ function fillLiveOn(sel, e) {
 }
 
 // renderEnvHints says, under each environment, where its deploys run and
-// whether its secrets file is there.
+// where its (optional) secrets file goes.
 function renderEnvHints() {
   $$("#settings-envs .env-edit").forEach((li, i) => {
     const e = envDraft[i], hint = $(".env-hint", li), name = (e?.name || "").trim().toLowerCase() || "<name>";
@@ -306,10 +306,7 @@ function renderEnvHints() {
     }
     const runners = deployRunners(typedRunsOn(), e.runs_on || []);
     matchList(hint, runners, { lead: "Deploys on", none: "No runner the project runs on has these labels: deploys fail." });
-    if (runners.length && !runners.some((r) => r.reported?.env_files?.includes(name))) {
-      const where = e.runs_on?.length ? e.runs_on.join(", ") : "this project";
-      hint.append(h("span", { class: "warn" }, ` · No runner with ${where} has a ${name} env file (~/.dash/env/${name}.env): deploys run without its secrets.`));
-    }
+    if (runners.length) hint.append(" · Secrets: each runner's ", h("code", {}, `~/.dash/env/${name}.env`), ", if there.");
   });
 }
 

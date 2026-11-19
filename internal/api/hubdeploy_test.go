@@ -192,14 +192,14 @@ func TestHubDeploysOnlyOnRunnersWithItsLabels(t *testing.T) {
 		t.Errorf("the deploy before: %s", old.Status)
 	}
 
-	// The Deploys page: what is live, where it deploys, and that no runner
-	// said it has the secrets file.
+	// The Deploys page: what is live and where it deploys. No runner has
+	// the secrets file, which is optional: no warning.
 	w = call(owner.User, "GET", pp+"/environments", "")
 	var list []envStatus
 	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || len(list) != 1 {
 		t.Fatalf("environments: %v %s", err, w.Body)
 	}
-	if e := list[0]; e.Live == nil || e.Live.ID != next.ID || len(e.Runners) != 1 || !strings.Contains(e.Warning, "production env file") {
+	if e := list[0]; e.Live == nil || e.Live.ID != next.ID || len(e.Runners) != 1 || e.Runners[0].EnvFile || e.Warning != "" {
 		t.Errorf("environment: %+v", e)
 	}
 	w = call(owner.User, "GET", pp+"/deploys", "")

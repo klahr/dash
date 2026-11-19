@@ -215,31 +215,20 @@ func (s *Server) listEnvironments(w http.ResponseWriter, r *http.Request) {
 }
 
 // envRunners are the runners of p that deploy to e, and a warning when
-// none of them can or none has e's secrets file.
+// none of them can. A missing secrets file is no warning: it is optional.
 func (s *Server) envRunners(p model.Project, e model.Environment) ([]envRunner, string) {
 	out := []envRunner{}
-	files := 0
 	for _, r := range s.projectRunners(p) {
 		if !r.Deploys(p, e) {
 			continue
 		}
-		has := r.HasEnvFile(e.Name)
-		if has {
-			files++
-		}
-		out = append(out, envRunner{ID: r.ID, Name: r.Name, Online: r.Online, EnvFile: has})
-	}
-	where := "this project"
-	if len(e.RunsOn) > 0 {
-		where = strings.Join(e.RunsOn, ", ")
+		out = append(out, envRunner{ID: r.ID, Name: r.Name, Online: r.Online, EnvFile: r.HasEnvFile(e.Name)})
 	}
 	switch {
 	case len(out) == 0 && len(e.RunsOn) > 0:
-		return out, fmt.Sprintf("No runner of this project has the labels %s: deploys to %s fail.", where, e.Name)
+		return out, fmt.Sprintf("No runner of this project has the labels %s: deploys to %s fail.", strings.Join(e.RunsOn, ", "), e.Name)
 	case len(out) == 0:
 		return out, "No runner works on this project: deploys fail."
-	case files == 0:
-		return out, fmt.Sprintf("No runner with %s has a %s env file (~/.dash/env/%s.env): deploys run without its secrets.", where, e.Name, e.Name)
 	}
 	return out, ""
 }

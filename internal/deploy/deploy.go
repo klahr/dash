@@ -6,8 +6,8 @@
 // The hub keeps the record of every deploy (model.Deploy) and never sees a
 // secret: each runner keeps an environment's secrets in a file of its own,
 // ~/.dash/env/<environment>.env (KEY=VALUE lines), passed to the commands
-// as environment variables. The hub only learns which environments a
-// runner has a file for (EnvFiles), so it can warn when none has.
+// as environment variables. The file is optional. The hub only learns which
+// environments a runner has a file for (EnvFiles).
 package deploy
 
 import (
