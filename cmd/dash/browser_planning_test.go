@@ -155,7 +155,9 @@ func TestBrowserPlannerShell(t *testing.T) {
 	b.waitJS("the planner's sections", `[...document.querySelectorAll("#account-sheet .rail-item")].filter((x) => !x.hidden).map((x) => x.dataset.rail).join() === "picture,twofactor,data"`)
 	b.until("two-factor sign-in", `document.querySelector("#twofactor-body button")?.textContent.includes("Set up")`,
 		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=twofactor]`)))
-	b.do("close Account", chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
+	// Closed for sure: an Account still open (modal) takes every click below.
+	b.until("close Account", `!document.querySelector("#account-sheet").open`,
+		chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
 
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("no bottom nav, the drawer closed", `!matchMedia("(min-width: 1024px)").matches &&

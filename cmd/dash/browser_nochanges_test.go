@@ -102,7 +102,10 @@ func TestBrowserCloseNoChanges(t *testing.T) {
 		chromedp.Click(chromedp.ID("settings-sheet-rail-board")))
 	b.waitJS("the setting, off", `(() => { const el = document.querySelector("#settings-form [name=close_no_changes]"); return el && !el.checked && el.getBoundingClientRect().width > 0; })()`)
 	shot("nochanges-settings")
-	b.do("turn it on", chromedp.Click(chromedp.CSS(`#settings-form [name=close_no_changes]`)))
+	// Clicked until checked: a click lost while the sheet settles would
+	// leave nothing to save. Checking it saves it (its change event).
+	b.until("turn it on", `document.querySelector("#settings-form [name=close_no_changes]").checked`,
+		chromedp.Click(chromedp.CSS(`#settings-form [name=close_no_changes]`)))
 	waitFor(t, nil, "the setting saved", func() bool {
 		var p struct {
 			CloseNoChanges bool `json:"close_no_changes"`
