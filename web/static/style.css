@@ -315,7 +315,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 }
 .todo {
   --c: var(--muted);
-  position: relative; display: grid; grid-template-columns: 24px 1fr auto; align-items: start; gap: 4px 14px;
+  position: relative; display: grid; grid-template-columns: 24px minmax(8em, 1fr) minmax(0, auto); align-items: start; gap: 4px 14px;
   width: 100%; text-align: left; padding: 14px 16px; min-height: 64px; cursor: pointer;
 }
 .todo:hover, .todo.selected { background: var(--surface); }
@@ -404,7 +404,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .todo-sub.activity .act-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .act-spin { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--running) 30%, transparent); border-top-color: var(--running); animation: spin .8s linear infinite; vertical-align: -1px; }
 @media (prefers-reduced-motion: reduce) { .act-spin { animation-duration: 2.4s; } }
-.todo-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; padding-top: 2px; }
+/* The side column may shrink (.todo's minmax(0, auto)) so the title keeps its width; what
+   is in it then keeps inside it, and the long ones (a link, a runner's name) end in an ellipsis. */
+.todo-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 0; color: var(--faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; padding-top: 2px; }
+.todo-side > * { max-width: 100%; }
 /* Below desktop the side column sits beside the title; a card in review has four
    action chips, too wide for that, so its side goes under the title (as on desktop). */
 @media (max-width: 1023.98px) {
@@ -419,7 +422,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 /* A card's small word tags (paused, reviewing, a PR, CI, checks, a revert): one size; each sets its colour. */
 :is(.failed-tag, .paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag) { font-size: var(--fs-xs); font-weight: 600; }
 /* A link to other tasks (a conflict, a note, an active_work lookup): one short line, the rest on hover. */
-.link-tag, .dep-link.link-tag { display: inline-block; color: var(--accent); text-decoration: none; max-width: min(22em, 100%); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-tag, .dep-link.link-tag { display: inline-block; color: var(--accent); text-decoration: none; max-width: min(14em, 100%); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link-tag.conflict-tag, .dep-link.link-tag.conflict-tag, .conflicts { color: var(--running); }
 .links { display: flex; flex-direction: column; gap: 2px; flex-basis: 100%; overflow-wrap: anywhere; }
 /* A run log entry about another task (a conflict note, an active_work call), with links to it. */
@@ -1463,7 +1466,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 #settings-runners .runner-pick .runner-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #settings-runners .runner-pick .hint { flex: 1; min-width: 0; margin: 0; text-align: right; font-size: var(--fs-s); overflow-wrap: anywhere; }
 #settings-runners-hint { margin-top: 8px; }
-.runner-tag { color: var(--muted); }
+.runner-tag { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .todo-sub.waiting-runner { color: var(--running); }
 .runner-version { font: var(--fs-xs)/1.5 var(--mono); letter-spacing: 0; }
 .runner-version.warn { border-color: var(--running); color: var(--running); }
@@ -3390,7 +3393,7 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-cards[hidden] { display: none; }
 .pl-card { position: relative; }
 .pl-card .todo {
-  grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; min-height: 0; padding: 12px 14px;
+  grid-template-columns: minmax(8em, 1fr) minmax(0, auto); gap: 6px 12px; min-height: 0; padding: 12px 14px;
   border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); cursor: pointer;
 }
 .pl-card .todo:hover { border-color: color-mix(in srgb, var(--faint) 60%, var(--line)); box-shadow: var(--shadow-1); }
