@@ -31,7 +31,7 @@ func TestBoards(t *testing.T) {
 		t.Errorf("a second board named web: %v", err)
 	}
 	_, ops, _ := s.AddBoard(p.ID, "Ops")
-	if p, err = s.RenameBoard(p.ID, ops.ID, "Infra"); err != nil || p.BoardName(ops.ID) != "Infra" {
+	if p, err = s.RenameBoard(p.ID, ops.ID, "Infra"); err != nil || p.Boards[p.BoardIndex(ops.ID)].Name != "Infra" {
 		t.Fatalf("RenameBoard = %+v, %v", p.Boards, err)
 	}
 	if _, err := s.RenameBoard(p.ID, ops.ID, "Web"); !errors.Is(err, ErrBadBoard) {

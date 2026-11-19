@@ -54,15 +54,6 @@ func (p Project) BoardIndex(id string) int {
 	return -1
 }
 
-// BoardName is the name of p's board id (the main board's for "", and for
-// a board that is gone).
-func (p Project) BoardName(id string) string {
-	if i := p.BoardIndex(id); id != "" && i >= 0 {
-		return p.Boards[i].Name
-	}
-	return MainBoardName
-}
-
 // FindBoard is the id of p's board ref names: its id, or its name (letter
 // case aside; the main board's is ""). ok is false for no such board.
 func (p Project) FindBoard(ref string) (id string, ok bool) {

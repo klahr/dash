@@ -1245,14 +1245,6 @@ func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) er
 	return nil
 }
 
-// Online reports whether runner id has a tunnel now.
-func (h *Hub) Online(id string) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	_, ok := h.live[id]
-	return ok
-}
-
 // UserHeader names the hub's user a request to a runner is made for (see
 // WithUser). The runner runs Claude only for its owner: it compares this
 // with the user it was registered by. Proxy strips it from browsers'
