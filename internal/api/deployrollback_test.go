@@ -82,6 +82,17 @@ func TestDeployChecksRollbackAndFailure(t *testing.T) {
 		})
 		return d
 	}
+	// settled is deploy id once ok holds, or as it is when the wait runs
+	// out: a rollback goes live before the deploys it replaces are marked.
+	settled := func(id string, ok func(model.Deploy) bool) model.Deploy {
+		t.Helper()
+		d, _ := raw(s).GetDeploy(id)
+		for deadline := time.Now().Add(waitTimeout); !ok(d) && time.Now().Before(deadline); {
+			time.Sleep(10 * time.Millisecond)
+			d, _ = raw(s).GetDeploy(id)
+		}
+		return d
+	}
 	deploy := func(commit string) model.Deploy {
 		t.Helper()
 		w := call("POST", "/api/projects/"+p.ID+"/deploys", `{"environment":"staging","commit":"`+commit+`"}`)
@@ -153,10 +164,10 @@ func TestDeployChecksRollbackAndFailure(t *testing.T) {
 	if got := deployed(); got != commits[0]+" rollback=1" {
 		t.Errorf("the rollback's script ran with %q", got)
 	}
-	if x, _ := raw(s).GetDeploy(d2.ID); x.Status != model.DeployRolledBack || x.RolledBackBy != r1.ID {
+	if x := settled(d2.ID, func(x model.Deploy) bool { return x.RolledBackBy != "" }); x.Status != model.DeployRolledBack || x.RolledBackBy != r1.ID {
 		t.Errorf("the deploy rolled back: %s by %q", x.Status, x.RolledBackBy)
 	}
-	if x, _ := raw(s).GetDeploy(d1.ID); x.Status != model.DeploySuperseded {
+	if x := settled(d1.ID, func(x model.Deploy) bool { return x.Status != model.DeployLive }); x.Status != model.DeploySuperseded {
 		t.Errorf("the deploy rolled back to stays superseded: %s", x.Status)
 	}
 	// Now only d1's commit went live without being rolled back: nothing else to go to.
@@ -185,10 +196,10 @@ func TestDeployChecksRollbackAndFailure(t *testing.T) {
 	if r2.Status != model.DeployLive || r2.Trigger != model.DeployByAutoRollback || r2.Commit != commits[0] || r2.RollbackTo != r1.ID {
 		t.Fatalf("automatic rollback: %+v", r2)
 	}
-	if x, _ := raw(s).GetDeploy(d3.ID); x.Status != model.DeployFailed || x.RolledBackBy != r2.ID {
+	if x := settled(d3.ID, func(x model.Deploy) bool { return x.RolledBackBy != "" }); x.Status != model.DeployFailed || x.RolledBackBy != r2.ID {
 		t.Errorf("the failed deploy: %s, rolled back by %q", x.Status, x.RolledBackBy)
 	}
-	if x, _ := raw(s).GetDeploy(r1.ID); x.Status != model.DeploySuperseded {
+	if x := settled(r1.ID, func(x model.Deploy) bool { return x.Status != model.DeployLive }); x.Status != model.DeploySuperseded {
 		t.Errorf("the rollback before: %s", x.Status)
 	}
 
