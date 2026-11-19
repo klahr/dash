@@ -23,6 +23,7 @@ const (
 	NotifyDisk       NotifyEvent = "runner.disk"       // a runner's free disk space fell below its threshold
 	NotifyGoal       NotifyEvent = "goal.attention"    // a goal waits for the user, is done or ran out of budget
 	NotifyIssue      NotifyEvent = "issue.new"         // a scan or Claude reported a new issue
+	NotifyDeploy     NotifyEvent = "deploy.failed"     // a deploy failed (its scripts or its checks)
 	NotifyTest       NotifyEvent = "webhook.test"      // the settings' "Send test" button
 	// NotifySummary is a user's daily or weekly summary. A webhook gets it
 	// when the user chose it as a summary destination, whatever its events.
@@ -32,12 +33,12 @@ const (
 // NotifyEvents are the events a webhook can subscribe to, in display order.
 // NotifyBehind and NotifyIssue are never on unless chosen (see
 // DefaultNotifyEvents).
-var NotifyEvents = []NotifyEvent{NotifyReview, NotifyFailed, NotifyMerged, NotifyPermission, NotifyGoal, NotifyIssue, NotifyBuild, NotifyDisk, NotifyBehind}
+var NotifyEvents = []NotifyEvent{NotifyReview, NotifyFailed, NotifyMerged, NotifyPermission, NotifyGoal, NotifyIssue, NotifyBuild, NotifyDeploy, NotifyDisk, NotifyBehind}
 
 // DefaultNotifyEvents are a new webhook's events: all but NotifyBehind,
 // which only matters to whoever sits at a runner, and NotifyIssue, which
 // can be many at once after a scan: both are opt-in.
-var DefaultNotifyEvents = []NotifyEvent{NotifyReview, NotifyFailed, NotifyMerged, NotifyPermission, NotifyGoal, NotifyBuild, NotifyDisk}
+var DefaultNotifyEvents = []NotifyEvent{NotifyReview, NotifyFailed, NotifyMerged, NotifyPermission, NotifyGoal, NotifyBuild, NotifyDeploy, NotifyDisk}
 
 // Webhook formats: how a delivery is shaped for the receiving service.
 const (

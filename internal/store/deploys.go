@@ -213,6 +213,7 @@ func (s *Store) CardsLinkedTo(todoIDs []string) ([]model.DeployShipped, error) {
 func cloneDeploy(d model.Deploy) model.Deploy {
 	d.Phases = slices.Clone(d.Phases)
 	d.Shipped = slices.Clone(d.Shipped)
+	d.Checks = slices.Clone(d.Checks)
 	if d.ExitCode != nil {
 		c := *d.ExitCode
 		d.ExitCode = &c

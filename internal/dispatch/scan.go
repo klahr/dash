@@ -188,7 +188,7 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 				link.TestCommand = ""
 			case model.CmdDeploy:
 				for i := range link.Environments {
-					link.Environments[i].DeployCommand, link.Environments[i].BuildCommand = "", ""
+					link.Environments[i].ClearCommands()
 				}
 			case model.CmdSetup:
 				link.SetupCommand = ""
@@ -197,7 +197,7 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 			default:
 				for i, e := range link.Environments {
 					if kind == model.HeldEnvKind(e.Name) {
-						link.Environments[i].DeployCommand, link.Environments[i].BuildCommand = "", ""
+						link.Environments[i].ClearCommands()
 					}
 				}
 			}

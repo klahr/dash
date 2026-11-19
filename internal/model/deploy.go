@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -35,10 +36,62 @@ type Environment struct {
 	// and checked once a deploy is done (verifying). A deploy's script may
 	// report another (DeployOutputs).
 	URL string `json:"url,omitempty"`
+
+	// The checks that decide whether a deploy went live, once its deploy
+	// command exited 0 ("deployed"): the health check, the verify command,
+	// then the soak time. Any one failing fails the deploy.
+	//
+	// HealthPath is the path on the URL the health check asks for
+	// ("/healthz"; "": the URL itself). HealthStatus is the status it wants
+	// (0: any below 500). HealthTimeout is how long, in seconds, it keeps
+	// trying while the deploy comes up (0: DefaultHealthTimeout).
+	HealthPath    string `json:"health_path,omitempty"`
+	HealthStatus  int    `json:"health_status,omitempty"`
+	HealthTimeout int    `json:"health_timeout,omitempty"`
+	// VerifyCommand, if any, runs after the health check, in the same
+	// checkout: smoke tests, a bash script given the URL as DASH_URL. Exit
+	// code 0 passes.
+	VerifyCommand string `json:"verify_command,omitempty"`
+	// Soak is how long, in seconds, a deploy that passed its checks is
+	// watched before it is live: its health is checked again every so
+	// often (with a URL). 0: none.
+	Soak int `json:"soak,omitempty"`
+	// AutoRollback rolls a deploy whose checks failed back to the last good
+	// deploy at once (see RollbackTarget).
+	AutoRollback bool `json:"auto_rollback,omitempty"`
 }
 
+// Limits of an environment's checks.
+const (
+	DefaultHealthTimeout = 60
+	MaxHealthTimeout     = 600
+	MaxSoak              = 3600
+)
+
 // HasCommands reports whether e runs anything.
-func (e Environment) HasCommands() bool { return e.DeployCommand != "" || e.BuildCommand != "" }
+func (e Environment) HasCommands() bool {
+	return e.DeployCommand != "" || e.BuildCommand != "" || e.VerifyCommand != ""
+}
+
+// ClearCommands empties what e runs (held on a runner that mustn't run it).
+func (e *Environment) ClearCommands() { e.DeployCommand, e.BuildCommand, e.VerifyCommand = "", "", "" }
+
+// HealthURL is what e's health check asks for at url (a deploy's, else
+// e's own): url with HealthPath on it ("" without a url).
+func (e Environment) HealthURL(url string) string {
+	if url == "" || e.HealthPath == "" {
+		return url
+	}
+	return strings.TrimRight(url, "/") + e.HealthPath
+}
+
+// HealthWait is how long e's health check keeps trying.
+func (e Environment) HealthWait() time.Duration {
+	if e.HealthTimeout <= 0 {
+		return DefaultHealthTimeout * time.Second
+	}
+	return time.Duration(e.HealthTimeout) * time.Second
+}
 
 // DeploysOn reports whether a runner with the labels have may run e's
 // deploys: e names no labels, or have has every one of them.
@@ -78,13 +131,16 @@ func CleanEnvironments(envs []Environment) ([]Environment, error) {
 			return nil, fmt.Errorf("two environments are named %q", e.Name)
 		}
 		seen[e.Name] = true
-		e.DeployCommand, e.BuildCommand = CleanScript(e.DeployCommand), CleanScript(e.BuildCommand)
+		e.DeployCommand, e.BuildCommand, e.VerifyCommand = CleanScript(e.DeployCommand), CleanScript(e.BuildCommand), CleanScript(e.VerifyCommand)
 		if e.DeployCommand == "" {
 			return nil, fmt.Errorf("environment %s: give it a deploy command", e.Name)
 		}
 		e.URL = strings.TrimSpace(e.URL)
 		if e.URL != "" && !strings.HasPrefix(e.URL, "https://") && !strings.HasPrefix(e.URL, "http://") {
 			return nil, fmt.Errorf("environment %s: the URL must start with https:// or http://", e.Name)
+		}
+		if err := e.cleanChecks(); err != nil {
+			return nil, fmt.Errorf("environment %s: %v", e.Name, err)
 		}
 		labels := make([]string, 0, len(e.RunsOn))
 		for _, l := range e.RunsOn {
@@ -102,6 +158,29 @@ func CleanEnvironments(envs []Environment) ([]Environment, error) {
 		out = append(out, e)
 	}
 	return out, nil
+}
+
+// cleanChecks checks e's health check and soak settings, trimming the path.
+func (e *Environment) cleanChecks() error {
+	e.HealthPath = strings.TrimSpace(e.HealthPath)
+	if e.HealthPath != "" {
+		if e.URL == "" {
+			return errors.New("a health check path needs a URL")
+		}
+		if !strings.HasPrefix(e.HealthPath, "/") || strings.ContainsAny(e.HealthPath, " \t\r\n#") || len(e.HealthPath) > 200 {
+			return errors.New("the health check path must start with / (e.g. /healthz), with no spaces or #")
+		}
+	}
+	if e.HealthStatus != 0 && (e.HealthStatus < 100 || e.HealthStatus > 599) {
+		return errors.New("the expected status must be an HTTP status, 100 to 599")
+	}
+	if e.HealthTimeout < 0 || e.HealthTimeout > MaxHealthTimeout {
+		return fmt.Errorf("the health check timeout must be 0 to %d seconds", MaxHealthTimeout)
+	}
+	if e.Soak < 0 || e.Soak > MaxSoak {
+		return fmt.Errorf("the soak time must be 0 to %d seconds", MaxSoak)
+	}
+	return nil
 }
 
 // Environment is p's environment name, if it has one.
@@ -144,6 +223,9 @@ func DeployScripts(envs []Environment) string {
 			b.WriteString("build: " + e.BuildCommand + "\n")
 		}
 		b.WriteString(e.DeployCommand + "\n")
+		if e.VerifyCommand != "" {
+			b.WriteString("verify: " + e.VerifyCommand + "\n")
+		}
 	}
 	return strings.TrimSpace(b.String())
 }
@@ -182,8 +264,9 @@ func (p Project) DeployHeld(env string) string {
 //	   │           │            │             │           │
 //	   └───────────┴────────────┴─────────────┴──▶ failed └──▶ rolled_back
 //
-// A deploy with no build command skips building; one whose environment has
-// no URL (and whose script reported none) skips verifying.
+// A deploy with no build command skips building; one with no checks (no
+// URL, verify command or soak time) skips verifying. The deploy command
+// exiting 0 means "deployed" (Deploy.Deployed); the checks decide "live".
 type DeployStatus string
 
 const (
@@ -212,6 +295,9 @@ const (
 	DeployByMerge   = "merge"
 	DeployByRelease = "release"
 	DeployByGoal    = "goal"
+	// DeployByAutoRollback: Dash rolled back a deploy whose checks failed
+	// (Environment.AutoRollback).
+	DeployByAutoRollback = "auto_rollback"
 )
 
 // DeployPhase is when a deploy entered a status.
@@ -253,8 +339,14 @@ type Deploy struct {
 	Version  string `json:"version,omitempty"`
 	// URL is where it is reached: the script's, else the environment's.
 	URL string `json:"url,omitempty"`
-	// Rollback: it deploys an earlier deploy again (DASH_ROLLBACK=1).
-	Rollback bool `json:"rollback,omitempty"`
+	// Rollback: it deploys an earlier deploy again (DASH_ROLLBACK=1):
+	// RollbackTo, the last good deploy before RollbackOf, the one it
+	// rolls back.
+	Rollback   bool   `json:"rollback,omitempty"`
+	RollbackOf string `json:"rollback_of,omitempty"`
+	RollbackTo string `json:"rollback_to,omitempty"`
+	// RolledBackBy is the rollback that replaced it, once that is live.
+	RolledBackBy string `json:"rolled_back_by,omitempty"`
 	// Trigger is what started it (DeployByUser, …); By the user who did
 	// or on whose behalf (0: Dash), ByName their name then; TriggerRef
 	// the task, release tag or goal behind it.
@@ -270,6 +362,15 @@ type Deploy struct {
 	// Error says why it failed, when the exit code doesn't.
 	Error    string `json:"error,omitempty"`
 	ExitCode *int   `json:"exit_code,omitempty"`
+	// Deployed: its deploy command exited 0. A deploy that failed after
+	// that failed its checks (Checks), and the environment may run it.
+	Deployed bool `json:"deployed,omitempty"`
+	// Checks are how its checks went, in the order they ran.
+	Checks []DeployCheck `json:"checks,omitempty"`
+	// Cancelled: someone took it off the queue or stopped it.
+	Cancelled bool `json:"cancelled,omitempty"`
+	// FixTask is the draft task made when it failed.
+	FixTask string `json:"fix_task,omitempty"`
 	// Phases are when it entered each status, in order: its timings.
 	Phases     []DeployPhase `json:"phases,omitempty"`
 	CreatedAt  time.Time     `json:"created_at"`
@@ -301,6 +402,77 @@ func (d *Deploy) SetStatus(s DeployStatus, at time.Time) {
 	}
 }
 
+// The checks a deploy runs once deployed (DeployCheck.Name).
+const (
+	CheckHealth = "health"
+	CheckVerify = "verify"
+	CheckSoak   = "soak"
+)
+
+// DeployCheck is how one of a deploy's checks went.
+type DeployCheck struct {
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// ChecksFailed reports whether d was deployed and then failed a check.
+func (d Deploy) ChecksFailed() bool {
+	if d.Status != DeployFailed || !d.Deployed {
+		return false
+	}
+	for _, c := range d.Checks {
+		if !c.OK {
+			return true
+		}
+	}
+	return false
+}
+
+// WentLive reports whether d was ever live.
+func (d Deploy) WentLive() bool { return !d.LiveSince().IsZero() }
+
+// RollbackFrom is, of an environment's deploys (newest first), the one a
+// rollback would replace: the newest deploy done that the environment may
+// be running, live or deployed and failed (and not cancelled or rolled
+// back already).
+func RollbackFrom(deploys []Deploy) (Deploy, bool) {
+	for _, d := range deploys {
+		switch {
+		case d.Status == DeployLive:
+			return d, true
+		case d.Status == DeployFailed && d.Deployed && !d.Cancelled && d.RolledBackBy == "":
+			return d, true
+		}
+	}
+	return Deploy{}, false
+}
+
+// RollbackTarget is, of an environment's deploys (newest first), the last
+// good deploy before bad: the newest older one that went live, of a commit
+// never rolled back, and another than bad's (the same commit again would
+// change nothing).
+func RollbackTarget(deploys []Deploy, bad Deploy) (Deploy, bool) {
+	rolledBack := map[string]bool{}
+	for _, d := range deploys {
+		if d.Status == DeployRolledBack || d.RolledBackBy != "" {
+			rolledBack[d.Commit] = true
+		}
+	}
+	older := false
+	for _, d := range deploys {
+		if d.ID == bad.ID {
+			older = true
+			continue
+		}
+		if !older || !d.WentLive() || rolledBack[d.Commit] || d.Commit == "" || d.Commit == bad.Commit {
+			continue
+		}
+		return d, true
+	}
+	return Deploy{}, false
+}
+
 // LiveSince is when d went live (zero if it never did).
 func (d Deploy) LiveSince() time.Time {
 	for _, ph := range d.Phases {
@@ -321,6 +493,7 @@ const (
 	DeployVarArtifact = "DASH_ARTIFACT"    // the artifact to deploy again (a rollback), else ""
 	DeployVarID       = "DASH_DEPLOY_ID"   // the deploy's id
 	DeployVarRollback = "DASH_ROLLBACK"    // "1" on a rollback, else unset
+	DeployVarURL      = "DASH_URL"         // where the environment is reached (the verify command: the deploy's)
 	DeployVarOutput   = "DASH_OUTPUT"      // a file the script may write key=value lines to (DeployOutputs)
 )
 

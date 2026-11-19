@@ -19,6 +19,7 @@ export const WEBHOOK_EVENTS = {
   "goal.attention": "Goal needs you, done or out of budget",
   "issue.new": "New issue (from a scan or Claude)",
   "build.failing": "Build failing",
+  "deploy.failed": "Deploy failed",
   "runner.disk": "Runner disk nearly full",
   "checkout.behind": "Checkout left behind origin",
   "webhook.test": "Test",

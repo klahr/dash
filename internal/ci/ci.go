@@ -16,6 +16,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 type Publisher interface{ Publish(model.Event) }
@@ -435,19 +436,7 @@ func (w *Watcher) set(st Status) {
 
 // fence wraps text in a code fence longer than any backtick run inside it,
 // so the text can't close the fence and pose as the prompt.
-func fence(text string) string {
-	n, run := 3, 0
-	for _, c := range text {
-		if c == '`' {
-			run++
-			n = max(n, run+1)
-		} else {
-			run = 0
-		}
-	}
-	f := strings.Repeat("`", n)
-	return f + "\n" + text + "\n" + f
-}
+func fence(text string) string { return textutil.Fence(text) }
 
 func briefErr(err error) string {
 	for _, l := range strings.Split(err.Error(), "\n") {

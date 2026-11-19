@@ -21,6 +21,7 @@ const PUSH_LABELS = {
   "permission.needed": "Claude needs your approval",
   "goal.attention": "A goal needs you, is done or out of budget",
   "build.failing": "The build starts failing",
+  "deploy.failed": "A deploy fails",
   "runner.disk": "A runner's disk is nearly full",
   "issue.new": "A scan or Claude finds a new issue",
 };

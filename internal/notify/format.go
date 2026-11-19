@@ -31,6 +31,8 @@ type Notification struct {
 	Goal *GoalRef `json:"goal,omitempty"`
 	// Issue is the issue an issue.new event is about.
 	Issue *IssueRef `json:"issue,omitempty"`
+	// Deploy is the deploy a deploy.failed event is about.
+	Deploy *DeployRef `json:"deploy,omitempty"`
 	// Summary is a summary event's content.
 	Summary *Summary `json:"summary,omitempty"`
 	// Message is a one-line human summary (the error of a failed task, …).
@@ -73,6 +75,14 @@ type IssueRef struct {
 	URL      string         `json:"url,omitempty"` // the issue in Dash
 }
 
+type DeployRef struct {
+	ID          string `json:"id"`
+	Environment string `json:"environment"`
+	Commit      string `json:"commit,omitempty"`
+	Rollback    bool   `json:"rollback,omitempty"`
+	URL         string `json:"url,omitempty"` // the deploy in Dash
+}
+
 type RunnerRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -105,6 +115,7 @@ var looks = map[model.NotifyEvent]struct {
 	model.NotifyBehind:     {"Checkout behind origin", ":arrow_down:", "arrow_down", false},
 	model.NotifyDisk:       {"Disk nearly full", ":floppy_disk:", "floppy_disk", true},
 	model.NotifyIssue:      {"New issue", ":beetle:", "beetle", false},
+	model.NotifyDeploy:     {"Deploy failed", ":boom:", "boom", true},
 	model.NotifySummary:    {"Summary", ":newspaper:", "newspaper", false},
 	model.NotifyTest:       {"Test notification", ":wave:", "wave", false},
 }
@@ -124,6 +135,9 @@ func (n Notification) Head() string {
 	}
 	if n.Type == model.NotifyIssue && n.Issue != nil && n.Issue.Severity != "" {
 		h += " (" + string(n.Issue.Severity) + ")"
+	}
+	if n.Type == model.NotifyDeploy && n.Deploy != nil && n.Deploy.Rollback {
+		h = "Rollback failed"
 	}
 	if n.Type == model.NotifyBuild && n.Build != nil && n.Build.Branch != "" {
 		h += " on " + n.Build.Branch
@@ -149,6 +163,9 @@ func (n Notification) URL() string {
 	if n.Issue != nil && n.Issue.URL != "" {
 		return n.Issue.URL
 	}
+	if n.Deploy != nil && n.Deploy.URL != "" {
+		return n.Deploy.URL
+	}
 	if n.Summary != nil && n.Summary.URL != "" {
 		return n.Summary.URL
 	}
@@ -172,6 +189,13 @@ func (n Notification) subject() string {
 	}
 	if n.Issue != nil && n.Issue.Title != "" {
 		return n.Issue.Title
+	}
+	if n.Deploy != nil {
+		s := n.Project.Name + " to " + n.Deploy.Environment
+		if c := n.Deploy.Commit; c != "" {
+			s += " (" + c[:min(len(c), 8)] + ")"
+		}
+		return s
 	}
 	return n.Project.Name
 }

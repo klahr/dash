@@ -78,7 +78,7 @@ func (p *Project) SetCommand(kind, cmd string) {
 		if cmd == "" {
 			p.Environments = CloneEnvironments(p.Environments) // shared with the stored copy
 			for i := range p.Environments {
-				p.Environments[i].DeployCommand, p.Environments[i].BuildCommand = "", ""
+				p.Environments[i].ClearCommands()
 			}
 		}
 	case CmdSetup:

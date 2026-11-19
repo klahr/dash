@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,9 +15,12 @@ import (
 
 // The Deploys page against a real hub and runner: a card per environment,
 // Deploy on one runs its script on the runner and goes live; the deploy
-// opens in a pane beside the list with its log, and Esc closes it. On a
+// opens in a pane beside the list with its log, and Esc closes it. Once a
+// newer commit is live, the card offers Roll back to the one before, which
+// deploys it again after asking; its pane shows how its checks went. On a
 // phone's screen the pane covers the page and its close button reads
-// Back. Project settings → Deploy lists the environments to edit.
+// Back. Project settings → Deploy lists the environments to edit, with
+// their checks.
 //
 // $DASH_TEST_SHOTS, if set, is a folder the page's screenshots are saved
 // in (wide and narrow), for a person to look at.
@@ -27,7 +31,7 @@ func TestBrowserDeploys(t *testing.T) {
 	api, pid := h.api, h.project.ID
 	api.must("PATCH", "/api/projects/"+pid, map[string]any{"environments": []map[string]any{
 		{"name": "production", "deploy_command": "echo deploying $DASH_ENV at $DASH_COMMIT", "url": "https://example.com"},
-		{"name": "staging", "deploy_command": "echo staging"},
+		{"name": "staging", "deploy_command": "echo staging rollback=$DASH_ROLLBACK", "verify_command": `test -n "$DASH_COMMIT"`, "soak": 1},
 	}}, http.StatusOK, nil)
 
 	b := newBrowser(t, chrome)
@@ -71,6 +75,26 @@ func TestBrowserDeploys(t *testing.T) {
 	b.do("press Esc", chromedp.KeyEvent(kb.Escape))
 	b.waitJS("the pane closed", `document.querySelector("#deploy-detail").hidden && !document.querySelector("#deploy-list li.selected")`)
 
+	// Staging, checked by its verify command and a soak; then a newer
+	// commit, and Roll back to the first.
+	stagingLive := `document.querySelector('#env-cards [data-env="staging"] .env-live .status.d-live')`
+	b.until("deploy staging", stagingLive, chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-deploy`)))
+	first := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "rev-parse", "main"))
+	next := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "commit-tree", "main^{tree}", "-p", "main", "-m", "second"))
+	run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "update-ref", "refs/heads/main", next)
+	b.do("deploy staging's next commit", chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-deploy`)))
+	b.waitJS("Roll back to the first", `document.querySelector('#env-cards [data-env="staging"] .env-rollback button')?.textContent.includes("Roll back to `+first[:7]+`")`)
+	shot("deploys-rollback-wide")
+	b.until("ask to roll back", `document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-rollback button`)))
+	b.until("roll back", `document.querySelector("#deploy-list .status.d-rolled_back") && `+stagingLive, chromedp.Click(chromedp.ID("ask-ok")))
+	b.until("open the rollback", `document.querySelector("#dd-title").textContent === "Rollback to staging" && !document.querySelector("#dd-checks-wrap").hidden`,
+		chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-live`)))
+	b.waitJS("its checks", `[...document.querySelectorAll("#dd-checks .deploy-check")].map((e) => e.textContent).join() === "PassedVerify command,PassedSoak"`)
+	b.waitJS("its log says it rolled back", `document.querySelector("#dd-log").textContent.includes("staging rollback=1")`)
+	b.waitJS("no rollback to the commit just rolled back", `!document.querySelector("#dd-actions").textContent.includes("Roll back") && !document.querySelector('#env-cards [data-env="staging"] .env-rollback')`)
+	shot("deploy-rollback-pane-wide")
+	b.until("close the pane", `document.querySelector("#deploy-detail").hidden`, chromedp.Click(chromedp.ID("dd-close")))
+
 	// On a phone: the pane covers the page, with Back.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the cards one above the other", `(() => { const c = document.querySelectorAll("#env-cards .env-card"); return c.length === 2 && c[1].getBoundingClientRect().top >= c[0].getBoundingClientRect().bottom; })()`)
@@ -87,7 +111,9 @@ func TestBrowserDeploys(t *testing.T) {
 		chromedp.Click(chromedp.ID("deploy-settings")))
 	b.waitJS("the Deploy section shown", `!document.querySelector('#settings-sheet .rail-section[data-section="deploy"]').hidden`)
 	b.waitJS("where each deploys", `document.querySelector("#settings-envs .env-hint").textContent.includes("Deploys on")`)
+	b.waitJS("their checks", `[...document.querySelectorAll("#settings-envs .env-checks textarea")].map((e) => e.value).join() === ',test -n "$DASH_COMMIT"'`)
 	shot("settings-deploy-wide")
 	b.do("a phone's screen again", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("the checks fit the phone", `[...document.querySelectorAll("#settings-envs .env-checks")].every((e) => e.scrollWidth <= e.clientWidth + 1 && e.getBoundingClientRect().right <= innerWidth)`)
 	shot("settings-deploy-narrow")
 }

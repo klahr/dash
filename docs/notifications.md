@@ -34,7 +34,8 @@ made (from an issue or an automation), one whose creator's account was deleted, 
 creator left the organization.
 
 Events about the whole org aren't anyone's task, and still reach everyone who turned them on: a
-failing build on the default branch, a runner's disk filling up, a checkout left behind origin.
+failing build on the default branch, a failed deploy, a runner's disk filling up, a checkout left
+behind origin.
 Goals go to their owner, as before. [Webhooks](#notification-webhooks) don't follow this choice:
 each one has its own events.
 
@@ -56,11 +57,12 @@ also pushes these to the browser, so they arrive while Dash is closed. Choose wh
   restarts)
 - a [goal](goals.md) waits for you, is done or ran out of budget
 - GitHub Actions starts failing on the default branch
+- a [deploy](deploys.md#when-a-deploy-fails) fails
 - a runner's disk is nearly full ([Disk space on a runner](several-computers.md#disk-space-on-a-runner))
 - a scan or Claude finds a new issue (off until you tick it)
 
-Tapping a notification opens the task, the goal on the **Goals** page, or the issue on the
-**Issues** page. **Send a test**, under the switch, pushes one right away.
+Tapping a notification opens the task, the goal on the **Goals** page, the issue on the
+**Issues** page, or the deploy on the **Deploys** page. **Send a test**, under the switch, pushes one right away.
 On an iPhone or iPad, add Dash to the home screen first ([phone.md](phone.md)) and turn
 notifications on in the installed app: Safari tabs can't get pushes there.
 
@@ -104,6 +106,7 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | `goal.attention`    | a [goal](goals.md) waits for you, is done or out of budget   |
 | `issue.new`         | a [scan](scans.md) or Claude (`report_issue`) finds a new issue (off by default) |
 | `build.failing`     | GitHub Actions starts failing on the default branch          |
+| `deploy.failed`     | a [deploy](deploys.md#when-a-deploy-fails) or rollback failed |
 | `runner.disk`       | a runner that works on the project is nearly out of disk space |
 | `checkout.behind`   | a runner's checkout was left behind origin (off by default)  |
 | `webhook.test`      | the Send test button (always sent, whatever is ticked)       |
@@ -153,7 +156,8 @@ don't get them until you tick the event; neither do new ones.
 in `message` what the goal waits for, or why it ended; existing webhooks don't get them until you
 tick the event. `permission.needed` events also have `"permission": {"id", "tool"}`, and `build.failing`
 events have `"build": {"branch", "sha", "url"}` (`task` is the task investigating the failure,
-if there is one). `checkout.behind` events say in `message` which runners' checkouts of the
+if there is one). `deploy.failed` events have `"deploy": {"id", "environment", "commit", "rollback", "url"}`
+instead of `task`, and say in `message` why it failed. `checkout.behind` events say in `message` which runners' checkouts of the
 project another runner's push left behind, and why: for a clone the runner adopted, uncommitted
 changes or local commits; for one it made itself, which always follows origin (saving what is in
 the way on a `dash-backup/` branch first), why syncing failed. A clean checkout follows origin by

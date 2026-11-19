@@ -292,7 +292,7 @@ func hubSettings(req dispatch.Link, mode string) func(*model.Project) {
 			x.SetCommand(kind, "")
 			for i, e := range x.Environments {
 				if isEnv && e.Name == env {
-					x.Environments[i].DeployCommand, x.Environments[i].BuildCommand = "", ""
+					x.Environments[i].ClearCommands()
 				}
 			}
 		}

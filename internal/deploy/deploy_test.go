@@ -3,9 +3,12 @@ package deploy
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -88,7 +91,7 @@ func TestRunBuildDeployVerify(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var checked string
-	m := &Manager{Verify: func(_ context.Context, url string) error { checked = url; return nil }}
+	m := &Manager{Health: func(_ context.Context, url string, _ int, _ time.Duration) error { checked = url; return nil }}
 	j := Job{ID: "d1", Dir: dir,
 		Build:   `echo building $DASH_COMMIT > built.txt`,
 		Deploy:  "echo deploying $DASH_ENV with $API_TOKEN\necho url=https://example.com/v2 >> \"$DASH_OUTPUT\"\necho version=1.2 >> \"$DASH_OUTPUT\"",
@@ -117,7 +120,9 @@ func TestRunBuildDeployVerify(t *testing.T) {
 // A failing build stops the deploy; a failing check fails it.
 func TestRunFails(t *testing.T) {
 	t.Parallel()
-	m := &Manager{Verify: func(context.Context, string) error { return errors.New("it answers 502 Bad Gateway") }}
+	m := &Manager{Health: func(context.Context, string, int, time.Duration) error {
+		return errors.New("it answers 502 Bad Gateway")
+	}}
 	if err := m.Start(context.Background(), "p/a", Job{ID: "b", Dir: t.TempDir(), Build: "exit 3", Deploy: "touch deployed", Env: os.Environ()}); err != nil {
 		t.Fatal(err)
 	}
@@ -128,8 +133,86 @@ func TestRunFails(t *testing.T) {
 	if err := m.Start(context.Background(), "p/a", Job{ID: "v", Dir: t.TempDir(), Deploy: "true", Env: os.Environ(), URL: "https://example.com"}); err != nil {
 		t.Fatal(err)
 	}
-	if st := wait(t, m, "v"); st.Phase != model.DeployFailed || !strings.Contains(st.Error, "502") {
+	if st := wait(t, m, "v"); st.Phase != model.DeployFailed || !strings.Contains(st.Error, "502") || !st.Deployed ||
+		len(st.Checks) != 1 || st.Checks[0].Name != model.CheckHealth || st.Checks[0].OK {
 		t.Errorf("failed check: %+v", st)
+	}
+}
+
+// Once deployed, the health check asks for its path on the URL and wants
+// its status; then the verify command runs with DASH_URL (its exit code
+// decides); then the deploy soaks, its health checked again. Each check is
+// recorded; the first that fails fails the deploy, deployed all the same.
+func TestChecks(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	status, hits := http.StatusOK, 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.URL.Path != "/healthz" {
+			http.NotFound(w, r)
+			return
+		}
+		hits++
+		w.WriteHeader(status)
+	}))
+	defer srv.Close()
+	m := &Manager{SoakEvery: 20 * time.Millisecond}
+	dir := t.TempDir()
+	job := func(id, verify string) Job {
+		return Job{ID: id, Dir: dir, Deploy: "true", Verify: verify, Env: os.Environ(), URL: srv.URL + "/",
+			HealthPath: "/healthz", HealthStatus: http.StatusOK, Soak: 100 * time.Millisecond}
+	}
+	if err := m.Start(context.Background(), "p/a", job("ok", `echo "smoke $DASH_URL" > smoke.txt`)); err != nil {
+		t.Fatal(err)
+	}
+	st := wait(t, m, "ok")
+	if st.Phase != model.DeployLive || !st.Deployed || len(st.Checks) != 3 || !st.Checks[0].OK || !st.Checks[1].OK || st.Checks[2].Name != model.CheckSoak || !st.Checks[2].OK {
+		t.Fatalf("all checks pass: %+v", st)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "smoke.txt")); strings.TrimSpace(string(b)) != "smoke "+srv.URL+"/" {
+		t.Errorf("DASH_URL: %q", b)
+	}
+	mu.Lock()
+	if hits < 2 {
+		t.Errorf("health asked %d times: want it again while soaking", hits)
+	}
+	mu.Unlock()
+
+	if err := m.Start(context.Background(), "p/a", job("smoke", "exit 4")); err != nil {
+		t.Fatal(err)
+	}
+	if st := wait(t, m, "smoke"); st.Phase != model.DeployFailed || !st.Deployed || !strings.Contains(st.Error, "verify command exited with 4") ||
+		len(st.Checks) != 2 || st.Checks[1].Name != model.CheckVerify || st.Checks[1].OK {
+		t.Errorf("failed smoke test: %+v", st)
+	}
+
+	mu.Lock()
+	status = http.StatusAccepted // not the 200 it wants
+	mu.Unlock()
+	j := job("status", "")
+	j.HealthWait = time.Millisecond
+	if err := m.Start(context.Background(), "p/a", j); err != nil {
+		t.Fatal(err)
+	}
+	if st := wait(t, m, "status"); st.Phase != model.DeployFailed || !strings.Contains(st.Error, "202 Accepted, not 200") {
+		t.Errorf("wrong status: %+v", st)
+	}
+}
+
+func TestCheckURL(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) }))
+	defer srv.Close()
+	if err := CheckURL(context.Background(), srv.URL, 0, 0); err != nil {
+		t.Errorf("404 is below 500: %v", err)
+	}
+	if err := CheckURL(context.Background(), srv.URL, http.StatusNotFound, 0); err != nil {
+		t.Errorf("want 404: %v", err)
+	}
+	if err := CheckURL(context.Background(), srv.URL, http.StatusOK, 0); err == nil || !strings.Contains(err.Error(), "404") {
+		t.Errorf("want 200: %v", err)
 	}
 }
 

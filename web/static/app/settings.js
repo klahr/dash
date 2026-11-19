@@ -94,9 +94,12 @@ let envDraft = [];    // the environments as edited
 let shownEnvs = "[]"; // as last loaded or saved (JSON of cleanEnvs)
 const envOnHub = () => !$("#settings-runners-field").hidden;
 const script = (s) => (s || "").replace(/\r\n?/g, "\n").trim();
+const num = (v) => Math.max(0, parseInt(v, 10) || 0);
 const cleanEnvs = (list) => list.map((e) => ({
   name: (e.name || "").trim().toLowerCase(), deploy_command: script(e.deploy_command), build_command: script(e.build_command),
   runs_on: (e.runs_on || []).filter((l) => l.toLowerCase() !== "any"), url: (e.url || "").trim(),
+  health_path: (e.health_path || "").trim(), health_status: num(e.health_status), health_timeout: num(e.health_timeout),
+  verify_command: script(e.verify_command), soak: num(e.soak), auto_rollback: !!e.auto_rollback,
 }));
 
 function renderEnvEditor(p) {
@@ -126,6 +129,17 @@ function envEditor(e, i) {
     field("Build command", "optional; runs first, in the same checkout", text("build_command", { rows: 2, class: "script-field", placeholder: "npm ci && npm run build" })),
     field("URL", "optional; checked once a deploy is done", text("url", { type: "url", placeholder: "https://example.com" })),
     runsOn ? h("div", { class: "field" }, h("span", {}, "Runs on ", h("em", {}, "empty: any runner the project runs on")), runsOn.el) : null,
+    h("fieldset", { class: "env-checks" },
+      h("legend", {}, "Checks ", h("em", {}, "decide whether a deploy whose command exited 0 is live")),
+      h("div", { class: "env-check-row" },
+        field("Health check path", "on the URL", text("health_path", { placeholder: "/healthz" })),
+        field("Expected status", "empty: below 500", text("health_status", { type: "number", min: 100, max: 599, placeholder: "200", inputmode: "numeric" })),
+        field("Timeout", "seconds", text("health_timeout", { type: "number", min: 0, max: 600, placeholder: "60", inputmode: "numeric" }))),
+      field("Verify command", "optional smoke tests; gets the URL as $DASH_URL", text("verify_command", { rows: 2, class: "script-field", placeholder: "curl -fsS \"$DASH_URL/api/status\"" })),
+      field("Soak time", "seconds to watch it before it is live; empty: none", text("soak", { type: "number", min: 0, max: 3600, placeholder: "0", inputmode: "numeric" })),
+      h("label", { class: "toggle" },
+        h("input", { type: "checkbox", checked: !!e.auto_rollback, onchange: (ev) => { e.auto_rollback = ev.target.checked; } }),
+        h("span", {}, "Roll back on its own when the checks fail ", h("em", {}, "to the last good deploy")))),
     h("p", { class: "hint env-hint" }));
 }
 

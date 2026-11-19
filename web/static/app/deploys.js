@@ -21,7 +21,8 @@ export const DEPLOY_STATUS = {
   live: "Live", failed: "Failed", rolled_back: "Rolled back", superseded: "Replaced",
 };
 const ACTIVE = ["building", "deploying", "verifying"];
-const TRIGGER = { user: "", merge: "after a merge", release: "for a release", goal: "for a goal" };
+const TRIGGER = { user: "", merge: "after a merge", release: "for a release", goal: "for a goal", auto_rollback: "automatically, its checks failed" };
+const CHECK = { health: "Health check", verify: "Verify command", soak: "Soak" };
 
 export const dp = {
   project: null, // the project the page is of
@@ -106,6 +107,8 @@ function envCard(e) {
     active ? h("button", { type: "button", class: "env-line env-active", onclick: () => openDeploy(active.id).catch(fail) },
       h("span", { class: "act-spin", "aria-hidden": "true" }), `${DEPLOY_STATUS[active.status]} ${short(active.commit)}…`) : null,
     e.queued ? h("p", { class: "env-line hint" }, `${plural(e.queued, "deploy")} queued`) : null,
+    e.rollback ? h("div", { class: "env-line env-rollback" },
+      rollbackButton(e.name, e.rollback.of, e.rollback.to)) : null,
     e.runners?.length ? h("p", { class: "env-line hint" }, "Runs on ", e.runners.map((r) => `${r.name}${r.online ? "" : " (offline)"}`).join(", ")) : null,
     e.warning ? h("p", { class: "env-line hint warn" }, e.warning) : null);
 }
@@ -147,6 +150,22 @@ function renderList() {
   if (focused) $(`#deploy-list li[data-id="${focused}"] .deploy-open`)?.focus({ preventScroll: true });
 }
 
+// rollbackButton offers "Roll back to <commit>": a rollback of deploy of
+// (live, or deployed and failed) to the last good deploy before it.
+function rollbackButton(env, of, to) {
+  return ib({ type: "button", class: "btn small", title: `Deploy ${short(to.commit)}${to.subject ? ` (${to.subject})` : ""} to ${env} again, with DASH_ROLLBACK=1`,
+    onclick: attempt((ev) => busy(ev.currentTarget, () => rollBack(env, of, to))) }, "undo", `Roll back to ${short(to.commit)}`);
+}
+
+async function rollBack(env, of, to) {
+  if (!await ask({ title: `Roll ${env} back to ${short(to.commit)}?`,
+    body: `${to.subject ? `“${to.subject}”, ` : ""}live ${agoText(liveSince(to))}, is deployed again${to.artifact ? ` (artifact ${to.artifact})` : ""}, ahead of any queued deploys. Its script gets DASH_ROLLBACK=1.`,
+    ok: "Roll back" })) return;
+  const d = await api("POST", `/api/deploys/${of}/rollback`, null, prefix());
+  mergeDeploy(d);
+  toast(`Rollback of ${env} to ${short(to.commit)} queued`, { action: { label: "Open", run: () => openDeploy(d.id).catch(fail) } });
+}
+
 // deployTo queues a deploy of the default branch's tip (or of commit).
 async function deployTo(env, commit = "") {
   const p = dp.project || state.project;
@@ -162,12 +181,18 @@ let envTimer = 0, detailTimer = 0;
 export function onDeployEvent(ev) {
   const d = ev.data;
   if (!d?.id || dp.project?.id !== d.project_id) return;
+  const was = dp.list.find((x) => x.id === d.id)?.status;
+  if (was && was !== "failed" && d.status === "failed" && !d.cancelled) {
+    toast(d.error || "", { tone: "error", head: `${d.rollback ? "Rollback" : "Deploy"} to ${d.environment} failed`, action: { label: "Open", run: () => openDeploy(d.id).catch(fail) } });
+  }
   mergeDeploy(d);
   clearTimeout(envTimer);
   envTimer = setTimeout(() => state.view === "deploys" && loadEnvs().catch(() => {}), 300);
-  if (dp.open === d.id) {
+  // Another deploy to the same environment may change what the open one offers (Roll back).
+  if (dp.open && (dp.open === d.id || dp.detail?.environment === d.environment)) {
     clearTimeout(detailTimer);
-    detailTimer = setTimeout(() => loadDeploy(d.id).catch(() => {}), 200);
+    const id = dp.open;
+    detailTimer = setTimeout(() => loadDeploy(id).catch(() => {}), 200);
   }
 }
 
@@ -281,8 +306,12 @@ function renderDeploy() {
     d.url ? row("URL", h("a", { href: d.url, target: "_blank", rel: "noopener" }, d.url)) : null,
     d.runner ? row("Ran on", d.runner) : null,
     d.exit_code != null ? row("Exit code", String(d.exit_code)) : null,
+    d.rollback_of ? row("Rolls back", openLink(d.rollback_of)) : null,
+    d.rolled_back_by ? row("Rolled back by", openLink(d.rolled_back_by)) : null,
+    d.fix_task ? row("Fix", h("button", { type: "button", class: "link", onclick: () => openDetail(d.fix_task).catch(fail) }, `Fix failed deploy to ${d.environment}`)) : null,
   ].filter(Boolean).flat());
   renderPhases(d);
+  renderChecks(d);
   renderShipped(d);
   const log = $("#dd-log");
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
@@ -303,6 +332,22 @@ function renderPhases(d) {
   }));
 }
 
+// A link that opens deploy id, by its commit when the list has it.
+function openLink(id) {
+  const x = dp.list.find((d) => d.id === id);
+  return h("button", { type: "button", class: "link", onclick: () => openDeploy(id).catch(fail) }, x?.commit ? short(x.commit) : "Open");
+}
+
+// How its checks went (health check, verify command, soak), once deployed.
+function renderChecks(d) {
+  const items = d.checks || [];
+  $("#dd-checks-wrap").hidden = !items.length;
+  $("#dd-checks").replaceChildren(...items.map((c) => h("li", { class: `deploy-check ${c.ok ? "ok" : "bad"}` },
+    h("span", { class: `status ${c.ok ? "d-live" : "d-failed"}` }, c.ok ? "Passed" : "Failed"),
+    h("span", { class: "deploy-check-name" }, CHECK[c.name] || c.name),
+    c.detail ? h("span", { class: "hint" }, c.detail) : null)));
+}
+
 // What it shipped: the tasks and cards the commits since the last deploy name.
 function renderShipped(d) {
   const items = d.shipped || [];
@@ -319,6 +364,7 @@ function renderDeployActions(d) {
   fill($("#dd-actions"),
     d.status === "queued" ? btn("x", "Cancel", () => stopDeploy(d), "btn small danger", "Take it off the queue") : null,
     running ? btn("stop", "Stop", () => stopDeploy(d), "btn small danger", "Stop its script on the runner") : null,
+    d.rollback_target ? rollbackButton(d.environment, d.id, d.rollback_target) : null,
     !running && d.status !== "queued" && d.commit ? btn("redo", "Deploy again", () => deployTo(d.environment, d.commit), "btn small", `Deploy ${short(d.commit)} to ${d.environment} again`) : null,
     btn("link", "Copy link", () => copy(linkTo({ view: "deploys", deploy: d.id }, state.project), "Link copied"), "btn small", "Copy a link that opens this deploy"));
 }

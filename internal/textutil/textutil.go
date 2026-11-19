@@ -53,3 +53,19 @@ func OneLine(s string, n int) string {
 	r := []rune(s)
 	return strings.TrimSpace(string(r[:n-1])) + "…"
 }
+
+// Fence wraps text in a Markdown code fence longer than any run of
+// backticks in it, so nothing in it can close the fence early.
+func Fence(text string) string {
+	n, run := 3, 0
+	for _, c := range text {
+		if c == '`' {
+			run++
+			n = max(n, run+1)
+		} else {
+			run = 0
+		}
+	}
+	f := strings.Repeat("`", n)
+	return f + "\n" + text + "\n" + f
+}

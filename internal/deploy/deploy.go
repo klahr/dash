@@ -158,18 +158,31 @@ type Job struct {
 	ID string
 	// Dir is where the commands run: a checkout of the commit deployed.
 	Dir string
-	// Build and Deploy are the environment's commands (Build optional).
-	Build, Deploy string
+	// Build, Deploy and Verify are the environment's commands (Build and
+	// Verify optional). Verify runs once deployed, with DASH_URL.
+	Build, Deploy, Verify string
 	// Env is the commands' environment: this process's (or a shared
 	// runner's), the secrets and the DASH_* variables (model.DeployVar…).
 	// DASH_OUTPUT is added.
 	Env []string
 	// Secrets are the KEY=VALUE pairs of the secrets file, masked in the log.
 	Secrets []string
-	// URL is checked once the deploy command is done ("": not checked),
-	// unless the script reports another.
-	URL string
+	// URL is where the environment is reached ("": nowhere known), unless
+	// the script reports another: its health is checked at HealthPath on
+	// it once the deploy command is done.
+	URL        string
+	HealthPath string
+	// HealthStatus is the status the health check wants (0: any below
+	// 500); HealthWait how long it keeps trying (0: a minute).
+	HealthStatus int
+	HealthWait   time.Duration
+	// Soak is how long a deploy that passed its checks is watched (its
+	// health checked every so often) before it is live.
+	Soak time.Duration
 }
+
+// HasChecks reports whether j is checked once deployed (verifying).
+func (j Job) HasChecks() bool { return j.URL != "" || j.Verify != "" || j.Soak > 0 }
 
 // State is how a job is doing.
 type State struct {
@@ -185,16 +198,23 @@ type State struct {
 	Log string `json:"log"`
 	// Outputs are what the script wrote to $DASH_OUTPUT.
 	Outputs map[string]string `json:"outputs,omitempty"`
-	// URL is the one checked: the script's, else the job's.
+	// URL is where it is reached: the script's, else the job's.
 	URL string `json:"url,omitempty"`
+	// Deployed: the deploy command exited 0; the checks decide the rest.
+	Deployed bool `json:"deployed,omitempty"`
+	// Checks are how the checks went, in the order they ran.
+	Checks []model.DeployCheck `json:"checks,omitempty"`
 }
 
 // Manager runs jobs, one at a time per Key (an environment of a project),
 // and remembers finished ones for a while so their state can be read.
 type Manager struct {
-	// Verify checks a URL after a deploy (default: GET answers below 500
-	// within a minute or so).
-	Verify func(ctx context.Context, url string) error
+	// Health checks a URL once deployed: it answers want (0: below 500)
+	// within wait (default CheckURL).
+	Health func(ctx context.Context, url string, want int, wait time.Duration) error
+	// SoakEvery is how often health is checked while a deploy soaks
+	// (default 15 seconds).
+	SoakEvery time.Duration
 	// Keep is how long a finished job is remembered (default an hour).
 	Keep time.Duration
 
@@ -305,6 +325,10 @@ func (r *job) snapshot() State {
 		c := *st.ExitCode
 		st.ExitCode = &c
 	}
+	st.Checks = slices.Clone(st.Checks)
+	for i := range st.Checks {
+		st.Checks[i].Detail = Mask(st.Checks[i].Detail, r.secrets)
+	}
 	if st.Outputs != nil {
 		cp := make(map[string]string, len(st.Outputs))
 		for k, v := range st.Outputs {
@@ -402,23 +426,110 @@ func (m *Manager) run(ctx context.Context, r *job, j Job) {
 		url = u
 	}
 	r.mu.Lock()
-	r.state.Outputs, r.state.URL = outs, url
+	r.state.Outputs, r.state.URL, r.state.Deployed = outs, url, true
 	r.mu.Unlock()
-	if url != "" {
-		r.phase(model.DeployVerifying)
-		r.say("verifying: %s", url)
-		verify := m.Verify
-		if verify == nil {
-			verify = CheckURL
-		}
-		if err := verify(ctx, url); err != nil {
-			r.say("%v", err)
-			finish(model.DeployFailed, &zero, "verifying "+url+": "+err.Error())
+	if !j.HasChecks() && url == "" {
+		finish(model.DeployLive, &zero, "")
+		return
+	}
+	r.phase(model.DeployVerifying)
+	if err := m.check(ctx, r, j, url, env); err != nil {
+		if ctx.Err() != nil {
+			r.say("stopped")
+			finish(model.DeployFailed, &zero, "stopped while it was being checked")
 			return
 		}
-		r.say("%s answers", url)
+		finish(model.DeployFailed, &zero, err.Error())
+		return
 	}
 	finish(model.DeployLive, &zero, "")
+}
+
+// check runs a deployed job's checks, in order: the health check of url
+// (with its path), the verify command, then the soak time. The first that
+// fails fails the deploy.
+func (m *Manager) check(ctx context.Context, r *job, j Job, url string, env []string) error {
+	health := m.Health
+	if health == nil {
+		health = CheckURL
+	}
+	healthURL := url
+	if url != "" && j.HealthPath != "" {
+		healthURL = strings.TrimRight(url, "/") + j.HealthPath
+	}
+	wait := j.HealthWait
+	if wait <= 0 {
+		wait = model.DefaultHealthTimeout * time.Second
+	}
+	if healthURL != "" {
+		r.say("health check: %s", healthURL)
+		if err := health(ctx, healthURL, j.HealthStatus, wait); err != nil {
+			r.say("%v", err)
+			return r.checked(model.CheckHealth, fmt.Errorf("health check of %s: %w", healthURL, err))
+		}
+		r.say("%s answers", healthURL)
+		_ = r.checked(model.CheckHealth, nil)
+	}
+	if j.Verify != "" {
+		r.say("verify: %s", firstLine(j.Verify))
+		venv := append(slices.Clone(env), model.DeployVarURL+"="+url)
+		code, err := runScript(ctx, j.Dir, j.Verify, venv, r)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err == nil && *code != 0 {
+			err = fmt.Errorf("the verify command exited with %d", *code)
+		}
+		if err != nil {
+			r.say("%v", err)
+			return r.checked(model.CheckVerify, err)
+		}
+		_ = r.checked(model.CheckVerify, nil)
+	}
+	if j.Soak > 0 {
+		r.say("soak: watching it for %s", j.Soak)
+		every := m.SoakEvery
+		if every <= 0 {
+			every = 15 * time.Second
+		}
+		end := time.Now().Add(j.Soak)
+		for {
+			left := time.Until(end)
+			if left <= 0 {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(min(every, left)):
+			}
+			if healthURL == "" {
+				continue
+			}
+			if err := health(ctx, healthURL, j.HealthStatus, 0); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				r.say("during the soak: %v", err)
+				return r.checked(model.CheckSoak, fmt.Errorf("during the soak, %s: %w", healthURL, err))
+			}
+		}
+		r.say("soak done")
+		_ = r.checked(model.CheckSoak, nil)
+	}
+	return nil
+}
+
+// checked records how check name went (err nil: it passed) and returns err.
+func (r *job) checked(name string, err error) error {
+	c := model.DeployCheck{Name: name, OK: err == nil}
+	if err != nil {
+		c.Detail = err.Error()
+	}
+	r.mu.Lock()
+	r.state.Checks = append(r.state.Checks, c)
+	r.mu.Unlock()
+	return err
 }
 
 func firstLine(s string) string {
@@ -448,13 +559,18 @@ func runScript(ctx context.Context, dir, script string, env []string, w *job) (*
 	return &code, nil
 }
 
-// CheckURL checks that url answers below 500, trying for about a minute
-// (a server that restarts takes a moment).
-func CheckURL(ctx context.Context, url string) error {
+// CheckURL checks that url answers want (0: any status below 500),
+// trying every 5 seconds for up to wait (a server that restarts takes a
+// moment); wait 0 tries once.
+func CheckURL(ctx context.Context, url string, want int, wait time.Duration) error {
 	client := &http.Client{Timeout: 10 * time.Second}
+	end := time.Now().Add(wait)
 	var last error
-	for i := 0; i < 12; i++ {
+	for i := 0; ; i++ {
 		if i > 0 {
+			if time.Now().Add(5 * time.Second).After(end) {
+				return last
+			}
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -467,14 +583,19 @@ func CheckURL(ctx context.Context, url string) error {
 		}
 		res, err := client.Do(req)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			last = err
 			continue
 		}
 		res.Body.Close()
-		if res.StatusCode < 500 {
+		if want == 0 && res.StatusCode < 500 || res.StatusCode == want {
 			return nil
 		}
 		last = fmt.Errorf("it answers %s", res.Status)
+		if want != 0 {
+			last = fmt.Errorf("it answers %s, not %d", res.Status, want)
+		}
 	}
-	return last
 }

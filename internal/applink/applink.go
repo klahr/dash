@@ -46,6 +46,9 @@ func Goal(pid, id string) string { return Project(pid) + "/goals/" + url.PathEsc
 // Issue is the path that opens issue id of project pid.
 func Issue(pid, id string) string { return Project(pid) + "/issues/" + url.PathEscape(id) }
 
+// Deploy is the path that opens deploy id of project pid.
+func Deploy(pid, id string) string { return Project(pid) + "/deploys/" + url.PathEscape(id) }
+
 // Card is the path that opens Planning card id.
 func Card(id string) string { return "/planning/cards/" + url.PathEscape(id) }
 

@@ -44,6 +44,12 @@ type goalLister interface {
 	ListGoals(projectID string) []model.Goal
 }
 
+// deployLister is a Store that has deploys: Start remembers those not
+// done yet, so one that fails after a restart still notifies.
+type deployLister interface {
+	ListDeploys(projectID, env string) []model.Deploy
+}
+
 // issueLister is a Store that has issues: Start remembers them, so only
 // issues made from then on are new.
 type issueLister interface {
@@ -111,6 +117,8 @@ type Notifier struct {
 	// diskLow: runner id → its disk is low; diskTold: when that last notified.
 	diskLow  map[string]bool
 	diskTold map[string]time.Time
+	// deploys: the deploys not done yet, by id, with their status.
+	deploys map[string]model.DeployStatus
 
 	wg sync.WaitGroup
 }
@@ -124,6 +132,7 @@ func (n *Notifier) init() {
 		n.issues = map[string]bool{}
 		n.stuck, n.told = map[[2]string]bool{}, map[[2]string]time.Time{}
 		n.diskLow, n.diskTold = map[string]bool{}, map[string]time.Time{}
+		n.deploys = map[string]model.DeployStatus{}
 		n.client = newClient(n.timeout(), n.AllowPrivate)
 	})
 }
@@ -162,7 +171,7 @@ func (n *Notifier) now() time.Time {
 func (n *Notifier) Observe(ev model.Event) {
 	switch ev.Type {
 	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts, model.EvRunnerDisk, model.EvGoalUpdated,
-		model.EvIssueUpdated:
+		model.EvIssueUpdated, model.EvDeployUpdated:
 	default:
 		return
 	}
@@ -185,6 +194,13 @@ func (n *Notifier) Start(ctx context.Context) {
 	if gs, ok := n.Store.(goalLister); ok {
 		for _, g := range gs.ListGoals("") {
 			n.goals[g.ID] = g.Status
+		}
+	}
+	if ds, ok := n.Store.(deployLister); ok {
+		for _, d := range ds.ListDeploys("", "") {
+			if !d.Status.Done() {
+				n.deploys[d.ID] = d.Status
+			}
 		}
 	}
 	if is, ok := n.Store.(issueLister); ok {
@@ -227,6 +243,10 @@ func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 	}
 	if ev.Type == model.EvIssueUpdated {
 		n.issue(ctx, ev)
+		return
+	}
+	if ev.Type == model.EvDeployUpdated {
+		n.deploy(ctx, ev)
 		return
 	}
 	note, ok := n.classify(ev)
@@ -355,6 +375,33 @@ func (n *Notifier) issue(ctx context.Context, ev model.Event) {
 	n.record(note, 0)
 	n.push(ctx, note)
 	n.toWebhooks(ctx, note, []string{is.ProjectID})
+}
+
+// deploy notifies of a deploy that failed: one seen on its way (queued or
+// running) that is failed now, unless someone cancelled it.
+func (n *Notifier) deploy(ctx context.Context, ev model.Event) {
+	d, ok := ev.Data.(model.Deploy)
+	if !ok || d.ID == "" {
+		return
+	}
+	_, known := n.deploys[d.ID]
+	if !d.Status.Done() {
+		n.deploys[d.ID] = d.Status
+		return
+	}
+	delete(n.deploys, d.ID)
+	if !known || d.Status != model.DeployFailed || d.Cancelled {
+		return
+	}
+	note, ok := n.build(model.NotifyDeploy, d.ProjectID, "")
+	if !ok {
+		return
+	}
+	note.Deploy = &DeployRef{ID: d.ID, Environment: d.Environment, Commit: d.Commit, Rollback: d.Rollback, URL: n.deployURL(d.ProjectID, d.ID)}
+	note.Message = d.Error
+	n.record(note, 0)
+	n.push(ctx, note)
+	n.toWebhooks(ctx, note, []string{d.ProjectID})
 }
 
 // record keeps note for the summaries, if it is something they tell
@@ -574,6 +621,15 @@ func (n *Notifier) issueURL(projectID, issueID string) string {
 	return o + applink.Issue(projectID, issueID)
 }
 
+// deployURL opens the deploy on the project's Deploys page.
+func (n *Notifier) deployURL(projectID, deployID string) string {
+	o := n.origin(projectID)
+	if o == "" {
+		return ""
+	}
+	return o + applink.Deploy(projectID, deployID)
+}
+
 // taskURL opens the task in Dash's web app.
 func (n *Notifier) taskURL(projectID, todoID string) string {
 	o := n.origin(projectID)
@@ -632,6 +688,9 @@ func (n *Notifier) deliver(ctx context.Context, w model.Webhook, note Notificati
 	}
 	if note.Issue != nil {
 		d.Subject = note.Issue.Title
+	}
+	if note.Deploy != nil {
+		d.Subject = note.subject()
 	}
 	if note.Summary != nil {
 		d.Subject = note.Message

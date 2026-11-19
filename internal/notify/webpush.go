@@ -311,6 +311,9 @@ func pushPayload(n Notification, actions []PushAction) PushPayload {
 	case n.Type == model.NotifyIssue && n.Issue != nil:
 		p.URL = itemURL(pid, n.Issue.ID, applink.Issue)
 		p.Tag = "dash-issue-" + n.Issue.ID
+	case n.Type == model.NotifyDeploy && n.Deploy != nil:
+		p.URL = itemURL(pid, n.Deploy.ID, applink.Deploy)
+		p.Tag = "dash-deploy-" + n.Deploy.ID
 	case n.Type == model.NotifyBuild:
 		p.Tag = "dash-build-" + n.Project.ID
 	case n.Type == model.NotifyDisk && n.Runner != nil:
