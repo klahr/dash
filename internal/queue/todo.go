@@ -956,7 +956,7 @@ func (r *todoRun) commitAndCheck() (step, error) {
 	}
 	if c := r.t.Checks; c != nil && c.Passed {
 		if head, tree, err := testedState(ctx, e.Git, p.ID, wt.Path); err == nil && checksPassedOn(c, p.TestCommand, head, tree) {
-			r.log("✔ tests already passed on " + shortSHA(head) + "; not running them again")
+			r.log("✔ tests already passed on " + gitops.ShortSHA(head) + "; not running them again")
 			return stepHandOff, nil
 		}
 	}
@@ -1555,14 +1555,6 @@ func checksPassedOn(c *model.Checks, command, commit, tree string) bool {
 		return false
 	}
 	return (c.Commit != "" && c.Commit == commit) || (c.Tree != "" && c.Tree == tree)
-}
-
-// shortSHA is sha's first 7 characters.
-func shortSHA(sha string) string {
-	if len(sha) > 7 {
-		return sha[:7]
-	}
-	return sha
 }
 
 func testNote(c model.Checks) string {
