@@ -79,6 +79,9 @@ func (e Environment) WithDefaults() Environment {
 	if e.ApproveRole = e.WhoApproves(); e.ApproveRole == "" {
 		e.ApproveRole = RoleNone
 	}
+	if e.Trigger == "" {
+		e.Trigger = EnvTriggerManual
+	}
 	return e
 }
 
@@ -94,6 +97,12 @@ func (e *Environment) cleanPolicy() error {
 		if *r.v != "" && RoleRank(*r.v) == 0 && !(r.none && *r.v == RoleNone) {
 			return fmt.Errorf("%s must be member, admin or owner", r.what)
 		}
+	}
+	e.Trigger = strings.ToLower(strings.TrimSpace(e.Trigger))
+	switch e.Trigger {
+	case "", EnvTriggerManual, EnvTriggerMerge, EnvTriggerRelease:
+	default:
+		return fmt.Errorf("the trigger must be manual, merge or release")
 	}
 	*e = e.WithDefaults()
 	e.RequireLiveOn = strings.ToLower(strings.TrimSpace(e.RequireLiveOn))

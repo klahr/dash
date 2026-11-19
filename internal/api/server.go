@@ -165,6 +165,9 @@ type Server struct {
 	// deployStarts remembers what each deploy started here answered, for
 	// a hub that asks again (deploy id → deployStarted).
 	deployStarts sync.Map
+	// merged are the tasks known merged, for the merge trigger
+	// (deploytriggers.go).
+	merged mergeWatch
 
 	reviewMu  sync.Mutex
 	reviewGen uint64

@@ -16,6 +16,7 @@ import (
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
@@ -218,6 +219,12 @@ func (s *Server) viaRunner(h http.HandlerFunc) http.HandlerFunc {
 			if err != nil {
 				writeErr(w, err)
 				return
+			}
+			if res.ok() {
+				var rel mcptools.Release
+				if json.Unmarshal(res.body, &rel) == nil {
+					s.deployRelease(p, rel.Tag, rel.SHA, sv.c)
+				}
 			}
 			res.write(w)
 		case "GET /api/projects/{pid}/release":

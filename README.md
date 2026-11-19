@@ -168,8 +168,11 @@ what is live where. A health check and a verify command decide whether a deploy 
 **Roll back to <commit>** goes back to the last good deploy, by hand or on its own when the checks
 fail. A failed deploy notifies you and leaves a draft task to fix it. Per environment you set who
 may deploy and who must approve (production: admins), passing tests, a commit live on staging
-first, and freeze windows; **Promote** sends what is live on staging to production with no
-rebuild, and **History** keeps every settings change. See
+first, freeze windows, and whether it deploys on its own on each merge or release tag; **Promote**
+sends what is live on staging to production with no rebuild, and **History** keeps every settings
+change. History marks the commit each environment runs, and tasks and planning cards say **Live in
+production since …**. The chat deploys too, where any member may (`deploy`, `rollback`, `promote`,
+`list_deploys`), but never approves. See
 [Deploys](docs/deploys.md), and on a hub [Where deploys run](docs/several-computers.md#where-deploys-run).
 
 **Who made a task.** The task's pane says who created it ("Created by Ana", or "Created by Dash"

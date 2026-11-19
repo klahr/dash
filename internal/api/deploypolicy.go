@@ -53,11 +53,28 @@ func roleWord(role string) string {
 }
 
 // mayDeploy says why c may not deploy to e, roll back included ("": they may).
+// An agent (Claude with the deploy tools) may only where any member may,
+// whatever the role of the user it acts for.
 func (s *Server) mayDeploy(c Caller, e model.Environment) error {
+	if c.Agent && e.WhoDeploys() != model.RoleMember {
+		return fmt.Errorf("%w: Claude may deploy only where any member may; only %s of the org may deploy to %s: ask them to, on the Deploys page",
+			errForbidden, roleWord(e.WhoDeploys()), e.Name)
+	}
 	if s.hasRole(c, e.WhoDeploys()) {
 		return nil
 	}
 	return fmt.Errorf("%w: only %s of the org may deploy to %s", errForbidden, roleWord(e.WhoDeploys()), e.Name)
+}
+
+// mayDeployAs is mayDeploy for a deploy started by trigger: an
+// environment's own triggers (a merge, a release) need no role, their
+// settings having been changed by someone who had it.
+func (s *Server) mayDeployAs(c Caller, e model.Environment, trigger string) error {
+	switch trigger {
+	case model.DeployByMerge, model.DeployByRelease:
+		return nil
+	}
+	return s.mayDeploy(c, e)
 }
 
 // checkEnvSettings refuses a change from cur to next environments that c's
@@ -229,6 +246,9 @@ func (s *Server) decideDeploy(w http.ResponseWriter, r *http.Request, approve bo
 
 // decide approves (or rejects) deploy d of p for c.
 func (s *Server) decide(c Caller, p model.Project, d model.Deploy, approve bool, note string) (model.Deploy, error) {
+	if c.Agent {
+		return d, fmt.Errorf("%w: Claude can't approve or reject deploys: a person decides", errForbidden)
+	}
 	if d.Status != model.DeployAwaiting {
 		return d, fmt.Errorf("%w: it isn't waiting for an approval", errConflict)
 	}

@@ -113,8 +113,9 @@ const cleanEnvs = (list) => list.map((e) => ({
   verify_command: script(e.verify_command), soak: num(e.soak), auto_rollback: !!e.auto_rollback,
   ...roleDefaults(e), require_tests: !!e.require_tests, require_live_on: (e.require_live_on || "").trim().toLowerCase(),
   freezes: (e.freezes || []).map((f) => ({ from: (f.from || "").trim(), to: (f.to || "").trim(), note: (f.note || "").trim() })).filter((f) => f.from || f.to || f.note),
-  time_zone: (e.time_zone || "").trim(),
+  time_zone: (e.time_zone || "").trim(), trigger: e.trigger || "manual",
 }));
+const TRIGGER_OPTS = [["manual", "No, only when someone deploys"], ["merge", "On each merge to the default branch"], ["release", "On each release tag"]];
 const ROLE_OPTS = [["member", "Members"], ["admin", "Admins"], ["owner", "Owners"]];
 const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; } };
 
@@ -135,6 +136,7 @@ const ENV_FIELD = {
   health_status: "Expected status", health_timeout: "Health check timeout", verify_command: "Verify command", soak: "Soak time",
   auto_rollback: "Roll back on its own", deploy_role: "Who may deploy", approve_role: "Needs approval from", settings_role: "Who may change settings",
   require_tests: "Tests must pass", require_live_on: "Live on first", freezes: "Freeze windows", time_zone: "Time zone",
+  trigger: "Deploys on its own",
 };
 const ENV_ACTION = { added: "added", changed: "changed", removed: "removed" };
 
@@ -214,6 +216,7 @@ function envPolicy(e, field) {
       field("Who may deploy", "and roll back", select("deploy_role", ROLE_OPTS)),
       field("Needs approval from", "not their own deploy", select("approve_role", [["none", "No one"], ...ROLE_OPTS])),
       field("Who may change settings", "of this environment", select("settings_role", ROLE_OPTS))),
+    field("Deploys on its own", "through the approvals, requirements and freezes below, like any deploy", select("trigger", TRIGGER_OPTS)),
     h("label", { class: "toggle" },
       h("input", { type: "checkbox", checked: !!e.require_tests, onchange: (ev) => { e.require_tests = ev.target.checked; } }),
       h("span", {}, "Tests must pass on the commit ", h("em", {}, "Dash runs the test command first unless they passed already"))),

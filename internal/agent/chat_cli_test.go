@@ -126,7 +126,7 @@ func TestChatArgsBoard(t *testing.T) {
 		"mcp__dash_board__list_goals", "mcp__dash_board__get_goal", "mcp__dash_board__create_goal", "mcp__dash_board__update_goal",
 		"mcp__dash_board__pause_goal", "mcp__dash_board__resume_goal", "mcp__dash_board__stop_goal",
 		"mcp__dash_board__accept_goal_plan", "mcp__dash_board__reject_goal_plan", "mcp__dash_board__message_goal",
-		"mcp__dash_board__list_cards", "mcp__dash_board__create_card", "mcp__dash_board__link_card"}) {
+		"mcp__dash_board__list_cards", "mcp__dash_board__create_card", "mcp__dash_board__link_card", "mcp__dash_board__list_deploys"}) {
 		t.Errorf("readonly --allowedTools %q", got)
 	}
 	if _, ok := flag(ro, "--permission-prompt-tool"); ok {
@@ -142,7 +142,7 @@ func TestChatArgsBoard(t *testing.T) {
 	}
 	if got := allowed(sh); !slices.Equal(got, []string{"mcp__dash_board__list_projects", "mcp__dash_board__list_todos",
 		"mcp__dash_board__get_todo", "mcp__dash_board__list_issues", "mcp__dash_board__read_try_terminal", "mcp__dash_board__read_checklist",
-		"mcp__dash_board__list_goals", "mcp__dash_board__get_goal", "mcp__dash_board__list_cards", "Read"}) {
+		"mcp__dash_board__list_goals", "mcp__dash_board__get_goal", "mcp__dash_board__list_cards", "mcp__dash_board__list_deploys", "Read"}) {
 		t.Errorf("shell --allowedTools %q", got)
 	}
 	if got, _ := flag(sh, "--permission-prompt-tool"); got != perm.PromptTool {

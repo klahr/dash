@@ -1131,8 +1131,10 @@ func (a *app) startWorkers() {
 	// Goals' coordinators wake on their tasks' events.
 	a.storeEvents.chain(a.apiSrv.ObserveGoals)
 	a.apiSrv.StartGoals(ctx)
-	// Deploys a restart cut short, and the queued ones.
+	// Deploys a restart cut short, and the queued ones; then merges trigger
+	// the environments that deploy on merge.
 	a.apiSrv.StartDeploys(ctx)
+	a.storeEvents.chain(a.apiSrv.ObserveDeploys)
 }
 
 // configureChat picks the chat backend. The chat runs on runners only: the

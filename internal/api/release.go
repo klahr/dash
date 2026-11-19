@@ -433,6 +433,7 @@ func (s *Server) createTag(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	s.deployRelease(p, out.Tag, out.SHA, sv.c)
 	writeJSON(w, http.StatusCreated, out)
 }
 
@@ -473,10 +474,19 @@ func (b board) CreateRelease(projectID string, r mcptools.NewRelease) (mcptools.
 	if err != nil {
 		return mcptools.Release{}, fmt.Errorf("no project %q (see list_projects)", projectID)
 	}
+	var out mcptools.Release
 	if b.sv.s.hub() {
-		return b.sv.releaseOnRunner(context.Background(), p, r)
+		out, err = b.sv.releaseOnRunner(context.Background(), p, r)
+	} else {
+		out, err = b.sv.createRelease(context.Background(), p, r)
 	}
-	return b.sv.createRelease(context.Background(), p, r)
+	if err == nil {
+		// The environments that deploy on release do, as Dash: an agent
+		// may tag, but the trigger is the environment's own.
+		s := b.sv.s
+		s.deployRelease(p, out.Tag, out.SHA, Caller{Org: p.OrgID, User: b.sv.c.User})
+	}
+	return out, err
 }
 
 // releaseOnRunner tags a release of the hub's project p on a runner linked

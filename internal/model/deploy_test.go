@@ -129,3 +129,46 @@ func TestCleanEnvironmentChecks(t *testing.T) {
 		}
 	}
 }
+
+// LiveShipped: what an environment runs, of what its deploys shipped,
+// from the records alone; a rollback goes back to what was live with the
+// deploy it rolled back to.
+func TestLiveShipped(t *testing.T) {
+	day := func(n int) time.Time { return time.Date(2026, 11, n, 0, 0, 0, 0, time.UTC) }
+	ship := func(ids ...string) []DeployShipped {
+		var out []DeployShipped
+		for _, id := range ids {
+			out = append(out, DeployShipped{Kind: LinkTask, ID: id})
+		}
+		return out
+	}
+	went := func(id string, at time.Time, s DeployStatus, shipped []DeployShipped) Deploy {
+		return Deploy{ID: id, Status: s, Shipped: shipped, Phases: []DeployPhase{{DeployQueued, at.Add(-time.Hour)}, {DeployLive, at}, {s, at.Add(time.Hour)}}}
+	}
+	d1 := went("d1", day(1), DeploySuperseded, ship("a"))
+	d2 := went("d2", day(2), DeployRolledBack, ship("b"))
+	rb := went("rb", day(3), DeploySuperseded, nil)
+	rb.Rollback, rb.RollbackTo = true, "d1"
+	d4 := went("d4", day(4), DeployLive, ship("b", "c"))
+	failed := Deploy{ID: "f", Status: DeployFailed, Shipped: ship("x")}
+
+	if got := LiveShipped([]Deploy{failed}); got != nil {
+		t.Errorf("nothing live: %v", got)
+	}
+	rbLive := rb
+	rbLive.Status = DeployLive
+	got := LiveShipped([]Deploy{rbLive, d2, d1})
+	if len(got) != 1 || !got[ShippedKey(LinkTask, "a")].Equal(day(1)) {
+		t.Errorf("after the rollback: %v", got)
+	}
+	got = LiveShipped([]Deploy{failed, d4, rb, d2, d1})
+	want := map[string]time.Time{"task:a": day(1), "task:b": day(4), "task:c": day(4)}
+	if len(got) != len(want) {
+		t.Errorf("after d4: %v", got)
+	}
+	for k, at := range want {
+		if !got[k].Equal(at) {
+			t.Errorf("%s: %v, want %v", k, got[k], at)
+		}
+	}
+}

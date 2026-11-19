@@ -105,8 +105,8 @@ draft, queued or failed tasks, when you ask to remove one), `create_release`, `l
 `report_issue`, and the checklist tools on the project's `TODO.md` (`read_checklist`,
 `add_checklist_item`, `check_checklist_item`, `edit_checklist_item`, `delete_checklist_item`,
 `reorder_checklist_item`, `move_checklist_item_to_task`; see [Checklist](checklist.md)), the
-[goal tools](#goals) and the [planning tools](#planning). A read-only chat calls them without asking, except `create_release` and the
-checklist tools that change `TODO.md` (all of them but `read_checklist`), which it can't use; a shell chat asks for the ones that change something. They act as the user chatting,
+[goal tools](#goals), the [planning tools](#planning) and the [deploy tools](#deploys). A read-only chat calls them without asking, except `create_release`, the
+checklist tools that change `TODO.md` (all of them but `read_checklist`), and `deploy`, `rollback` and `promote`, which it can't use; a shell chat asks for the ones that change something. They act as the user chatting,
 in the org they're working in.
 
 A project's chat and a task's run reach their own project only: `list_projects` lists just that
@@ -231,6 +231,28 @@ Dash's chats' `dash_board` reads and adds to the org's [plan](planning.md):
   status. In a project chat, only that project's work, to its cards or cards of no project.
 
 A shell chat asks before it uses `create_card` and `link_card`.
+
+## Deploys
+
+Dash's chats' `dash_board` reads and starts a project's [deploys](deploys.md):
+
+- `list_deploys(project?, environment?, limit?)`: the environments, with what is live on each and
+  since when, the trigger, who may deploy (`claude_may_deploy` says whether Claude may), what a
+  deploy needs and what blocks one now, where `promote` goes and what `rollback` would go back to;
+  and the latest deploys (default 20), newest first.
+- `deploy(project?, environment, commit?)`: deploy a commit (default: the tip of the default
+  branch, as origin has it).
+- `rollback(project?, environment)`: roll back what the environment runs now to its last good
+  deploy.
+- `promote(project?, from, to?)`: deploy what is live on `from` to `to` (default: `from`'s next
+  environment), with no build.
+
+Claude may deploy, roll back and promote only to an environment whose **Who may deploy** is
+**Members**, whatever its user's role, and never approve a deploy: one that needs an approval waits
+for a person. Freezes and requirements refuse its deploys, with the reason, like anyone's. Its
+deploys show "by Claude for <user>", with the task it ran for. A shell chat asks before it uses
+`deploy`, `rollback` and `promote`; a read-only chat has `list_deploys` only. A task's own run
+doesn't get these tools.
 
 ## A goal's coordinator
 

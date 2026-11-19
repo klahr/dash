@@ -18,8 +18,28 @@ import { changed } from "./routes.js";
 export async function loadGraph() {
   const p = state.project;
   if (!p) return renderGraph(null);
+  // What each environment runs, for its marker (none when there are none, or it fails).
+  const live = p.environments?.length ? api("GET", `/api/projects/${p.id}/deploys/live`).catch(() => null) : null;
   const res = await api("GET", `/api/projects/${p.id}/graph`);
+  hist.live = liveByCommit(await live);
   if (projectKey(state.project) === projectKey(p)) renderGraph(res);
+}
+
+// liveByCommit maps each commit an environment runs to those environments.
+function liveByCommit(live) {
+  const m = new Map();
+  for (const e of live?.environments || []) {
+    if (!e.commit) continue;
+    if (!m.has(e.commit)) m.set(e.commit, []);
+    m.get(e.commit).push(e);
+  }
+  return m;
+}
+
+// liveRefs are the markers of the environments commit hash is live in.
+function liveRefs(hash) {
+  return (hist.live?.get(hash) || []).map((e) => h("span", { class: "graph-ref env", title: `Live in ${e.environment} since ${dateTimeText(e.since)}` },
+    h("span", { class: "sr-only" }, "Live in "), e.environment));
 }
 
 let graphTimer = 0;
@@ -73,6 +93,7 @@ export function renderGraph(res) {
       h("span", { class: "graph-commit", role: "button", tabindex: "0", "aria-controls": "commit-detail", "aria-current": selected ? "true" : null, onclick: open, onkeydown: open },
         h("span", { class: "sr-only" }, "Commit "), h("code", { class: "graph-sha" }, c.short),
         ...(c.refs || []).map(graphRef),
+        ...liveRefs(c.hash),
         h("span", { class: "graph-subject" }, c.subject),
         h("span", { class: "graph-meta" }, `${c.author} · ${c.when}`)));
   }));
@@ -206,7 +227,8 @@ function renderCommitHead() {
   $("#cd-title").textContent = ref.subject || ref.short;
   fill($("#cd-meta"),
     h("button", { type: "button", class: "commit-sha", title: `Copy ${ref.sha}`, "aria-label": `Copy the commit's SHA ${ref.sha}`, onclick: () => copy(ref.sha, "SHA copied") }, ref.short),
-    ...(d?.refs || c?.refs || []).map(graphRef));
+    ...(d?.refs || c?.refs || []).map(graphRef),
+    ...liveRefs(ref.sha));
   if (!p) return;
   const gh = githubURL(p.remote_url);
   // A commit beyond the loaded graph is older than ones in it: pushed if they are.

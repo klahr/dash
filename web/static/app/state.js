@@ -60,7 +60,7 @@ export const state = {
 export const projectFirst = (hint = "") => (state.projects.length ? `Select a project first${hint}.` : "Create a project first.");
 export const DAY = 24 * 3600 * 1000;
 // The History graph as last drawn, and the commit its pane shows (see "commit pane").
-export const hist = { commits: [], byHash: new Map(), remote: "" };
+export const hist = { commits: [], byHash: new Map(), remote: "", live: new Map() }; // live: commit → the environments it is live in
 // file: the path selected in the desktop file list; texts: the open commit's loaded diffs.
 export const cp = { sha: null, project: null, detail: null, error: "", diffs: null, file: null, texts: new Map(), msgOpen: false, listFocus: false };
 

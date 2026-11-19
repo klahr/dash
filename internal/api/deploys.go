@@ -49,6 +49,7 @@ func (s *Server) deployRoutes(mux routeMux) {
 	mux.HandleFunc("GET /api/projects/{pid}/environments", s.listEnvironments)
 	mux.HandleFunc("GET /api/projects/{pid}/environments/history", s.envHistory)
 	mux.HandleFunc("GET /api/projects/{pid}/deploys", s.listDeploys)
+	mux.HandleFunc("GET /api/projects/{pid}/deploys/live", s.liveDeploys)
 	mux.HandleFunc("POST /api/projects/{pid}/deploys", s.createDeploy)
 	mux.HandleFunc("GET /api/deploys/{id}", s.getDeploy)
 	mux.HandleFunc("DELETE /api/deploys/{id}", s.cancelDeploy)
@@ -318,46 +319,57 @@ func (s *Server) createDeploy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	e, ok := p.Environment(strings.TrimSpace(req.Environment))
-	if !ok {
-		writeErr(w, fmt.Errorf("%w: the project has no environment %q (Project settings → Deploy)", errBadRequest, req.Environment))
-		return
-	}
-	req.Commit = strings.TrimSpace(req.Commit)
-	if req.Commit != "" && gitops.CheckRev(req.Commit) != nil {
-		writeErr(w, fmt.Errorf("%w: %q isn't a commit", errBadRequest, req.Commit))
-		return
-	}
-	if err := s.mayDeploy(sv.c, e); err != nil {
-		writeErr(w, err)
-		return
-	}
-	d := model.Deploy{ProjectID: p.ID, Environment: e.Name, Ref: req.Commit, Trigger: model.DeployByUser}
-	if from := strings.TrimSpace(req.PromoteFrom); from != "" {
-		src, ok := sv.data.LiveDeploy(p.ID, from)
-		switch {
-		case from == e.Name:
-			writeErr(w, fmt.Errorf("%w: promote from another environment", errBadRequest))
-			return
-		case !ok || src.Commit == "":
-			writeErr(w, fmt.Errorf("%w: nothing is live on %q to promote", errConflict, from))
-			return
-		}
-		d.Ref, d.Artifact, d.Promote, d.PromotedFrom, d.PromotedEnv = src.Commit, src.Artifact, true, src.ID, from
-	}
-	if whys := s.deployBlocks(p, e, d.Ref, time.Now()); len(whys) > 0 {
-		writeErr(w, blockedErr(whys))
-		return
-	}
-	if need := e.WhoApproves(); need != "" {
-		d.Status, d.NeedsApproval = model.DeployAwaiting, need
-	}
-	d, err := s.queueDeploy(sv.c, d)
+	d, err := sv.requestDeploy(p, deployAsk{Environment: req.Environment, Commit: req.Commit, PromoteFrom: req.PromoteFrom, Trigger: model.DeployByUser})
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, d)
+}
+
+// deployAsk is a deploy someone (or something) asks for: of Commit ("" for
+// the tip of the default branch) to Environment, or of what is live on
+// PromoteFrom; Trigger and TriggerRef say what asked.
+type deployAsk struct {
+	Environment, Commit, PromoteFrom string
+	Trigger, TriggerRef              string
+}
+
+// requestDeploy checks and queues the deploy a asks of p for sv's caller:
+// they need the environment's deploy role (an agent: the member role, see
+// agentMayDeploy), and the deploy must not be blocked (deployBlocks). It
+// waits for an approval when the environment needs one.
+func (sv *service) requestDeploy(p model.Project, a deployAsk) (model.Deploy, error) {
+	s := sv.s
+	e, ok := p.Environment(strings.TrimSpace(a.Environment))
+	if !ok {
+		return model.Deploy{}, fmt.Errorf("%w: the project has no environment %q (Project settings → Deploy)", errBadRequest, a.Environment)
+	}
+	commit := strings.TrimSpace(a.Commit)
+	if commit != "" && gitops.CheckRev(commit) != nil {
+		return model.Deploy{}, fmt.Errorf("%w: %q isn't a commit", errBadRequest, commit)
+	}
+	if err := s.mayDeployAs(sv.c, e, a.Trigger); err != nil {
+		return model.Deploy{}, err
+	}
+	d := model.Deploy{ProjectID: p.ID, Environment: e.Name, Ref: commit, Trigger: a.Trigger, TriggerRef: a.TriggerRef}
+	if from := strings.TrimSpace(a.PromoteFrom); from != "" {
+		src, ok := sv.data.LiveDeploy(p.ID, from)
+		switch {
+		case from == e.Name:
+			return model.Deploy{}, fmt.Errorf("%w: promote from another environment", errBadRequest)
+		case !ok || src.Commit == "":
+			return model.Deploy{}, fmt.Errorf("%w: nothing is live on %q to promote", errConflict, from)
+		}
+		d.Ref, d.Artifact, d.Promote, d.PromotedFrom, d.PromotedEnv = src.Commit, src.Artifact, true, src.ID, from
+	}
+	if whys := s.deployBlocks(p, e, d.Ref, time.Now()); len(whys) > 0 {
+		return model.Deploy{}, blockedErr(whys)
+	}
+	if need := e.WhoApproves(); need != "" {
+		d.Status, d.NeedsApproval = model.DeployAwaiting, need
+	}
+	return s.queueDeploy(sv.c, d)
 }
 
 // queueDeploy queues d for c (who starts it) and wakes its environment's queue.
@@ -434,13 +446,7 @@ func (s *Server) rollbackDeploy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if e, ok := p.Environment(d.Environment); ok {
-		if err := s.mayDeploy(sv.c, e); err != nil {
-			writeErr(w, err)
-			return
-		}
-	}
-	rb, err := s.queueRollback(sv.c, d, model.DeployByUser)
+	rb, err := sv.requestRollback(p, d, model.DeployByUser, "")
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -448,9 +454,26 @@ func (s *Server) rollbackDeploy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, rb)
 }
 
+// requestRollback queues a rollback of deploy d of p for sv's caller, who
+// needs the environment's deploy role (an agent: the member role).
+func (sv *service) requestRollback(p model.Project, d model.Deploy, trigger, triggerRef string) (model.Deploy, error) {
+	if e, ok := p.Environment(d.Environment); ok {
+		if err := sv.s.mayDeployAs(sv.c, e, trigger); err != nil {
+			return model.Deploy{}, err
+		}
+	} else if trigger == model.DeployByAgent {
+		return model.Deploy{}, fmt.Errorf("%w: the project no longer has the environment %s", errConflict, d.Environment)
+	}
+	return sv.s.queueRollback(sv.c, d, trigger, triggerRef)
+}
+
 // queueRollback queues a rollback of bad to the last good deploy before it
-// (model.RollbackTarget), started by trigger.
-func (s *Server) queueRollback(c Caller, bad model.Deploy, trigger string) (model.Deploy, error) {
+// (model.RollbackTarget), started by trigger; ref is what asked for it
+// (an agent's task), "" for bad itself.
+func (s *Server) queueRollback(c Caller, bad model.Deploy, trigger, ref string) (model.Deploy, error) {
+	if ref == "" {
+		ref = bad.ID
+	}
 	deploys := s.Store.ListDeploys(bad.ProjectID, bad.Environment)
 	if why := rollbackBusy(deploys); why != "" {
 		return model.Deploy{}, fmt.Errorf("%w: %s", errConflict, why)
@@ -463,7 +486,7 @@ func (s *Server) queueRollback(c Caller, bad model.Deploy, trigger string) (mode
 		return model.Deploy{}, fmt.Errorf("%w: %s has no earlier good deploy of another commit to roll back to", errConflict, bad.Environment)
 	}
 	return s.queueDeploy(c, model.Deploy{ProjectID: bad.ProjectID, Environment: bad.Environment, Ref: to.Commit, Artifact: to.Artifact,
-		Rollback: true, RollbackOf: bad.ID, RollbackTo: to.ID, Trigger: trigger, TriggerRef: bad.ID})
+		Rollback: true, RollbackOf: bad.ID, RollbackTo: to.ID, Trigger: trigger, TriggerRef: ref})
 }
 
 // cancelDeploy handles DELETE /api/deploys/{id}: a queued deploy is taken
@@ -548,8 +571,10 @@ func (s *Server) deployPoll() time.Duration {
 }
 
 // StartDeploys picks up, once Dash has started, the deploys a restart cut
-// short (asking their runners how they went) and the queued ones.
+// short (asking their runners how they went) and the queued ones, and notes
+// the tasks merged so far (only those merged from now on trigger deploys).
 func (s *Server) StartDeploys(ctx context.Context) {
+	s.primeMerges()
 	e := s.deployer()
 	e.mu.Lock()
 	e.ctx = ctx
@@ -955,7 +980,7 @@ func (s *Server) deployFailed(d model.Deploy) {
 	e, _ := p.Environment(d.Environment)
 	rolledBack := ""
 	if e.AutoRollback && d.ChecksFailed() && !d.Rollback {
-		rb, err := s.queueRollback(Caller{Org: p.OrgID}, d, model.DeployByAutoRollback)
+		rb, err := s.queueRollback(Caller{Org: p.OrgID}, d, model.DeployByAutoRollback, "")
 		if err != nil {
 			slog.Warn("deploy: no automatic rollback", "project", p.Name, "environment", d.Environment, "id", d.ID, "err", err)
 		} else {

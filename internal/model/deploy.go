@@ -77,7 +77,26 @@ type Environment struct {
 	// TimeZone (an IANA name; "": UTC).
 	Freezes  []Freeze `json:"freezes,omitempty"`
 	TimeZone string   `json:"time_zone,omitempty"`
+	// Trigger is what deploys here on its own besides a person pressing
+	// Deploy: EnvTriggerManual (nothing), EnvTriggerMerge (each merge to
+	// the default branch) or EnvTriggerRelease (each release tag). A
+	// triggered deploy goes through the queue, the requirements, the
+	// approvals and the freezes like any other. "": manual.
+	Trigger string `json:"trigger,omitempty"`
 }
+
+// Environment.Trigger.
+const (
+	EnvTriggerManual  = "manual"
+	EnvTriggerMerge   = "merge"
+	EnvTriggerRelease = "release"
+)
+
+// DeploysOnMerge reports whether e deploys each merge to the default branch.
+func (e Environment) DeploysOnMerge() bool { return e.Trigger == EnvTriggerMerge }
+
+// DeploysOnRelease reports whether e deploys each release tag.
+func (e Environment) DeploysOnRelease() bool { return e.Trigger == EnvTriggerRelease }
 
 // Limits of an environment's checks.
 const (
@@ -334,6 +353,9 @@ const (
 	// DeployByAutoRollback: Dash rolled back a deploy whose checks failed
 	// (Environment.AutoRollback).
 	DeployByAutoRollback = "auto_rollback"
+	// DeployByAgent: Claude, with the deploy tools, on behalf of By
+	// (TriggerRef: the task it ran for, or "chat").
+	DeployByAgent = "agent"
 )
 
 // DeployPhase is when a deploy entered a status.
@@ -531,6 +553,55 @@ func (d Deploy) LiveSince() time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// ShippedKey names a task or planning card a deploy shipped, in LiveShipped.
+func ShippedKey(kind, id string) string { return kind + ":" + id }
+
+// LiveShipped is what one environment runs now, of the tasks and cards its
+// deploys (any order) shipped: by ShippedKey, since when each has been
+// live there. It is worked out from the records alone, without the
+// repository (a hub has none): each deploy that went live adds what it
+// shipped to what was live before it, and a rollback goes back to what
+// was live with the deploy it rolled back to. Nil when nothing is live.
+func LiveShipped(deploys []Deploy) map[string]time.Time {
+	var went []Deploy
+	for _, d := range deploys {
+		if d.WentLive() {
+			went = append(went, d)
+		}
+	}
+	slices.SortStableFunc(went, func(a, b Deploy) int { return a.LiveSince().Compare(b.LiveSince()) })
+	after := map[string]map[string]time.Time{} // deploy id → what was live with it
+	var cur map[string]time.Time
+	live := ""
+	for _, d := range went {
+		next := map[string]time.Time{}
+		base := cur
+		if d.Rollback {
+			if snap, ok := after[d.RollbackTo]; ok {
+				base = snap
+			}
+		}
+		for k, at := range base {
+			next[k] = at
+		}
+		if !d.Rollback {
+			for _, s := range d.Shipped {
+				if _, ok := next[ShippedKey(s.Kind, s.ID)]; !ok {
+					next[ShippedKey(s.Kind, s.ID)] = d.LiveSince()
+				}
+			}
+		}
+		after[d.ID], cur = next, next
+		if d.Status == DeployLive {
+			live = d.ID
+		}
+	}
+	if live == "" {
+		return nil
+	}
+	return after[live]
 }
 
 // The environment variables a deploy's build and deploy commands get (the

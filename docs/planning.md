@@ -96,11 +96,18 @@ stored. It says, for example:
 | Failed, needs a developer | a linked task failed                                           |
 | All done                  | every task is merged and every goal is done                    |
 | Shipped in 1.4.0          | all of it is in a release (the first release tag that has it)  |
+| Live in production since 4 Nov 2026 | all of it is deployed and live in an environment     |
 
 With more than one linked piece of work, the card also counts it: "3 of 5 done".
+**Live in** comes from the project's [deploys](deploys.md#where-it-is-live): a task is live in an
+environment once a deploy that shipped it went live there. The card names production when all of
+it is live there, else the environment furthest along that has all of it, and the latest date one
+of its pieces went live. It works on a hub whose projects live on runners: the hub holds the
+deploy records. Each linked task or goal shows its own **Live in** too.
+
 **Shipped in** uses the project's release tags (see [Releases](releases.md)). Dash tells it
 from the project's repository, so a hub whose projects live on runners shows **All done**
-instead.
+instead, unless the work is **Live in** an environment. **Live in** comes first when both apply.
 
 The card shows only owner-facing words: titles and states. It never shows branches,
 worktrees, diffs or runners.

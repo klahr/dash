@@ -8,7 +8,7 @@ import { loadUnpushed } from "./board.js";
 import { closedNoChanges, renderBoard, title, updateLiveLine } from "./branches.js";
 import { trackActivity } from "./activity.js";
 import { activityAfterStatus } from "../activityclear.js";
-import { closeDetail, loadDiff, openDetail, openTodo, renderActions, renderDetail } from "./detail.js";
+import { closeDetail, forgetLive, loadDiff, openDetail, openTodo, renderActions, renderDetail } from "./detail.js";
 import { connectLog, connectTerm, loadPreviews, previewEvent, previewOf, pv } from "./preview.js";
 import { loadRunners, refreshRunnerLinks, renderRunners } from "./runners.js";
 import { syncSettingsRunners } from "./settings.js";
@@ -227,6 +227,7 @@ function onEvent(ev, m = { name: "" }) {
       break;
     case "deploy.updated":
       if (mine) onDeployEvent(ev);
+      if (mine && ev.data?.status === "live") { refreshGraph(); forgetLive(ev.project_id); } // History's markers, tasks' "Live in"
       break;
     case "issue.updated":
     case "issue.deleted":

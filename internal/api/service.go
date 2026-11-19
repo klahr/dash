@@ -45,6 +45,9 @@ type Data interface {
 	UpdateDeploy(id string, fn func(*model.Deploy) error) (model.Deploy, error)
 	SetDeployLog(id, log string) error
 	CardsLinkedTo(todoIDs []string) ([]model.DeployShipped, error)
+	// ListTodos serves the merge trigger (deploytriggers.go): every org's
+	// tasks merged before it starts watching.
+	ListTodos(projectID string, statuses ...model.TodoStatus) []model.Todo
 	// AddEnvChanges records the environments' settings history.
 	AddEnvChanges(projectID string, uid int64, name string, at time.Time, changes []model.EnvChange) error
 	Accounts() *store.Accounts
@@ -71,6 +74,10 @@ type Caller struct {
 	// tunnel.UserHeader; 0 when it doesn't say). It is only recorded as who
 	// did something (author); it grants nothing: rights stay the Machine's.
 	HubUser int64
+	// Agent: Claude, with the board's MCP tools, acting for User. It may
+	// deploy only where members may, and never approve a deploy
+	// (mayDeploy, decide).
+	Agent bool
 }
 
 // author is who to record as having done what c asks (a task's creator, a

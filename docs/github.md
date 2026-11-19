@@ -201,6 +201,8 @@ notes start out as the Dash tasks merged since the previous release (each task's
 summary of it); edit them freely, they become the tag's message. The dialog warns when the commit's
 build isn't green or tasks are still running. Confirming creates an annotated tag
 (`git tag -a <tag> <sha>`) and pushes it (`git push origin <tag>`); the tag shows up in the graph.
+The project's environments that deploy on each release tag then deploy the tagged commit (see
+[Triggers](deploys.md#triggers)). The graph also marks the commit each environment runs.
 
 When the project is on GitHub, Dash then follows the workflow runs the tag started: the
 project's row in the sidebar shows the pulsing ring ("Building v1.2.3"), the **Builds** action says

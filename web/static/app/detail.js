@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../editor.js";
-import { $, $$, h, ib, ico, plural } from "./dom.js";
+import { $, $$, dateText, dateTimeText, h, ib, ico, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
@@ -119,6 +119,37 @@ function createdBy(t) {
   return h("span", { class: "created-by" }, avatar(u), `Created by ${u.username}`);
 }
 
+// ------------------------------------------------------------------ live in
+// A merged task of a project with environments says where it is live:
+// "Live in production since 4 Nov 2026", from the project's deploy records
+// (GET /deploys/live, read at most every 30s per project).
+const liveCache = new Map(); // project id → { at, tasks, loading }
+const LIVE_FOR = 30000;
+
+function liveMeta(t) {
+  if (t.status !== "merged") return null;
+  const p = state.projects.find((x) => x.id === t.project_id);
+  if (!p?.environments?.length) return null;
+  const c = liveCache.get(p.id);
+  if (!c || (Date.now() - c.at > LIVE_FOR && !c.loading)) {
+    const next = { at: Date.now(), tasks: c?.tasks || {}, loading: true };
+    liveCache.set(p.id, next);
+    api("GET", `/api/projects/${p.id}/deploys/live`, null, p.prefix || "")
+      .then((res) => { next.tasks = res?.tasks || {}; })
+      .catch(() => {})
+      .finally(() => { next.loading = false; if (state.detail === t.id) renderDetail(); });
+  }
+  const lives = liveCache.get(p.id).tasks[t.id] || [];
+  if (!lives.length) return null;
+  // Production if it is live there, else the environment furthest along.
+  const l = lives.find((x) => x.environment === "production" || x.environment === "prod") || lives.at(-1);
+  const all = lives.map((x) => `${x.environment} since ${dateTimeText(x.since)}`).join("\n");
+  return h("span", { class: "live-tag", title: `Live in ${all}` }, `Live in ${l.environment} since ${dateText(l.since)}`);
+}
+
+// A deploy going live changes where tasks are live: read it again.
+export function forgetLive(projectID) { liveCache.delete(projectID); }
+
 let promptFold = ""; // the task and fold state the prompt was last opened or folded for
 export function renderDetail() {
   const t = state.todos.get(state.detail);
@@ -143,6 +174,7 @@ export function renderDetail() {
     waitsOnGitHub(t) ? h("span", { class: `pr-status ${prTone(prStatus(t.pr))}`, title: prChecksTitle(t.pr) }, prStatus(t.pr)) : null,
     waitsOnGitHub(t) ? prChecksEl(t.pr) : null,
     t.merged_commit ? h("span", { class: "branch", title: t.merged_commit }, t.merged_commit.slice(0, 8)) : null,
+    liveMeta(t),
     t.revert ? (t.revert.pr_url
       ? h("a", { class: "revert-tag", href: t.revert.pr_url, target: "_blank", rel: "noopener" }, "Revert pull request")
       : h("span", { class: "revert-tag", title: t.revert.commit }, "Reverted")) : null,

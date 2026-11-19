@@ -22,7 +22,19 @@ export const DEPLOY_STATUS = {
   awaiting_approval: "Awaiting approval", rejected: "Rejected",
 };
 const ACTIVE = ["building", "deploying", "verifying"];
-const TRIGGER = { user: "", merge: "after a merge", release: "for a release", goal: "for a goal", auto_rollback: "automatically, its checks failed" };
+const TRIGGER = { user: "", merge: "after a merge", release: "for a release", goal: "for a goal", auto_rollback: "automatically, its checks failed", agent: "by Claude" };
+const ENV_TRIGGER = { merge: "Deploys each merge to the default branch", release: "Deploys each release tag" };
+
+// startedBy says who or what started deploy d: "by ana", "by Claude for
+// ana", "after a merge", "for release 1.4.0".
+export function startedBy(d) {
+  switch (d.trigger) {
+    case "agent": return d.by_name ? `by Claude for ${d.by_name}` : "by Claude";
+    case "release": return `for release ${d.trigger_ref || ""}`.trim() + (d.by_name ? `, tagged by ${d.by_name}` : "");
+    case "merge": return "after a merge";
+  }
+  return [d.by_name ? `by ${d.by_name}` : "", TRIGGER[d.trigger] || ""].filter(Boolean).join(" ");
+}
 const CHECK = { health: "Health check", verify: "Verify command", soak: "Soak" };
 
 export const dp = {
@@ -117,10 +129,11 @@ function envCard(e) {
     active ? h("button", { type: "button", class: "env-line env-active", onclick: () => openDeploy(active.id).catch(fail) },
       h("span", { class: "act-spin", "aria-hidden": "true" }), `${DEPLOY_STATUS[active.status]} ${short(active.commit)}…`) : null,
     e.queued ? h("p", { class: "env-line hint" }, `${plural(e.queued, "deploy")} queued`) : null,
+    ENV_TRIGGER[e.trigger] ? h("p", { class: "env-line hint" }, `${ENV_TRIGGER[e.trigger]}.`) : null,
     pol.awaiting?.length ? h("ul", { class: "env-line env-awaiting", "aria-label": `Deploys to ${e.name} awaiting approval` }, ...pol.awaiting.map((d) => h("li", {},
       h("button", { type: "button", class: "link", onclick: () => openDeploy(d.id).catch(fail) }, statusTag(d)),
       h("code", {}, short(d.ref || d.commit) || "tip"),
-      h("span", { class: "env-subject hint" }, d.by_name ? `by ${d.by_name}` : ""),
+      h("span", { class: "env-subject hint" }, startedBy(d)),
       ...approveButtons(d, pol)))) : null,
     promote ? h("div", { class: "env-line env-actions" }, promote) : null,
     pol.frozen ? h("p", { class: "env-line warn" }, pol.frozen) : null,
@@ -161,8 +174,7 @@ function renderList() {
         h("span", { class: "deploy-subject" }, d.subject || "")),
       h("span", { class: "deploy-sub" },
         h("time", { datetime: d.created_at, title: dateTimeText(d.created_at) }, agoText(d.created_at)),
-        d.by_name ? h("span", {}, `by ${d.by_name}`) : null,
-        TRIGGER[d.trigger] ? h("span", {}, TRIGGER[d.trigger]) : null,
+        startedBy(d) ? h("span", {}, startedBy(d)) : null,
         d.runner ? h("span", {}, `on ${d.runner}`) : null,
         took(d) ? h("span", {}, took(d)) : null,
         d.shipped?.length ? h("span", {}, plural(d.shipped.filter((x) => x.kind === "task").length, "task")) : null)))));
@@ -354,7 +366,7 @@ function renderDeploy() {
   fill($("#dd-meta"), statusTag(d),
     d.commit ? h("code", { title: d.commit }, short(d.commit)) : null,
     h("span", { title: dateTimeText(d.created_at) }, `queued ${agoText(d.created_at)}`),
-    d.by_name ? h("span", {}, `by ${d.by_name}${TRIGGER[d.trigger] ? ` ${TRIGGER[d.trigger]}` : ""}`) : null);
+    startedBy(d) ? h("span", {}, startedBy(d)) : null);
   renderDeployActions(d);
   $("#dd-error").hidden = !(dp.error || d.error);
   $("#dd-error").textContent = dp.error || d.error || "";
@@ -375,6 +387,8 @@ function renderDeploy() {
     d.tests_passed ? row("Tests", "passed on this commit") : null,
     d.rollback_of ? row("Rolls back", openLink(d.rollback_of)) : null,
     d.rolled_back_by ? row("Rolled back by", openLink(d.rolled_back_by)) : null,
+    (d.trigger === "merge" || d.trigger === "agent") && d.trigger_ref && d.trigger_ref !== "chat"
+      ? row(d.trigger === "merge" ? "Merged task" : "For task", h("button", { type: "button", class: "link", onclick: () => openDetail(d.trigger_ref).catch(fail) }, "Open the task")) : null,
     d.fix_task ? row("Fix", h("button", { type: "button", class: "link", onclick: () => openDetail(d.fix_task).catch(fail) }, `Fix failed deploy to ${d.environment}`)) : null,
   ].filter(Boolean).flat());
   renderPhases(d);

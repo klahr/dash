@@ -419,6 +419,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .failed-tag { color: var(--failed); border: 1px solid currentColor; border-radius: var(--r-s); padding: 0 5px; line-height: 1.5; }
 .prio-tag.prio-urgent { color: var(--failed); font-weight: 600; }
 .start-now-tag { color: var(--running); } /* the task skips the wait for the weekly pace */
+.live-tag { color: var(--merged); font-weight: 600; } /* a merged task, live in an environment */
 /* A card's small word tags (paused, reviewing, a PR, CI, checks, a revert): one size; each sets its colour. */
 :is(.failed-tag, .paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag, .nochange-tag) { font-size: var(--fs-xs); font-weight: 600; }
 /* A task that changed no files: in Review it is closed, not merged; once closed it says so. */
@@ -837,6 +838,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .graph-ref { line-height: 18px; padding: 0 6px; border-radius: var(--r-s); border: 1px solid var(--merged); color: var(--merged); font-size: var(--fs-2xs); }
 .graph-ref.tag { border-color: var(--accent); color: var(--accent); }
 .graph-ref.remote { background: var(--merged); color: var(--bg); font-weight: 600; }
+.graph-ref.env { border-color: var(--review); color: var(--review); }
+.graph-ref.env::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
 .graph-commit[role="button"] { cursor: pointer; border-radius: var(--r-s); padding-inline: 4px; margin-inline: -4px; transition: background-color .15s; }
 .graph-commit[role="button"]:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .graph-commit[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -3531,7 +3534,7 @@ button.goal-task-open:hover { background: var(--raised); }
 .t-working { --c: var(--running); }
 .t-waiting { --c: var(--review); }
 .t-failed { --c: var(--failed); }
-.t-done, .t-shipped { --c: var(--merged); }
+.t-done, .t-shipped, .t-live { --c: var(--merged); }
 .pl-suggest { font-size: var(--fs-xs); font-weight: 600; color: var(--merged); }
 /* A card's first picture across its top, and its files in its pane (app/planning.js). */
 .pl-cover {

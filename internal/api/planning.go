@@ -72,6 +72,9 @@ type cardStatus struct {
 	// SuggestDone: everything linked is done but the card isn't in Done.
 	// Dash suggests the move; it never makes it.
 	SuggestDone bool `json:"suggest_done,omitempty"`
+	// Live is where all of it is live, once it is, and since when
+	// (deploylive.go): Text says "Live in production since 19 Nov 2026".
+	Live *liveIn `json:"live,omitempty"`
 }
 
 // linkView is one task or goal of a card, as its owner sees it: title,
@@ -88,6 +91,9 @@ type linkView struct {
 	Tone      string `json:"tone"`
 	// Shipped is the first release with all of it, once done and released.
 	Shipped string `json:"shipped,omitempty"`
+	// Live is where it is live (production if it is there), once deployed.
+	Live    *liveIn  `json:"live,omitempty"`
+	lives   []liveIn // every environment it is live in
 	done    bool
 	failed  bool
 	started bool
@@ -145,11 +151,13 @@ type planningWork struct {
 	goals    map[string]model.Goal
 	goalWork map[string][]model.Todo // goal id → its tasks
 	people   map[int64]store.Member  // the org's members, by user id
+	live     map[string]projectLive  // project id → what is live where, read when needed
 }
 
 func (sv *service) planningWork(ctx context.Context) *planningWork {
 	w := &planningWork{sv: sv, ctx: ctx, projects: map[string]model.Project{}, todos: map[string]model.Todo{},
-		goals: map[string]model.Goal{}, goalWork: map[string][]model.Todo{}, people: map[int64]store.Member{}}
+		goals: map[string]model.Goal{}, goalWork: map[string][]model.Todo{}, people: map[int64]store.Member{},
+		live: map[string]projectLive{}}
 	if ms, err := sv.s.Store.Accounts().Members(sv.c.Org); err == nil {
 		for _, m := range ms {
 			w.people[m.ID] = m
@@ -224,6 +232,7 @@ func (w *planningWork) link(l model.CardLink) linkView {
 		v.started = t.Status != model.StatusDraft
 		if v.done {
 			v.Shipped = w.shipped([]model.Todo{t})
+			v.lives = w.liveTask(t)
 		}
 	case model.LinkGoal:
 		g, ok := w.goals[l.WorkID]
@@ -248,12 +257,35 @@ func (w *planningWork) link(l model.CardLink) linkView {
 				}
 			}
 			v.Shipped = w.shipped(merged)
+			var sets [][]liveIn
+			for _, t := range merged {
+				sets = append(sets, w.liveTask(t))
+			}
+			v.lives = commonLive(sets)
 		}
 	}
 	if v.Shipped != "" {
 		v.State, v.Tone = "Shipped in "+v.Shipped, "shipped"
 	}
+	if l, ok := bestLive(v.lives); ok {
+		v.Live = &l
+		v.State, v.Tone = liveText(l), "live"
+	}
 	return v
+}
+
+// liveTask is where merged task t is live, from its project's deploys.
+func (w *planningWork) liveTask(t model.Todo) []liveIn {
+	pl, ok := w.live[t.ProjectID]
+	if !ok {
+		p, found := w.projects[t.ProjectID]
+		if !found || len(p.Environments) == 0 {
+			return nil
+		}
+		pl = liveOf(w.sv.data, p)
+		w.live[t.ProjectID] = pl
+	}
+	return pl.Shipped[model.ShippedKey(model.LinkTask, t.ID)]
 }
 
 // shipped is the first release that has every one of the tasks' merged
@@ -337,7 +369,9 @@ func status(c model.Card, links []linkView) cardStatus {
 	}
 	var failed, waiting, review, started int
 	shipped, allShipped := "", true
+	var lives [][]liveIn
 	for _, l := range links {
+		lives = append(lives, l.lives)
 		switch {
 		case l.done:
 			st.Done++
@@ -364,6 +398,9 @@ func status(c model.Card, links []linkView) cardStatus {
 	switch {
 	case failed > 0:
 		st.Text, st.Tone = "Failed, needs a developer", "failed"
+	case st.Done == st.Total && len(commonLive(lives)) > 0:
+		l, _ := bestLive(commonLive(lives))
+		st.Text, st.Tone, st.Live = liveText(l), "live", &l
 	case st.Done == st.Total && allShipped:
 		st.Text, st.Tone = "Shipped in "+shipped, "shipped"
 	case st.Done == st.Total:

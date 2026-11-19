@@ -16,8 +16,9 @@ them in **Project settings → Deploy**. Each has:
 - **Runs on** (on a hub): the runner labels its deploys run on. Empty runs on any runner the
   project runs on. See [Where deploys run](several-computers.md#where-deploys-run).
 - **Checks** (optional): what decides that a deploy is live. See [Checks](#checks).
-- **Who and when**: who may deploy, approve and change settings, what a deploy needs first, and
-  freeze windows. See [Roles and approvals](#roles-and-approvals).
+- **Who and when**: who may deploy, approve and change settings, whether it deploys on its own,
+  what a deploy needs first, and freeze windows. See [Roles and approvals](#roles-and-approvals)
+  and [Triggers](#triggers).
 
 The environments are settings kept by Dash. Nothing goes in the repository.
 
@@ -29,6 +30,8 @@ A project that had a **Deploy command** before environments now has one environm
 Open **Deploys** in the sidebar (`gd`). Each environment has a card:
 
 - what is live there, since when, and its version;
+- what deploys there on its own: "Deploys each merge to the default branch" or "Deploys each
+  release tag";
 - how far it is ahead of the others ("staging is 3 commits ahead of production");
 - a deploy that is running or queued;
 - on a hub, the runners its deploys may run on, and a warning when none of them can, or none has
@@ -51,7 +54,8 @@ Below the cards are the deploys, newest first. A deploy opens in a pane beside t
 screen with **Back** on a phone; `Esc` closes it, `j`/`k` step through the list). The pane shows:
 
 - the commit, and the deploy it replaced;
-- who started it, the runner it ran on, its exit code;
+- who or what started it ("by ana", "by Claude for ana", "after a merge", "for release 1.4.0"),
+  with the task a merge or Claude deployed for, the runner it ran on, its exit code;
 - its phases and how long each took: **Awaiting approval** (when it needs one), **Queued**, **Building**, **Deploying**, **Verifying**,
   then **Live** or **Failed**. A live deploy becomes **Replaced** when the next one goes live, or
   **Rolled back** when a rollback replaces it;
@@ -83,6 +87,26 @@ Each lets that role and the roles above it. Dash checks them on the hub, whateve
 - **Who may change settings**: changing or removing an environment needs it. You can't set a role
   above your own.
 
+## Triggers
+
+**Who and when → Deploys on its own** says what deploys to an environment besides someone pressing
+**Deploy**:
+
+- **No, only when someone deploys** (the default).
+- **On each merge to the default branch**: each task Dash merges, here or as a pull request merged
+  on GitHub, deploys its merged commit. While one such deploy still waits to start (queued, or
+  awaiting approval), the next merge moves it on to the newer commit instead of queueing another.
+- **On each release tag**: each release tagged with **Tag release…** or `create_release` (see
+  [Tag a release](github.md#tag-a-release)) deploys the tagged commit.
+
+A triggered deploy goes through the same queue, requirements, approvals and freezes as one you
+start. One that a freeze or a requirement blocks is recorded as **Failed**, with the reason, so the
+list shows it didn't go. Dash records what started it: the merged task, or the tag and who tagged
+it.
+
+On a hub, the hub triggers the deploys: it keeps the records. A typical setup deploys `staging` on
+each merge and `production` on each release tag, with **Live on first** set to `staging`.
+
 ## Requirements and freezes
 
 Also under **Who and when**:
@@ -111,6 +135,33 @@ Also under **Who and when**:
 A blocked deploy is refused, with the reason: "production is frozen until Mon 23 Nov 07:00
 (Europe/Stockholm): weekend". Approving one is refused the same way. A deploy whose turn comes
 during a freeze fails with the reason.
+
+## Where it is live
+
+Dash works out from its deploy records what each environment runs, so it shows:
+
+- in **History**, a marker with the environment's name on the commit each environment runs;
+- on a merged task, **Live in production since 4 Nov 2026** (production when it is live there,
+  else the environment furthest along; point at it to see all of them);
+- on a [planning card](planning.md#status), the same once all its work is live.
+
+A task is live in an environment once a deploy that shipped it (its commit names the task, see
+the deploy's pane) went live there, and until a rollback goes back to before it. This works on a
+hub whose projects live on runners: the hub holds the records.
+
+## From Claude
+
+The chats' `dash_board` tools deploy too (see [MCP](mcp.md#deploys)): `list_deploys`, `deploy`,
+`rollback` and `promote`. Claude acts for the chat's user, with more limits:
+
+- it may deploy, roll back and promote only to an environment whose **Who may deploy** is
+  **Members**, whatever the user's role;
+- it can never approve or reject a deploy: its deploys wait for a person where approval is needed;
+- freezes and requirements hold its deploys like anyone's.
+
+A shell chat asks you before each `deploy`, `rollback` and `promote`; a read-only chat only has
+`list_deploys`. Claude's deploys show "by Claude for <you>". Your own rule on approvals holds: in
+an org with more than one admin, someone else approves the deploys Claude makes for you.
 
 ## Settings history
 
@@ -240,7 +291,12 @@ a production env file".
 - `GET /api/projects/{id}/environments`: each environment with what is live, what runs, how far
   it is ahead of the others, (on a hub) its runners, and in `policy` what you may do there, what
   blocks a deploy, the deploys awaiting approval and where **Promote** goes.
-- `GET /api/projects/{id}/deploys?environment=`: the deploys, newest first, without logs.
+- `GET /api/projects/{id}/deploys?environment=`: the deploys, newest first, without logs. A
+  deploy's `trigger` is what started it: `user`, `agent` (Claude), `merge`, `release`,
+  `auto_rollback`; `trigger_ref` the task, tag or rolled-back deploy behind it.
+- `GET /api/projects/{id}/deploys/live`: what is live where. `environments` has each
+  environment's live `commit`, `deploy` and `since`; `tasks` maps a task id to the environments
+  it is live in (`{"environment", "since"}`).
 - `POST /api/projects/{id}/deploys` with `{"environment": "production", "commit": ""}`: queue a
   deploy. An empty `commit` deploys the tip of the default branch. With `"promote_from":
   "staging"` instead of `commit`, it promotes what is live there. A deploy that needs an approval
@@ -258,7 +314,8 @@ The environments are the `environments` field of `PATCH /api/projects/{id}` and 
 `update_project` tool: a list of `{"name", "deploy_command", "build_command", "runs_on", "url",
 "health_path", "health_status", "health_timeout", "verify_command", "soak", "auto_rollback",
 "deploy_role", "approve_role", "settings_role", "require_tests", "require_live_on", "freezes",
-"time_zone"}`, which replaces the project's environments. Roles are `member`, `admin` or `owner`
-(`approve_role` also `none`). `freezes` is a list of `{"from", "to", "note"}`.
+"time_zone", "trigger"}`, which replaces the project's environments. Roles are `member`, `admin` or
+`owner` (`approve_role` also `none`). `freezes` is a list of `{"from", "to", "note"}`. `trigger` is
+`manual` (the default), `merge` or `release`.
 
-Planners may use the `GET` routes above, without the deploys' logs.
+Planners may use the `GET` routes above, without the deploys' logs, except `deploys/live`.

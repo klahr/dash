@@ -40,7 +40,7 @@ func (s *Server) BoardMCP() http.Handler {
 
 func (s *Server) boardHandler() *mcptools.Handler {
 	return &mcptools.Handler{Tokens: s.Board, Board: func(sc mcptools.Scope) (mcptools.Board, error) {
-		c := Caller{Org: sc.Org, User: sc.User}
+		c := Caller{Org: sc.Org, User: sc.User, Agent: true}
 		if sc.Todo != "" {
 			org, ok := s.Store.TodoOrg(sc.Todo)
 			if !ok || org != sc.Org {
