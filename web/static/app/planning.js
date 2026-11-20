@@ -1295,7 +1295,7 @@ function sheet(title, kids, ok, icon = "check") {
 // then starts it: the card's title and description are what to do.
 async function startSheet(c) {
   if (!pl.projects.length) await loadPlanning();
-  if (!pl.projects.length) throw new Error("There are no projects to start work in yet. Ask a developer to add one.");
+  if (!pl.projects.length) throw new Error("There are no projects to start work in yet. Planning starts work in shared projects only, not in a runner's own project. Ask a developer to add a shared one with + Add project, from GitHub or a URL.");
   // Dash doesn't stop either, but says so: work already under way for the
   // card (a second Start makes the same work again), and cards it waits for.
   const open = (c.links || []).filter((l) => l.state !== "Removed" && !["done", "shipped", "live"].includes(l.tone));

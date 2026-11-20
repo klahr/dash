@@ -930,7 +930,8 @@ func (s *Server) removeCardFile(w http.ResponseWriter, r *http.Request) {
 
 // planningProjects handles GET /api/planning/projects: the org's projects'
 // ids, names, colors and icons (the icon is a planning URL a planner can
-// load, or empty for none).
+// load, or empty for none). On a hub these are the shared projects only: a
+// runner's own projects live in that runner's store, not the org's.
 func (s *Server) planningProjects(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {

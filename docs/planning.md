@@ -142,6 +142,13 @@ moves a card to **Done** on its own.
    tasks; see [Goals](goals.md)).
 3. Click **Start**.
 
+On a hub, the project list holds the org's shared projects only. A
+[runner's own project](several-computers.md#projects-of-a-runners-own) isn't in it, as the
+hub doesn't keep its tasks. To start cards in it, make it a shared project: push it to a git
+remote and add that with **+ Add project** (**From GitHub** or **From URL**). See
+[Two kinds of projects](several-computers.md#two-kinds-of-projects). With no shared project
+yet, **Start…** says so.
+
 The card's title and description become the task's prompt or the goal's description. A task
 also gets the card's files, for Claude to read. On a hub it doesn't: files can't be sent to
 runners yet. Dash links the new work to the card and moves the card to
@@ -204,7 +211,7 @@ Planning is under `/api/planning/`:
 | `GET /api/planning/cards/{id}/files/{file}/{name}`    | a card's file                                    |
 | `DELETE /api/planning/cards/{id}/files/{file}`        | take a file off the card                         |
 | `POST /api/planning/cards/{id}/start`                 | `project` and `kind` (`task` or `goal`); the card, with `started`: the new work's `kind` and `id` |
-| `GET /api/planning/projects`                          | the org's projects' ids, names, colors and icon URLs |
+| `GET /api/planning/projects`                          | the org's projects' ids, names, colors and icon URLs (on a hub, shared projects only) |
 | `GET /api/planning/projects/{id}/icon`                | a project's icon image                           |
 | `GET /api/planning/people`                            | the org's members to add to cards: ids, usernames and picture versions |
 | `POST /api/planning/cards/{id}/links`                 | link `kind` and `id` (members)                   |
