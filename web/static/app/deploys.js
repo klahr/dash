@@ -5,6 +5,7 @@ import { detailPane } from "./detailpane.js";
 import { state } from "./state.js";
 import { projectKey } from "./events.js";
 import { agoText } from "./branches.js";
+import { duration } from "./activity.js";
 import { detailBackground, openDetail } from "./detail.js";
 import { openSettings } from "./settings.js";
 import { changed, linkTo } from "./routes.js";
@@ -161,12 +162,11 @@ function renderEnvCards() {
 
 const liveSince = (d) => (d.phases || []).find((ph) => ph.status === "live")?.at || d.finished_at || d.created_at;
 
-// How long a deploy took (or has taken), e.g. "1m 20s".
+// How long a deploy took (or has taken), e.g. "1m 20s" or "2h 03m".
 function took(d) {
   if (!d.started_at) return "";
   const end = d.finished_at ? new Date(d.finished_at) : new Date();
-  const s = Math.max(0, Math.round((end - new Date(d.started_at)) / 1000));
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  return duration(end - new Date(d.started_at));
 }
 
 const statusTag = (d) => h("span", { class: `status d-${d.status}` },
@@ -521,11 +521,10 @@ function renderPhases(d) {
   const ph = d.phases || [];
   $("#dd-phases").replaceChildren(...ph.map((p, i) => {
     const next = ph[i + 1];
-    const secs = next ? Math.round((new Date(next.at) - new Date(p.at)) / 1000) : null;
     return h("li", { class: `deploy-phase d-${p.status}` },
       h("span", { class: "deploy-phase-name" }, DEPLOY_STATUS[p.status] || p.status),
       h("time", { datetime: p.at, title: dateTimeText(p.at) }, agoText(p.at)),
-      secs != null ? h("span", { class: "hint" }, secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`) : null);
+      next ? h("span", { class: "hint" }, duration(new Date(next.at) - new Date(p.at))) : null);
   }));
 }
 

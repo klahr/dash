@@ -20,24 +20,20 @@ import { confirmRunAs } from "./people.js";
 // ------------------------------------------------------------------ chat
 // usageLine shows what an answer took: tokens in and out, time spent
 // thinking and in all. Null for answers saved before Dash recorded it.
-const fmtSecs = (ms) => {
-  const s = Math.round(ms / 1000);
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-};
 function usageLine(u) {
   if (!u) return null;
   const cacheRead = u.cache_read_tokens || 0, cacheNew = u.cache_creation_tokens || 0;
   const input = (u.input_tokens || 0) + cacheRead + cacheNew;
   const parts = [`${fmtTokens(input)} in`, `${fmtTokens(u.output_tokens || 0)} out`];
-  if (u.thinking_ms >= 500) parts.push(`thought ${fmtSecs(u.thinking_ms)}`);
-  if (u.duration_ms) parts.push(fmtSecs(u.duration_ms));
+  if (u.thinking_ms >= 500) parts.push(`thought ${duration(u.thinking_ms)}`);
+  if (u.duration_ms) parts.push(duration(u.duration_ms));
   const title = [
     `Input: ${(u.input_tokens || 0).toLocaleString()} tokens`,
     cacheRead ? `Read from cache: ${cacheRead.toLocaleString()}` : null,
     cacheNew ? `Written to cache: ${cacheNew.toLocaleString()}` : null,
     `Output: ${(u.output_tokens || 0).toLocaleString()} tokens (thinking included)`,
-    u.thinking_ms ? `Thinking: ${fmtSecs(u.thinking_ms)}` : null,
-    u.duration_ms ? `Total: ${fmtSecs(u.duration_ms)}` : null,
+    u.thinking_ms ? `Thinking: ${duration(u.thinking_ms)}` : null,
+    u.duration_ms ? `Total: ${duration(u.duration_ms)}` : null,
   ].filter(Boolean).join("\n");
   return h("div", { class: "msg-usage", title }, parts.join(" · "));
 }
