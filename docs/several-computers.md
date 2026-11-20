@@ -548,10 +548,13 @@ the org sees it and adds tasks to it, and each member's tasks run on their own r
   ("laptop is bob's runner and only takes bob's tasks").
 - Terminals, `!` commands and chats on a runner stay its owner's alone.
 - The rest of a project's pages read the project's clone on one of its runners: **History**,
-  **Files**, the checklist, branches, releases. So do pushes, pulls, tags and checklist changes.
-  This goes to a runner of yours first, then to a shared runner, and only when none of those is
-  online to another member's runner. That runner clones and fetches with its owner's git login,
-  so their login must reach the repository.
+  **Files**, the checklist, branches, releases. A read goes to a runner of yours first, then to a
+  shared runner, and only when none of those is online to another member's runner. That runner
+  clones and fetches with its owner's git login, so their login must reach the repository.
+- Pushes, tags, switching or making the work branch, a branch's pull request and checklist
+  changes run only on a runner of yours or a shared one, never on another member's: they push
+  with the runner's owner's git login. With none of those online they fail, saying which runners
+  there are and why each doesn't take your work.
 
 A task that waits because only other members' runners have its labels says so: "waiting: no runner
 of alice's has the labels Linux; laptop is bob's runner and only takes bob's tasks". Its card shows

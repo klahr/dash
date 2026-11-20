@@ -52,6 +52,23 @@ func (sv *service) projectRunner(ctx context.Context, p model.Project, prefer st
 	return sv.projectRunnerFor(ctx, p, prefer, nil)
 }
 
+// pushRunner is projectRunner for work that pushes or commits to p's
+// remote (a push, a tag, a branch, a pull request, a checklist save): a
+// runner does it with its owner's git login, so it runs only on one of the
+// caller's own runners or a shared one, never on another member's.
+func (sv *service) pushRunner(ctx context.Context, p model.Project, prefer string) (tunnel.Runner, string, error) {
+	return sv.projectRunnerFor(ctx, p, prefer, []int64{sv.c.User})
+}
+
+// pushRoutes are the forwarded routes (see viaRunner) that push or commit
+// to the project's remote: they go to a runner through pushRunner.
+var pushRoutes = map[string]bool{
+	"POST /api/projects/{pid}/push":      true,
+	"POST /api/projects/{pid}/tags":      true,
+	"PUT /api/projects/{pid}/branch":     true,
+	"POST /api/projects/{pid}/branch/pr": true,
+}
+
 // projectRunnerFor is projectRunner among the runners that do work for
 // users (tunnel.Runner.WorksFor; nil: any of p's runners), for what runs a
 // project command there: the caller's own runners, or shared ones.
@@ -118,8 +135,9 @@ func (sv *service) projectRunnerAmong(ctx context.Context, p model.Project, cand
 // mineFirst orders runners for work done for user (0: no one in
 // particular): user's own runners first, then shared ones, then other
 // members'. A runner does its git work with its owner's git login, so a
-// member's reads and git work go to someone else's runner only when none of
-// their own, and no shared one, is online. It returns a sorted copy.
+// member's reads go to someone else's runner only when none of their own,
+// and no shared one, is online (and pushes never do: pushRunner). It returns
+// a sorted copy.
 func mineFirst(runs []tunnel.Runner, user int64) []tunnel.Runner {
 	rank := func(r tunnel.Runner) int {
 		if user != 0 && r.OwnerID() == user {
@@ -320,9 +338,14 @@ func (f forwarded) write(w http.ResponseWriter) {
 
 // forward sends r, a request about the hub's project p, to p's clone on
 // one of its runners (prefer if it is online) and returns the answer. body
-// replaces r's body when not nil.
+// replaces r's body when not nil. A request that pushes (pushRoutes) goes
+// only to a runner of the caller's own or a shared one.
 func (sv *service) forward(r *http.Request, p model.Project, prefer string, body []byte) (forwarded, error) {
-	run, rpid, err := sv.projectRunner(r.Context(), p, prefer)
+	pick := sv.projectRunner
+	if pushRoutes[r.Pattern] {
+		pick = sv.pushRunner
+	}
+	run, rpid, err := pick(r.Context(), p, prefer)
 	if err != nil {
 		return forwarded{}, err
 	}
@@ -338,7 +361,7 @@ func (sv *service) forward(r *http.Request, p model.Project, prefer string, body
 	if body == nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return res, nil // its body was read
 	}
-	run, rpid, err = sv.projectRunner(r.Context(), p, run.ID)
+	run, rpid, err = pick(r.Context(), p, run.ID)
 	if err != nil {
 		return forwarded{}, err
 	}

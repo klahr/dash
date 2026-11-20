@@ -84,9 +84,15 @@ func (sv *service) readChecklist(ctx context.Context, p model.Project) (mcptools
 }
 
 // callRunner calls a project endpoint ("/checklist", …) on one of p's runners,
-// from a hub.
+// from a hub. Anything but a GET commits to the default branch and pushes,
+// so it runs only on a runner of the caller's own or a shared one
+// (pushRunner).
 func (sv *service) callRunner(ctx context.Context, p model.Project, method, rest string, in, out any) error {
-	run, rpid, err := sv.projectRunner(ctx, p, "")
+	pick := sv.pushRunner
+	if method == http.MethodGet {
+		pick = sv.projectRunner
+	}
+	run, rpid, err := pick(ctx, p, "")
 	if err != nil {
 		return err
 	}

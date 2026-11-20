@@ -17,7 +17,9 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/checklist"
 	"github.com/klahr/dash/internal/dispatch"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/runner"
@@ -388,5 +390,65 @@ func TestShellRunnerPick(t *testing.T) {
 	}
 	if _, err := shellRunner(runners, Caller{Org: 10, Machine: true}, "mine"); !errors.Is(err, errForbidden) {
 		t.Errorf("a caller with no user: %v", err)
+	}
+}
+
+// A runner pushes with its owner's git login, so a member's pushes (push,
+// tag, branch, pull request, a checklist save) never run on another
+// member's runner, even when none of theirs is online; their reads still
+// fall back to it.
+func TestHubPushesOnlyOnTheCallersOrASharedRunner(t *testing.T) {
+	parallel(t)
+
+	hub, _, _ := boardServer(t)
+	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
+	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}
+	d := &dispatch.Dispatcher{Store: raw(hub), Fleet: rh, Grace: 50 * time.Millisecond}
+	rh.OnState, rh.OnRevoke, rh.OnReport = d.State, d.Revoked, d.Report
+	hub.Dispatch = d
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := httptest.NewServer(hub.Routes())
+	defer srv.Close()
+
+	owner := testOwner(t, hub)
+	code, _, err := rh.NewCode(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	creds, err := tunnel.Register(ctx, srv.URL, code, "laptop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs, runnerAPI, remote := runnerSide(t, creds.OrgID)
+	rs.HubUser = creds.UserID
+	client := &tunnel.Client{Creds: creds, Handler: runnerAPI, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
+	go func() { _ = client.Run(ctx) }()
+	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
+
+	p, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, RemoteURL: remote,
+		DefaultBranch: "main", MergeMode: model.MergeLocal, RunsOn: []string{"any"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mid := member(t, hub, owner.Org, "m", store.RoleMember)
+	m := loginAs(t, hub.Routes(), "m", "long-enough-m")
+
+	for _, rt := range []struct{ method, path, body string }{
+		{"POST", "/push", ""}, {"PUT", "/branch", `{"branch":"dev","create":true}`}, {"POST", "/branch/pr", `{}`},
+	} {
+		w := send(m, rt.method, "/api/projects/"+p.ID+rt.path, rt.body)
+		if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "none of yours, or a shared one") {
+			t.Errorf("member's %s %s: %d %s", rt.method, rt.path, w.Code, w.Body)
+		}
+	}
+	sv := hub.as(Caller{User: mid, Org: owner.Org})
+	if _, err := sv.changeChecklist(ctx, p, mcptools.ChecklistChange{Ops: []checklist.Op{{Op: "add", Text: "x"}}}); err == nil ||
+		!strings.Contains(err.Error(), "none of yours, or a shared one") {
+		t.Errorf("member's checklist save: %v", err)
+	}
+	// A read still goes to the owner's runner.
+	if w := send(m, "GET", "/api/projects/"+p.ID+"/branches", ""); w.Code != http.StatusOK {
+		t.Errorf("member's GET /branches: %d %s", w.Code, w.Body)
 	}
 }

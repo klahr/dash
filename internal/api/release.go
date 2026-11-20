@@ -498,7 +498,7 @@ func (sv *service) releaseOnRunner(ctx context.Context, p model.Project, r mcpto
 	if err := sv.canRelease(); err != nil {
 		return out, err
 	}
-	run, rpid, err := sv.projectRunner(ctx, p, "")
+	run, rpid, err := sv.pushRunner(ctx, p, "")
 	if err != nil {
 		return out, err
 	}
