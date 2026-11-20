@@ -66,6 +66,9 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
 - **Depends on**: the cards that must be done before this one. **Add a card…** picks one;
   **×** takes it off. A card can't depend on itself, or on a card that already depends on it.
   **Needed by** lists the cards that depend on this one. Click a card in either list to open it.
+- **Delete card…**: the card's creator, its owner or an admin can delete a card. Before it
+  goes, the card names the tasks and goals that lose their card and the cards that no longer
+  depend on it. It can't be undone.
 - **Comments**: anyone in the org can comment; a comment's author or an admin can delete it.
   A card with comments shows how many on the board, by a speech bubble. Write `@` and
   someone's username, such as `@pia`, to mention them: they get a

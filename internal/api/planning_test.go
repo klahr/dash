@@ -161,6 +161,31 @@ func TestPlanningCardFollowsItsWork(t *testing.T) {
 	}
 }
 
+// Only a card's creator, its owner or an admin deletes it: another planner
+// can't, so its linked work and the cards that depend on it keep their link.
+func TestPlanningCardDeleteIsTheirs(t *testing.T) {
+	s, _, _ := boardServer(t)
+	h := s.Routes()
+	a := loggedIn(t, h) // an owner of the org
+	ph, _ := plannerOf(t, s, h)
+
+	mine := decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Patient sign-up"}`))
+	if w := do(t, ph, "DELETE", "/api/planning/cards/"+mine.ID, ""); w.Code != http.StatusForbidden {
+		t.Errorf("a planner deleted someone's card: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, ph, "DELETE", "/api/planning/cards/nope", ""); w.Code != http.StatusNotFound {
+		t.Errorf("delete no card: %d", w.Code)
+	}
+
+	theirs := decodeCard(t, do(t, ph, "POST", "/api/planning/cards", `{"title":"Book an appointment"}`))
+	if w := do(t, ph, "DELETE", "/api/planning/cards/"+theirs.ID, ""); w.Code != http.StatusNoContent {
+		t.Errorf("the creator deletes their card: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, a, "DELETE", "/api/planning/cards/"+mine.ID, ""); w.Code != http.StatusNoContent {
+		t.Errorf("an admin deletes a card: %d %s", w.Code, w.Body)
+	}
+}
+
 // A planner's event stream carries Planning's events only: a linked task's
 // change reaches them as planning.work, never as the task's own event.
 func TestPlannerEventsArePlanningOnly(t *testing.T) {

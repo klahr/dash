@@ -760,20 +760,40 @@ func (s *Server) answerCard(w http.ResponseWriter, r *http.Request, sv *service,
 	writeJSON(w, http.StatusOK, v)
 }
 
+// deleteCard handles DELETE /api/planning/cards/{cid}: the card's creator,
+// its owner, or an admin of the org may delete it. Its links to work and
+// the other cards' dependencies on it go with it, so it isn't everyone's.
 func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
+		return
+	}
+	c, err := sv.data.GetCard(r.PathValue("cid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if !s.canDeleteCard(sv.c, c) {
+		writeErr(w, fmt.Errorf("%w: only the card's creator, its owner or an admin can delete it", errForbidden))
 		return
 	}
 	if err := sv.writable(); err != nil {
 		writeErr(w, err)
 		return
 	}
-	if err := sv.data.DeleteCard(r.PathValue("cid")); err != nil {
+	if err := sv.data.DeleteCard(c.ID); err != nil {
 		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// canDeleteCard reports whether caller may delete c.
+func (s *Server) canDeleteCard(caller Caller, c model.Card) bool {
+	if caller.User != 0 && (caller.User == c.CreatedBy || caller.User == c.Owner) {
+		return true
+	}
+	return s.orgAdmin(caller)
 }
 
 // moveCard handles POST /api/planning/cards/{cid}/move: {column, position}.

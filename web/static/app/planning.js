@@ -1236,19 +1236,33 @@ function renderCard() {
       await loadCard(c.id);
     }) }, box, ib({ type: "submit", class: "btn small" }, "comment", "Comment")));
 
-  const danger = h("div", { class: "pl-danger" },
+  // Its creator, its owner or an admin deletes a card (the server checks too).
+  const mayDelete = me && (me.admin || me.id === c.created_by || me.id === c.owner);
+  const danger = mayDelete ? h("div", { class: "pl-danger" },
     ib({ type: "button", class: "btn small danger", onclick: attempt(async () => {
-      if (!await ask({ title: "Delete this card?", body: "Its comments, files and links go too, and cards that depend on it no longer do. The tasks and goals it links to stay.", ok: "Delete", danger: true })) return;
+      if (!await ask({ title: "Delete this card?", body: deleteCardText(c), ok: "Delete", danger: true })) return;
       await call("DELETE", cardAPI(c.id));
       pl.cards = pl.cards.filter((x) => x.id !== c.id);
       closeCard();
       renderBoard();
       toast("Card deleted");
-    }) }, "trash", "Delete card…"));
+    }) }, "trash", "Delete card…")) : null;
 
   const keep = body.scrollTop;
   fill(body, rename, suggest, facts, h("section", { class: "pl-section" }, h("h3", {}, h("label", { for: "pd-desc" }, "Description")), desc), filesSection(c), deps, work, discussion, danger);
   body.scrollTop = keep;
+}
+
+// deleteCardText is the confirmation for deleting c: it names the work that
+// loses its card and the cards that lose their dependency on it.
+function deleteCardText(c) {
+  const quote = (xs) => xs.map((x) => `“${x}”`).join(", ");
+  const work = (c.links || []).filter((l) => !l.removed).map((l) => l.title);
+  const needed = (c.needed_by || []).map((d) => d.title);
+  const lines = ["Its comments and files go too. This can't be undone."];
+  if (work.length) lines.push(`${work.length === 1 ? "This task or goal stays, but is" : "These tasks and goals stay, but are"} no longer on a card: ${quote(work)}.`);
+  if (needed.length) lines.push(`${needed.length === 1 ? "This card no longer depends" : "These cards no longer depend"} on it: ${quote(needed)}.`);
+  return lines.join(" ");
 }
 
 // ---- dependencies: the cards to be done before this one, and those that
