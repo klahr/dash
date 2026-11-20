@@ -20,7 +20,8 @@
 //
 // Query parameters, on any of them:
 //   board=<id>                     a board other than the project's Main one (board, tasks)
-//   project=<id>, tag=<tag>        Planning's project and tag filters (/planning only)
+//   project=<id>, tag=<tag> (any number), target=<target>, mine=1
+//                                  Planning's filters (/planning only)
 //   sheet=settings|account|org|runners, section=<key>
 //                                  a sheet open over the page, at a section of its rail
 //                                  (Project settings → Board: ?sheet=settings&section=board)
@@ -62,13 +63,13 @@ export function findProject(list, ref) {
 
 // parse turns a URL (a Location or URL) into a route:
 //   { project: {id, machine} | null, view, task, goal, sha, issue, deploy, card,
-//     board, plProject, plTag, sheet, section, named }
+//     board, plProject, plTags, plTarget, plMine, sheet, section, named }
 // named is false for a plain / (no place in it: the saved one applies). A
 // path that isn't the app's parses as / with named false.
 export function parse(loc) {
   const q = new URLSearchParams(loc.search);
   const r = { project: null, view: null, task: null, goal: null, sha: null, issue: null, deploy: null, card: null,
-    board: q.get("board"), plProject: null, plTag: null, sheet: null, section: null, named: false };
+    board: q.get("board"), plProject: null, plTags: [], plTarget: "", plMine: false, sheet: null, section: null, named: false };
   const sheet = q.get("sheet");
   if (SHEETS.includes(sheet)) { r.sheet = sheet; r.section = q.get("section"); }
   const parts = loc.pathname.split("/").slice(1).map(dec);
@@ -78,7 +79,9 @@ export function parse(loc) {
     r.view = "planning";
     r.card = parts[2] || null;
     r.plProject = q.get("project") || "";
-    r.plTag = q.get("tag") || "";
+    r.plTags = q.getAll("tag").filter(Boolean);
+    r.plTarget = q.get("target") || "";
+    r.plMine = q.get("mine") === "1";
     return r;
   }
   if (parts[0] === "p" && parts[1] && parts.length <= 4) {
@@ -114,7 +117,9 @@ export function href(r, p) {
   if (r.view === "planning") {
     path = "/planning" + (r.card ? `/cards/${enc(r.card)}` : "");
     if (r.plProject) q.set("project", r.plProject);
-    if (r.plTag) q.set("tag", r.plTag);
+    for (const t of r.plTags || []) q.append("tag", t);
+    if (r.plTarget) q.set("target", r.plTarget);
+    if (r.plMine) q.set("mine", "1");
   } else if (p) {
     const base = `/p/${projectSegment(p)}`;
     if (r.task) path = `${base}/tasks/${enc(r.task)}`;

@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -69,6 +70,9 @@ type Card struct {
 	// Members are the people in the org on the card (user ids), in the
 	// order they were added.
 	Members []int64 `json:"members"`
+	// Owner is the one member who answers for the card (a user id in
+	// Members; 0: nobody).
+	Owner int64 `json:"owner"`
 	// DependsOn are the org's other cards that must be done (in the Done
 	// column) before this one, in the order they were added.
 	DependsOn []string `json:"depends_on"`
@@ -164,6 +168,16 @@ func CleanCard(c *Card) error {
 		return fmt.Errorf("a card has at most %d members", MaxCardMembers)
 	}
 	c.Members = members
+	// The owner is one of the members: an owner who isn't one yet joins.
+	if c.Owner < 0 {
+		c.Owner = 0
+	}
+	if c.Owner != 0 && !slices.Contains(c.Members, c.Owner) {
+		if len(c.Members) >= MaxCardMembers {
+			return fmt.Errorf("a card has at most %d members", MaxCardMembers)
+		}
+		c.Members = append(c.Members, c.Owner)
+	}
 	// Each dependency once, in the order given.
 	seenDep := map[string]bool{}
 	deps := []string{}

@@ -124,12 +124,15 @@ func (o *OrgStore) emitCard(id string, deleted bool) {
 	}
 }
 
-const cardColumns = "c.id, c.org_id, c.project_id, c.title, c.description, c.col, c.position, c.priority, c.target, COALESCE(c.created_by, 0), c.created_at, c.updated_at"
+// The card's owner (model.Card.Owner) is kept in planning_cards.assignee,
+// the column a card's one assignee had before it had members (migration
+// 0031): NULL is nobody, and a deleted account leaves its cards without one.
+const cardColumns = "c.id, c.org_id, c.project_id, c.title, c.description, c.col, c.position, c.priority, c.target, COALESCE(c.assignee, 0), COALESCE(c.created_by, 0), c.created_at, c.updated_at"
 
 func scanCard(sc scanner) (model.Card, error) {
 	c := model.Card{Members: []int64{}, DependsOn: []string{}, Tags: []string{}, Files: []model.CardFile{}}
 	var created, updated int64
-	err := sc.Scan(&c.ID, &c.OrgID, &c.ProjectID, &c.Title, &c.Description, &c.Column, &c.Position, &c.Priority, &c.Target, &c.CreatedBy, &created, &updated)
+	err := sc.Scan(&c.ID, &c.OrgID, &c.ProjectID, &c.Title, &c.Description, &c.Column, &c.Position, &c.Priority, &c.Target, &c.Owner, &c.CreatedBy, &created, &updated)
 	c.CreatedAt, c.UpdatedAt = time.Unix(created, 0).UTC(), time.Unix(updated, 0).UTC()
 	return c, err
 }
@@ -453,9 +456,9 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 		if err := tx.QueryRow("SELECT COALESCE(MAX(position) + 1, 0) FROM planning_cards WHERE org_id = ? AND col = ?", o.org, c.Column).Scan(&c.Position); err != nil {
 			return err
 		}
-		_, err := tx.Exec(`INSERT INTO planning_cards (id, org_id, project_id, title, description, col, position, priority, target, created_by, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, 0), ?, ?)`,
-			c.ID, c.OrgID, c.ProjectID, c.Title, c.Description, c.Column, c.Position, c.Priority, c.Target, c.CreatedBy, c.CreatedAt.Unix(), c.UpdatedAt.Unix())
+		_, err := tx.Exec(`INSERT INTO planning_cards (id, org_id, project_id, title, description, col, position, priority, target, assignee, created_by, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, 0), NULLIF(?, 0), ?, ?)`,
+			c.ID, c.OrgID, c.ProjectID, c.Title, c.Description, c.Column, c.Position, c.Priority, c.Target, c.Owner, c.CreatedBy, c.CreatedAt.Unix(), c.UpdatedAt.Unix())
 		if err != nil {
 			return err
 		}
@@ -479,7 +482,7 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 }
 
 // UpdateCard applies fn to the card and stores its title, description,
-// project, priority, target, members, dependencies and tags (fn must leave
+// project, priority, target, members, owner, dependencies and tags (fn must leave
 // it clean). Its column and position change with MoveCard only.
 func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card, error) {
 	var c model.Card
@@ -506,8 +509,8 @@ func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card
 			return err
 		}
 		c.UpdatedAt = time.Now().UTC().Truncate(time.Second)
-		_, err = tx.Exec("UPDATE planning_cards SET project_id = ?, title = ?, description = ?, priority = ?, target = ?, updated_at = ? WHERE id = ?",
-			c.ProjectID, c.Title, c.Description, c.Priority, c.Target, c.UpdatedAt.Unix(), id)
+		_, err = tx.Exec("UPDATE planning_cards SET project_id = ?, title = ?, description = ?, priority = ?, target = ?, assignee = NULLIF(?, 0), updated_at = ? WHERE id = ?",
+			c.ProjectID, c.Title, c.Description, c.Priority, c.Target, c.Owner, c.UpdatedAt.Unix(), id)
 		if err != nil {
 			return err
 		}

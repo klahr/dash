@@ -25,21 +25,31 @@ It looks like a project's **Board**: on a phone, tap a column's name at the top 
 - The project filter at the top shows one project's cards. A card may name a project, or
   none yet. Picking a project in the sidebar picks it here too; opening the page keeps the
   filter you had.
-- A tag filter shows only the cards with one tag. Click a tag in an open card to pick it, and
-  click **×** on the tag at the top to show all cards again. A card added while a tag is
-  picked gets that tag.
+- **Mine** at the top shows only the cards you are a member of: your cards. Click it again to
+  show everyone's.
+- **Filter…** at the top shows only the cards with a tag, or with a target. Pick more tags to
+  narrow it: a card must have all of them. One target at a time, such as `1.4`, so a target
+  works as a milestone. Clicking a tag in an open card picks it too. Click **×** on a filter
+  at the top to take it off.
+- A card added while filters are on gets their tags and target, and you as a member with
+  **Mine** on, so it shows.
+- The filters stay as you left them, and are in the page's address, so a link shows the same
+  cards (see [Links](links.md)).
 
 Click a card to open it beside the board. On a phone it opens full screen, with **Back**.
 `Esc` closes it. A card has:
 
 - a title: **Rename**
 - **Priority** (high, medium, low or none) and **Target**: free text, such as a version
-  (`1.4`) or a date
+  (`1.4`), a milestone or a date. Give cards of one milestone the same target, and filter by it.
 - **Members**: the people in the org on the card, any number. Pick one from the list to add
   them, and click **×** on a member to take them off. Their pictures (or initials) show on the
   card on the board. Anyone in the org, planners too, can be a member and can add members. On
   the board, point at a card and press `Space` to put yourself on it; press it again to take
   yourself off. Someone you add gets a [notification](notifications.md#planning-cards).
+  **Owner** on a member makes them the card's one owner, who answers for it; click it again for
+  no owner. The owner's face comes first on the board, ringed. Taking the owner off the card
+  leaves it with no owner.
 - **Tags**: short labels, such as `backend` or `Q3`, any number up to 20. Type one in the box
   and press `Enter` (or a comma) to add it; the org's other tags are offered as you type.
   Click **×** on a tag to take it off. Tags show on the card on the board. Case doesn't
@@ -168,7 +178,7 @@ when linked work moves on.
 The chats, `dash-mcp` and the claude.ai connector have tools for the plan (see
 [MCP](mcp.md#planning)):
 
-- `list_cards`: the cards, with their column, priority, target, members, dependencies and status
+- `list_cards`: the cards, with their column, priority, target, members, owner, dependencies and status
 - `get_card`: one card, with its description, linked work and comments
 - `create_card`: add a card, and the cards it depends on
 - `update_card`: change a card, or move it to another column
@@ -185,7 +195,7 @@ Planning is under `/api/planning/`:
 | Call                                                  | What it does                                     |
 |-------------------------------------------------------|--------------------------------------------------|
 | `GET /api/planning/cards?project=<id>`                | the cards, with status and linked work           |
-| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `members` (user ids; `[]` is nobody), `depends_on` (card ids; `[]` is none) |
+| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `members` (user ids; `[]` is nobody), `owner` (a user id, who joins the members if they aren't one; `0` is nobody), `depends_on` (card ids; `[]` is none) |
 | `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments). A card has `deps` and `needed_by` (id, title, column, done) and `waiting`: its dependencies not done yet |
 | `POST /api/planning/cards/{id}/move`                  | `column` and `position` (0 is the top)           |
 | `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
@@ -204,6 +214,6 @@ Planning is under `/api/planning/`:
 
 ## Not yet
 
-Custom columns, labels, written progress summaries, approval before
-**Start**, and syncing with Jira or Linear aren't in this version. See
+Custom columns, labels, estimates, sorting cards by priority, written progress summaries,
+approval before **Start**, and syncing with Jira or Linear aren't in this version. See
 [Task boards](boards.md) for how an outside tracker can own a project's board.

@@ -28,7 +28,9 @@ type CardRow struct {
 	Project  string `json:"project,omitempty"`
 	// Members are the usernames of the people on the card.
 	Members []string `json:"members,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
+	// Owner is the username of the member who owns the card ("": nobody).
+	Owner string   `json:"owner,omitempty"`
+	Tags  []string `json:"tags,omitempty"`
 	// Status is what its linked work adds up to, e.g. "Waiting for review".
 	Status   string `json:"status"`
 	Progress string `json:"progress,omitempty"`
@@ -122,7 +124,7 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 	pProject.Desc = "Only this project's cards (name or id); default every project's."
 	return []Tool{
 		{"list_cards", "List the cards of the org's plan (the Planning page): what a product owner wants built, by column " +
-			"(ideas, planned, in_progress, done), with each card's priority, target, members, tags, the cards it depends on " +
+			"(ideas, planned, in_progress, done), with each card's priority, target, members, owner, tags, the cards it depends on " +
 			"(depends_on; waiting counts those not done yet) and the status of the tasks and goals linked to it.",
 			[]Param{pProject, {"column", "string", "Only this column: ideas, planned, in_progress or done.", false},
 				{"tag", "string", "Only the cards with this tag (any case).", false}},
@@ -362,7 +364,9 @@ type restCard struct {
 	Target      string   `json:"target"`
 	ProjectName string   `json:"project_name"`
 	Tags        []string `json:"tags"`
+	Owner       int64    `json:"owner"`
 	People      []struct {
+		ID       int64  `json:"id"`
 		Username string `json:"username"`
 	} `json:"people"`
 	Status struct {
@@ -397,6 +401,9 @@ func (c restCard) row() CardRow {
 		Tags: c.Tags, Status: c.Status.Text, Progress: c.Status.Progress, Links: len(c.Links), Waiting: c.Waiting}
 	for _, p := range c.People {
 		r.Members = append(r.Members, p.Username)
+		if p.ID != 0 && p.ID == c.Owner {
+			r.Owner = p.Username
+		}
 	}
 	for _, d := range c.Deps {
 		r.DependsOn = append(r.DependsOn, d.ID)

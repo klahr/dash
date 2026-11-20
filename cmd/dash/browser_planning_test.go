@@ -307,6 +307,25 @@ func TestBrowserPlanningTags(t *testing.T) {
 	b.until("all cards again", `document.querySelectorAll("#view-planning .pl-card").length === 2 && document.querySelector("#pl-tag-filter").hidden`,
 		chromedp.Click(chromedp.CSS(`#pl-tag-filter .icon-btn`)))
 
+	// Filter… picks tags, more than one: the cards with all of them show.
+	pick := func(v string) {
+		t.Helper()
+		js := fmt.Sprintf(`(() => { const s = document.querySelector("#pl-more-filter"); s.value = %q; s.dispatchEvent(new Event("change")); return true; })()`, v)
+		if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](js)); err != nil {
+			t.Fatalf("pick %s: %v", v, err)
+		}
+	}
+	pick("t:Q3")
+	b.waitJS("tagged Q3", `document.querySelectorAll("#view-planning .pl-card").length === 1 && document.querySelectorAll("#pl-tag-filter .pl-tag").length === 1`)
+	pick("t:ux")
+	b.waitJS("tagged Q3 and ux", `document.querySelectorAll("#view-planning .pl-card").length === 1 && [...document.querySelectorAll("#pl-tag-filter .pl-tag-name")].map((e) => e.textContent).join() === "Q3,ux" && location.search.includes("tag=Q3&tag=ux")`)
+	// Mine shows only the cards you are on: none yet.
+	b.until("Mine", `document.querySelector("#pl-mine").getAttribute("aria-pressed") === "true" && document.querySelectorAll("#view-planning .pl-card").length === 0 && location.search.includes("mine=1")`,
+		chromedp.Click(chromedp.CSS(`#pl-mine`)))
+	b.do("Mine off, and the tags", chromedp.Click(chromedp.CSS(`#pl-mine`)),
+		chromedp.Click(chromedp.CSS(`#pl-tag-filter .icon-btn`)), chromedp.Click(chromedp.CSS(`#pl-tag-filter .icon-btn`)))
+	b.waitJS("all cards again", `document.querySelectorAll("#view-planning .pl-card").length === 2 && document.querySelector("#pl-tag-filter").hidden`)
+
 	// On a phone, the pane's tags and their box fit the screen.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the tags fit", `(() => { const f = document.querySelector("#card-detail .pl-tags-field"); const r = f?.getBoundingClientRect(); const i = f?.querySelector(".pl-tag-input")?.getBoundingClientRect();

@@ -51,12 +51,14 @@ document.addEventListener("dash:route", (e) => {
 
 // current is the route of what the page shows now.
 function current() {
-  const r = { view: state.view, task: null, goal: null, sha: null, issue: null, deploy: null, card: null, board: null, plProject: "", plTag: "", sheet: null, section: null };
+  const r = { view: state.view, task: null, goal: null, sha: null, issue: null, deploy: null, card: null, board: null, plProject: "", plTags: [], plTarget: "", plMine: false, sheet: null, section: null };
   if (state.view === "planning") {
     r.card = cardId();
     const f = planningFilters();
     r.plProject = f.project;
-    r.plTag = f.tag;
+    r.plTags = f.tags;
+    r.plTarget = f.target;
+    r.plMine = f.mine;
   } else {
     if (state.detail) r.task = state.detail;
     else if (state.view === "goals" && gp.open) r.goal = gp.open;
@@ -178,7 +180,7 @@ async function apply(r, { startup = false, settle = !startup } = {}) {
     if (r.task && !startup && state.view !== "planning") view = state.view;
     if (view && view !== state.view) showView(view, { now: true });
     if (view === "board" && !r.task) showBoard(r.board || "");
-    if (view === "planning") setPlanningFilters(r.plProject || "", r.plTag || "");
+    if (view === "planning") setPlanningFilters(r.plProject || "", r.plTags || [], r.plTarget || "", !!r.plMine);
 
     if (r.task) {
       if (state.detail !== r.task) {

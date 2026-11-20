@@ -36,7 +36,7 @@ These can be added to any of them:
 | Query                              | Means                                              |
 |------------------------------------|----------------------------------------------------|
 | `?board=<id>`                      | a board other than the project's Main board        |
-| `?project=<id>`, `?tag=<tag>`      | Planning's project and tag filters                 |
+| `?project=<id>`, `?tag=<tag>`, `?target=<target>`, `?mine=1` | Planning's filters; `tag` may be given more than once |
 | `?sheet=settings&section=board`    | a sheet open over the page, at a section: `settings`, `account`, `org` or `runners` |
 
 For example, **Project settings → Board** of a project:

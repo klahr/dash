@@ -242,7 +242,7 @@ before it uses the others.
 you would on the **Planning** page:
 
 - `list_cards(project?, column?, tag?)`: the cards with their column, priority, target, members,
-  tags, the cards they depend on and the status of their linked work. In a project chat, that
+  owner, tags, the cards they depend on and the status of their linked work. In a project chat, that
   project's cards.
 - `get_card(card)`: one card, with its description, the cards that depend on it, its linked tasks
   and goals with their state, and its comments.

@@ -45,7 +45,11 @@ const pl = {
   projects: [],
   people: [], // the org's members a card may be assigned to
   filter: store.get("dash.planning.project", ""),
-  tag: store.get("dash.planning.tag", ""), // only the cards with this tag ("" all)
+  // The board's other filters: only the cards with all of tags, with
+  // target ("" any), and (mine) with the signed-in user among their members.
+  tags: savedTags(),
+  target: store.get("dash.planning.target", ""),
+  mine: store.flag("dash.planning.mine"),
   loaded: false,
   open: null, // the open card's id
   detail: null, // its view, with its discussion
@@ -60,17 +64,41 @@ const pl = {
   uploading: {}, // card id → how many files are on their way to it
 };
 
+// savedTags are the tags picked last time (an older Dash kept one, as a string).
+function savedTags() {
+  const tags = store.getJSON("dash.planning.tags", null);
+  if (Array.isArray(tags)) return tags.filter((t) => typeof t === "string" && t);
+  const one = store.get("dash.planning.tag", "");
+  return one ? [one] : [];
+}
+
 const byId = (id) => pl.cards.find((c) => c.id === id);
 const sameTag = (a, b) => a.toLowerCase() === b.toLowerCase();
 const tagged = (c, tag) => (c.tags || []).some((t) => sameTag(t, tag));
-// shown are the cards the board shows: with the tag picked, if one is.
-const shown = () => pl.tag ? pl.cards.filter((c) => tagged(c, pl.tag)) : pl.cards;
-// allTags are the tags on the cards loaded, each once, A to Z.
-function allTags() {
-  const seen = new Map();
-  for (const c of pl.cards) for (const t of c.tags || []) if (!seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t);
-  return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+const tagPicked = (tag) => pl.tags.some((t) => sameTag(t, tag));
+const meId = () => pl.hooks.me?.()?.id || 0;
+// filtered: whether a filter other than the project's hides cards.
+const filtered = () => pl.tags.length > 0 || !!pl.target || (pl.mine && !!meId());
+// shows: whether the board shows card c: it has every tag picked, the
+// target picked, and the user among its members, as far as those are picked.
+function shows(c) {
+  if (!pl.tags.every((t) => tagged(c, t))) return false;
+  if (pl.target && !sameTag(c.target || "", pl.target)) return false;
+  const me = meId();
+  return !(pl.mine && me && !(c.members || []).includes(me));
 }
+// shown are the cards the board shows.
+const shown = () => filtered() ? pl.cards.filter(shows) : pl.cards;
+// distinct is each of values once, whatever its case, in order: A to Z,
+// with numbers in it by their value (1.9 before 1.10).
+function distinct(values) {
+  const seen = new Map();
+  for (const v of values) if (v && !seen.has(v.toLowerCase())) seen.set(v.toLowerCase(), v);
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
+}
+// allTags are the tags on the cards loaded; allTargets their targets.
+const allTags = () => distinct(pl.cards.flatMap((c) => c.tags || []));
+const allTargets = () => distinct(pl.cards.map((c) => c.target || ""));
 const paneEl = () => $("#card-detail");
 
 // mountPlanning builds Planning in root. planner hides what a planner
@@ -91,6 +119,10 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
       h("header", { class: "cl-head pl-head" },
         h("h2", { class: "cl-title page-title" }, "Planning"),
         filterPicker(),
+        ib({ type: "button", class: "btn small pl-mine", id: "pl-mine", "aria-pressed": "false", hidden: true,
+          title: "Show only the cards you are a member of", onclick: () => pickMine(!pl.mine) }, "user", "Mine"),
+        h("select", { class: "pl-more-filter", id: "pl-more-filter", "aria-label": "Show only the cards with a tag or a target", hidden: true,
+          onchange: (e) => { const [kind, v] = [e.target.value.slice(0, 1), e.target.value.slice(2)]; e.target.value = ""; if (kind === "t") pickTag(v, true); else if (kind === "m") pickTarget(v); } }),
         h("span", { class: "pl-tag-filter", id: "pl-tag-filter", hidden: true }),
         h("span", { class: "cl-state", id: "pl-state", "aria-live": "polite" }),
         ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to the plan", onclick: () => openComposer("ideas") }, "plus", "New card")),
@@ -288,21 +320,67 @@ function renderBoard() {
   }
 }
 
-// pickTag shows only the cards with tag on the board ("" all of them).
-export function pickTag(tag) {
-  pl.tag = tag;
-  store.set("dash.planning.tag", tag);
+// saveFilters keeps the board's filters for next time, puts them in the
+// address, and shows the board (and the open card) with them.
+function saveFilters() {
+  store.setJSON("dash.planning.tags", pl.tags);
+  store.remove("dash.planning.tag");
+  store.set("dash.planning.target", pl.target);
+  store.setFlag("dash.planning.mine", pl.mine);
   changed("replace");
   renderBoard();
   if (pl.open) renderCard();
 }
 
+// pickTag adds tag to the tags the board shows the cards of (on false: takes
+// it off them).
+export function pickTag(tag, on = true) {
+  const others = pl.tags.filter((t) => !sameTag(t, tag));
+  pl.tags = on ? [...others, tag] : others;
+  saveFilters();
+}
+
+// pickTarget shows only the cards with target ("": any target).
+function pickTarget(target) {
+  pl.target = target;
+  saveFilters();
+}
+
+// pickMine shows only the cards the signed-in user is a member of (or all).
+function pickMine(on) {
+  pl.mine = on;
+  saveFilters();
+}
+
+// renderTagFilter shows the filters picked, each with × to take it off;
+// Mine; and a list of the tags and targets to filter by.
 function renderTagFilter() {
+  const chip = (cls, icon, name, label, off) => h("span", { class: `pl-chip ${cls} pl-tag-on` }, ico(icon), h("span", { class: "pl-tag-name" }, name),
+    ib({ type: "button", class: "icon-btn small", "aria-label": label, title: "Take this filter off", onclick: off }, "x"));
   const el = $("#pl-tag-filter");
-  el.hidden = !pl.tag;
-  fill(el, pl.tag ? h("span", { class: "pl-chip pl-tag pl-tag-on" }, ico("tag"), h("span", { class: "pl-tag-name" }, pl.tag),
-    ib({ type: "button", class: "icon-btn small", "aria-label": `Show all cards, not only those tagged ${pl.tag}`, title: "Show all cards", onclick: () => pickTag("") }, "x")) : null);
+  el.hidden = !pl.tags.length && !pl.target;
+  fill(el,
+    ...pl.tags.map((t) => chip("pl-tag", "tag", t, `Show the cards not tagged ${t} too`, () => pickTag(t, false))),
+    pl.target ? chip("pl-tag pl-target-on", "flag", pl.target, `Show the cards of any target, not only ${pl.target}`, () => pickTarget("")) : null);
+  const mine = $("#pl-mine");
+  mine.hidden = !meId();
+  mine.setAttribute("aria-pressed", String(pl.mine));
+  mine.classList.toggle("on", pl.mine);
+  const tags = allTags().filter((t) => !tagPicked(t));
+  const targets = allTargets().filter((t) => !sameTag(t, pl.target));
+  const more = $("#pl-more-filter");
+  more.hidden = !tags.length && !targets.length;
+  fill(more, h("option", { value: "" }, "Filter…"),
+    tags.length ? h("optgroup", { label: "Tag" }, ...tags.map((t) => h("option", { value: `t:${t}` }, t))) : null,
+    targets.length ? h("optgroup", { label: "Target" }, ...targets.map((t) => h("option", { value: `m:${t}` }, t))) : null);
   fill($("#pl-tag-options"), ...allTags().map((t) => h("option", { value: t })));
+}
+
+// emptyText is what an empty column says.
+function emptyText(col) {
+  if (!filtered()) return col.empty;
+  const what = [pl.mine && meId() ? "of yours" : "", pl.tags.length ? `tagged ${pl.tags.join(" and ")}` : "", pl.target ? `for ${pl.target}` : ""].filter(Boolean);
+  return `Nothing ${what.join(", ")}.`;
 }
 
 function renderColumns() {
@@ -323,7 +401,7 @@ function renderColumns() {
     } else fill(ol, ...cards.map(cardEl));
     ol.hidden = !cards.length && !comp;
     $(`#pl-empty-${col.key}`).hidden = cards.length > 0 || !!comp;
-    $(`#pl-empty-${col.key}`).textContent = pl.tag ? `Nothing tagged ${pl.tag}.` : col.empty;
+    $(`#pl-empty-${col.key}`).textContent = emptyText(col);
     if (focused && ol.querySelector(`[data-id="${focused}"]`)) $(`[data-id="${focused}"] .pl-open`, ol)?.focus({ preventScroll: true });
     $(`#pl-count-${col.key}`).textContent = String(cards.length);
     $(`#pl-tab-n-${col.key}`).textContent = String(cards.length);
@@ -346,15 +424,17 @@ const MEMBER_FACES = 3;
 
 // membersEl is the card's members' faces, overlapping, with their names for
 // a tooltip and a screen reader.
+// The owner comes first, ringed.
 function membersEl(c) {
-  const ps = c.people || [];
+  const owner = (c.people || []).find((p) => p.id === c.owner);
+  const ps = owner ? [owner, ...c.people.filter((p) => p !== owner)] : c.people || [];
   if (!ps.length) return null;
-  const names = ps.map((p) => p.username).join(", ");
+  const names = (owner ? `Owner: ${owner.username}. ` : "") + `Members: ${ps.map((p) => p.username).join(", ")}`;
   const more = ps.length - MEMBER_FACES;
-  return h("span", { class: "pl-members", title: `Members: ${names}` },
-    ...ps.slice(0, more > 0 ? MEMBER_FACES - 1 : MEMBER_FACES).map((p) => avatar(p)),
+  return h("span", { class: "pl-members", title: names },
+    ...ps.slice(0, more > 0 ? MEMBER_FACES - 1 : MEMBER_FACES).map((p) => avatar(p, p === owner ? "pl-owner-face" : "")),
     more > 0 ? h("span", { class: "avatar pl-more", "aria-hidden": "true" }, `+${more + 1}`) : null,
-    h("span", { class: "sr-only" }, `Members: ${names}`));
+    h("span", { class: "sr-only" }, names));
 }
 
 // waitsEl marks a card that waits for cards it depends on, not done yet.
@@ -738,7 +818,7 @@ function saveComposer(next) {
   c.li.setAttribute("aria-busy", "true");
   c.busy = (async () => {
     try {
-      const card = await call("POST", cardAPI(), { title, description, column: c.col, project: pl.filter || undefined, tags: pl.tag ? [pl.tag] : undefined });
+      const card = await call("POST", cardAPI(), { title, description, column: c.col, project: pl.filter || undefined, ...newCardFilters() });
       if (!byId(card.id)) pl.cards.push(card);
       if (next && pl.composer === c) {
         c.ta.value = "";
@@ -814,16 +894,32 @@ export const cardOpen = () => !!pl.open;
 // The open card's id (null: none), and why it couldn't be read ("" if it was).
 export const cardId = () => pl.open;
 export const cardError = () => pl.error;
-// planningFilters are the project and tag Planning shows the cards of ("": all).
-export const planningFilters = () => ({ project: pl.filter, tag: pl.tag });
-// setPlanningFilters shows the cards of project and tag (a link's: router.js).
-export function setPlanningFilters(project, tag) {
-  if (project === pl.filter && tag === pl.tag) return;
+// newCardFilters are what a card added on the board takes from the filters,
+// so that it shows: the tags and target picked, and the user, with Mine on.
+function newCardFilters() {
+  const me = meId();
+  return { tags: pl.tags.length ? pl.tags : undefined, target: pl.target || undefined, members: pl.mine && me ? [me] : undefined };
+}
+
+// planningFilters are the project, tags, target and Mine Planning shows the
+// cards of ("", [] and false: all).
+export const planningFilters = () => ({ project: pl.filter, tags: pl.tags, target: pl.target, mine: pl.mine });
+// setPlanningFilters shows the cards of project, with all of tags, of target
+// and (mine) of the user (a link's: router.js).
+export function setPlanningFilters(project, tags = [], target = "", mine = false) {
+  const same = project === pl.filter && target === pl.target && mine === pl.mine &&
+    tags.length === pl.tags.length && tags.every((t, i) => t === pl.tags[i]);
+  if (same) return;
   const reload = project !== pl.filter;
   pl.filter = project;
-  pl.tag = tag;
+  pl.tags = tags;
+  pl.target = target;
+  pl.mine = mine;
   store.set("dash.planning.project", project);
-  store.set("dash.planning.tag", tag);
+  store.setJSON("dash.planning.tags", tags);
+  store.remove("dash.planning.tag");
+  store.set("dash.planning.target", target);
+  store.setFlag("dash.planning.mine", mine);
   if (!pl.root) return;
   renderFilter();
   if (reload) { pl.loaded = false; if (!pl.hooks.visible || pl.hooks.visible()) loadPlanning().catch(fail); }
@@ -930,8 +1026,9 @@ function field(label, control) {
   return h("label", { class: "field pl-field" }, h("span", {}, label), control);
 }
 
-// membersField is the card's members, each with × to take them off, and a
-// list of the org's other members to add one.
+// membersField is the card's members, each with × to take them off and
+// Owner to make them the one who owns it (or no longer), and a list of the
+// org's other members to add one.
 function membersField(c) {
   const ids = c.members || [];
   const set = (members) => patchCard({ members })().catch(fail);
@@ -939,7 +1036,10 @@ function membersField(c) {
   return h("div", { class: "field pl-field pl-members-field", role: "group", "aria-labelledby": "pd-members" },
     h("span", { id: "pd-members" }, "Members"),
     h("div", { class: "pl-member-list" },
-      ...(c.people || []).map((p) => h("span", { class: "pl-member" }, avatar(p), h("span", { class: "pl-member-name" }, p.username),
+      ...(c.people || []).map((p) => h("span", { class: `pl-member${p.id === c.owner ? " pl-owner" : ""}` }, avatar(p), h("span", { class: "pl-member-name" }, p.username),
+        h("button", { type: "button", class: "pl-owner-btn", "aria-pressed": String(p.id === c.owner),
+          title: p.id === c.owner ? `${p.username} owns the card: click for no owner` : `Make ${p.username} the card's owner`,
+          onclick: () => patchCard({ owner: p.id === c.owner ? 0 : p.id })().catch(fail) }, "Owner"),
         ib({ type: "button", class: "icon-btn small", "aria-label": `Take ${p.username} off the card`, title: "Take off the card",
           onclick: () => set(ids.filter((id) => id !== p.id)) }, "x"))),
       others.length ? h("select", { "aria-label": "Add a member", onchange: (e) => e.target.value && set([...ids, Number(e.target.value)]) },
@@ -968,8 +1068,9 @@ function tagsField(c) {
   return h("div", { class: "field pl-field pl-tags-field", role: "group", "aria-labelledby": "pd-tags" },
     h("span", { id: "pd-tags" }, "Tags"),
     h("div", { class: "pl-member-list pl-tag-list" },
-      ...tags.map((t) => h("span", { class: `pl-chip pl-tag${pl.tag && sameTag(pl.tag, t) ? " pl-tag-on" : ""}` },
-        h("button", { type: "button", class: "pl-tag-name", title: `Show only the cards tagged ${t}`, onclick: () => pickTag(pl.tag && sameTag(pl.tag, t) ? "" : t) }, t),
+      ...tags.map((t) => h("span", { class: `pl-chip pl-tag${tagPicked(t) ? " pl-tag-on" : ""}` },
+        h("button", { type: "button", class: "pl-tag-name", "aria-pressed": String(tagPicked(t)),
+          title: tagPicked(t) ? `Show the cards not tagged ${t} too` : `Show only the cards tagged ${t}`, onclick: () => pickTag(t, !tagPicked(t)) }, t),
         ib({ type: "button", class: "icon-btn small", "aria-label": `Remove the tag ${t}`, title: "Remove", onclick: () => set(tags.filter((x) => x !== t)) }, "x"))),
       tags.length < 20 ? input : null));
 }

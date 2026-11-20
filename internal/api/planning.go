@@ -350,6 +350,9 @@ func (w *planningWork) views(cards, all []model.Card, links map[string][]model.C
 				v.People = append(v.People, cardPerson{ID: id, Username: m.Username, Avatar: m.Avatar})
 			}
 		}
+		if !slices.Contains(v.Members, v.Owner) {
+			v.Owner = 0
+		}
 		for _, l := range links[c.ID] {
 			lv := w.link(l)
 			if w.sv.c.Planner {
@@ -559,6 +562,10 @@ type cardRequest struct {
 	// Members are the user ids of the people in the org on the card, all of
 	// them ([] is nobody).
 	Members *[]int64 `json:"members"`
+	// Owner is the user id of the member who owns the card (0: nobody); one
+	// who isn't a member yet joins. Members without the owner in them, and
+	// no owner given, leave the card with no owner.
+	Owner *int64 `json:"owner"`
 	// DependsOn are the ids of the org's cards to be done before this one,
 	// all of them ([] is none).
 	DependsOn *[]string `json:"depends_on"`
@@ -572,7 +579,11 @@ func (req cardRequest) apply(c *model.Card) error {
 	set(&c.ProjectID, req.Project)
 	set(&c.Priority, req.Priority)
 	set(&c.Target, req.Target)
+	if req.Members != nil && req.Owner == nil && !slices.Contains(*req.Members, c.Owner) {
+		c.Owner = 0
+	}
 	set(&c.Members, req.Members)
+	set(&c.Owner, req.Owner)
 	set(&c.DependsOn, req.DependsOn)
 	set(&c.Tags, req.Tags)
 	if req.Column != nil {
@@ -1246,6 +1257,11 @@ func cardRow(v cardView) mcptools.CardRow {
 	r := mcptools.CardRow{ID: v.ID, Title: v.Title, Column: string(v.Column), Priority: v.Priority, Target: v.Target,
 		Project: v.ProjectName, Members: usernames(v.People), Tags: v.Tags, Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links),
 		Waiting: v.Waiting}
+	for _, p := range v.People {
+		if p.ID == v.Owner {
+			r.Owner = p.Username
+		}
+	}
 	for _, d := range v.Deps {
 		r.DependsOn = append(r.DependsOn, d.ID)
 	}
