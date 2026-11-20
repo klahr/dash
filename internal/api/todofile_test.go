@@ -84,6 +84,11 @@ func TestEditTodoFileInReview(t *testing.T) {
 		t.Errorf("stale save: %d %s", code, body)
 	}
 
+	// A save without the blob it was read at is a bad request, not a conflict.
+	if code, body := save("", "x\n"); code != http.StatusBadRequest || !strings.Contains(body, "blob is required") {
+		t.Errorf("save without a blob: %d %s", code, body)
+	}
+
 	// Uncommitted changes to the file in the worktree are kept, not overwritten.
 	_, f = read("a.txt")
 	writeRepoFile(t, wt, "a.txt", "by hand\n")

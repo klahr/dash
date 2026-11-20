@@ -197,6 +197,11 @@ func (sv *service) commitTodoFile(ctx context.Context, t model.Todo, e todoFileE
 	if err != nil {
 		return todoFileSaved{}, err
 	}
+	// Only files already on the branch can be edited here, so the blob the
+	// editor read is always set.
+	if e.Blob == "" {
+		return todoFileSaved{}, fmt.Errorf("%w: blob is required (from GET /api/todos/{id}/file)", errBadRequest)
+	}
 	if len(e.Content) > maxEditBytes {
 		return todoFileSaved{}, fmt.Errorf("%w: file is larger than %d KiB", errBadRequest, maxEditBytes>>10)
 	}
