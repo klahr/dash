@@ -357,6 +357,12 @@ func (sv *service) requestDeploy(p model.Project, a deployAsk) (model.Deploy, er
 			return model.Deploy{}, fmt.Errorf("%w: nothing is live on %q to promote", errConflict, from)
 		}
 		d.Ref, d.Artifact, d.Promote, d.PromotedFrom, d.PromotedEnv = src.Commit, src.Artifact, true, src.ID, from
+	} else if gitops.IsSHA(d.Ref) {
+		full, err := sv.pinCommit(p, d.Ref)
+		if err != nil {
+			return model.Deploy{}, err
+		}
+		d.Ref = full
 	}
 	if a.Trigger != model.DeployByRelease {
 		what := ""
@@ -378,6 +384,25 @@ func (sv *service) requestDeploy(p model.Project, a deployAsk) (model.Deploy, er
 		d.Status, d.NeedsApproval = model.DeployAwaiting, need
 	}
 	return s.queueDeploy(sv.c, d)
+}
+
+// pinCommit resolves ref, a commit id someone asked to deploy, to the full
+// id where p's code is, so the checks (deployBlocks), the approver and the
+// runner all see the same commit. A tag or branch named like a commit id
+// that is another commit is refused: git would deploy that one. When the
+// code can't be asked now, ref stays as it is; the runner that starts the
+// deploy refuses a commit that ref doesn't begin (deployCommitOf).
+func (sv *service) pinCommit(p model.Project, ref string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), tagsTimeout)
+	defer cancel()
+	got, err := sv.releaseTagsOf(ctx, p, tagsQuery{Format: p.TagFormat, Commit: ref})
+	if err != nil || got.Commit == "" {
+		return ref, nil
+	}
+	if !strings.HasPrefix(got.Commit, ref) {
+		return "", fmt.Errorf("%w: %s names a tag or branch (commit %s), not a commit with that id; deploy it by its full commit id", errConflict, ref, gitops.ShortSHA(got.Commit))
+	}
+	return got.Commit, nil
 }
 
 // queueDeploy queues d for c (who starts it) and wakes its environment's queue.
@@ -804,6 +829,10 @@ func (s *Server) startDeploy(ctx context.Context, p model.Project, env model.Env
 		if x.Status != model.DeployQueued {
 			return errDeployCancelled // while it was being started
 		}
+		if gitops.IsSHA(x.Ref) && !strings.HasPrefix(started.Commit, x.Ref) {
+			// A runner that let a tag or branch named like the commit win.
+			return fmt.Errorf("%w: the runner resolved %s to another commit, %s (a tag or branch of that name); deploy it by its full commit id", errConflict, x.Ref, gitops.ShortSHA(started.Commit))
+		}
 		x.Commit, x.Subject, x.Commits, x.Shipped = started.Commit, started.Subject, started.Commits, shipped
 		switch {
 		case started.Tag != "":
@@ -825,8 +854,9 @@ func (s *Server) startDeploy(ctx context.Context, p model.Project, env model.Env
 		x.SetStatus(first, time.Now())
 		return nil
 	})
-	if errors.Is(err, errDeployCancelled) {
-		// Cancelled meanwhile: what was started stops too.
+	if err != nil {
+		// Cancelled meanwhile, or not the commit asked for: what was
+		// started stops too.
 		if at.run.ID == "" {
 			_ = s.deployRuns.Stop(d.ID)
 		} else {
@@ -1168,6 +1198,35 @@ var deployLocks sync.Map // "<project id>/<environment>" → *sync.Mutex
 // maxShipped bounds the commits a deploy looks through for the tasks it ships.
 const maxShipped = 1000
 
+// deployCommitOf resolves ref, the commit a deploy of p asks for, in p's
+// clone here. The hub checks a commit id (deployBlocks, the approval) as
+// the prefix of a full one, while git resolves a tag or branch of the same
+// name before a short commit id: a ref that looks like a commit id must
+// resolve to a commit whose id it begins, or the deploy is refused. Any
+// other name is origin's branch first, then what git finds (a tag).
+func (s *Server) deployCommitOf(ctx context.Context, p model.Project, ref string) (model.CommitInfo, error) {
+	if gitops.IsSHA(ref) {
+		c, err := s.Git.CommitOf(ctx, p.ID, p.Path, ref)
+		if err != nil {
+			return c, fmt.Errorf("%w: no commit %s in %s here", errBadRequest, ref, p.Name)
+		}
+		if !strings.HasPrefix(c.SHA, ref) {
+			return model.CommitInfo{}, fmt.Errorf("%w: %s names a tag or branch here (commit %s), not the commit asked for; deploy it by its full commit id", errConflict, ref, gitops.ShortSHA(c.SHA))
+		}
+		return c, nil
+	}
+	if !strings.HasPrefix(ref, "refs/") && !strings.ContainsAny(ref, "~^") {
+		if c, err := s.Git.CommitOf(ctx, p.ID, p.Path, "refs/remotes/origin/"+ref); err == nil {
+			return c, nil
+		}
+	}
+	c, err := s.Git.CommitOf(ctx, p.ID, p.Path, ref)
+	if err != nil {
+		return c, fmt.Errorf("%w: no commit %s in %s here", errBadRequest, ref, p.Name)
+	}
+	return c, nil
+}
+
 // startDeployHere starts deploy req of p (this computer's project) to one
 // of its environments: in a checkout of the commit kept for the
 // environment, with its secrets file's variables. shared: for another
@@ -1208,9 +1267,9 @@ func (s *Server) startDeployHere(ctx context.Context, p model.Project, req deplo
 	if req.Commit != "" {
 		ref = req.Commit
 	}
-	c, err := s.Git.CommitOf(ctx, p.ID, p.Path, ref)
+	c, err := s.deployCommitOf(ctx, p, ref)
 	if err != nil {
-		return out, fmt.Errorf("%w: no commit %s in %s here", errBadRequest, ref, p.Name)
+		return out, err
 	}
 	out.Commit, out.Subject = c.SHA, c.Subject
 

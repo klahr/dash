@@ -305,3 +305,55 @@ func TestDeployRecordsItsTag(t *testing.T) {
 		t.Errorf("untagged: %+v", d)
 	}
 }
+
+// A tag named like a commit id (git resolves it before the commit) can't
+// stand in for that commit: the hub pins a commit id to the full one and
+// refuses a tag or branch of that name that is another commit, and the
+// runner refuses to start a deploy of a commit id that resolves to another.
+func TestDeployRefNamedLikeCommit(t *testing.T) {
+	s, _, _ := boardServer(t)
+	holdDeploys(s)
+	s.Git = gitops.New(s.Hub)
+	repo, c := tagRepo(t)
+	short := c[0][:7]
+	git(t, repo, "tag", short, c[3]) // "staging's commit", pointing at another
+	p, err := raw(s).CreateProject(model.Project{Name: "pin", OrgID: testOwner(t, s).Org, Path: repo, DefaultBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p = withEnvs(t, s, p,
+		model.Environment{Name: "staging", DeployCommand: "true"},
+		model.Environment{Name: "qa", DeployCommand: "true", RequireLiveOn: "staging"},
+		model.Environment{Name: "dev", DeployCommand: "true"})
+	liveDeploy(t, s, p, "staging", c[0], time.Now())
+	sv := s.as(Caller{Org: p.OrgID})
+
+	if _, err := sv.requestDeploy(p, deployAsk{Environment: "qa", Commit: short, Trigger: model.DeployByUser}); err == nil || !strings.Contains(err.Error(), "names a tag or branch") {
+		t.Errorf("tag named like staging's commit: %v", err)
+	}
+	if d, err := sv.requestDeploy(p, deployAsk{Environment: "qa", Commit: c[0], Trigger: model.DeployByUser}); err != nil || d.Ref != c[0] {
+		t.Errorf("staging's commit by full id: %+v %v", d, err)
+	}
+	if d, err := sv.requestDeploy(p, deployAsk{Environment: "dev", Commit: c[1][:7], Trigger: model.DeployByUser}); err != nil || d.Ref != c[1] {
+		t.Errorf("short id not pinned: %+v %v", d, err)
+	}
+
+	// The runner: a commit id resolves to that commit or is refused; a name
+	// resolves as before.
+	if _, err := s.deployCommitOf(t.Context(), p, short); err == nil || !strings.Contains(err.Error(), "names a tag or branch") {
+		t.Errorf("runner, tag named like a commit: %v", err)
+	}
+	if got, err := s.deployCommitOf(t.Context(), p, c[0]); err != nil || got.SHA != c[0] {
+		t.Errorf("runner, full id: %+v %v", got, err)
+	}
+	if got, err := s.deployCommitOf(t.Context(), p, "main"); err != nil || got.SHA != c[3] {
+		t.Errorf("runner, branch: %+v %v", got, err)
+	}
+	if got, err := s.deployCommitOf(t.Context(), p, "1.0.0"); err != nil || got.SHA != c[0] {
+		t.Errorf("runner, release tag: %+v %v", got, err)
+	}
+	s.DeployRoot, s.EnvDir = t.TempDir(), t.TempDir()
+	if _, err := s.startDeployHere(t.Context(), p, deployRun{ID: "x1", Environment: "qa", Commit: short}, false); err == nil || !strings.Contains(err.Error(), "names a tag or branch") {
+		t.Errorf("started a tag named like a commit: %v", err)
+	}
+}
