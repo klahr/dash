@@ -290,7 +290,7 @@ func TestCodexRunArgs(t *testing.T) {
 		Resume:        "th"})
 	line := strings.Join(args, " ")
 	for _, want := range []string{
-		"exec --json --skip-git-repo-check -c x=1 --sandbox workspace-write -c sandbox_workspace_write.network_access=true",
+		"exec --json --skip-git-repo-check --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c x=1",
 		`-c approval_policy="never"`,
 		"--model gpt-5.5",
 		`-c model_reasoning_effort="high"`,
@@ -318,6 +318,22 @@ func TestCodexRunArgs(t *testing.T) {
 	if !strings.Contains(line, "--ignore-user-config --ignore-rules --ephemeral --sandbox read-only") ||
 		strings.Contains(line, "x=1") || strings.Contains(line, "--model") || strings.Contains(line, "fork") {
 		t.Errorf("unattended args %s", line)
+	}
+}
+
+// The operator's -codex-args come after Dash's sandbox defaults, so they
+// win: network_access=false holds, and their --sandbox replaces Dash's.
+func TestCodexRunArgsOperatorWins(t *testing.T) {
+	off := "sandbox_workspace_write.network_access=false"
+	args, _ := Codex{Args: []string{"-c", off}}.RunArgs(ExecRequest{})
+	if last := slices.Index(args, off); last < 0 || slices.Index(args, "sandbox_workspace_write.network_access=true") > last {
+		t.Errorf("network_access=false doesn't win: %q", args)
+	}
+	for _, a := range [][]string{{"--sandbox", "read-only"}, {"-s", "read-only"}, {"--sandbox=read-only"}} {
+		args, _ = Codex{Args: a}.RunArgs(ExecRequest{})
+		if line := strings.Join(args, " "); strings.Contains(line, "workspace-write --") || strings.Count(line, "read-only") != 1 {
+			t.Errorf("Args %q: %s", a, line)
+		}
 	}
 }
 
@@ -376,7 +392,10 @@ func TestCodexPrompt(t *testing.T) {
 		t.Fatalf("%q, %v", got, err)
 	}
 	line := strings.Join(readLines(t, dir+"/args"), " ")
-	for _, want := range []string{"--ephemeral", "--ignore-user-config", "--sandbox read-only", `model_reasoning_effort="low"`, `developer_instructions="Name the task."`} {
+	// No tools: the input may be a task's text, which must not run commands
+	// or read files.
+	for _, want := range []string{"--ephemeral", "--ignore-user-config", "--sandbox read-only", `model_reasoning_effort="low"`, `developer_instructions="Name the task."`,
+		"-c features.shell_tool=false", "-c features.unified_exec=false", "-c tools.view_image=false", `-c web_search="disabled"`} {
 		if !strings.Contains(line, want) {
 			t.Errorf("args lack %s: %s", want, line)
 		}

@@ -53,6 +53,14 @@ when Codex isn't installed or signed in on that computer.
 
 Codex runs tasks in its own sandbox: it can write in the task's worktree and use the network,
 and nothing else. Nobody is asked before a command, so a command the sandbox blocks fails.
+Your `-codex-args` win over these defaults. To run tasks without the network:
+
+```sh
+dash runner -codex-args "-c sandbox_workspace_write.network_access=false"
+```
+
+Summaries, titles and other short prompts run Codex without tools: it can't run commands, read
+files or search the web for them.
 
 These don't work with Codex:
 

@@ -128,14 +128,22 @@ func (o codexOpts) args() (args, env []string) {
 	if o.ephemeral {
 		args = append(args, "--ephemeral")
 	}
+	// Dash's sandbox defaults come before o.extra, so the operator's own
+	// (-codex-args) win: Codex takes the last -c for a key. --sandbox can be
+	// given once only, so Dash leaves its own out when extra has one.
+	if !hasFlag(o.extra, "--sandbox", "-s") {
+		if o.readOnly {
+			args = append(args, "--sandbox", "read-only")
+		} else {
+			args = append(args, "--sandbox", "workspace-write")
+		}
+	}
+	if !o.readOnly {
+		args = append(args, "-c", "sandbox_workspace_write.network_access=true")
+	}
 	args = append(args, o.extra...)
 	// Nobody answers an approval in `codex exec`: what the sandbox doesn't
 	// allow fails at once.
-	if o.readOnly {
-		args = append(args, "--sandbox", "read-only")
-	} else {
-		args = append(args, "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true")
-	}
 	args = append(args, "-c", `approval_policy="never"`)
 	if m := codexModel(o.model); m != "" {
 		args = append(args, "--model", m)
@@ -156,6 +164,32 @@ func (o codexOpts) args() (args, env []string) {
 		args = append(args, sub, o.resume)
 	}
 	return append(args, "-"), env
+}
+
+// hasFlag reports whether args has one of names, alone or as name=value.
+func hasFlag(args []string, names ...string) bool {
+	for _, a := range args {
+		for _, n := range names {
+			if a == n || strings.HasPrefix(a, n+"=") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// codexNoTools are the -c overrides that leave Codex no tools: no shell
+// (shell_tool, unified_exec's exec_command), no file edits, no image
+// viewer, no web search. A one-shot prompt only answers in text, as
+// ClaudeCode.Prompt's `claude -p` with no tools does: its input may be a
+// task's text, which must not get to run commands or read files.
+var codexNoTools = []string{
+	"-c", "features.shell_tool=false",
+	"-c", "features.unified_exec=false",
+	"-c", "features.apply_patch_freeform=false",
+	"-c", "include_apply_patch_tool=false",
+	"-c", "tools.view_image=false",
+	"-c", `web_search="disabled"`,
 }
 
 // codexModel is model as Codex takes it: "" (Codex's default) for a
@@ -424,8 +458,8 @@ func (c Codex) Chat(cfg ChatConfig) Chatter {
 	return CodexChat{Bin: c.Bin, Dir: cfg.Dir, Board: cfg.Board, BoardURL: cfg.BoardURL, CLI: c.CLI}
 }
 
-// Prompt runs `codex exec` once on req.Input, read-only, without the
-// user's config or a saved session, and returns its final message (stdout:
+// Prompt runs `codex exec` once on req.Input, read-only, with no tools
+// (codexNoTools), without the user's config or a saved session, and returns its final message (stdout:
 // `codex exec` prints only that there). req.System goes in as developer
 // instructions, next to Codex's own. A Claude model name is left out
 // (codexModel); a small job asks for low reasoning effort.
@@ -442,7 +476,7 @@ func (c Codex) Prompt(ctx context.Context, req PromptRequest) (string, error) {
 		defer cancel()
 	}
 	o := codexOpts{readOnly: true, ephemeral: true, bare: true, model: req.Model, system: req.System,
-		extra: []string{"-c", `web_search="disabled"`}}
+		extra: codexNoTools}
 	if !req.Large {
 		o.effort = "low"
 	}
