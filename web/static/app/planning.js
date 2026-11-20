@@ -1195,8 +1195,17 @@ function sheet(title, kids, ok, icon = "check") {
 async function startSheet(c) {
   if (!pl.projects.length) await loadPlanning();
   if (!pl.projects.length) throw new Error("There are no projects to start work in yet. Ask a developer to add one.");
+  // Dash doesn't stop either, but says so: work already under way for the
+  // card (a second Start makes the same work again), and cards it waits for.
+  const open = (c.links || []).filter((l) => l.state !== "Removed" && !["done", "shipped", "live"].includes(l.tone));
+  const waits = (c.deps || []).filter((d) => !d.done).map((d) => d.title);
+  const kinds = new Set(open.map((l) => l.kind));
+  const noun = kinds.size > 1 ? "tasks or goals" : `${kinds.has("goal") ? "goal" : "task"}${open.length === 1 ? "" : "s"}`;
   const data = await sheet("Start this card", [
     h("p", { class: "hint" }, "Dash makes the work from the card's title and description, links it to the card and moves the card to In progress."),
+    open.length ? h("p", { class: "hint warn" }, ico("alert"),
+      ` This card already has ${open.length} ${noun} in progress. Start makes another one.`) : null,
+    waits.length ? h("p", { class: "hint warn" }, ico("lock"), ` Waits for: ${waits.join(", ")} (not done).`) : null,
     h("label", { class: "field" }, h("span", {}, "Project"),
       h("select", { name: "project", required: true },
         ...pl.projects.map((p) => h("option", { value: p.id, selected: p.id === (c.project_id || pl.filter) }, p.name)))),

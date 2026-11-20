@@ -138,6 +138,10 @@ runners yet. Dash links the new work to the card and moves the card to
 **In progress**. Planners and members
 can both press **Start**.
 
+The **Start this card** sheet warns, but still lets you start, when the card already has work
+in progress (a second **Start** makes the same work again) or waits for cards not in **Done**
+yet (it names them).
+
 A task a planner starts is the card's: its news goes to the card's members who aren't planners,
 as if they had created it. Put the developer on the card before you press **Start**. The
 planners on the card, and the planner who pressed **Start**, hear of it as card news (see
