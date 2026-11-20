@@ -122,6 +122,19 @@ runner's org: a project's chat only in its project, which that runner must work 
 under the hub's ids. If the hub can't be reached, the tool call fails; it never writes to the
 runner's own database instead.
 
+In a project's chat, a draft Claude makes with `create_todo` shows as a card under its answer,
+with three buttons that act right away, without asking Claude:
+
+- **Queue** queues it, like **Queue** in the task's detail.
+- **Open** opens the task.
+- **Discard** deletes the draft.
+
+After **Queue** or **Discard** the card says **Queued ✓** or **Discarded**, and the chat notes
+it ("You queued *Fix login redirect*."). Claude reads the note on your next message, so it
+doesn't offer to queue that task again. A task queued, started or deleted elsewhere shows how it
+is now instead of the buttons, also when you open the chat again. Asking in the chat ("queue
+it") still works too.
+
 A task keeps nothing for later tasks through these tools. Lasting facts that future tasks need
 (how to build or test, a pitfall, where something lives) go in the project's `CLAUDE.md`, which git
 shares with every computer.

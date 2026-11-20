@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/klahr/dash/internal/mcptools"
+	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/testbin"
 )
@@ -207,6 +209,96 @@ func TestToolBlockDeltas(t *testing.T) {
 	}
 	if got[2].Text != "ab" || !got[2].IsError {
 		t.Errorf("tool_result parts: %+v", got[2])
+	}
+}
+
+// TestCreatedTaskDelta: a create_todo result that worked carries the task
+// it made, read from the whole result even when the chat's copy is cut;
+// other tools' results and failed calls carry none.
+func TestCreatedTaskDelta(t *testing.T) {
+	testbin.SkipOnWindows(t, "runs a #!/bin/sh stand-in for claude")
+	long := strings.Repeat("x", 2*maxToolOutput)
+	result, _ := json.Marshal(fmt.Sprintf("{\n  \"id\": \"t42\",\n  \"title\": \"Fix login\",\n  \"prompt\": %q,\n  \"status\": \"draft\"\n}", long))
+	msg := func(role, content string) string {
+		return fmt.Sprintf(`{"type":%q,"message":{"content":[%s]}}`, role, content)
+	}
+	lines := []string{
+		msg("assistant", `{"type":"tool_use","id":"u1","name":"mcp__dash_board__create_todo","input":{"title":"Fix login"}}`),
+		msg("user", `{"type":"tool_result","tool_use_id":"u1","content":`+string(result)+`}`),
+		msg("assistant", `{"type":"tool_use","id":"u2","name":"mcp__dash_board__get_todo","input":{"todo":"t42"}}`),
+		msg("user", `{"type":"tool_result","tool_use_id":"u2","content":"{\"id\":\"t42\"}"}`),
+		msg("assistant", `{"type":"tool_use","id":"u3","name":"mcp__dash_board__create_todo","input":{}}`),
+		msg("user", `{"type":"tool_result","tool_use_id":"u3","content":"title or prompt is required","is_error":true}`),
+		`{"type":"result","is_error":false,"result":""}`,
+	}
+	var script strings.Builder
+	script.WriteString("#!/bin/sh\ncat >/dev/null\ncat <<'EOF'\n")
+	for _, l := range lines {
+		script.WriteString(l + "\n")
+	}
+	script.WriteString("EOF\n")
+	bin := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(bin, []byte(script.String()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tasks := map[string]*model.ChatTask{}
+	err := ClaudeCodeChat{Bin: bin}.Stream(context.Background(), t.TempDir(), []ChatMessage{{Role: "user", Content: "q"}}, func(d ChatDelta) {
+		if d.Kind == "tool_result" {
+			tasks[d.ID] = d.Task
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tasks["u1"]; got == nil || got.ID != "t42" || got.Title != "Fix login" {
+		t.Errorf("create_todo's task: %+v", got)
+	}
+	if len(tasks) != 3 || tasks["u2"] != nil || tasks["u3"] != nil {
+		t.Errorf("tasks on other results: %+v", tasks)
+	}
+}
+
+func TestCreatedTask(t *testing.T) {
+	for in, want := range map[string]*model.ChatTask{
+		`{"id":"a1","title":"Fix login","status":"draft"}`:                 {ID: "a1", Title: "Fix login"},
+		`{"id":"a1","title":"","prompt":"Add a test\nfor the login page"}`: {ID: "a1", Title: "Add a test"},
+		`{"id":"a1","waiting":"pace","title":"Paced"}`:                     {ID: "a1", Title: "Paced"},
+		`{"title":"no id"}`: nil,
+		`created task a1`:   nil,
+	} {
+		got := CreatedTask(in)
+		if (got == nil) != (want == nil) || got != nil && *got != *want {
+			t.Errorf("CreatedTask(%q) = %+v, want %+v", in, got, want)
+		}
+	}
+}
+
+// A note of what the user did from a task's card shows to them as "You
+// queued *…*." and reaches Claude as something they did, with the task's id.
+func TestTranscriptShowsActionNotes(t *testing.T) {
+	q := model.ChatAction{Kind: model.ChatQueued, Todo: "t1", Title: "Fix *login*"}
+	d := model.ChatAction{Kind: model.ChatDiscarded, Todo: "t2", Title: "Old idea"}
+	if got := ChatActionNote(q); got != "You queued *Fix login*." {
+		t.Errorf("note: %q", got)
+	}
+	if got := ChatActionNote(d); got != "You discarded *Old idea*." {
+		t.Errorf("note: %q", got)
+	}
+	history := []ChatMessage{
+		{Role: "user", Content: "make two tasks"},
+		{Role: "assistant", Content: "done", Tasks: []model.ChatTask{{ID: "t1"}, {ID: "t2"}}},
+		{Role: "user", Content: ChatActionNote(q), Action: &q},
+		{Role: "user", Content: ChatActionNote(d), Action: &d},
+		{Role: "user", Content: "anything else?"},
+	}
+	got := transcript(history)
+	for _, want := range []string{`I queued the draft task "Fix *login*" (id t1) myself`, "don't queue it again", `I discarded the draft task "Old idea" (id t2)`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("transcript lacks %q:\n%s", want, got)
+		}
+	}
+	if plain := WithShellText(history); plain[2].Action != nil || !strings.Contains(plain[2].Content, "id t1") || history[2].Action == nil {
+		t.Errorf("WithShellText: %+v", plain[2])
 	}
 }
 

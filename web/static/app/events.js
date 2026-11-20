@@ -17,7 +17,7 @@ import { describePerm, renderPerms } from "./review.js";
 import { loadUsage, renderUsage } from "./usage.js";
 import { releaseNews, renderCI } from "./actions.js";
 import { loadCheckouts, renderCheckouts, renderRemote } from "./origin.js";
-import { chatRunner, loadChat, todoChat } from "./chat.js";
+import { chatRunner, chatTaskEvent, loadChat, todoChat } from "./chat.js";
 import { loadTodoChat } from "./chatpane.js";
 import { addWorkerEvent } from "./timeline.js";
 import { renderPane } from "./drawmode.js";
@@ -166,7 +166,7 @@ function onEvent(ev, m = { name: "" }) {
   const sameMachine = !state.project || m.name === state.project.machine;
   const mine = eventFor(state.project, ev, m);
   if (!mine) elsewhere(ev, m);
-  if (ev.type === "todo.updated" || ev.type === "todo.deleted") trackActive(ev, m);
+  if (ev.type === "todo.updated" || ev.type === "todo.deleted") { trackActive(ev, m); chatTaskEvent(ev); }
   if (ev.type.startsWith("planning.")) { if (m.local) onPlanningEvent(ev); return; }
   switch (ev.type) {
     case "runners":

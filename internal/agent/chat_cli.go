@@ -251,6 +251,7 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	started := time.Now()
 	think := newThinkClock()
 	var usage *model.ChatUsage
+	tools := map[string]string{} // tool_use id → tool
 	check := c.CLI.Stream()
 	pumpLines(stdout, func(line string) {
 		check.Line(line) // the chat has no log: the Runners page shows them
@@ -315,9 +316,19 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 			}
 		case "assistant", "user":
 			for _, b := range ev.Message.Content {
-				if d, ok := b.delta(); ok {
-					emit(d)
+				d, ok := b.delta()
+				if !ok {
+					continue
 				}
+				if b.Type == "tool_use" {
+					tools[b.ID] = b.Name
+				}
+				// The task create_todo made, read from its whole result
+				// (the chat's copy may be cut short).
+				if b.Type == "tool_result" && !b.IsError && createTodoTool(tools[b.ToolUseID]) {
+					d.Task = CreatedTask(b.resultText())
+				}
+				emit(d)
 			}
 		case "result":
 			if ev.IsError {
@@ -400,24 +411,54 @@ func (b contentBlock) delta() (ChatDelta, bool) {
 	case "tool_use":
 		return ChatDelta{Kind: "tool_use", ID: b.ID, Tool: b.Name, Input: b.Input}, true
 	case "tool_result":
-		var text string
-		if json.Unmarshal(b.Content, &text) != nil {
-			var parts []struct{ Type, Text string }
-			_ = json.Unmarshal(b.Content, &parts)
-			var sb strings.Builder
-			for _, p := range parts {
-				if p.Type == "text" {
-					sb.WriteString(p.Text)
-				}
-			}
-			text = sb.String()
-		}
+		text := b.resultText()
 		if len(text) > maxToolOutput {
 			text = text[:maxToolOutput] + "\n[output truncated]"
 		}
 		return ChatDelta{Kind: "tool_result", ID: b.ToolUseID, Text: text, IsError: b.IsError}, true
 	}
 	return ChatDelta{}, false
+}
+
+// resultText is a tool_result block's text, in full.
+func (b contentBlock) resultText() string {
+	var text string
+	if json.Unmarshal(b.Content, &text) == nil {
+		return text
+	}
+	var parts []struct{ Type, Text string }
+	_ = json.Unmarshal(b.Content, &parts)
+	var sb strings.Builder
+	for _, p := range parts {
+		if p.Type == "text" {
+			sb.WriteString(p.Text)
+		}
+	}
+	return sb.String()
+}
+
+// createTodoTool reports whether tool (as Claude Code names it, e.g.
+// "mcp__dash_board__create_todo") is the Dash board's create_todo.
+func createTodoTool(tool string) bool {
+	return tool == "create_todo" || tool == "mcp__"+mcptools.ServerName+"__create_todo"
+}
+
+// CreatedTask is the task a create_todo result (the task, as JSON) names,
+// or nil when it names none.
+func CreatedTask(result string) *model.ChatTask {
+	var t struct {
+		ID     string `json:"id"`
+		Title  string `json:"title"`
+		Prompt string `json:"prompt"`
+	}
+	if json.Unmarshal([]byte(result), &t) != nil || t.ID == "" {
+		return nil
+	}
+	title := t.Title
+	if title == "" {
+		title, _, _ = strings.Cut(t.Prompt, "\n")
+	}
+	return &model.ChatTask{ID: t.ID, Title: title}
 }
 
 // transcript renders the conversation as one prompt. A single question is

@@ -6,7 +6,8 @@ import { attempt, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { chatPage, renderNavActive } from "./nav.js";
 import { baseBranch, projectKey } from "./events.js";
-import { grouped, projectDot, projectIcon, projectWhere, sharedMark } from "./projects.js";
+import { grouped, projectDot, projectIcon, projectWhere, selectProject, sharedMark } from "./projects.js";
+import { openDetail } from "./detail.js";
 import { chat, chatActions, chatDismissed, chatUnread, makeChat, paneChatState, saveChatUnread, todoChat } from "./chat.js";
 import { addWorkerEvent, worker } from "./timeline.js";
 import { fitTerm } from "./terminal.js";
@@ -90,11 +91,29 @@ export function projectChatFor(p) {
       if (!pc.chat.busy && pc.dirty) loadProjectChat(proj(), true).catch(() => {});
     },
     shell: true,
+    // The drafts Claude makes here show with Queue, Open and Discard.
+    tasks: {
+      prefix: () => proj().prefix || "",
+      local: () => projectKey(proj()) === projectKey(state.project),
+      open: (id) => openChatTask(proj(), id),
+      note: async (todo, kind) => {
+        const m = await api("POST", `/api/projects/${proj().id}/chat/actions`, { todo, kind }, proj().prefix || "");
+        pc.chat.addNote(m);
+      },
+    },
   });
   // Talking in a chat again wants its reply, even if its tab was closed mid-reply.
   pc.chat.input.form.addEventListener("submit", () => chatDismissed.delete(key));
   projectChats.set(key, pc);
   return pc;
+}
+// openChatTask opens task id of project p from its card in p's chat, as
+// the board opens it: in p (selected first, when another is). On a phone,
+// where the chat is a page of its own, the chat closes first.
+async function openChatTask(p, id) {
+  if (projectKey(p) !== projectKey(state.project)) await selectProject(p);
+  if (!desktop.matches) toggleChatPane(false);
+  await openDetail(id);
 }
 const renderRemote = (pc) => { pc.remote.hidden = !pc.remoteBusy || pc.chat.busy; };
 // sameChat reports whether a conversation shown (history) is the one saved.

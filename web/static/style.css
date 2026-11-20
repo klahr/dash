@@ -596,6 +596,20 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .msg .tool pre { margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); font: var(--fs-xs)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
 .msg .tool .tool-out { color: var(--code-text); background: var(--bg); }
 .msg .perm { margin: 0 0 10px; }
+/* A task Claude made in a project chat: Queue, Open and Discard while it's a draft. */
+.chat-task { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--r-s); background: var(--surface); font-size: var(--fs-s); }
+.chat-task:focus { outline: none; }
+.chat-task:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-task-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin-bottom: 8px; }
+.chat-task-tag { flex: none; color: var(--muted); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.chat-task-title { min-width: 0; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-task-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chat-task-actions:empty { display: none; }
+.chat-task-state { color: var(--c, var(--muted)); font-weight: 600; margin-right: 4px; }
+.chat-task-error { margin: 8px 0 0; color: var(--failed); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+/* What the user did from a task's card, noted in the chat for Claude. */
+.chat-note { align-self: center; max-width: 100%; color: var(--muted); font-size: var(--fs-xs); text-align: center; padding: 2px 10px; overflow-wrap: anywhere; }
+.chat-note .md p { margin: 0; }
 .perm-status { color: var(--muted); font-weight: 600; }
 .chat-cwd { color: var(--muted); font: var(--fs-xs) var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
 .chat-cwd-bar { padding: 6px 16px; border-bottom: 1px solid var(--line); }

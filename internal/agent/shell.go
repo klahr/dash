@@ -205,6 +205,9 @@ func CapShellOutput(s string) (string, bool) {
 // as a command the user ran themselves, with its output (capped) and how it
 // ended; any other message as it is.
 func ShellText(m ChatMessage) string {
+	if m.Action != nil {
+		return ActionText(*m.Action)
+	}
 	sh := m.Shell
 	if sh == nil {
 		return m.Content
@@ -231,14 +234,41 @@ func ShellText(m ChatMessage) string {
 	return b.String()
 }
 
-// WithShellText turns the "!" commands of a conversation into the text
-// Claude reads (ShellText), so what adds to the messages' text (a task's
-// context, attachments) reaches Claude whatever kind of message it is.
+// ChatActionNote is the note the chat shows for a, what the user did to a task
+// from its card: "You queued *Fix login*."
+func ChatActionNote(a model.ChatAction) string {
+	verb := map[string]string{model.ChatQueued: "queued", model.ChatDiscarded: "discarded"}[a.Kind]
+	title := strings.NewReplacer("*", "", "\n", " ").Replace(a.Title)
+	if title == "" {
+		title = a.Todo
+	}
+	return fmt.Sprintf("You %s *%s*.", verb, title)
+}
+
+// ActionText is how Claude reads a's note: something the user did
+// themselves, not a request.
+func ActionText(a model.ChatAction) string {
+	var did string
+	switch a.Kind {
+	case model.ChatQueued:
+		did = "queued the draft task %q (id %s) myself, from its card in the chat: it is queued to run, so don't queue it again"
+	case model.ChatDiscarded:
+		did = "discarded the draft task %q (id %s) myself, from its card in the chat: it is deleted, so don't queue or change it"
+	default:
+		did = "changed the task %q (id %s) myself, from its card in the chat"
+	}
+	return "(For your information, not a request: I " + fmt.Sprintf(did, a.Title, a.Todo) + ".)"
+}
+
+// WithShellText turns the "!" commands and action notes of a conversation
+// into the text Claude reads (ShellText), so what adds to the messages'
+// text (a task's context, attachments) reaches Claude whatever kind of
+// message it is.
 func WithShellText(history []ChatMessage) []ChatMessage {
 	out := append([]ChatMessage(nil), history...)
 	for i, m := range out {
-		if m.Shell != nil {
-			out[i].Content, out[i].Shell = ShellText(m), nil
+		if m.Shell != nil || m.Action != nil {
+			out[i].Content, out[i].Shell, out[i].Action = ShellText(m), nil, nil
 		}
 	}
 	return out

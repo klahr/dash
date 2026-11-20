@@ -418,6 +418,7 @@ func (s *Server) buildMux() *http.ServeMux {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("POST /api/projects/{pid}/chat/actions", s.projectChatAction)
 	mux.HandleFunc("POST /api/projects/{pid}/cleanup", s.viaRunner(s.cleanupProject))
 
 	// GitHub Actions builds of the default branch

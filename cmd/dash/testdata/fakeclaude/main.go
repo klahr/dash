@@ -93,6 +93,26 @@ func main() {
 		}
 		fmt.Println("Title from the runner")
 	case "chat":
+		// "draft task: <title>" (the latest message) makes a draft with the
+		// board's create_todo, shown as Claude Code shows a tool call.
+		latest := string(stdin)
+		if _, after, ok := strings.Cut(latest, "Reply to my latest message:"); ok {
+			latest = after
+		}
+		if _, title, ok := strings.Cut(latest, "draft task: "); ok {
+			title = firstLine(title)
+			input := map[string]any{"title": title, "prompt": "Made in the chat: " + title, "draft": true}
+			out, err := callTool(args, "dash_board", "create_todo", input)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "create_todo:", err)
+				os.Exit(1)
+			}
+			id := fmt.Sprintf("toolu_%d", time.Now().UnixNano())
+			line(map[string]any{"type": "assistant", "message": map[string]any{"content": []map[string]any{
+				{"type": "tool_use", "id": id, "name": "mcp__dash_board__create_todo", "input": input}}}})
+			line(map[string]any{"type": "user", "message": map[string]any{"content": []map[string]any{
+				{"type": "tool_result", "tool_use_id": id, "content": toolText(out)}}}})
+		}
 		line(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start"}})
 		line(map[string]any{"type": "stream_event", "event": map[string]any{"type": "content_block_delta",
 			"delta": map[string]any{"type": "text_delta", "text": "Hello from the runner"}}})
@@ -222,6 +242,21 @@ func callTool(args []string, server, tool string, arguments map[string]any) ([]b
 		return nil, fmt.Errorf("%s: %s", res.Status, out)
 	}
 	return out, nil
+}
+
+// toolText is the text of a tools/call response, as Claude Code gives it.
+func toolText(out []byte) string {
+	var res struct {
+		Result struct {
+			Content []struct{ Text string } `json:"content"`
+		} `json:"result"`
+	}
+	_ = json.Unmarshal(out, &res)
+	var b strings.Builder
+	for _, c := range res.Result.Content {
+		b.WriteString(c.Text)
+	}
+	return b.String()
 }
 
 // behavior is "allow" or "deny" from a permission_prompt response.

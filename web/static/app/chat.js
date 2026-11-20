@@ -5,7 +5,7 @@ import { wsURL } from "./viewport.js";
 import { api, here, on, request } from "./api.js";
 import { ask, attempt, copy, fail, toast } from "./dialogs.js";
 import { attachBox, attachThumb } from "./attachments.js";
-import { state } from "./state.js";
+import { STATUS_LABEL, state } from "./state.js";
 import { showView } from "./nav.js";
 import { projectKey } from "./events.js";
 import { duration } from "./activity.js";
@@ -68,11 +68,11 @@ function usageLine(u) {
 // through. Each is a function of c: chatSendButton, chatSuggestion,
 // chatSocket, chatRecall (with the composer's keys), chatQueue, shellRunner
 // and chatStreamHandler.
-export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false, mode = () => null }) {
+export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false, mode = () => null, tasks = null }) {
   // waiting: ids of the permission requests the current turn waits on an answer to.
   // queue: messages written while a reply streams ({q, files}), sent together
   // as one message once it's done.
-  const c = { history: [], current: null, ws: null, prefix: "", waiting: new Set(), queue: [], log, empty, form, target, actions, labels, scroller, onState };
+  const c = { history: [], current: null, ws: null, prefix: "", waiting: new Set(), queue: [], log, empty, form, target, actions, labels, scroller, onState, tasks };
   const input = c.input = form.q;
   const composing = c.composing = () => !!input.value.trim() || att.items().length > 0;
   const sendBtn = chatSendButton(c, form, mode, composing);
@@ -93,9 +93,11 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     sc.scrollTo({ top: sc.scrollHeight, behavior: glide ? "smooth" : "instant" });
   };
   const from = c.from = (who) => labels ? h("div", { class: "msg-from" }, labels[who]) : null;
-  const assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), usageLine(m.usage), actions(m.content));
+  // The tasks the answer made show as cards under it (see taskCard).
+  const cards = (list) => (tasks ? (list || []).map((t) => taskCard(t, tasks)) : []);
+  const assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), ...cards(m.tasks), usageLine(m.usage), actions(m.content));
   const prefixOf = () => target().prefix || "";
-  const user = (m) => m.shell ? sh.block(m, labels && from("user")).el : h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
+  const user = (m) => m.action ? actionNote(m) : m.shell ? sh.block(m, labels && from("user")).el : h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
     m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
 
   // "!" commands: the composer shows shell mode while its text starts with
@@ -138,7 +140,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     if (u) cur.el.append(u);
     if (cur.content) {
       cur.el.append(entering(actions(cur.content)));
-      c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage && !stopped ? { usage: cur.usage } : {}) });
+      c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage && !stopped ? { usage: cur.usage } : {}), ...(cur.tasks.length ? { tasks: cur.tasks } : {}) });
     } else {
       c.history.pop(); // keep history alternating
     }
@@ -202,7 +204,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     const el = entering(h("div", { class: "msg assistant pending" }, from("assistant"), thinking, reply));
     c.current ? c.current.el.replaceWith(el) : log.append(el);
     toEnd(true);
-    c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), target: { prefix, ...fields }, at: new Date().toISOString() };
+    c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), tasks: [], target: { prefix, ...fields }, at: new Date().toISOString() };
     suggest();
     c.busyButton();
     onState();
@@ -267,12 +269,23 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
 
   // resumeLast answers a question left unanswered in a saved conversation.
   function resumeLast() {
-    if (c.current || c.history.at(-1)?.role !== "user" || c.history.at(-1).shell) return;
+    if (c.current || c.history.at(-1)?.role !== "user" || c.history.at(-1).shell || c.history.at(-1).action) return;
     empty.hidden = true;
     turn(target());
   }
 
-  return { reset, resumeLast, stop, input, toEnd, modeChanged: c.modeChanged, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
+  // addNote shows m, an action note the server saved at the end of the
+  // conversation (see taskCard). While a turn runs, the server has it
+  // before the turn's messages: the chat reloads once the turn ends.
+  function addNote(m) {
+    if (c.current || c.history.some((x) => x.action && x.action.kind === m.action?.kind && x.action.todo === m.action?.todo)) return;
+    empty.hidden = true;
+    c.history.push(m);
+    log.append(entering(user(m)));
+    toEnd(true);
+  }
+
+  return { reset, resumeLast, stop, addNote, input, toEnd, modeChanged: c.modeChanged, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
 }
 
 // chatSendButton sets c.busyButton, which shows the send button for the
@@ -410,7 +423,7 @@ function chatRecall(c, input, autoGrow) {
       if (dir < 0 ? v.lastIndexOf("\n", a - 1) >= 0 : v.indexOf("\n", b) >= 0) return false;
       if (recall.pos === null) {
         if (dir > 0) return false;
-        recall.list = c.history.filter((m) => m.role === "user" && m.content?.trim()).map((m) => m.content)
+        recall.list = c.history.filter((m) => m.role === "user" && !m.action && m.content?.trim()).map((m) => m.content)
           .filter((q, i, all) => q !== all[i - 1]);
         if (!recall.list.length) return false;
         recall.draft = v;
@@ -551,6 +564,11 @@ function chatStreamHandler(c) {
       case "tool_result": {
         const t = cur.tools.get(d.id);
         if (t) toolResult(t, d);
+        // A task create_todo made: its card, under the call.
+        if (t && d.task?.id && !d.is_error && c.tasks) {
+          cur.tasks.push(d.task);
+          t.el.after(entering(taskCard(d.task, c.tasks)));
+        }
         break;
       }
       case "permission":
@@ -724,6 +742,114 @@ export function toolSettled(t, end = null) {
   const ms = end - t.since;
   t.time.textContent = end && ms >= 3000 ? duration(ms) : "";
 }
+
+// ------------------------------------------------------------------ task cards
+// A task Claude made in a project chat (create_todo) shows as a card under
+// the tool call, and under the answer when the chat is loaded again. While
+// it's a draft, Queue, Open and Discard act on it right away, with the
+// task's own routes; Queue and Discard then add a note to the chat ("You
+// queued *…*.") that Claude sees next turn. Once it isn't a draft (queued or
+// deleted here or elsewhere) the card says what it is now. ops (the chat's
+// tasks option): {prefix(), local() (whether state.todos has the chat's
+// project's tasks), open(id), note(todo, kind)}.
+const TASK_DONE = { queued: "Queued ✓", discarded: "Discarded" };
+// The cards shown (or once shown: those gone from the page are dropped as
+// they're met), to follow their tasks' changes.
+const taskCards = new Set();
+
+// taskStatus is t's status for its card: "deleted" when it's gone, null
+// when it can't be read.
+async function taskStatus(id, ops) {
+  const t = ops.local?.() && state.todos.get(id);
+  if (t) return t.status;
+  try {
+    return (await api("GET", `/api/todos/${id}`, null, ops.prefix())).status;
+  } catch (e) {
+    return e.status === 404 ? "deleted" : null;
+  }
+}
+
+function taskCard(task, ops) {
+  const label = task.title || task.id;
+  const tag = h("span", { class: "chat-task-tag" }, "Task");
+  const actions = h("div", { class: "chat-task-actions" });
+  const err = h("p", { class: "chat-task-error", role: "alert", hidden: true });
+  const el = h("div", { class: "chat-task", role: "group", tabindex: "-1", "aria-label": `Task: ${label}`, "data-todo": task.id },
+    h("div", { class: "chat-task-head" }, tag, h("span", { class: "chat-task-title", title: label }, label)), actions, err);
+  const card = { el, task, ops, status: undefined, done: "" };
+  const open = () => ib({ type: "button", class: "btn small", title: "Open the task", onclick: attempt(() => ops.open(task.id)) }, "external", "Open");
+  // act runs one of the buttons: the call, then the chat's note. An error
+  // shows on the card and leaves the buttons.
+  const act = (kind, call) => async () => {
+    const bs = [...actions.querySelectorAll("button")];
+    bs.forEach((b) => { b.disabled = true; });
+    err.hidden = true;
+    try {
+      await call();
+    } catch (x) {
+      bs.forEach((b) => { b.disabled = false; });
+      err.hidden = false;
+      err.textContent = x.message || String(x);
+      return;
+    }
+    card.done = kind;
+    // The button pressed is gone: the focus stays on the card.
+    const refocus = el.contains(document.activeElement) || !document.activeElement || document.activeElement === document.body;
+    renderTaskCard(card, kind === "queued" ? "queued" : "deleted");
+    if (refocus) (actions.querySelector("button") || el).focus();
+    try {
+      await ops.note(task.id, kind);
+    } catch (x) {
+      err.hidden = false;
+      err.textContent = `${kind === "queued" ? "Queued" : "Discarded"}, but the chat couldn't note it: ${x.message || x}`;
+    }
+  };
+  card.buttons = () => [
+    ib({ type: "button", class: "btn small primary", title: "Queue it to run", onclick: act("queued", () => api("POST", `/api/todos/${task.id}/enqueue`, null, ops.prefix())) }, "queue", "Queue"),
+    open(),
+    ib({ type: "button", class: "btn small danger", title: "Delete this draft", onclick: act("discarded", () => api("DELETE", `/api/todos/${task.id}`, null, ops.prefix())) }, "trash", "Discard"),
+  ];
+  card.open = open;
+  card.tag = tag;
+  card.actions = actions;
+  taskCards.add(card);
+  renderTaskCard(card, undefined);
+  taskStatus(task.id, ops).then((s) => { if (card.status === undefined) renderTaskCard(card, s); });
+  return el;
+}
+
+// renderTaskCard shows card's task as having status s (undefined: not
+// known yet; null: couldn't be read).
+function renderTaskCard(card, s) {
+  card.status = s;
+  const { actions, tag } = card;
+  if (s === undefined) { tag.textContent = "Task"; actions.replaceChildren(); return; }
+  if (s === "draft") {
+    tag.textContent = "Draft";
+    actions.replaceChildren(...card.buttons());
+    return;
+  }
+  const word = s === "deleted" ? (card.done === "discarded" ? TASK_DONE.discarded : "Deleted")
+    : s === "queued" && card.done === "queued" ? TASK_DONE.queued
+      : s ? STATUS_LABEL[s] || s : "Task";
+  tag.textContent = "Task";
+  const badge = h("span", { class: `chat-task-state s-${s || "unknown"}`, role: "status" }, word);
+  actions.replaceChildren(...(s === "deleted" ? [badge] : [badge, card.open()]));
+}
+
+// chatTaskEvent follows a task's change (a todo.updated or todo.deleted
+// event, from whichever project) on the cards that show it.
+export function chatTaskEvent(ev) {
+  for (const card of taskCards) {
+    if (!card.el.isConnected) { taskCards.delete(card); continue; }
+    if (card.task.id !== ev.todo_id) continue;
+    const s = ev.type === "todo.deleted" ? "deleted" : ev.data?.status;
+    if (s && s !== card.status) renderTaskCard(card, s);
+  }
+}
+
+// An action note in the chat: "You queued *Fix login*."
+const actionNote = (m) => h("div", { class: "chat-note", role: "note" }, h("span", { class: "md", innerHTML: renderMarkdown(m.content || "") }));
 
 // Tool calls in the chat: a one-line summary, and the full input when expanded.
 function toolSummary(tool, i = {}) {

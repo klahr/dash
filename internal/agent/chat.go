@@ -41,6 +41,9 @@ type ChatDelta struct {
 	Input   json.RawMessage  `json:"input,omitempty"`
 	IsError bool             `json:"is_error,omitempty"`
 	Shell   *model.ChatShell `json:"shell,omitempty"`
+	// Task is set on the tool_result of a create_todo call that worked: the
+	// task it made, read from the result.
+	Task *model.ChatTask `json:"task,omitempty"`
 }
 
 // Chat answers through the Anthropic Messages API (billed to an API key).

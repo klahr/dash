@@ -996,7 +996,34 @@ type ChatMessage struct {
 	// what it printed and how it ended. Claude didn't run it, but sees it on
 	// the next turn.
 	Shell *ChatShell `json:"shell,omitempty"`
+	// Tasks are the tasks Claude's answer made with create_todo, which the
+	// chat shows with Queue, Open and Discard buttons (assistant messages
+	// only).
+	Tasks []ChatTask `json:"tasks,omitempty"`
+	// Action is set on a note the user's own action added to the chat (they
+	// queued or discarded a task from its card there); Content is the note
+	// as the chat shows it. Claude sees it on the next turn.
+	Action *ChatAction `json:"action,omitempty"`
 }
+
+// ChatTask is a task a chat answer made.
+type ChatTask struct {
+	ID    string `json:"id"`
+	Title string `json:"title,omitempty"`
+}
+
+// ChatAction is what the user did to a task from its card in a chat.
+type ChatAction struct {
+	Kind  string `json:"kind"` // ChatQueued or ChatDiscarded
+	Todo  string `json:"todo"`
+	Title string `json:"title,omitempty"`
+}
+
+// The kinds of ChatAction.
+const (
+	ChatQueued    = "queued"
+	ChatDiscarded = "discarded"
+)
 
 // ChatShell is a "!" command run from a chat, and its result.
 type ChatShell struct {

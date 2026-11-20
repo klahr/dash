@@ -712,9 +712,12 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 		// suggestion mustn't ask for what was just done.
 		tools := map[string]string{}
 		var done []string
+		// The tasks the reply made (create_todo): saved with it, so the
+		// chat shows their cards when it is loaded again.
+		var tasks []model.ChatTask
 		started := time.Now() // places the reply right after its question in a task's timeline
 		answered := func() []agent.ChatMessage {
-			return append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started, Usage: usage})
+			return append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started, Usage: usage, Tasks: tasks})
 		}
 		err := ct.chatter.Stream(ctx, ct.dir, ct.prompt, func(d agent.ChatDelta) {
 			if ctx.Err() != nil {
@@ -728,6 +731,9 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 			}
 			if d.Kind == "tool_use" && d.ID != "" {
 				tools[d.ID] = d.Tool
+			}
+			if d.Kind == "tool_result" && !d.IsError && d.Task != nil && d.Task.ID != "" {
+				tasks = append(tasks, *d.Task)
 			}
 			if d.Kind == "tool_result" && !d.IsError {
 				if note := agent.ActionNote(tools[d.ID]); note != "" && !slices.Contains(done, note) {
