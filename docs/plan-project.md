@@ -83,6 +83,9 @@ A brief is saved as you go. Pick it again from the **Drafts** list under **Write
 to carry on where you left off, or delete it there. The repository is picked again after a
 reload. A launched brief leaves the list.
 
+An idea you typed but haven't sent yet is kept in your browser: if the sheet closes (on `Esc`,
+say), the idea and name are there when you open it again. Clear the idea to drop it.
+
 A draft is yours: nobody else in the organization sees it, admins included. Leaving the
 organization deletes your drafts there.
 

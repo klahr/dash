@@ -2,6 +2,7 @@ import { $, $$, h, ib, ico, plural, setLabel, dateTimeText } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, fail, railOf, toast } from "./dialogs.js";
 import { renderMarkdown } from "../editor.js";
+import * as store from "./store.js";
 
 // The Add project sheet (projects.js's SHEET). projects.js is the app's, so
 // it is loaded only for a project's brief: the planners' Planning page
@@ -87,6 +88,8 @@ export const planner = {
     if (on) mount("project");
     if (pl.kind !== "project") return;
     pl.visible = on;
+    // An idea typed but not saved yet (the sheet closed on it) opens again.
+    if (on && !pl.cur && typedIdea()) return newProject();
     if (on && !pl.cur && !pl.drafts) loadDrafts().catch(fail);
     render();
   },
@@ -200,6 +203,7 @@ function renderHome() {
 async function deleteDraft(p) {
   if (!await ask({ title: `Delete ${p.name || "this brief"}?`, body: "Its interview and brief go with it.", ok: "Delete", danger: true })) return;
   await call("DELETE", plansAPI(p.id));
+  store.remove(`dash.planIdea.${kindOf(p)}.${p.id}`);
   pl.drafts = (pl.drafts || []).filter((x) => x.id !== p.id);
   render();
   $("#plan-new").focus();
@@ -216,12 +220,16 @@ async function openPlan(id) {
   focus();
 }
 
-$("#plan-new").addEventListener("click", () => {
-  if (pl.kind === "feature") return newFeature({ project: pl.cur?.project_id });
+function newProject() {
   reset();
   pl.cur = { id: "", name: "", idea: "", rounds: [], topics: [], brief: "", open: [], verdict: {}, step: "idea" };
   render();
   focus();
+}
+
+$("#plan-new").addEventListener("click", () => {
+  if (pl.kind === "feature") return newFeature({ project: pl.cur?.project_id });
+  newProject();
 });
 $("#plan-all").addEventListener("click", attempt(async () => {
   await flushBrief();
@@ -341,8 +349,12 @@ let ideaFor = null;
 function renderIdea() {
   const f = { idea: $("#plan-idea"), name: $("#plan-name"), project: $("#plan-project") };
   if (ideaFor !== pl.cur) {
-    f.idea.value = pl.cur.idea;
-    f.name.value = pl.cur.name;
+    // What the user typed and didn't save (the sheet closed on it) wins,
+    // except over an idea a new brief was opened with.
+    const typed = typedIdea(), fresh = !pl.cur.id && !pl.cur.card_id;
+    const use = typed && (!fresh || !pl.cur.idea);
+    f.idea.value = use ? typed.idea : pl.cur.idea;
+    f.name.value = use ? typed.name : pl.cur.name;
     ideaFor = pl.cur;
   }
   if (pl.kind === "feature") {
@@ -368,11 +380,28 @@ function renderIdea() {
   $("#plan-where").textContent = whereText || "";
 }
 
+// The idea and name the user types are kept in localStorage until they are
+// saved, so closing the sheet (Esc, say) doesn't lose them: one draft each
+// for a plan, a card, and a new brief of each kind.
+const typedKey = () => `dash.planIdea.${pl.kind}.${pl.cur?.id || (pl.cur?.card_id ? `card.${pl.cur.card_id}` : "new")}`;
+function typedIdea() {
+  const t = store.getJSON(pl.cur ? typedKey() : `dash.planIdea.${pl.kind}.new`);
+  return t && typeof t.idea === "string" && t.idea.trim() ? { idea: t.idea, name: String(t.name || "") } : null;
+}
+function keepTyped() {
+  if (!pl.cur || pl.step !== "idea") return;
+  const idea = $("#plan-idea").value, name = $("#plan-name").value;
+  const saved = idea.trim() === (pl.cur.idea || "").trim() && name.trim() === (pl.cur.name || "").trim();
+  if (saved || !idea.trim()) store.remove(typedKey());
+  else store.setJSON(typedKey(), { idea, name });
+}
+
 // saveIdea saves the idea and name: the plan is made with the first save.
 // A feature's is made for its project and card (a new card if none): what
 // the user didn't change of the card's words, the server takes from the card.
 async function saveIdea() {
   const idea = $("#plan-idea").value.trim(), name = $("#plan-name").value.trim();
+  const key = typedKey();
   if (!idea) {
     $("#plan-idea").focus();
     throw new Error("Describe the idea first: a sentence or two is enough.");
@@ -390,6 +419,7 @@ async function saveIdea() {
     pl.cur = await call("POST", plansAPI(), body);
   } else if (!pl.cur.id) pl.cur = await call("POST", plansAPI(), { idea, name, step: "interview" });
   else if (idea !== pl.cur.idea || name !== pl.cur.name) pl.cur = { ...await call("PATCH", plansAPI(pl.cur.id), { idea, name }) };
+  store.remove(key);
 }
 
 async function startInterview() {
@@ -400,6 +430,7 @@ async function startInterview() {
 }
 
 for (const el of ["#plan-idea", "#plan-name"]) {
+  $(el).addEventListener("input", keepTyped);
   $(el).addEventListener("keydown", (e) => {
     if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
     e.preventDefault();
