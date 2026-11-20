@@ -1,10 +1,33 @@
 # Several computers
 
-Run Dash on each computer (say home and work), each with its own projects and Claude login, and
-watch them all from one dashboard. The Dash you open in the browser is the **hub**. The other
+Run Dash on each computer (yours at home and at work, or each teammate's), each with its own
+projects and Claude login, and watch them all from one dashboard. The Dash you open in the browser is the **hub**. The other
 computers are **runners**: they connect out to the hub and keep that connection open, so they
 need no open port, VPN or shared secret. The hub must be reachable over HTTPS from the runners,
-see [Deploy the hub](deploy.md).
+see [Deploy the hub](deploy.md). Setting up a team? Start with [Set up a team](team.md).
+
+**A runner only does its owner's work**: it runs Claude with its owner's login. Each person needs a
+runner of their own, or a [shared runner](#shared-runners-use-an-api-key) with an API key for
+tasks. Chats, `!` commands, terminals, **Split…** and titles always run on one of your own
+runners (see [Whose work a runner does](#whose-work-a-runner-does)).
+
+## Contents
+
+- [Two kinds of projects](#two-kinds-of-projects): a runner's own, or shared on labels
+- [Add a runner](#add-a-runner): install, update, manage, Windows
+- [Shared projects: tasks on runners](#shared-projects-tasks-on-runners)
+  - [Runner labels](#runner-labels)
+  - [Where deploys run](#where-deploys-run)
+  - [Whose work a runner does](#whose-work-a-runner-does): shared runners, command approval
+  - [A runner's projects](#a-runners-projects)
+  - [Moving projects off the hub](#moving-projects-off-the-hub)
+- [Claude runs on each user's own runner](#claude-runs-on-each-users-own-runner): chats, scans,
+  titles, laptops that sleep, GitHub access, where clones live
+- [Projects of a runner's own](#projects-of-a-runners-own)
+- [What a runner lets the hub do](#what-a-runner-lets-the-hub-do)
+- [Disk space on a runner](#disk-space-on-a-runner)
+- [When a runner goes offline](#when-a-runner-goes-offline)
+- [Previews](#previews)
 
 The hub is a coordinator and **runs nothing on its own computer**: it signs people in, keeps the
 users, the board and the database, and forwards work to runners. Every task, scan, chat, git
@@ -106,7 +129,7 @@ offline, red when none is, grey when there are none yet.
 
 ## Add a runner
 
-In the hub's dashboard, open the account menu → **Organization** → **Add a runner** (any member
+In the hub's dashboard, open the account menu → **Runners** → **Add a runner** (any member
 can, in a signed-in browser). It shows a one-time code (valid for 10 minutes) inside a command to
 paste on the other computer (Linux, macOS or [Windows](#windows-runners), amd64 or arm64). The code is bound to you and the
 organization you're working in: the runner will be yours, there, and run tasks with your Claude

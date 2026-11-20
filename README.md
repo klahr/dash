@@ -90,6 +90,8 @@ project's labels in its settings, **Runners**, and a runner's on its page in Run
 of its own before this: see
 [Moving projects off the hub](docs/several-computers.md#moving-projects-off-the-hub).
 
+Setting up a team (developers and planners)? Follow [Set up a team](docs/team.md).
+
 Prefer the terminal? There's a terminal client too: `./bin/dash-tui` (it's in the release
 archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
@@ -281,6 +283,7 @@ limit (see **Claude usage**).
 - [Merge queue](docs/merge-queue.md): how approved tasks land one at a time, and conflicts between running tasks found before they merge
 - [GitHub](docs/github.md): merge locally or review and merge through pull requests, work on another branch and open its pull request, auto-approve, revert, tag releases from History
 - [MCP and the claude.ai connector](docs/mcp.md)
+- [Set up a team](docs/team.md): the hub online, invitations, a runner per developer or a shared API-key runner, projects shared by labels, what planners do
 - [Several computers](docs/several-computers.md)
 - [Use Dash from your phone](docs/phone.md)
 - [Links](docs/links.md): every view, task, goal, commit and Planning card has its own address; Back and Forward work, and **Copy link** shares one
