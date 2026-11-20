@@ -34,6 +34,11 @@ change no files**. It is off by default. A task that changes no files is then cl
 finishes, with Claude's answer in its chat. To ask for more, add a task that builds on it.
 Tasks that change files go to Review as before.
 
+When the default branch already has a task's changes (another task made the same change and
+merged first), its chat and log say so and name that task: "its changes are already on main
+(from #12 Fix login)". An approved task never goes back to Review for this: it closes (see
+[Merge queue](merge-queue.md)).
+
 The API:
 
     POST  /api/todos/{id}/close                  close a task in Review that changed no files

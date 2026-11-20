@@ -9,7 +9,9 @@ Each project has its own queue, so a long test run in one project never holds up
    origin.
 2. **Merge the default branch in.** Dash merges the default branch into the task's worktree.
    A conflict sends the task back to Claude to resolve. Once fixed, it returns to the queue
-   without another review.
+   without another review. When the fix leaves nothing to merge, because the default branch
+   already has the same change, the task closes: its log says "its changes are already on main
+   (from #12 Fix login)". So does a task whose identical change another task merged first.
 3. **Test.** The project's **Test command** runs on the result, unless it already passed on
    exactly that code (the same commit, or the same files). Failing tests go back to Claude the same way, so a red build never lands.
 4. **Land.** Dash squashes the branch onto the default branch (one commit per task) and pushes

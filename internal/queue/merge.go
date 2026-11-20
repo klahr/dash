@@ -705,10 +705,38 @@ func (m *MergeQueue) afterLanding(ctx context.Context, t model.Todo, p model.Pro
 // closedNote is the task log's line for a task closed without changes.
 const closedNote = "✔ closed; no changes, nothing to merge"
 
+// alreadyLanded words why t's branch, checked out in dir, changes no files
+// when the default branch already has its changes (an identical change
+// merged first, or a conflict fix that ended with the default branch's
+// content): "its changes are already on main (from #id Title)". It is ""
+// when the branch's own commits changed nothing on balance, or it has none.
+func alreadyLanded(ctx context.Context, g *gitops.Git, s *store.Store, t model.Todo, p model.Project, dir string) string {
+	if g == nil || dir == "" {
+		return ""
+	}
+	l, ok, err := g.LandedOn(ctx, p.ID, dir, p.Base())
+	if err != nil || !ok {
+		return ""
+	}
+	from := gitops.ShortSHA(l.Commit) + " " + textutil.Clip(l.Subject, 72)
+	if l.Todo != "" && l.Todo != t.ID && s != nil {
+		if o, err := s.GetTodo(l.Todo); err == nil {
+			from = "#" + o.ID + " " + taskName(o)
+		}
+	}
+	return "its changes are already on " + p.Base() + " (from " + from + ")"
+}
+
 // closeNoChanges closes t, whose branch changes no files: it is Merged
 // with NoChanges and no commit, and its worktree goes. check, when set,
 // may refuse the change, seeing the task as it is now.
 func (m *MergeQueue) closeNoChanges(ctx context.Context, t model.Todo, p model.Project, check func(*model.Todo) error) (model.Todo, error) {
+	note := closedNote
+	if t.Worktree != nil {
+		if why := alreadyLanded(ctx, m.Git, m.Store, t, p, t.Worktree.Path); why != "" {
+			note = "✔ closed; " + why
+		}
+	}
 	nt, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 		if check != nil {
 			if err := check(x); err != nil {
@@ -722,7 +750,7 @@ func (m *MergeQueue) closeNoChanges(ctx context.Context, t model.Todo, p model.P
 	if err != nil {
 		return nt, err
 	}
-	m.afterLanding(ctx, t, p, closedNote)
+	m.afterLanding(ctx, t, p, note)
 	return nt, nil
 }
 

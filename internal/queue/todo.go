@@ -936,11 +936,16 @@ func (r *todoRun) commitAndCheck() (step, error) {
 	if derr == nil && files == 0 {
 		// An answer, an investigation or "it already works": nothing to
 		// test or merge, but not a failure. Review it, where it is closed,
-		// or close it now when the project says so.
-		autoClose := p.CloseNoChanges && e.Merges != nil
-		noteNoChanges(e.Store, r.t.ID, r.report, autoClose)
+		// or close it now when the project says so. An approved task (a
+		// conflict fix, say) isn't reviewed again: with nothing left to
+		// merge, it closes; most often main already has its changes.
+		landed := alreadyLanded(ctx, e.Git, e.Store, r.t, p, wt.Path)
+		autoClose := (p.CloseNoChanges || r.t.AutoMerge) && e.Merges != nil
+		noteNoChanges(e.Store, r.t.ID, r.report, landed, autoClose)
 		if autoClose {
-			r.log("✔ finished without changing any files")
+			if landed == "" {
+				r.log("✔ finished without changing any files")
+			}
 			if _, err := e.Merges.closeNoChanges(ctx, r.t, p, func(x *model.Todo) error {
 				if x.Status != model.StatusInProgress {
 					return fmt.Errorf("task is %s", x.Status)
@@ -952,7 +957,11 @@ func (r *todoRun) commitAndCheck() (step, error) {
 				slog.Error("close", "todo", r.t.ID, "err", err)
 			}
 		}
-		r.log("✔ finished without changing any files; ready for review")
+		if landed != "" {
+			r.log("✔ finished without changing any files: " + landed + "; ready for review")
+		} else {
+			r.log("✔ finished without changing any files; ready for review")
+		}
 		if _, err := e.Store.SetStatus(r.t.ID, model.StatusReview, ""); err != nil {
 			slog.Error("set review", "todo", r.t.ID, "err", err)
 		}
@@ -1222,11 +1231,16 @@ func noteFailure(s *store.Store, todoID, why, report string) {
 // noteNoChanges says in the todo's chat that Claude changed nothing,
 // quoting its final message: usually the answer or the reason. closed says the task is closed already (the project's "Close tasks that
 // change no files").
-func noteNoChanges(s *store.Store, todoID, report string, closed bool) {
+func noteNoChanges(s *store.Store, todoID, report, landed string, closed bool) {
 	now := time.Now()
 	msg := "**Claude finished without changing any files.** Close the task, or ask for changes to keep going."
-	if closed {
+	switch {
+	case closed && landed != "":
+		msg = "**Nothing left to merge: " + landed + ", so the task is closed.** To ask for more, add a task that builds on it."
+	case closed:
 		msg = "**Claude finished without changing any files, so the task is closed.** To ask for more, add a task that builds on it."
+	case landed != "":
+		msg = "**Nothing left to merge: " + landed + ".** Close the task, or ask for changes to keep going."
 	}
 	if report != "" {
 		msg += "\n\nClaude's last message:\n\n" + report

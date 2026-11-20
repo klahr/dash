@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -127,5 +128,70 @@ func TestChangesStillGoToReviewAndMerge(t *testing.T) {
 	h.approve(td.ID)
 	if got := h.waitFor(td.ID, model.StatusMerged); got.MergedCommit == "" || got.NoChanges {
 		t.Fatalf("want a merge commit and no no_changes, got commit=%q no_changes=%v", got.MergedCommit, got.NoChanges)
+	}
+}
+
+// An approved task whose conflict fix ends with main's content isn't
+// reviewed again (docs/merge-queue.md): it closes, saying main already has
+// its changes and from which task.
+func TestApprovedConflictFixWithoutChangesCloses(t *testing.T) {
+	parallel(t)
+
+	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		path := filepath.Join(req.Dir, "shared.txt")
+		if b, _ := os.ReadFile(path); strings.Contains(string(b), "<<<<<<<") {
+			main, err := exec.Command("git", "-C", req.Dir, "show", "main:shared.txt").Output()
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(path, main, 0o644) // keep main's side
+		}
+		return os.WriteFile(path, []byte("line from "+filepath.Base(req.Dir)+"\n"), 0o644)
+	}, result: "Kept main's version."}
+	h := newHarness(t, exe, model.Project{Name: "p", MaxAutoFixes: 2})
+	a, b := h.add("first"), h.add("second")
+	h.waitFor(a.ID, model.StatusReview)
+	h.waitFor(b.ID, model.StatusReview)
+	h.approve(a.ID)
+	h.waitFor(a.ID, model.StatusMerged)
+	h.approve(b.ID)
+
+	tb := h.waitFor(b.ID, model.StatusMerged)
+	if !tb.NoChanges || tb.MergedCommit != "" {
+		t.Fatalf("want closed with no changes, got no_changes=%v commit=%q", tb.NoChanges, tb.MergedCommit)
+	}
+	want := "its changes are already on main (from #" + a.ID + " first)"
+	log, _ := h.log.Read(b.ID)
+	_, fix, _ := strings.Cut(log, "sending back to Claude")
+	if strings.Contains(fix, "ready for review") || !strings.Contains(fix, "✔ closed; "+want) {
+		t.Fatalf("want it closed as already on main, got log:\n%s", log)
+	}
+	chat := h.st.TodoChat(b.ID)
+	if len(chat) == 0 || !strings.Contains(chat[len(chat)-1].Content, want) || !strings.Contains(chat[len(chat)-1].Content, "the task is closed") {
+		t.Fatalf("want the chat to say main has its changes, got %+v", chat)
+	}
+}
+
+// An approved task whose identical change merged first closes, naming that task.
+func TestIdenticalChangeMergedFirstClosesAsAlreadyOnMain(t *testing.T) {
+	parallel(t)
+
+	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		return os.WriteFile(filepath.Join(req.Dir, "same.txt"), []byte("same\n"), 0o644)
+	}}
+	h := newHarness(t, exe, model.Project{Name: "p"})
+	a, b := h.add("first"), h.add("second")
+	h.waitFor(a.ID, model.StatusReview)
+	h.waitFor(b.ID, model.StatusReview)
+	h.approve(a.ID)
+	h.waitFor(a.ID, model.StatusMerged)
+	h.approve(b.ID)
+
+	tb := h.waitFor(b.ID, model.StatusMerged)
+	if !tb.NoChanges || tb.MergedCommit != "" {
+		t.Fatalf("want closed with no changes, got no_changes=%v commit=%q", tb.NoChanges, tb.MergedCommit)
+	}
+	if log, _ := h.log.Read(b.ID); !strings.Contains(log, "✔ closed; its changes are already on main (from #"+a.ID+" first)") {
+		t.Fatalf("want it closed as already on main, got log:\n%s", log)
 	}
 }
