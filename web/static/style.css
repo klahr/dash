@@ -3762,6 +3762,10 @@ select.pl-more-filter { width: auto; min-height: 32px; max-width: 12em; font-siz
 .pl-chat .chat-log { padding-inline: max(16px, calc((100% - 80ch) / 2)); }
 .pl-chat .composer { padding-bottom: max(10px, var(--safe-b)); }
 .pl-chat-needed { margin: auto; }
+/* Toasts go under the chat's head, clear of the composer: at the foot they would lie over
+   Send, and one under the pointer holds itself open (app/dialogs.js toast). Over a sheet
+   they are moved into it, out of body, and placed there instead. */
+html:has(.planning-app #chat-main:not([hidden])) body > .toasts { top: calc(var(--vv-top, 0px) + var(--top-h) + 60px); bottom: auto; }
 .claude-needed { display: inline-flex; align-items: center; text-align: left; }
 .pl-compose-brief.claude-needed, .pl-composer .claude-needed { font-size: var(--fs-s); padding: 4px 10px 8px; }
 @media (max-width: 1023px) {
