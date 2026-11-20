@@ -178,7 +178,7 @@ When the project is on GitHub, Dash follows the GitHub Actions runs on the defau
   the menu button gets a red dot).
 
 **Builds**, in the sidebar's **Actions**, says how the latest build went (**Build passing**,
-**Build running**, **Build failing**) and opens the builds sheet: the latest runs,
+**Build running**, in yellow with a spinner, **Build failing**) and opens the builds sheet: the latest runs,
 **Re-run build**, and after a failure **Retry failed jobs** and **Ask Claude to fix it**.
 
 When a build fails, Dash queues a task asking Claude to fix it ("Fix failing build: …"), unless

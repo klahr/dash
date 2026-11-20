@@ -58,6 +58,7 @@ export function renderCI() {
   const failing = has && (relFailed || st?.state === "failing");
   const running = has && !failing && (rel?.state === "building" || st?.state === "running");
   btn.classList.toggle("bad", failing);
+  btn.classList.toggle("running", running);
   btn.classList.toggle("ok", has && !failing && !running && st?.state === "passing");
   btn.querySelector("span").textContent = relFailed ? `Release ${rel.tag} failed` : rel?.state === "building" && has ? `Building ${rel.tag}` : CI_LABEL[st?.state] || "Builds";
   btn.title = "GitHub Actions on the default branch";
