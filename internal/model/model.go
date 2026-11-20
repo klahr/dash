@@ -668,7 +668,8 @@ func (t Todo) WorkFor() []int64 {
 
 // QueueBefore reports whether a runs before b: prioritised todos first, by
 // priority ascending, then oldest first; unprioritised ones after all of
-// them, oldest first.
+// them, oldest first. Todos created at the same instant (a coarse clock, as
+// on Windows) go by id, so the order is the same on every call.
 func QueueBefore(a, b Todo) bool {
 	switch {
 	case a.Priority != nil && b.Priority == nil:
@@ -677,8 +678,10 @@ func QueueBefore(a, b Todo) bool {
 		return false
 	case a.Priority != nil && *a.Priority != *b.Priority:
 		return *a.Priority < *b.Priority
+	case !a.CreatedAt.Equal(b.CreatedAt):
+		return a.CreatedAt.Before(b.CreatedAt)
 	}
-	return a.CreatedAt.Before(b.CreatedAt)
+	return a.ID < b.ID
 }
 
 // Finished reports whether a task is done with for good: merged, or failed
