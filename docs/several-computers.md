@@ -537,8 +537,12 @@ the org sees it and adds tasks to it, and each member's tasks run on their own r
 - Terminals, `!` commands and chats on a runner stay its owner's alone.
 
 A task that waits because only other members' runners have its labels says so: "waiting: no runner
-of alice's has the labels Linux; laptop is bob's runner and only takes bob's tasks". Give one of
-your runners those labels, or ask for a shared runner.
+of alice's has the labels Linux; laptop is bob's runner and only takes bob's tasks". Its card shows
+**Needs your runner**. Give one of your runners those labels, or ask for a shared runner.
+
+When no runner of yours (and no shared runner) has a project's labels, the board says so above
+the lanes, with **Add a runner**. Admins see how many runners each member has in
+**Organization → Members**: "no runner" means that member's tasks wait.
 
 #### Shared runners use an API key
 

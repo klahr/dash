@@ -415,13 +415,14 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   .todo:has(.ask-claude-chip) > .todo-side .card-actions { margin-top: 0; }
 }
 .paused-tag { color: var(--muted); }
+.needs-runner-tag { color: var(--running); white-space: nowrap; }
 /* A failed task waits in Review: say so plainly, as a badge. */
 .failed-tag { color: var(--failed); border: 1px solid currentColor; border-radius: var(--r-s); padding: 0 5px; line-height: 1.5; }
 .prio-tag.prio-urgent { color: var(--failed); font-weight: 600; }
 .start-now-tag { color: var(--running); } /* the task skips the wait for the weekly pace */
 .live-tag { color: var(--merged); font-weight: 600; } /* a merged task, live in an environment */
 /* A card's small word tags (paused, reviewing, a PR, CI, checks, a revert): one size; each sets its colour. */
-:is(.failed-tag, .paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag, .nochange-tag) { font-size: var(--fs-xs); font-weight: 600; }
+:is(.failed-tag, .paused-tag, .needs-runner-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag, .nochange-tag) { font-size: var(--fs-xs); font-weight: 600; }
 /* A task that changed no files: in Review it is closed, not merged; once closed it says so. */
 .nochange-tag { color: var(--muted); border: 1px solid currentColor; border-radius: var(--r-s); padding: 0 5px; line-height: 1.5; white-space: nowrap; }
 /* A link to other tasks (a conflict, a note, an active_work lookup): one short line, the rest on hover. */
@@ -1348,7 +1349,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-account .ico { flex: none; width: 14px; height: 14px; }
 .runner-account-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Small outlined tags: a runner's plan and version, a setting's scope, two-factor on/off. */
-:is(.runner-plan, .runner-version, .scope-tag, .tfa-tag) { flex: none; padding: 1px 8px; border-radius: var(--r-pill); border: 1px solid var(--line); font: 600 var(--fs-2xs)/1.6 var(--ui); letter-spacing: .02em; color: var(--muted); white-space: nowrap; }
+:is(.runner-plan, .runner-version, .scope-tag, .tfa-tag, .member-runners) { flex: none; padding: 1px 8px; border-radius: var(--r-pill); border: 1px solid var(--line); font: 600 var(--fs-2xs)/1.6 var(--ui); letter-spacing: .02em; color: var(--muted); white-space: nowrap; }
 .runner-paced-with { margin: 8px 0 0; }
 #runner-detail > .runner-update { margin-top: 12px; padding: 8px 10px; border-radius: var(--r-s); background: color-mix(in srgb, var(--running) 8%, transparent); }
 #runner-detail > .runner-update .hint:first-child { margin: 0; }
@@ -3162,6 +3163,8 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .org-require-2fa { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 8px 0; font-size: var(--fs-m); cursor: pointer; }
 .tfa-tag { margin-left: 6px; }
 .tfa-tag.on { color: var(--accent); border-color: currentColor; }
+.member-runners { margin-left: 6px; }
+.member-runners.none { color: var(--running); border-color: currentColor; }
 
 /* Branch switcher sheet. */
 #branch-intro code, .branch-current code, .branch-create code { font-family: var(--mono); font-size: var(--fs-s); }

@@ -120,13 +120,23 @@ async function renderOrg() {
     }));
     return sel;
   };
+  // On a hub: how many runners each member has. A member's tasks run only
+  // on their own runners (or a shared one), so one with none waits.
+  const runners = Array.isArray(state.runners) ? state.runners : null;
+  const runnerTag = (m) => {
+    if (!runners) return null;
+    const n = runners.filter((r) => r.owner?.user_id === m.id).length;
+    return h("span", { class: `member-runners${n ? "" : " none"}`,
+      title: n ? `${m.username} has ${plural(n, "runner")}` : `${m.username} has no runner: their tasks run only on a shared runner, and wait without one` },
+    n ? plural(n, "runner") : "no runner");
+  };
   const rows = org.members.map((m) => {
     const self = m.id === me.user.id;
     const canEdit = manage && RANK[m.role] <= RANK[mine];
     return h("li", { class: "item-row" },
       avatar(m, "member-avatar"),
       h("span", { class: "runner-name" }, m.username, self ? h("span", { class: "hint" }, " (you)") : null),
-      h("span", { class: "item-sub hint" }, m.email || "", manage || org.org.require_2fa ? h("span", { class: `tfa-tag${m.totp_enabled ? " on" : ""}`, title: m.totp_enabled ? "Signs in with two factors" : "No two-factor sign-in yet" }, m.totp_enabled ? "2FA" : "no 2FA") : null),
+      h("span", { class: "item-sub hint" }, m.email || "", manage || org.org.require_2fa ? h("span", { class: `tfa-tag${m.totp_enabled ? " on" : ""}`, title: m.totp_enabled ? "Signs in with two factors" : "No two-factor sign-in yet" }, m.totp_enabled ? "2FA" : "no 2FA") : null, runnerTag(m)),
       canEdit ? roleSelect(m) : h("span", { class: "org-role-tag" }, ROLE_LABEL[m.role]),
       (canEdit && !self) ? h("button", { class: "btn small", type: "button", title: `End ${m.username}'s sessions in ${org.org.name}`, onclick: attempt(async () => {
         const pw = await askPassword(`Sign ${m.username} out everywhere?`,

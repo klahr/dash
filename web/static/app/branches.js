@@ -666,6 +666,18 @@ export function depMeta(t) {
   return h("span", { class: "deps" }, "Depends on ", deps.flatMap((d, i) => [i ? ", " : "", depLink(d)]));
 }
 
+// needsOwnRunner reports whether queued task t waits only because none of
+// the runners with its project's labels does its people's work: they need a
+// runner of their own, or a shared one (dispatch's "no runner of …'s").
+export const needsOwnRunner = (t) => t.status === "queued" && !t.paused && /\bno runner of .+ has the labels /.test(t.waiting || "");
+// needsOwnRunnerTag is the card's short label for that.
+function needsOwnRunnerTag(t) {
+  if (!needsOwnRunner(t)) return null;
+  const me = myID();
+  const mine = me > 0 && (t.created_by === me || t.run_by === me);
+  return h("span", { class: "needs-runner-tag", title: t.waiting }, mine ? "Needs your runner" : "Needs their runner");
+}
+
 export function todoRow(t, li = -1, ri = -1) {
   const atCursor = keys.active && keys.cur.lane === li && keys.cur.row === ri;
   let sub = t.prompt.replace(/\s+/g, " ");
@@ -714,6 +726,7 @@ export function todoRow(t, li = -1, ri = -1) {
       t.no_changes && t.status === "review" ? h("span", { class: "nochange-tag", title: "Claude finished without changing any files" }, "No changes") : null,
       closedNoChanges(t) ? h("span", { class: "nochange-tag", title: "Closed without changes: nothing was merged" }, "Closed · no changes") : null,
       t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,
+      needsOwnRunnerTag(t),
       t.runner && ["in_progress", "review", "merging", "failed"].includes(t.status) ? h("span", { class: "runner-tag", title: "Runs on this runner" }, runnerName(t.runner)) : null,
       t.reviewing ? h("span", { class: "reviewing-tag" }, "Reviewing") : null,
       t.pr && t.status !== "merged" ? prTag(t.pr) : null,

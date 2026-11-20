@@ -97,26 +97,39 @@ const osChip = (r) => {
 };
 
 // The hub never runs Claude: tasks and scans of p run only on a runner with
-// the labels it runs on. runnerNeeded says why they would wait now, or "" (also on a
-// Dash without runners of its own, a runner, and for another runner's project).
+// the labels it runs on that does the viewer's work (their own, or a shared
+// one: tunnel.Runner.WorksFor). runnerNeeded says why their work would wait
+// now, or "" (also on a Dash without runners of its own, a runner, and for
+// another runner's project).
 export const startRunner = "use Runners → Add a runner";
+export const noRunnerOfMine = "You have no runner for this project.";
 function runnerNeeded(p) {
   if (!p || p.prefix || !Array.isArray(state.runners)) return "";
   if (!state.runners.length) return `Its work needs a runner. To add one, ${startRunner}.`;
   const linked = state.runners.filter((r) => servesProject(r, p));
   if (!linked.length) return `${p.name} needs a runner: ${p.runs_on?.length ? `none has ${projectLabels(p).join(", ")}` : "it has no labels"}. Its work waits.`;
-  if (!linked.some((r) => r.online)) return "No runner of this project is online. Its work waits.";
+  const usable = linked.filter(worksForMe);
+  if (!usable.length) return `${noRunnerOfMine} Your tasks wait. To add one, ${startRunner}, or ask an admin for a shared runner.`;
+  if (!usable.some((r) => r.online)) return "No runner of this project is online. Its work waits.";
   return "";
 }
+// worksForMe reports whether runner r takes the viewer's tasks: it is
+// theirs, or it takes other members' tasks.
+const worksForMe = (r) => !!(r.mine || r.takes_others);
 // renderRunnerBanner says above the board when the open project's git,
-// files and commands can't be reached (no runner with its labels, or none
-// online), with a way to change them.
+// files and commands can't be reached (no runner with its labels, none of
+// the viewer's, or none online), with a way to change that.
 export function renderRunnerBanner() {
   const el = $("#runner-banner");
   const p = state.project;
   const why = isHub() && p && !p.prefix && state.runners?.length ? runnerNeeded(p) : "";
   el.hidden = !why;
   if (!why) return el.replaceChildren();
+  if (why.startsWith(noRunnerOfMine)) {
+    return el.replaceChildren(`${noRunnerOfMine} `,
+      h("button", { type: "button", class: "link inline", onclick: attempt(() => openAddRunner()) }, "Add a runner"),
+      ", or ask an admin for a shared runner. Your tasks wait until then.");
+  }
   el.replaceChildren(why, " ", needsRunner(p)
     ? h("button", { type: "button", class: "link inline", onclick: () => { openSettings(); $("#settings-runners-field")?.scrollIntoView({ block: "center" }); } }, "Change its labels")
     : h("button", { type: "button", class: "link inline", onclick: attempt(() => openRunners()) }, "Runners"));
