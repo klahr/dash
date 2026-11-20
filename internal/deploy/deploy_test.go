@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -222,6 +223,31 @@ func TestChecks(t *testing.T) {
 	}
 	if st := wait(t, m, "status"); st.Phase != model.DeployFailed || !strings.Contains(st.Error, "202 Accepted, not 200") {
 		t.Errorf("wrong status: %+v", st)
+	}
+}
+
+// A deploy seen as finished has freed its environment: the next one there
+// starts at once, not ErrBusy.
+func TestFinishedFreesKey(t *testing.T) {
+	t.Parallel()
+	m := &Manager{}
+	dir := t.TempDir()
+	for i := range 20 {
+		id := fmt.Sprint("d", i)
+		if err := m.Start(context.Background(), "p/k", Job{ID: id, Dir: dir, Deploy: "true", Env: os.Environ()}); err != nil {
+			t.Fatalf("deploy %d: %v", i, err)
+		}
+		// Asked without a pause, to start the next the moment this one is done.
+		for deadline := time.Now().Add(30 * time.Second); ; {
+			if st, err := m.State(id); err != nil {
+				t.Fatal(err)
+			} else if !st.Running {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("the deploy didn't finish")
+			}
+		}
 	}
 }
 

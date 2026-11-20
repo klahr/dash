@@ -271,6 +271,7 @@ func (m *Manager) Start(ctx context.Context, key string, j Job) error {
 	go func() {
 		defer cancel()
 		m.run(ctx, r, j)
+		// run frees the key as it finishes; this is in case it didn't.
 		m.mu.Lock()
 		if m.busy[key] == j.ID {
 			delete(m.busy, key)
@@ -376,7 +377,14 @@ func (r *job) say(format string, a ...any) {
 }
 
 func (m *Manager) run(ctx context.Context, r *job, j Job) {
+	// finish frees the key in the same step that marks the job done, so a
+	// deploy seen as finished never makes the next one there ErrBusy.
 	finish := func(p model.DeployStatus, code *int, msg string) {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if m.busy[r.key] == r.state.ID {
+			delete(m.busy, r.key)
+		}
 		r.mu.Lock()
 		r.state.Phase, r.state.Running, r.state.ExitCode, r.state.Error = p, false, code, msg
 		r.done = time.Now()
