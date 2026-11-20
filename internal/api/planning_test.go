@@ -636,3 +636,37 @@ func TestPlanningCardStatusWords(t *testing.T) {
 		}
 	}
 }
+
+// The card calls tell an API user what they left out or got wrong instead of
+// answering a success: a field the call doesn't take is refused, PATCH
+// refuses column (moves are …/move), priority "none" clears the priority,
+// and columns match in any case.
+func TestPlanningCardRequestsAreStrict(t *testing.T) {
+	s, _, _ := boardServer(t)
+	h := s.Routes()
+	ph, _ := plannerOf(t, s, h)
+
+	w := do(t, ph, "POST", "/api/planning/cards", `{"title":"Export","estimate":3,"assignee":"ann"}`)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "estimate") {
+		t.Errorf("unknown field on create: %d %s", w.Code, w.Body)
+	}
+	w = do(t, ph, "POST", "/api/planning/cards", `{"title":"Export","column":" Planned ","priority":"High"}`)
+	c := decodeCard(t, w)
+	if w.Code != http.StatusCreated || c.Column != model.CardPlanned || c.Priority != model.CardHigh {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+
+	if w := do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"labels":["x"]}`); w.Code != http.StatusBadRequest {
+		t.Errorf("unknown field on PATCH: %d %s", w.Code, w.Body)
+	}
+	w = do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"column":"done"}`)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "/move") {
+		t.Errorf("column on PATCH: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"priority":"none"}`); w.Code != http.StatusOK || decodeCard(t, w).Priority != "" {
+		t.Errorf("priority none: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, ph, "POST", "/api/planning/cards/"+c.ID+"/move", `{"column":"In_Progress"}`); w.Code != http.StatusOK || decodeCard(t, w).Column != model.CardInProgress {
+		t.Errorf("move in any case: %d %s", w.Code, w.Body)
+	}
+}

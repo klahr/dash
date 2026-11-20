@@ -655,7 +655,7 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req cardRequest
-	if err := decode(r, &req); err != nil {
+	if err := decodeStrict(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -718,7 +718,7 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req cardRequest
-	if err := decode(r, &req); err != nil {
+	if err := decodeStrict(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -732,7 +732,9 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 // updateCard changes a card's fields (not its column: see moveCard), for
 // the REST API and the update_card tool.
 func (sv *service) updateCard(id string, req cardRequest) error {
-	req.Column = nil
+	if req.Column != nil {
+		return fmt.Errorf("%w: PATCH doesn't move a card: use POST /api/planning/cards/{id}/move with column (and position)", errBadRequest)
+	}
 	if err := sv.writable(); err != nil {
 		return err
 	}
@@ -821,7 +823,7 @@ func (s *Server) moveCard(w http.ResponseWriter, r *http.Request) {
 // moveCard puts a card in column, at position (nil: the end), for the REST
 // API and the update_card tool.
 func (sv *service) moveCard(id, column string, position *int) error {
-	col := model.CardColumn(column)
+	col := model.ParseCardColumn(column)
 	if !col.Valid() {
 		return fmt.Errorf("%w: unknown column %q: use ideas, planned, in_progress or done", errBadRequest, column)
 	}

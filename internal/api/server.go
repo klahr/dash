@@ -771,6 +771,22 @@ func decode(r *http.Request, v any) error {
 	return nil
 }
 
+// decodeStrict is decode that refuses fields v doesn't have, so an API
+// user who sends one (a typo, or a field the call doesn't take) hears so
+// instead of a success that left it out.
+func decodeStrict(r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, maxBody)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := decodeWith(dec, v); err != nil {
+		if f, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			return fmt.Errorf("%w: this call doesn't take the field %s", errBadRequest, f)
+		}
+		return fmt.Errorf("%w: %w", errBadRequest, err)
+	}
+	return nil
+}
+
 // decodeOptional is decode for a body that may be left out (empty).
 func decodeOptional(r *http.Request, v any) error {
 	b, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxBody))
@@ -790,7 +806,11 @@ func decodeOptional(r *http.Request, v any) error {
 // after it but white space. decode and peekJSON both use it, so a body the
 // runner's guard checks is the body the handler acts on.
 func decodeJSON(rd io.Reader, v any) error {
-	dec := json.NewDecoder(rd)
+	return decodeWith(json.NewDecoder(rd), v)
+}
+
+// decodeWith decodes the one JSON value dec reads into v, as decodeJSON.
+func decodeWith(dec *json.Decoder, v any) error {
 	if err := dec.Decode(v); err != nil {
 		return err
 	}

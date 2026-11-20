@@ -216,13 +216,13 @@ A project's chat reaches that project's cards and cards of no project.
 
 ## API
 
-Planning is under `/api/planning/`:
+Planning is under `/api/planning/`. Column names match in any case. Adding or changing a card refuses a field it doesn't take, with `400`.
 
 | Call                                                  | What it does                                     |
 |-------------------------------------------------------|--------------------------------------------------|
 | `GET /api/planning/cards?project=<id>`                | the cards, with status and linked work           |
-| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `members` (user ids; `[]` is nobody), `owner` (a user id, who joins the members if they aren't one; `0` is nobody), `depends_on` (card ids; `[]` is none), `tags` (up to 20; `[]` is none) |
-| `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments). A card has `deps` and `needed_by` (id, title, column, done), `waiting`: its dependencies not done yet, and `version`. Send `version` with `PATCH` to get `409` instead of overwriting a change someone made since; a move or a file doesn't change it |
+| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority` (`high`, `medium`, `low`, or `none`), `target`, `members` (user ids; `[]` is nobody), `owner` (a user id, who joins the members if they aren't one; `0` is nobody), `depends_on` (card ids; `[]` is none), `tags` (up to 20; `[]` is none) |
+| `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments). A card has `deps` and `needed_by` (id, title, column, done), `waiting`: its dependencies not done yet, and `version`. Send `version` with `PATCH` to get `409` instead of overwriting a change someone made since; a move or a file doesn't change it. `PATCH` takes the fields `POST` takes but `column`: move a card with `…/move` |
 | `POST /api/planning/cards/{id}/move`                  | `column` and `position` (0 is the top)           |
 | `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
 | `DELETE /api/planning/cards/{id}/comments/{comment}`  | delete a comment                                 |

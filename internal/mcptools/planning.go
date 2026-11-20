@@ -187,7 +187,7 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 			[]Param{pCard,
 				{"title", "string", "New title.", false},
 				{"description", "string", "New description (markdown); replaces the old one.", false},
-				{"priority", "string", "high, medium or low; an empty string for none.", false},
+				{"priority", "string", "high, medium or low; none (or an empty string) for none.", false},
 				{"target", "string", "When it should ship: a version like 1.4, or a date; an empty string for none.", false},
 				{"tags", "array", "The card's tags; replaces them, an empty array clears them.", false},
 				{"depends_on", "array", "Ids of the cards to be done before this one; replaces the list, an empty array clears it.", false},

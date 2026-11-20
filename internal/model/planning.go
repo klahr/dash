@@ -37,6 +37,13 @@ func (c CardColumn) Valid() bool {
 	return false
 }
 
+// ParseCardColumn reads a column's name as an API user may write it: any
+// case, with spaces around it ("Planned" is planned). It doesn't check it:
+// see Valid.
+func ParseCardColumn(s string) CardColumn {
+	return CardColumn(strings.ToLower(strings.TrimSpace(s)))
+}
+
 // Card priorities ("" is none).
 const (
 	CardHigh   = "high"
@@ -163,6 +170,10 @@ func CleanCard(c *Card) error {
 	c.Description = strings.TrimSpace(c.Description)
 	c.Target = strings.TrimSpace(c.Target)
 	c.Priority = strings.ToLower(strings.TrimSpace(c.Priority))
+	if c.Priority == "none" {
+		c.Priority = ""
+	}
+	c.Column = ParseCardColumn(string(c.Column))
 	switch {
 	case c.Title == "" && c.Description == "":
 		return errors.New("a card needs a title")
