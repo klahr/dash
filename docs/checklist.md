@@ -109,8 +109,9 @@ tasks are what `create_todo` makes.
   "text": "…"}, {"op": "delete", "ref": "…"}]}`: makes the changes as one commit. Answers the new
   checklist and `refs`, mapping each old ref to its new one. `409` when the version or a ref is
   stale.
-- `POST /api/projects/{id}/checklist/move` with `{"ref": "…", "queue": false, "priority": 1,
-  "depends_on": []}`: answers `{"task": …, "removed": true}`, or `removed: false` with `error`
+- `POST /api/projects/{id}/checklist/move` with `{"ref": "…", "queue": false, "priority": "high",
+  "depends_on": []}` (`priority` is `"none"`, `"high"`, `"urgent"` or a number; see
+  [Task priority](mcp.md#task-priority)): answers `{"task": …, "removed": true}`, or `removed: false` with `error`
   when the task was made but the item is still there.
 
 The `/ws/events` stream sends `checklist.updated` (with `project_id` and `data.version`, the

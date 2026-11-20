@@ -119,7 +119,8 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    for another task (a pasted multi-line text stays one task). **More options…**
    (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form, with a title, priority, model,
    dependencies, the task it builds on and attachments. **Priority** is **None**, **High** or
-   **Urgent**: urgent tasks start first, then high ones, then the rest, oldest first. For a large
+   **Urgent**: urgent tasks start first, then high ones, then the rest, oldest first (the API
+   takes the same levels; see [Task priority](docs/mcp.md#task-priority)). For a large
    task, **Split…** there has Claude propose smaller tasks that can each be reviewed and merged on
    their own; edit, remove or add to them, then save them all, each one waiting for the tasks it
    builds on.

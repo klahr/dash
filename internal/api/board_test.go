@@ -439,6 +439,21 @@ func TestBoardMCPUpdateTodo(t *testing.T) {
 	if td, _ := raw(s).GetTodo(c.ID); td.Priority != nil {
 		t.Errorf("priority null did not clear: %d", *td.Priority)
 	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","priority":"urgent"}`); isErr {
+		t.Fatal(text)
+	}
+	if td, _ := raw(s).GetTodo(c.ID); td.Priority == nil || *td.Priority != -1 {
+		t.Errorf("priority urgent not -1: %v", td.Priority)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","priority":"none"}`); isErr {
+		t.Fatal(text)
+	}
+	if td, _ := raw(s).GetTodo(c.ID); td.Priority != nil {
+		t.Errorf("priority none did not clear: %d", *td.Priority)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","priority":"soon"}`); !isErr || !strings.Contains(text, "urgent") {
+		t.Errorf("unknown priority level accepted: %s", text)
+	}
 	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","priority":2,"clear_priority":true}`); !isErr {
 		t.Errorf("priority and clear_priority together accepted: %s", text)
 	}

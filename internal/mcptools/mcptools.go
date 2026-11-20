@@ -263,6 +263,10 @@ func (a Args) FlagOr(k string, def bool) bool {
 // ObjectArray is the Param type of an array of JSON objects.
 const ObjectArray = "array<object>"
 
+// PriorityParam is the Param type of a task priority: a number or a level
+// (see ParsePriority).
+const PriorityParam = "priority"
+
 type Param struct {
 	Name, Type, Desc string
 	Required         bool
@@ -284,6 +288,8 @@ func (t Tool) schema() map[string]any {
 			prop["items"] = map[string]string{"type": "string"}
 		case ObjectArray:
 			prop["type"], prop["items"] = "array", map[string]string{"type": "object"}
+		case PriorityParam:
+			prop["type"] = []string{"integer", "string"}
 		}
 		props[p.Name] = prop
 		if p.Required {
@@ -303,7 +309,7 @@ const buildsOnDesc = "Id of an earlier task in the same project to build on: the
 const boardDesc = "The project's board the task is on, by name or id (a project's boards are in its \"boards\"; empty or \"Main\": its main board)."
 
 // priorityDesc describes a task's priority to Claude.
-const priorityDesc = "Prioritised tasks run first, lower before higher (0 is a real priority); unprioritised tasks run after all of them, oldest first."
+const priorityDesc = `A whole number, or a level as the board shows it: "high" (0) or "urgent" (-1). Prioritised tasks run first, lower before higher (0 is a real priority; urgent is below 0, high 0 and up); unprioritised tasks run after all of them, oldest first.`
 
 // ---- board tools ----
 
@@ -776,7 +782,7 @@ func boardTools(b Board, o Options) []Tool {
 		{"create_todo", createDesc, []Param{pProject,
 			{"prompt", "string", "The task for Claude (the title alone is enough for small tasks).", false},
 			{"title", "string", "Short title (generated from the prompt if empty).", false},
-			{"priority", "integer", priorityDesc + " Omit it to leave the task unprioritised.", false},
+			{"priority", PriorityParam, priorityDesc + " Omit it to leave the task unprioritised.", false},
 			{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts; it waits queued until then.", false},
 			{"builds_on", "string", buildsOnDesc, false},
 			{"model", "string", modelDesc, false},
@@ -791,9 +797,13 @@ func boardTools(b Board, o Options) []Tool {
 				if a.Str("title") == "" && a.Str("prompt") == "" {
 					return nil, errors.New("title or prompt is required")
 				}
+				prio, err := a.OptPriority("priority")
+				if err != nil {
+					return nil, err
+				}
 				return b.CreateTodo(p.ID, NewTodo{
 					Title: a.Str("title"), Prompt: a.Str("prompt"),
-					Priority: a.OptNum("priority"), Enqueue: !a.FlagOr("draft", o.Draft),
+					Priority: prio, Enqueue: !a.FlagOr("draft", o.Draft),
 					DependsOn: a.List("depends_on"), BuildsOn: a.Str("builds_on"), Model: a.Str("model"), RunOn: a.Str("run_on"),
 					Board: a.Str("board"),
 				})
@@ -846,7 +856,7 @@ func boardTools(b Board, o Options) []Tool {
 			"The prompt can only be changed while the task is a draft, queued or failed.", []Param{PTodo,
 			{"title", "string", "New short title.", false},
 			{"prompt", "string", "New task for Claude.", false},
-			{"priority", "integer", priorityDesc, false},
+			{"priority", PriorityParam, priorityDesc + ` "none" or null unsets it.`, false},
 			{"clear_priority", "boolean", "Unset the priority: the task runs after every prioritised one, oldest first.", false},
 			{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts; replaces the list, an empty array clears it.", false},
 			{"builds_on", "string", buildsOnDesc + " An empty string builds on none. It can only be changed while the task is a draft, queued or failed.", false},
@@ -857,9 +867,13 @@ func boardTools(b Board, o Options) []Tool {
 				if a.Str("todo") == "" {
 					return nil, errors.New("todo is required")
 				}
-				u := TodoUpdate{Title: a.OptStr("title"), Prompt: a.OptStr("prompt"), Priority: a.OptNum("priority"), DependsOn: a.OptList("depends_on"), BuildsOn: a.OptStr("builds_on"), Model: a.OptStr("model"), RunOn: a.OptStr("run_on"), Board: a.OptStr("board")}
-				if v, ok := a["priority"]; ok && v == nil {
-					u.ClearPriority = true // priority: null
+				u := TodoUpdate{Title: a.OptStr("title"), Prompt: a.OptStr("prompt"), DependsOn: a.OptList("depends_on"), BuildsOn: a.OptStr("builds_on"), Model: a.OptStr("model"), RunOn: a.OptStr("run_on"), Board: a.OptStr("board")}
+				if _, ok := a["priority"]; ok {
+					prio, err := a.OptPriority("priority")
+					if err != nil {
+						return nil, err
+					}
+					u.Priority, u.ClearPriority = prio, prio == nil // null or "none" unsets it
 				}
 				if a.Flag("clear_priority") {
 					if u.Priority != nil {

@@ -8,59 +8,72 @@ import (
 	"github.com/klahr/dash/internal/model"
 )
 
-// A task's priority is optional: created without one it is null, PATCH
-// leaves it alone when absent, sets it (0 included) and clears it with null.
-func TestTodoPriorityIsOptional(t *testing.T) {
+// A task's priority goes in as a number or as the level the board's forms
+// show: "high" is 0, "urgent" -1, and "none" (like null) none at all.
+func TestTaskPriorityLevels(t *testing.T) {
 	parallel(t)
-
 	s, _, p := boardServer(t)
 	h := loggedIn(t, s.Routes())
-	decodeTodo := func(body []byte) model.Todo {
+	prio := func(body []byte) *int {
 		t.Helper()
 		var td model.Todo
 		if err := json.Unmarshal(body, &td); err != nil {
-			t.Fatal(err, string(body))
+			t.Fatalf("%s: %v", body, err)
 		}
-		return td
+		return td.Priority
 	}
-	w := do(t, h, "POST", "/api/projects/"+p.ID+"/todos", `{"title":"x"}`)
-	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+	str := func(n *int) string {
+		if n == nil {
+			return "none"
+		}
+		b, _ := json.Marshal(*n)
+		return string(b)
+	}
+
+	for body, want := range map[string]string{
+		`{"title":"a","priority":"urgent"}`: "-1",
+		`{"title":"a","priority":"High"}`:   "0",
+		`{"title":"a","priority":"none"}`:   "none",
+		`{"title":"a","priority":3}`:        "3",
+		`{"title":"a","priority":null}`:     "none",
+		`{"title":"a"}`:                     "none",
+	} {
+		w := do(t, h, "POST", "/api/projects/"+p.ID+"/todos", body)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("%s: %d %s", body, w.Code, w.Body)
+		}
+		if got := str(prio(w.Body.Bytes())); got != want {
+			t.Errorf("%s: priority %s, want %s", body, got, want)
+		}
+	}
+	for _, body := range []string{`{"title":"a","priority":"soon"}`, `{"title":"a","priority":1.5}`, `{"title":"a","priority":true}`} {
+		if w := do(t, h, "POST", "/api/projects/"+p.ID+"/todos", body); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s, want 400", body, w.Code, w.Body)
+		}
+	}
+
+	w := do(t, h, "POST", "/api/projects/"+p.ID+"/todos", `{"title":"b"}`)
+	var td model.Todo
+	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &td) != nil {
 		t.Fatalf("create: %d %s", w.Code, w.Body)
 	}
-	td := decodeTodo(w.Body.Bytes())
-	if td.Priority != nil {
-		t.Fatalf("created with priority %d, want none", *td.Priority)
-	}
-	stored := func() *int {
-		got, err := raw(s).GetTodo(td.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got.Priority
-	}
-	for _, c := range []struct {
-		body string
-		want *int
-	}{
-		{`{"priority":0}`, new(0)},
-		{`{"title":"y"}`, new(0)}, // absent: kept
-		{`{"priority":4}`, new(4)},
-		{`{"priority":null}`, nil},
-		{`{"title":"z"}`, nil},
+	for _, c := range []struct{ body, want string }{
+		{`{"priority":"urgent"}`, "-1"},
+		{`{"title":"b2"}`, "-1"}, // left out: kept
+		{`{"priority":"none"}`, "none"},
+		{`{"priority":"high"}`, "0"},
+		{`{"priority":null}`, "none"},
+		{`{"priority":5}`, "5"},
 	} {
-		if w := do(t, h, "PATCH", "/api/todos/"+td.ID, c.body); w.Code != http.StatusOK {
+		w := do(t, h, "PATCH", "/api/todos/"+td.ID, c.body)
+		if w.Code != http.StatusOK {
 			t.Fatalf("%s: %d %s", c.body, w.Code, w.Body)
 		}
-		got := stored()
-		if (got == nil) != (c.want == nil) || (got != nil && *got != *c.want) {
-			t.Errorf("after %s: priority %v, want %v", c.body, got, c.want)
+		if got := str(prio(w.Body.Bytes())); got != c.want {
+			t.Errorf("PATCH %s: priority %s, want %s", c.body, got, c.want)
 		}
 	}
-	if w := do(t, h, "PATCH", "/api/todos/"+td.ID, `{"priority":"high"}`); w.Code != http.StatusBadRequest {
-		t.Errorf("non-number priority: %d %s", w.Code, w.Body)
-	}
-	w = do(t, h, "POST", "/api/projects/"+p.ID+"/todos", `{"title":"first","priority":0}`)
-	if td := decodeTodo(w.Body.Bytes()); td.Priority == nil || *td.Priority != 0 {
-		t.Errorf("created with priority 0: %v", td.Priority)
+	if w := do(t, h, "PATCH", "/api/todos/"+td.ID, `{"priority":"later"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("unknown level: %d %s, want 400", w.Code, w.Body)
 	}
 }

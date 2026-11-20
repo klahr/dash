@@ -1,6 +1,7 @@
 package mcptools
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -49,8 +50,22 @@ type ChecklistMove struct {
 	Ref       string   `json:"ref"`
 	Version   *string  `json:"version,omitempty"`
 	Queue     bool     `json:"queue"`
-	Priority  *int     `json:"priority,omitempty"`
+	Priority  *int     `json:"priority,omitempty"` // takes a level too (see ParsePriority)
 	DependsOn []string `json:"depends_on,omitempty"`
+}
+
+func (m *ChecklistMove) UnmarshalJSON(b []byte) error {
+	type plain ChecklistMove
+	var v struct {
+		plain
+		Priority Priority `json:"priority"`
+	}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	*m = ChecklistMove(v.plain)
+	m.Priority = v.Priority.Value
+	return nil
 }
 
 // ChecklistMoved is the task made of an item, and whether the item left
@@ -205,7 +220,7 @@ func checklistTools(b Board, o Options, project func(Args) (model.Project, error
 			}},
 		{"move_checklist_item_to_task", moveDesc, []Param{pProject, pRef,
 			{"queue", "boolean", "Queue the task to run instead of keeping a draft; only when the user asks for it to run (default false).", false},
-			{"priority", "integer", priorityDesc + " Omit it to leave the task unprioritised.", false},
+			{"priority", PriorityParam, priorityDesc + " Omit it to leave the task unprioritised.", false},
 			{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts.", false}},
 			func(a Args) (any, error) {
 				if a.Str("ref") == "" {
@@ -215,7 +230,11 @@ func checklistTools(b Board, o Options, project func(Args) (model.Project, error
 				if err != nil {
 					return nil, err
 				}
-				m, err := b.MoveChecklistItem(p.ID, ChecklistMove{Ref: a.Str("ref"), Queue: a.Flag("queue"), Priority: a.OptNum("priority"), DependsOn: a.List("depends_on")})
+				prio, err := a.OptPriority("priority")
+				if err != nil {
+					return nil, err
+				}
+				m, err := b.MoveChecklistItem(p.ID, ChecklistMove{Ref: a.Str("ref"), Queue: a.Flag("queue"), Priority: prio, DependsOn: a.List("depends_on")})
 				if err != nil {
 					return nil, stale(err)
 				}

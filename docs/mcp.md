@@ -164,6 +164,24 @@ dashboard, and `update_project` sets `tag_format`.
 `dash-mcp` and the connector have `update_todo` too. Their `delete_todo` deletes a task in any
 status except running or merging.
 
+### Task priority
+
+A task's priority is a number: tasks with one start first, lowest first, then the tasks without
+one, oldest first. The board's **Priority** levels sit on top of that number:
+
+| Level      | Number         | Pass                      |
+| ---------- | -------------- | ------------------------- |
+| **None**   | none           | `"none"` or `null`        |
+| **High**   | `0` and higher | `"high"` (sets `0`)       |
+| **Urgent** | below `0`      | `"urgent"` (sets `-1`)    |
+
+`create_todo`, `update_todo` and `move_checklist_item_to_task` take either form, and so do
+`POST /api/projects/{id}/todos`, `PATCH /api/todos/{id}` and
+`POST /api/projects/{id}/checklist/move`. Leave `priority` out to keep it as it is (no priority on
+a new task). Tasks always come back with the number, or `null` for none. Dragging cards on the
+board changes the numbers but keeps a task in its level. For example, `PATCH /api/todos/{id}`
+with `{"priority": "urgent"}` makes a task urgent. An unknown level is refused with `400`.
+
 ## A task's tools
 
 A task's own Claude run gets these `dash_board` tools, in its project only, and calls them
