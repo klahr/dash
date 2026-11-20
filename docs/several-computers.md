@@ -50,7 +50,7 @@ Every project lives on runners, in one of two ways:
   (`<-projects>/<org>/<owner>/<repo>`), any of them can run its tasks, and work lands on the remote.
   It shows in the dashboard with a small "shared" mark (two people). Make one with **+ Add
   project** (see [Add project on the hub](#add-project-on-the-hub)). Change its labels in its
-  **Settings → Runners**, or a runner's labels on its page in Runners (see
+  **Project settings → Runners**, or a runner's labels on its page in Runners (see
   [A runner's projects](#a-runners-projects)). See [below](#shared-projects-tasks-on-runners).
 
 A project that is only ever worked on from one computer is simplest as that runner's own; share
@@ -216,7 +216,7 @@ curl -fsSL https://dash.example.com/runner/install.sh | sh
 ```
 
 It installs the hub's version if it differs, keeps the registration (and projects directory),
-and restarts the service. A runner set up with `--data` needs the same `--data` again. The Organization page shows each runner's version and flags those that
+and restarts the service. A runner set up with `--data` needs the same `--data` again. The **Runners** sheet shows each runner's version and flags those that
 differ from the hub's, with this command to copy.
 
 ### Managing the runner
@@ -307,7 +307,7 @@ listen on a port of its own unless you pass `-addr` (then it also needs `DASH_US
 
 A runner belongs to whoever made its code, in the org they were working in: its token is one of
 their [tokens](users.md#tokens), pinned to that org, and stops working if they leave it. The
-Organization page lists the org's runners (other orgs never see them) as online or offline, with
+**Runners** sheet lists the org's runners (other orgs never see them) as online or offline, with
 when each was last seen, whose it is, its operating system (macOS, Linux or Windows, with its
 logo), the Dash version it runs, how many tasks it is running and its owner's Claude usage. A
 runner shows its operating system once it has connected with this version of Dash. It also shows the runner's Claude Code version. If Claude Code changes in a
@@ -631,7 +631,7 @@ work. A team that wants shared runners needs one with an API key.
 
 A runner's page in Runners shows its labels and the projects it builds. **Shared projects…** lists
 the org's shared projects, each with the labels it runs on and whether the runner has them; it is
-the same as each project's **Settings → Runners**, from the runner's side, and a change on one
+the same as each project's **Project settings → Runners**, from the runner's side, and a change on one
 shows up on the other right away, in every open browser.
 
 - **Add labels** on a project the runner doesn't build gives the runner the labels it lacks (for
@@ -764,7 +764,7 @@ member's, admins included), and the runner checks the user the hub names against
 registered by. Runners registered with a hub older than this can't check, and trust the hub; run
 the install command with a new code to register them again.
 
-Their Claude usage is the runner's: it shows with the runner's usage on the Organization page,
+Their Claude usage is the runner's: it shows with the runner's usage in **Runners**,
 never as the hub's.
 
 This used to be a choice (`-hub-claude`, with a single-user hub running Claude itself by default).

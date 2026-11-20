@@ -511,7 +511,7 @@ function paintOverview(list) {
     box.replaceChildren(h("div", { class: "runners-empty" },
       ico("computer"),
       h("p", { class: "empty-title" }, "No runners yet"),
-      h("p", { class: "hint" }, "A runner is a computer that runs this organization's tasks and chats with its owner's Claude subscription. It needs git and Claude Code logged in, on Linux, macOS or Windows. ",
+      h("p", { class: "hint" }, "A runner is a computer that runs this organization's tasks and chats: its owner's, with their Claude subscription, or every member's, when it is shared with an API key. Projects pick runners by label. It needs git and Claude Code logged in, on Linux, macOS or Windows. ",
         docsLink("several-computers.md"))));
     return;
   }

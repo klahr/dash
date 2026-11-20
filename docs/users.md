@@ -90,8 +90,8 @@ address, password or code, lock it out for 15 minutes (the defaults; see
 reset the count until the code is right too. Wrong codes also count per account, so
 someone with a stolen password can't keep guessing from other addresses.
 
-**Requiring it.** An org's owners can tick **Require two-factor sign-in** in
-**Organization** (after turning it on for themselves). Members without it are sent to set
+**Requiring it.** An org's owners can tick **Require two-factor sign-in of every member** in
+**Organization → Sign-in** (after turning it on for themselves). Members without it are sent to set
 it up, at their next sign-in or their next click if they're signed in, and can't do
 anything else until they have; their Claude connectors stop working until then too.
 Because records aren't separated by org yet, the requirement applies to anyone who belongs

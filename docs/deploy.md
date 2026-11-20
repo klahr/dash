@@ -469,7 +469,7 @@ whether the hub runs as a [service](service.md) or in [Docker](#run-the-hub-with
      when the new version changes the database. Dash copies the database beside itself before
      each migration, and doesn't start if that copy fails (e.g. a full disk).
    - `dash listening`, then `runner connected name=… version=…` as the runners come back.
-5. **Update the runners** (optional, in any order): the Organization page flags runners whose
+5. **Update the runners** (optional, in any order): the **Runners** sheet flags runners whose
    version differs from the hub's, with the command that updates each
    ([Update a runner](several-computers.md#update-a-runner)). A runner restarted for an update
    resumes its tasks.
