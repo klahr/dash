@@ -868,9 +868,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .file-status:is(.st-R, .st-C) { color: var(--accent); }
 /* The close button: Back on a phone, ✕ on a desktop. A phone shows the whole message (its pane scrolls). */
 #cd-close .cd-x, #gd-close .cd-x, #dd-close .cd-x, #pd-close .cd-x, .commit-message-more { display: none; }
-.project-list button.menu-choice { flex-direction: row; align-items: center; gap: 10px; }
-.project-list button.menu-choice:disabled { opacity: .55; cursor: not-allowed; }
-.menu-choice .menu-note { font-style: normal; font-weight: 400; font-size: var(--fs-s); color: var(--muted); margin-left: auto; }
 .release-warnings { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
 .release-warnings:empty { display: none; }
 .release-warnings a { margin-left: 4px; }
@@ -1987,6 +1984,16 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .foot-menu-list button:hover { background: var(--raised); }
 .foot-menu-list button.danger { color: var(--failed); }
 .menu-sep { margin: 4px 6px; border: 0; border-top: 1px solid var(--line); }
+/* popMenu (app/drawmode.js): a .foot-menu-list built on a click, in the top layer, placed by the script
+   under (or above) its button. It scrolls when it doesn't fit; a long label is cut short on a narrow screen. */
+.foot-menu-list.pop-menu { position: fixed; inset: auto; z-index: 100; margin: 0; overflow-y: auto; overscroll-behavior: contain; max-width: calc(100vw - 16px); color: var(--text); }
+.pop-menu button { flex: none; }
+.pop-menu .ico { flex: none; }
+.pop-menu button:focus-visible { background: var(--raised); outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.pop-menu button:disabled { opacity: .55; cursor: not-allowed; background: none; }
+.pop-menu .menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pop-menu .menu-note { font-style: normal; font-size: var(--fs-s); color: var(--muted); margin-left: auto; padding-left: 12px; }
+.pop-menu-head { padding: 6px 10px 4px; font-size: var(--fs-s); font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The account menu at the bottom of the sidebar: a full-width row with the username. */
 .account-menu { flex: 1 1 100%; margin-left: 0; }
 .foot-menu.account-menu > summary {

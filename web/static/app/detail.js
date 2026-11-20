@@ -10,7 +10,7 @@ import { goalChip } from "./goals.js";
 import { editable, openTodoForm } from "./todos.js";
 import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.js";
 import { canPreview, hidePreview, previewButton, previewOf, pv, renderPreview, stopPreview } from "./preview.js";
-import { canRework, menu, renderPane, renderReworkBox, revertTodo, reviewTodo, reworkTodo } from "./drawmode.js";
+import { canRework, popMenu, renderPane, renderReworkBox, revertTodo, reviewTodo, reworkTodo } from "./drawmode.js";
 import { runnerName } from "./runners.js";
 import { commentsFor, renderChecks, renderPerms, sendComments } from "./review.js";
 import { renderTodoChatMode, todoChat } from "./chat.js";
@@ -307,49 +307,52 @@ function startNowButton(t, post) {
   return ib({ class: "btn primary grow", title: why, onclick: attempt(() => startNow(t)) }, "play", "Start now");
 }
 
-$("#d-more").addEventListener("click", attempt(async () => {
+$("#d-more").addEventListener("click", attempt(async (e) => {
   const t = state.todos.get(state.detail);
   if (!t) return;
-  const choices = [];
-  if (desktop.matches && editable(t)) choices.push(["edit", "Edit in the full form", () => openTodoForm(t)]);
+  const btn = e.currentTarget;
   // A task of a runner's own project has its worktree on that runner, reached
   // through it like the project; a hub task's is on the runner that ran it.
   const here = !t.runner && !!state.project?.prefix;
-  if (t.status === "review" && !t.reviewing && here) choices.push(["eye", "Review with Claude", reviewTodo]);
-  if (previewOf(t.id)) choices.push(["stop", "Stop the live preview", () => stopPreview(t.id)]);
+  const settled = !["in_progress", "merging"].includes(t.status);
+  const edit = [], worktree = [], organise = [], danger = [];
+  if (desktop.matches && editable(t)) edit.push(["edit", "Edit in the full form", () => openTodoForm(t)]);
+  if (canStartNow(t)) edit.push(["play", "Start now", () => startNow(t)]);
+  if (t.status === "review" && !t.reviewing && here) edit.push(["eye", "Review with Claude", reviewTodo]);
+  if (settled && t.worktree && here && state.project?.test_command) edit.push(["check", "Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
+  if (settled && hasPriority(t)) edit.push(["x", "Clear priority", () => clearPriority(t)]);
+
   if (t.worktree && (here || (t.remote_id && !shellBlocked(state.project, t.runner))) && ["review", "failed"].includes(t.status)) {
-    choices.push(["terminal", "Open shell in this worktree", () => startProc({ kind: "pty", todo_id: t.id })]);
+    worktree.push(["terminal", "Open shell in this worktree", () => startProc({ kind: "pty", todo_id: t.id })]);
   }
-  if (canStartNow(t)) choices.push(["play", "Start now", () => startNow(t)]);
-  if (t.pr) choices.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
-  if (t.status === "merged" && !t.revert && !closedNoChanges(t) && here) choices.push(["undo", "Revert…", () => revertTodo(t)]);
-  if (!["in_progress", "merging"].includes(t.status)) {
-    if (t.worktree && here && state.project?.test_command) choices.push(["check", "Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
-    if (hasPriority(t)) choices.push(["x", "Clear priority", () => clearPriority(t)]);
-    if (hasBoards()) {
-      const others = boardsOf().filter((b) => b.id !== (t.board || ""));
-      choices.push(["right", "Move to another board…", () => menu(others.map((b) => ["right", b.name, () => moveToBoard(t, b.id)]), `Move from ${boardName(t.board)} to`)]);
-    }
-    choices.push(["copy", "Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
-    if (t.worktree && !here) choices.push(["copy", `Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
-    if (t.worktree && here) {
-      choices.push(["code", "Open worktree in editor", () => api("POST", `/api/todos/${t.id}/open`).then(() => toast("Opening in your editor"))]);
-      choices.push(["copy", `Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
-      choices.push(["copy", "Copy worktree path", () => copy(t.worktree.path, "Path copied")]);
-    }
-    choices.push(["trash", "Delete task…", async () => {
+  if (settled && t.worktree) {
+    if (here) worktree.push(["code", "Open worktree in editor", () => api("POST", `/api/todos/${t.id}/open`).then(() => toast("Opening in your editor"))]);
+    worktree.push(["copy", `Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
+    if (here) worktree.push(["copy", "Copy worktree path", () => copy(t.worktree.path, "Path copied")]);
+  }
+  if (previewOf(t.id)) worktree.push(["stop", "Stop the live preview", () => stopPreview(t.id)]);
+  if (t.pr) worktree.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
+
+  if (settled && hasBoards()) {
+    const others = boardsOf().filter((b) => b.id !== (t.board || ""));
+    organise.push(["right", "Move to another board…", () => popMenu(btn, [others.map((b) => ["right", b.name, () => moveToBoard(t, b.id)])], { heading: `Move from ${boardName(t.board)} to` })]);
+  }
+  if (settled) organise.push(["copy", "Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
+  // Planning is the hub's: its cards link to the tasks it has.
+  if (!state.project?.prefix) organise.push(["plan", "Link to a planning card…", () => linkToCard("task", t.id)]);
+  if (todoChat.history.length) organise.push(["x", "Clear this task's chat", () => api("DELETE", `/api/todos/${t.id}/chat`).then(() => { if (state.detail === t.id) todoChat.reset(); })]);
+
+  if (t.status === "merged" && !t.revert && !closedNoChanges(t) && here) danger.push(["undo", "Revert…", () => revertTodo(t), { danger: true }]);
+  if (settled) {
+    danger.push(["trash", "Delete task…", async () => {
       const pr = t.pr?.state === "OPEN" ? ` Its pull request #${t.pr.number} is closed on GitHub: the task is rejected.` : "";
       if (await ask({ title: "Delete this task?", body: `Its worktree and branch are removed too.${pr} This can't be undone.`, ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
         closeDetail();
         toast("Task deleted");
       }
-    }]);
+    }, { danger: true }]);
   }
-  // Planning is the hub's: its cards link to the tasks it has.
-  if (!state.project?.prefix) choices.push(["plan", "Link to a planning card…", () => linkToCard("task", t.id)]);
-  if (todoChat.history.length) choices.push(["x", "Clear this task's chat", () => api("DELETE", `/api/todos/${t.id}/chat`).then(() => { if (state.detail === t.id) todoChat.reset(); })]);
-  if (!choices.length) return;
-  await menu(choices);
+  await popMenu(btn, [edit, worktree, organise, danger]);
 }));
 

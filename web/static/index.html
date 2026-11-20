@@ -574,8 +574,8 @@
           <div class="meta-edit" id="d-meta-edit" hidden></div>
         </div>
         <button class="icon-btn" id="d-link" type="button" aria-label="Copy link" title="Copy a link that opens this task" data-icon="link"></button>
-        <button class="icon-btn" id="d-more" aria-label="More actions">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+        <button class="icon-btn" id="d-more" type="button" aria-label="More actions" title="More actions" aria-haspopup="menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
         </button>
       </header>
       <div class="detail-body">
@@ -698,7 +698,7 @@
           <summary>Server log</summary>
           <pre class="log" id="pv-log-text"></pre>
         </details>
-        <button class="pv-fab" type="button" id="pv-fab" aria-label="Preview actions" data-icon="more"></button>
+        <button class="pv-fab" type="button" id="pv-fab" aria-label="Preview actions" aria-haspopup="menu" aria-expanded="false" data-icon="more"></button>
       </section>
     </aside>
     <!-- A History commit: over most of the graph on desktop (a sliver stays visible; j/k move),

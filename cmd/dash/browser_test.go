@@ -1508,10 +1508,52 @@ func TestBrowserInlineEdit(t *testing.T) {
 	b.do("close the list", chromedp.KeyEvent(kb.Escape))
 	b.waitJS("the list closed, the pane open", paneOpen+` && !document.querySelector("#d-meta-edit .dep-pop:not([hidden])") && document.querySelector("#d-meta-edit .meta-btn").textContent === "Depends on 1 task"`)
 
+	// ⋯ drops a menu down under itself: groups with lines between them,
+	// Delete in red last. Arrows move, Esc closes it and only it.
+	menuOpen := `!!document.querySelector(".pop-menu") && document.querySelector("#d-more").getAttribute("aria-expanded") === "true"`
+	menuShut := `!document.querySelector(".pop-menu") && document.querySelector("#d-more").getAttribute("aria-expanded") === "false"`
+	focused := func(label string) string {
+		return fmt.Sprintf(`document.activeElement?.closest(".pop-menu") && document.activeElement.textContent.includes(%q)`, label)
+	}
+	b.until("open ⋯", menuOpen, chromedp.Click(chromedp.ID("d-more")))
+	b.waitJS("the groups", `(() => {
+		const m = document.querySelector(".pop-menu"), kids = [...m.children], last = m.lastElementChild;
+		const seps = kids.filter((e) => e.matches("hr.menu-sep"));
+		const btn = document.querySelector("#d-more").getBoundingClientRect(), r = m.getBoundingClientRect();
+		return seps.length >= 1 && !kids[0].matches("hr") && !last.matches("hr") && !kids.some((e, i) => e.matches("hr") && kids[i + 1]?.matches("hr")) &&
+			last.textContent.includes("Delete task…") && last.classList.contains("danger") &&
+			[...m.querySelectorAll("button")].some((e) => e.textContent.includes("Clear priority")) &&
+			r.top >= btn.bottom && r.right <= btn.right + 1 && btn.right - r.right <= 9; // right-aligned, kept 8px off the screen's edge
+	})()`)
+	b.waitJS("the first row focused", focused("Edit in the full form"))
+	b.do("arrow down", chromedp.KeyEvent(kb.ArrowDown))
+	b.waitJS("the next row focused", `document.activeElement?.closest(".pop-menu") && document.activeElement !== document.querySelector(".pop-menu button")`)
+	b.do("to the end", chromedp.KeyEvent(kb.End))
+	b.waitJS("Delete focused", focused("Delete task…"))
+	b.do("arrow down past the end", chromedp.KeyEvent(kb.ArrowDown))
+	b.waitJS("back to the first row", focused("Edit in the full form"))
+	b.do("close it", chromedp.KeyEvent(kb.Escape))
+	b.waitJS("the menu closed, the pane open, ⋯ focused", paneOpen+` && `+menuShut+` && document.activeElement?.id === "d-more"`)
+	b.until("open ⋯ again", menuOpen, chromedp.Click(chromedp.ID("d-more")))
+	b.do("click ⋯ again", chromedp.Click(chromedp.ID("d-more")))
+	b.waitJS("the menu closed by its button", paneOpen+` && `+menuShut)
+	b.until("open ⋯ to pick", menuOpen, chromedp.Click(chromedp.ID("d-more")))
+	b.clickText(".pop-menu button", "Duplicate as a new draft")
+	b.waitJS("duplicated, the menu closed", menuShut+` && [...document.querySelectorAll("#toasts .toast")].some((e) => e.textContent.includes("Duplicated as a draft"))`)
+
 	// A phone keeps the task form.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the Edit button, nothing in place", `[...document.querySelectorAll("#d-actions .btn")].some((e) => e.textContent.trim() === "Edit") &&
 		!document.querySelector("#d-title").classList.contains("editable") && document.querySelector("#d-meta-edit").hidden && !document.querySelector("#d-prompt .edit-prompt")`)
+	// There ⋯'s menu fits the screen, its rows tall enough for a finger.
+	b.until("open ⋯ on a phone", menuOpen, chromedp.Click(chromedp.ID("d-more")))
+	b.waitJS("the menu on the screen", `(() => {
+		const m = document.querySelector(".pop-menu"), r = m.getBoundingClientRect();
+		return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight &&
+			[...m.querySelectorAll("button")].every((e) => e.getBoundingClientRect().height >= 44);
+	})()`)
+	b.do("close it", chromedp.KeyEvent(kb.Escape))
+	b.waitJS("the menu closed, the pane open", paneOpen+` && `+menuShut)
 }
 
 // A runner low on disk space: with thresholds that make its real disk

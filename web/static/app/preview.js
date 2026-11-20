@@ -6,7 +6,7 @@ import { attempt, copy, openSheet, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { renderBoard } from "./branches.js";
 import { openDetail, renderActions } from "./detail.js";
-import { canRework, draw, endDraw, menu, previewsSheet, renderPreviewsBtn, reworkTodo, startDraw } from "./drawmode.js";
+import { canRework, draw, endDraw, popMenu, previewsSheet, renderPreviewsBtn, reworkTodo, startDraw } from "./drawmode.js";
 import { procTerminal } from "./terminal.js";
 
 // ------------------------------------------------------------------ live preview
@@ -394,20 +394,20 @@ $$("#pv-keys [data-key]").forEach((b) => {
   });
 });
 // Phone: the preview is full screen; this sheet leads back out.
-$("#pv-fab").addEventListener("click", attempt(async () => {
+$("#pv-fab").addEventListener("click", attempt(async (e) => {
   const t = state.todos.get(pv.todo);
   if (!t) return hidePreview();
   const p = previewOf(t.id);
   const term = isTermPreview(p); // Draw, Reload and links are for web pages
-  const choices = [["minimize", "Back to task", hidePreview]];
-  if (!term && p?.state === "live" && p.url) choices.push(["edit", "Draw", startDraw]);
-  if (!term && p?.state === "live") choices.push(["reload", "Reload", reloadPreview]);
-  if (canRework(t) && term && p?.state === "live") choices.push(["redo", pvTerm?.hasSelection() ? "Rework with the selection…" : "Rework with transcript…", () => sendBackWithTranscript(t)]);
-  if (canRework(t)) choices.push(["redo", "Rework…", () => (p?.state === "crashed" ? sendBackWithLog(t) : reworkTodo(t).then((sent) => sent && hidePreview()))]);
+  const page = [["minimize", "Back to task", hidePreview]], rework = [], link = [], stop = [];
+  if (!term && p?.state === "live" && p.url) page.push(["edit", "Draw", startDraw]);
+  if (!term && p?.state === "live") page.push(["reload", "Reload", reloadPreview]);
+  if (canRework(t) && term && p?.state === "live") rework.push(["redo", pvTerm?.hasSelection() ? "Rework with the selection…" : "Rework with transcript…", () => sendBackWithTranscript(t)]);
+  if (canRework(t)) rework.push(["redo", "Rework…", () => (p?.state === "crashed" ? sendBackWithLog(t) : reworkTodo(t).then((sent) => sent && hidePreview()))]);
   if (p) {
-    if (!term) choices.push(["external", "Open in a new tab", () => window.open(p.url || p.local_url, "_blank", "noopener")]);
-    if (!term && p.url) choices.push(["link", "Copy link", () => copy(p.url, "Preview link copied")]);
-    choices.push(["stop", "Stop the preview", () => stopPreview(t.id)]);
+    if (!term) link.push(["external", "Open in a new tab", () => window.open(p.url || p.local_url, "_blank", "noopener")]);
+    if (!term && p.url) link.push(["link", "Copy link", () => copy(p.url, "Preview link copied")]);
+    stop.push(["stop", "Stop the preview", () => stopPreview(t.id)]);
   }
-  await menu(choices);
+  await popMenu(e.currentTarget, [page, rework, link, stop]);
 }));
