@@ -3,3 +3,5 @@ bin/
 dist/
 /dash
 /dash-tui
+# Local secrets written by `elevenlabs onboard`
+/.env.local
