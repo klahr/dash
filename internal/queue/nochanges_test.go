@@ -102,6 +102,7 @@ func TestCloseNoChangesAutomatically(t *testing.T) {
 	if after := gitRun(t, h.proj.Path, "rev-parse", "main"); after != base {
 		t.Fatalf("closing moved main from %s to %s", base, after)
 	}
+	waitLog(t, h, td.ID, closedNote) // written just after the task is Merged
 	chat := h.st.TodoChat(td.ID)
 	if len(chat) != 1 || !strings.Contains(chat[0].Content, "the task is closed") || !strings.Contains(chat[0].Content, "It already works") {
 		t.Fatalf("want Claude's answer in the chat, saying it is closed, got %+v", chat)
@@ -161,6 +162,7 @@ func TestApprovedConflictFixWithoutChangesCloses(t *testing.T) {
 		t.Fatalf("want closed with no changes, got no_changes=%v commit=%q", tb.NoChanges, tb.MergedCommit)
 	}
 	want := "its changes are already on main (from #" + a.ID + " first)"
+	waitLog(t, h, b.ID, "✔ closed; ") // written just after the task is Merged
 	log, _ := h.log.Read(b.ID)
 	_, fix, _ := strings.Cut(log, "sending back to Claude")
 	if strings.Contains(fix, "ready for review") || !strings.Contains(fix, "✔ closed; "+want) {
@@ -191,6 +193,7 @@ func TestIdenticalChangeMergedFirstClosesAsAlreadyOnMain(t *testing.T) {
 	if !tb.NoChanges || tb.MergedCommit != "" {
 		t.Fatalf("want closed with no changes, got no_changes=%v commit=%q", tb.NoChanges, tb.MergedCommit)
 	}
+	waitLog(t, h, b.ID, "✔ closed; ") // written just after the task is Merged
 	if log, _ := h.log.Read(b.ID); !strings.Contains(log, "✔ closed; its changes are already on main (from #"+a.ID+" first)") {
 		t.Fatalf("want it closed as already on main, got log:\n%s", log)
 	}
