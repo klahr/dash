@@ -425,8 +425,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 :is(.failed-tag, .paused-tag, .needs-runner-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag, .nochange-tag) { font-size: var(--fs-xs); font-weight: 600; }
 /* A task that changed no files: in Review it is closed, not merged; once closed it says so. */
 .nochange-tag { color: var(--muted); border: 1px solid currentColor; border-radius: var(--r-s); padding: 0 5px; line-height: 1.5; white-space: nowrap; }
-/* A link to other tasks (a conflict, a note, an active_work lookup): one short line, the rest on hover. */
-.link-tag, .dep-link.link-tag { display: inline-block; color: var(--accent); text-decoration: none; max-width: min(14em, 100%); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A link to other tasks (a conflict, a note, an active_work lookup): one short line, the rest on hover.
+   On a card it has its own row under the title and line, so they keep the card's width. */
+.link-tag, .dep-link.link-tag { display: inline-block; color: var(--accent); text-decoration: none; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
+.todo-links { display: block; min-width: 0; margin-top: 2px; line-height: 1.4; }
 .link-tag.conflict-tag, .dep-link.link-tag.conflict-tag, .conflicts { color: var(--running); }
 .links { display: flex; flex-direction: column; gap: 2px; flex-basis: 100%; overflow-wrap: anywhere; }
 /* A run log entry about another task (a conflict note, an active_work call), with links to it. */

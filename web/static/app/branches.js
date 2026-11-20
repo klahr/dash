@@ -645,6 +645,13 @@ function linkTag(t) {
   return el;
 }
 
+// The link marker on a row of its own under the card's title and line, so
+// it takes no width from them.
+function linkRow(t) {
+  const tag = linkTag(t);
+  return tag ? h("span", { class: "todo-links" }, tag) : null;
+}
+
 // The detail view's lines about other tasks: its conflicts with the default
 // branch, then every interaction, each with a link to the other task.
 export function conflictMeta(t) {
@@ -719,6 +726,7 @@ export function todoRow(t, li = -1, ri = -1) {
     h("span", { class: "todo-main" },
       h("button", { type: "button", class: "todo-open" }, h("span", { class: "todo-title" }, title(t))),
       h("span", { class: subClass }, sub),
+      linkRow(t),
       goalChip(t)),
     h("span", { class: "todo-side" },
       checkTag,
@@ -734,7 +742,6 @@ export function todoRow(t, li = -1, ri = -1) {
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
       t.ci_run ? h("span", { class: "ci-tag" }, "Build fix") : null,
       fixing ? h("span", { class: "sentback-tag", title: `Sent back: ${fixing}` }, /^review /.test(fixing) ? "Review comments" : /conflict/.test(fixing) ? "Merge conflict" : "Failing checks") : null,
-      linkTag(t),
       t.attachments?.length ? h("span", { class: "attach-tag", title: `${t.attachments.length} attached` }, clip(), String(t.attachments.length)) : null,
       t.diff_files && ["review", "merging", "merged", "failed"].includes(t.status)
         ? h("span", { class: "diffsize", title: `${plural(t.diff_files, "file")} changed` },
