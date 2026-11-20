@@ -281,10 +281,7 @@ func (sv *service) recordCommands(p *model.Project, cur model.Project, req proje
 	}
 	sent := map[string]*string{model.CmdRun: req.RunCommand, model.CmdTest: req.TestCommand, model.CmdDeploy: req.deployScripts(),
 		model.CmdSetup: req.SetupCommand, model.CmdPreview: req.PreviewCommand}
-	admin, name := sv.s.orgAdmin(sv.c), ""
-	if u, err := sv.s.Store.Accounts().User(sv.c.User); err == nil {
-		name = u.Username
-	}
+	admin, name := sv.s.orgAdmin(sv.c), sv.s.username(sv.c.User)
 	out := maps.Clone(cur.CommandsBy)
 	for _, kind := range model.CommandKinds {
 		v := sent[kind]

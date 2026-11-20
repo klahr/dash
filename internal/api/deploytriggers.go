@@ -146,14 +146,3 @@ func (s *Server) triggerDeploy(p model.Project, e model.Environment, trigger, co
 	})
 	slog.Info("deploy: triggered, blocked", "project", p.Name, "environment", e.Name, "trigger", trigger, "ref", ref, "why", why)
 }
-
-// username is user id's name ("" for none, or Dash itself).
-func (s *Server) username(id int64) string {
-	if id == 0 || s.Store == nil {
-		return ""
-	}
-	if u, err := s.Store.Accounts().User(id); err == nil {
-		return u.Username
-	}
-	return ""
-}

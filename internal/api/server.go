@@ -847,3 +847,14 @@ func logRequests(next http.Handler) http.Handler {
 		}
 	})
 }
+
+// username is user id's name ("" for none, or Dash itself).
+func (s *Server) username(id int64) string {
+	if id == 0 || s.Store == nil {
+		return ""
+	}
+	if u, err := s.Store.Accounts().User(id); err == nil {
+		return u.Username
+	}
+	return ""
+}

@@ -122,13 +122,7 @@ func (s *Server) recordEnvChanges(c Caller, projectID string, before, after []mo
 	if len(changes) == 0 {
 		return
 	}
-	name := ""
-	if c.User != 0 {
-		if u, err := s.Store.Accounts().User(c.User); err == nil {
-			name = u.Username
-		}
-	}
-	if err := s.Store.AddEnvChanges(projectID, c.author(), name, time.Now(), changes); err != nil {
+	if err := s.Store.AddEnvChanges(projectID, c.author(), s.username(c.User), time.Now(), changes); err != nil {
 		slog.Error("deploy: record environment changes", "project", projectID, "err", err)
 	}
 }
@@ -274,10 +268,7 @@ func (s *Server) decide(c Caller, p model.Project, d model.Deploy, approve bool,
 	if len(note) > 500 {
 		note = note[:500]
 	}
-	a := model.DeployApproval{Approved: approve, By: c.author(), At: time.Now(), Note: note}
-	if u, err := s.Store.Accounts().User(c.User); err == nil {
-		a.ByName = u.Username
-	}
+	a := model.DeployApproval{Approved: approve, By: c.author(), ByName: s.username(c.User), At: time.Now(), Note: note}
 	out, err := s.Store.UpdateDeploy(d.ID, func(x *model.Deploy) error {
 		if x.Status != model.DeployAwaiting {
 			return fmt.Errorf("%w: someone decided meanwhile", errConflict)

@@ -22,6 +22,7 @@ package api
 // linked it with (held ones are empty, see dispatch.HeldCommands).
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -408,11 +409,7 @@ func (sv *service) pinCommit(p model.Project, ref string) (string, error) {
 // queueDeploy queues d for c (who starts it) and wakes its environment's queue.
 func (s *Server) queueDeploy(c Caller, d model.Deploy) (model.Deploy, error) {
 	d.By = c.User
-	if c.User != 0 && s.Store != nil {
-		if u, err := s.Store.Accounts().User(c.User); err == nil {
-			d.ByName = u.Username
-		}
-	}
+	d.ByName = s.username(c.User)
 	d, err := s.Store.CreateDeploy(d)
 	if err != nil {
 		return d, err
@@ -558,10 +555,7 @@ func (s *Server) cancelDeploy(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	who := "someone"
-	if u, err := s.Store.Accounts().User(sv.c.User); err == nil {
-		who = u.Username
-	}
+	who := cmp.Or(s.username(sv.c.User), "someone")
 	switch {
 	case d.Status == model.DeployQueued || d.Status == model.DeployAwaiting:
 		_, err = s.Store.UpdateDeploy(d.ID, func(x *model.Deploy) error {

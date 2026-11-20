@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"slices"
 
@@ -30,10 +31,7 @@ func (sv *service) cardNews(c model.Card, users []int64, head, message string) {
 
 // callerName is the caller's username ("Someone" if it can't be had).
 func (sv *service) callerName() string {
-	if u, err := sv.s.Store.Accounts().User(sv.c.User); err == nil && u.Username != "" {
-		return u.Username
-	}
-	return "Someone"
+	return cmp.Or(sv.s.username(sv.c.User), "Someone")
 }
 
 // membersAdded tells the people added to card c (now as after, before it
