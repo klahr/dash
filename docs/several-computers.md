@@ -23,7 +23,7 @@ runners (see [Whose work a runner does](#whose-work-a-runner-does)).
   - [Moving projects off the hub](#moving-projects-off-the-hub)
 - [Claude runs on each user's own runner](#claude-runs-on-each-users-own-runner): chats, scans,
   titles, laptops that sleep, GitHub access, where clones live
-- [Projects of a runner's own](#projects-of-a-runners-own)
+- [Projects of a runner's own](#projects-of-a-runners-own): adding them, goals, the API
 - [What a runner lets the hub do](#what-a-runner-lets-the-hub-do)
 - [Disk space on a runner](#disk-space-on-a-runner)
 - [When a runner goes offline](#when-a-runner-goes-offline)
@@ -893,6 +893,40 @@ The runner does the looking, and only:
   not an org admin), and the runner checks that user as it does for [Claude](#claude-runs-on-each-users-own-runner);
 - names, paths, branches and remotes: it reads `.git/HEAD` and `.git/config`, never the files in
   a repository. **Add selected** takes only paths that are in its listing at that moment.
+
+**Goals** don't work on a runner's own project from the hub: the runner doesn't offer them, so
+**New goal…** isn't shown. Use them in that computer's own Dash, or make the project a shared one.
+See [Goals](goals.md).
+
+### A runner's own projects through the API
+
+Platform admins reach a runner's whole API under `/peer/{runner}/`: the hub forwards
+`/peer/{runner}/api/…` to the runner's `/api/…`, for the routes in
+[What a runner lets the hub do](#what-a-runner-lets-the-hub-do). `{runner}` is the runner's
+name. For example, a project's settings:
+
+```sh
+curl -b cookies.txt https://dash.example.com/peer/team-laptop/api/projects/a1b2c3d4e5f6
+```
+
+Everyone else uses these routes on the hub, where `{id}` is the runner's id (from
+`GET /api/runners`) and `{pid}` the project's id on the runner:
+
+| Call | Who | What it does |
+| --- | --- | --- |
+| `GET /api/runners/{id}/repos` | its owner | the repositories in its projects directory |
+| `POST /api/runners/{id}/repos` | its owner | add them as its own projects: `{"paths": [...]}`; with one path, `name` and `test_command` too |
+| `POST /api/runners/{id}/projects` | its owner | a new local-only project: `{"name", "test_command", ...}` |
+| `GET /api/runners/{id}/projects/{pid}` | anyone in its org | one of its own projects' settings |
+| `PATCH /api/runners/{id}/projects/{pid}` | its owner | change them, with the body of `PATCH /api/projects/{id}` |
+
+A shared project's clone on a runner isn't one of its own projects: change its settings on the
+hub, with `PATCH /api/projects/{id}`.
+
+```sh
+curl -b cookies.txt -X POST https://dash.example.com/api/runners/r1b2c3/repos \
+  -d '{"paths":["app"],"name":"App","test_command":"make test"}'
+```
 
 ## What a runner lets the hub do
 

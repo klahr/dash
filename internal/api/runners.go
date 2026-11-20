@@ -264,6 +264,8 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 	mux.HandleFunc("GET /api/runners/{id}/repos", s.runnerRepos)
 	mux.HandleFunc("POST /api/runners/{id}/repos", s.addRunnerRepos)
 	mux.HandleFunc("POST /api/runners/{id}/projects", s.createRunnerProject)
+	mux.HandleFunc("GET /api/runners/{id}/projects/{pid}", s.runnerProject)
+	mux.HandleFunc("PATCH /api/runners/{id}/projects/{pid}", s.updateRunnerProject)
 	mux.HandleFunc("GET /api/runners/{id}/github-repos", s.runnerGitHubRepos)
 	mux.HandleFunc("POST /api/runners/{id}/github-repos", s.createRunnerGitHubRepo)
 	s.runnerLinkRoutes(mux) // the runner's Projects screen (runnerlinks.go)

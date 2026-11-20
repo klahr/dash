@@ -332,10 +332,10 @@ function newProjectReady(mode = hubMode()) {
     return { ready: false, why: mode === "create" ? `Only ${r.name}'s owner can create repositories with its GitHub login. Pick one of your runners, or add it from a URL.`
       : `Only ${r.name}'s owner can make local-only projects on it. Pick one of your runners.` };
   }
-  // A plan's goal starts on the new project: on a hub, a runner's local-only
-  // project can only be reached by those who see the runner's own dashboard.
-  if (planner.open() && mode === "local" && !state.machines?.some((m) => m.name === r.name && m.prefix)) {
-    return { ready: false, why: `A local-only project on ${r.name} can't be opened from this dashboard, so the plan couldn't start its goal there. Pick a GitHub repository or a URL.` };
+  // A plan's goal starts on the new project, and a runner doesn't offer goals
+  // on its own (local-only) projects to the hub (goalsOn).
+  if (planner.open() && mode === "local") {
+    return { ready: false, why: `Goals don't work on a local-only project on ${r.name} from this dashboard, so the plan couldn't start its goal there. Pick a GitHub repository or a URL.` };
   }
   const has = { gh: !!ghState.pick, create: !!f.github.value.trim(), url: !!f.remote_url.value.trim(), local: !!f.name.value.trim() }[mode];
   return { ready: has, why: "" };

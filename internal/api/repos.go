@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -257,15 +258,22 @@ func (s *Server) hubRepos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"repos": repos, "root": s.ProjectRoot})
 }
 
-// addReposRequest picks repositories by their path in the listing.
+// addReposRequest picks repositories by their path in the listing. On the
+// hub, a name and a test command may come with a single path: the hub
+// sets them on the new project once the runner has added it.
 type addReposRequest struct {
-	Paths []string `json:"paths"`
+	Paths       []string `json:"paths"`
+	Name        string   `json:"name,omitempty"`
+	TestCommand string   `json:"test_command,omitempty"`
 }
 
 // AddedRepos is what adding repositories made of each.
 type AddedRepos struct {
 	Added  []model.Project `json:"added"`
 	Failed []RepoFailure   `json:"failed"`
+	// SettingsError is why the name or test command asked for couldn't be
+	// set on the project that was added (the hub's side only).
+	SettingsError string `json:"settings_error,omitempty"`
 }
 
 // RepoFailure is a repository that wasn't added, and why.
@@ -416,12 +424,114 @@ func (s *Server) addRunnerRepos(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: pick 1 to %d repositories", errBadRequest, maxRepos))
 		return
 	}
+	req.Name, req.TestCommand = strings.TrimSpace(req.Name), strings.TrimSpace(req.TestCommand)
+	settings := projectUpdate{}
+	if req.Name != "" {
+		settings.Name = &req.Name
+	}
+	if req.TestCommand != "" {
+		settings.TestCommand = &req.TestCommand
+	}
+	if (settings.Name != nil || settings.TestCommand != nil) && len(req.Paths) != 1 {
+		writeErr(w, fmt.Errorf("%w: a name or test command goes with one repository at a time", errBadRequest))
+		return
+	}
 	ctx, cancel := context.WithTimeout(tunnel.WithUser(r.Context(), c.User), 2*time.Minute)
 	defer cancel()
 	var out AddedRepos
-	if err := s.fleet().Call(ctx, x.ID, http.MethodPost, "/api/hub/repos", req, &out); err != nil {
+	// The runner takes only the paths: older runners don't know the rest.
+	if err := s.fleet().Call(ctx, x.ID, http.MethodPost, "/api/hub/repos", addReposRequest{Paths: req.Paths}, &out); err != nil {
 		writeErr(w, err)
 		return
 	}
+	if len(out.Added) == 1 && (settings.Name != nil || settings.TestCommand != nil) {
+		var p model.Project
+		if err := s.fleet().Call(ctx, x.ID, http.MethodPatch, "/api/projects/"+out.Added[0].ID, settings, &p); err != nil {
+			out.SettingsError = err.Error()
+		} else {
+			out.Added[0] = p
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// runnerProjectPath is the runner's API path of its project pid, or ""
+// when pid can't be one (a project id is one plain path segment).
+func runnerProjectPath(pid string) string {
+	if pid == "" || pid == "." || pid == ".." || strings.ContainsAny(pid, "/\\?#%") {
+		return ""
+	}
+	return "/api/projects/" + pid
+}
+
+// runnerOwnProject asks runner x for its own project {pid} in r's path, for
+// c. A shared project's clone isn't one: its settings are the hub's. When
+// it can't be had it answers r and returns false.
+func (s *Server) runnerOwnProject(ctx context.Context, w http.ResponseWriter, r *http.Request, x tunnel.Runner) (model.Project, bool) {
+	path := runnerProjectPath(r.PathValue("pid"))
+	if path == "" {
+		writeError(w, http.StatusNotFound, "no such project on this runner")
+		return model.Project{}, false
+	}
+	var p model.Project
+	if err := s.fleet().Call(ctx, x.ID, http.MethodGet, path, nil, &p); err != nil {
+		if ce := (*tunnel.CallError)(nil); errors.As(err, &ce) && ce.Status == http.StatusNotFound {
+			writeError(w, http.StatusNotFound, "no such project on this runner")
+		} else {
+			writeErr(w, err)
+		}
+		return p, false
+	}
+	if p.HubProjectID != "" {
+		writeError(w, http.StatusNotFound, "that is a shared project's clone on this runner: use the shared project's own settings")
+		return p, false
+	}
+	return p, true
+}
+
+// runnerProject handles GET /api/runners/{id}/projects/{pid}: the settings
+// of one of runner {id}'s own projects. Anyone in the runner's org may
+// read them (only platform admins reach the runner's whole API through
+// /peer/{runner}/…).
+func (s *Server) runnerProject(w http.ResponseWriter, r *http.Request) {
+	c, x, ok := s.runnerFor(w, r, func(Caller, tunnel.Runner) bool { return true }, "")
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(tunnel.WithUser(r.Context(), c.User), 30*time.Second)
+	defer cancel()
+	if p, ok := s.runnerOwnProject(ctx, w, r, x); ok {
+		writeJSON(w, http.StatusOK, p)
+	}
+}
+
+// updateRunnerProject handles PATCH /api/runners/{id}/projects/{pid}: the
+// runner's owner changes one of its own projects' settings, with the same
+// body as PATCH /api/projects/{pid}. Its commands run on the owner's
+// computer, so no one else may.
+func (s *Server) updateRunnerProject(w http.ResponseWriter, r *http.Request) {
+	c, x, ok := s.runnerFor(w, r, func(c Caller, x tunnel.Runner) bool {
+		return x.Owner != nil && x.Owner.UserID == c.User
+	}, "only the runner's owner can change its own projects' settings")
+	if !ok {
+		return
+	}
+	// Passed on as sent: the runner may know settings this hub doesn't.
+	var req map[string]json.RawMessage
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(tunnel.WithUser(r.Context(), c.User), time.Minute)
+	defer cancel()
+	cur, ok := s.runnerOwnProject(ctx, w, r, x)
+	if !ok {
+		return
+	}
+	var p model.Project
+	if err := s.fleet().Call(ctx, x.ID, http.MethodPatch, "/api/projects/"+cur.ID, req, &p); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
 }

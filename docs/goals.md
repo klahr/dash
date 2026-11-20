@@ -20,6 +20,11 @@ them, e.g. "By coordinator · goal Faster search: sent this task back with notes
 
 ## Start a goal
 
+Goals work on the hub's shared projects and on a Dash of your own. They don't work on a
+[runner's own project](several-computers.md#projects-of-a-runners-own) in the hub's dashboard:
+the runner doesn't offer goals to the hub, so **New goal…** isn't shown there. Open the project
+in that computer's own Dash to use goals, or make it a shared project.
+
 To start a new project and its first goal from an idea, use [Plan a new project](plan-project.md)
 instead.
 

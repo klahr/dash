@@ -52,11 +52,18 @@ export const gp = {
 const goalAPI = (id) => `/api/goals/${id}`;
 const prefix = () => gp.project?.prefix || "";
 
+// goalsOn reports whether project p can have goals here. A runner's own
+// project (one with a /peer/… prefix) can't: its runner doesn't offer goals
+// to the hub, so they're used in the runner's own dashboard.
+export const goalsOn = (p) => !!p && !p.prefix;
+const NO_GOALS = "Goals don't work on a runner's own project from the hub: its runner keeps them. Open the project in that computer's own Dash to use goals, or make it a shared project.";
+
 // loadGoals reads the project's goals. Events seen while the list was on
 // its way are replayed over it. A Dash from before goals has none.
 export async function loadGoals() {
   const p = state.project;
   if (!p) return resetGoals();
+  if (!goalsOn(p)) return resetGoals(); // its runner would refuse: renderGoals says why
   let list = [], seen = [];
   try {
     ({ data: list, seen } = await latest(() => api("GET", `/api/projects/${p.id}/goals`, null, p.prefix || "")));
@@ -136,11 +143,12 @@ export function renderGoals() {
   if (!list) return;
   const goals = [...gp.list].sort((a, b) => (STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status)) || b.updated_at.localeCompare(a.updated_at));
   $("#goal-empty").hidden = goals.length > 0;
-  $("#goal-empty-title").textContent = state.project ? "No goals yet" : "No project";
-  $("#goal-empty-text").textContent = state.project
-    ? "A goal is something bigger than one task. Say what you want done: a coordinator reads the code, plans the tasks and reviews what each one did. Approving and merging stay yours."
-    : "Select a project to see its goals.";
-  $("#goal-new").hidden = !state.project;
+  const on = goalsOn(state.project);
+  $("#goal-empty-title").textContent = !state.project ? "No project" : on ? "No goals yet" : "No goals here";
+  $("#goal-empty-text").textContent = !state.project ? "Select a project to see its goals."
+    : on ? "A goal is something bigger than one task. Say what you want done: a coordinator reads the code, plans the tasks and reviews what each one did. Approving and merging stay yours."
+      : NO_GOALS;
+  $("#goal-new").hidden = !on;
   const focused = document.activeElement?.closest?.("#goal-list li")?.dataset.id;
   list.replaceChildren(...goals.map((g) => h("li", { class: `goal${g.id === gp.open ? " selected" : ""}`, "data-id": g.id },
     h("button", { type: "button", class: "goal-open", "aria-controls": "goal-detail", "aria-current": g.id === gp.open ? "true" : null, onclick: () => openGoal(g.id).catch(fail) },
@@ -448,6 +456,7 @@ function talk(g) {
 // Split into tasks sheet once the coordinator has one.
 export function openGoalSheet({ goal = null, title: t = "", description = "" } = {}) {
   if (!state.project) throw new Error(projectFirst());
+  if (!goal && !goalsOn(state.project)) throw new Error(NO_GOALS);
   gp.editing = goal;
   const f = $("#goal-form");
   f.reset();

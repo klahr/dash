@@ -31,7 +31,7 @@ import { chat, todoChat } from "./chat.js";
 import { pane, paneOverlays, projectChatFor, toggleChatPane, togglePin } from "./chatpane.js";
 import { attached, openShell, shellBlocked, startProc, techFor, term } from "./terminal.js";
 import { closeCommit, commitScroller, moveCommit, stepCommitFile } from "./history.js";
-import { closeGoal, gp, openGoalSheet, stepGoal } from "./goals.js";
+import { closeGoal, goalsOn, gp, openGoalSheet, stepGoal } from "./goals.js";
 import { closeDeploy, dp, stepDeploy } from "./deploys.js";
 import { cardOpen, closeCard } from "./planning.js";
 import { checklistKey } from "./checklist.js";
@@ -69,7 +69,7 @@ function paletteCommands() {
   return [
     p && ["New task", "plus", () => openQuickAdd(), "n", "add create todo quick"],
     p && ["New task with all options", "plus", () => openTodoForm(), "N", "add create todo full form title priority dependencies attachments"],
-    p && ["New goal", "target", () => openGoalSheet(), "", "goal coordinator plan bigger project objective"],
+    goalsOn(p) && ["New goal", "target", () => openGoalSheet(), "", "goal coordinator plan bigger project objective"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
     p && multiMember() && [mineOn() ? "Show everyone's tasks" : "Show only my tasks", "users", () => runCommand("mine"), ":mine", "mine my own created by me filter board"],
     ["Issues", "bug", go("issues"), "gi", "bugs vulnerabilities problems triage scan"],

@@ -9,7 +9,7 @@ import { grouped, projectWhere } from "./projects.js";
 import { renderBoard } from "./branches.js";
 import { showRunnerNeeded } from "./runners.js";
 import { levelPriority, priorityLevel } from "./dnd.js";
-import { openGoalSheet } from "./goals.js";
+import { goalsOn, openGoalSheet } from "./goals.js";
 import { confirmRunAs } from "./people.js";
 
 // ------------------------------------------------------------------ new / edit todo
@@ -53,7 +53,7 @@ export function openTodoForm(t = null, { pick = false } = {}) {
   showRunnerNeeded($("#todo-runner-note"), state.project);
   $("#todo-clear").hidden = !!t;
   $("#todo-split").hidden = !split.splittable(t);
-  $("#todo-goal").hidden = !!t; // a goal is new work, not an edit of a task
+  $("#todo-goal").hidden = !!t || !goalsOn(state.project); // a goal is new work, not an edit of a task
   if (t) {
     f.title.value = t.title;
     f.prompt.value = t.prompt;
@@ -112,6 +112,7 @@ export function openQuickAdd(texts = [""]) {
   if (!state.project) return toast(projectFirst(), true);
   quick.rows.replaceChildren();
   showRunnerNeeded($("#quick-runner-note"), state.project);
+  $("#quick-goal").hidden = !goalsOn(state.project);
   quick.sheet.returnValue = "";
   quick.sheet.showModal();
   texts.forEach((t) => quickAddRow(null, t));
