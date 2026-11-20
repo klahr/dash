@@ -353,7 +353,7 @@ func (g *Git) SeedRepo(ctx context.Context, projectID, path, branch string) (see
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return false, err
 	}
-	if _, err := g.git(ctx, projectID, path, "rev-parse", "--git-dir"); err != nil {
+	if !g.isRepoRoot(ctx, projectID, path) {
 		if _, err := g.git(ctx, projectID, path, "init", "-b", branch); err != nil {
 			return false, err
 		}
@@ -375,6 +375,25 @@ func (g *Git) SeedRepo(ctx context.Context, projectID, path, branch string) (see
 		return false, err
 	}
 	return true, nil
+}
+
+// isRepoRoot reports whether path is a repository of its own: the top of a
+// work tree, or a bare repository. A folder merely inside another
+// repository (a home folder kept as a dotfiles repo, say) is not: git would
+// find the enclosing one from it.
+func (g *Git) isRepoRoot(ctx context.Context, projectID, path string) bool {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	if top, err := g.git(ctx, projectID, abs, "rev-parse", "--show-toplevel"); err == nil && top != "" {
+		return samePath(top, abs)
+	}
+	if bare, err := g.git(ctx, projectID, abs, "rev-parse", "--is-bare-repository"); err != nil || bare != "true" {
+		return false
+	}
+	dir, err := g.git(ctx, projectID, abs, "rev-parse", "--absolute-git-dir")
+	return err == nil && samePath(dir, abs)
 }
 
 // PushUpstream pushes branch to origin and makes origin's its upstream:

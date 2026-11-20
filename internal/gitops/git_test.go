@@ -41,6 +41,41 @@ func TestMainBranch(t *testing.T) {
 	}
 }
 
+// A new project's folder inside another repository (a home folder kept as a
+// dotfiles repo) gets a repository of its own: InitRepo used to find the
+// enclosing one and make that the project.
+func TestInitRepoInsideAnotherRepo(t *testing.T) {
+	t.Parallel()
+
+	ctx, g := context.Background(), New(nil)
+	home := t.TempDir()
+	gitIn(t, home, "init", "-q", "-b", "dotfiles")
+	gitIn(t, home, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "dotfiles")
+	dir := filepath.Join(home, "dash-projects", "app")
+	if err := g.InitRepo(ctx, "p", dir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if top, err := g.git(ctx, "p", dir, "rev-parse", "--show-toplevel"); err != nil || !samePath(top, dir) {
+		t.Fatalf("top level = %q, %v; want %s", top, err, dir)
+	}
+	if b, _ := g.git(ctx, "p", dir, "branch", "--show-current"); b != "main" {
+		t.Fatalf("branch = %q, want main", b)
+	}
+	if n, _ := g.git(ctx, "p", home, "rev-list", "--count", "HEAD"); n != "1" {
+		t.Fatalf("the enclosing repo has %s commits, want 1", n)
+	}
+
+	// A bare repository is one of its own, and is left as it is.
+	bare := filepath.Join(t.TempDir(), "bare.git")
+	gitIn(t, filepath.Dir(bare), "clone", "-q", "--bare", home, bare)
+	if err := g.InitRepo(ctx, "p", bare, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := g.git(ctx, "p", bare, "rev-parse", "--is-bare-repository"); b != "true" {
+		t.Fatalf("bare repository: is-bare = %q", b)
+	}
+}
+
 // A NUL byte in a commit message (pasted into a task's prompt) used to make
 // the commit fail with "fork/exec git: invalid argument".
 func TestCommitMessageWithNUL(t *testing.T) {
