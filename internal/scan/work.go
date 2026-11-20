@@ -47,6 +47,9 @@ type Job struct {
 	// For is the hub's user the run is for (model.ScanRun.StartedBy; 0: no
 	// one's). Only their own runners, or shared ones, take it.
 	For int64 `json:"for,omitempty"`
+	// Account, on a hub, is the Claude account whose runners may take it
+	// ("": any): an early run's, which that account's usage had room for.
+	Account string `json:"-"`
 	// Shared is, on a runner, the Claude config folder of a scan for
 	// another member than its owner: Claude runs with the runner's API key
 	// alone (claudecli.SharedEnv). "": its owner's.

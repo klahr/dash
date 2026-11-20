@@ -153,18 +153,25 @@ func (r *Runner) LogPath(runID string) string {
 // A scheduled run is for whoever last turned its schedule on or changed it
 // (model.ScanSetting.ScheduledBy).
 func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
-	return r.start(projectID, name, trigger, nil, 0)
+	return r.start(projectID, name, trigger, nil, 0, "")
 }
 
 // StartFor is Start for the hub's user by, who started it: on a hub, it
 // runs on one of their runners, or a shared one (model.ScanRun.StartedBy).
 func (r *Runner) StartFor(projectID, name, trigger string, by int64) (model.ScanRun, error) {
-	return r.start(projectID, name, trigger, nil, by)
+	return r.start(projectID, name, trigger, nil, by, "")
+}
+
+// StartOn is Start on a hub, on a runner logged in to the Claude account
+// account ("": any of them), as an early run picks one with spare usage.
+func (r *Runner) StartOn(projectID, name, trigger, account string) (model.ScanRun, error) {
+	return r.start(projectID, name, trigger, nil, 0, account)
 }
 
 // start begins a run for by; from, if set, is the interrupted run it starts
-// over, whose scope, path, base commit and user it keeps.
-func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun, by int64) (model.ScanRun, error) {
+// over, whose scope, path, base commit and user it keeps. account, on a
+// hub, is the Claude account whose runners may take it ("": any).
+func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun, by int64, account string) (model.ScanRun, error) {
 	p, err := r.Store.GetProject(projectID)
 	if err != nil {
 		return model.ScanRun{}, err
@@ -174,7 +181,7 @@ func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun, by 
 		return model.ScanRun{}, fmt.Errorf("%w %q in %s", ErrNoScan, name, p.Name)
 	}
 	resumedFrom := ""
-	if trigger == "schedule" && by == 0 {
+	if (trigger == model.TriggerSchedule || trigger == model.TriggerEarly) && by == 0 {
 		if set, ok := r.Store.ScanSetting(projectID, t.Name); ok {
 			by = set.ScheduledBy
 		}
@@ -220,7 +227,7 @@ func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun, by 
 		defer r.wg.Done()
 		defer r.release(key)
 		defer cancel(nil)
-		r.execute(ctx, p, t, run, from)
+		r.execute(ctx, p, t, run, from, account)
 		r.PruneLogs() // of runs the store just let go
 	}()
 	return run, nil
@@ -367,7 +374,7 @@ func underPath(files []string, dir string) []string {
 // remote reports whether runs go to a runner (see Runner.Remote).
 func (r *Runner) remote() bool { return r.Remote != nil }
 
-func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run model.ScanRun, from *model.ScanRun) {
+func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run model.ScanRun, from *model.ScanRun, account string) {
 	logf, _ := r.openLog(run.ID)
 	defer func() {
 		if logf != nil {
@@ -424,7 +431,7 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 	if !approved {
 		logLine(fmt.Sprintf("⚠ the template asks for tools that are not approved in Dash (%s): running with read-only tools", strings.Join(t.Tools, ", ")))
 	}
-	job := Job{RunID: run.ID, Template: t, Tools: tools, Timeout: r.runTimeout(), Known: r.scanIssues(p.ID, t), For: run.StartedBy}
+	job := Job{RunID: run.ID, Template: t, Tools: tools, Timeout: r.runTimeout(), Known: r.scanIssues(p.ID, t), For: run.StartedBy, Account: account}
 	if from != nil {
 		job.From = &Resume{Commit: from.Commit, Since: from.Since, Incremental: from.Incremental, Note: from.Note}
 	}

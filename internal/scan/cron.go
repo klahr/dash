@@ -163,3 +163,32 @@ func Due(c Cron, anchor, now time.Time) bool {
 	next := c.Next(anchor)
 	return !next.IsZero() && !next.After(now)
 }
+
+// Prev is the last time at or before t that the expression matches, to the
+// minute; the zero time if it didn't in the five years before.
+func (c Cron) Prev(t time.Time) time.Time {
+	t = t.Truncate(time.Minute)
+	// Look back over ever longer spans, so a frequent schedule is found
+	// quickly and a rare one still is.
+	for _, back := range []time.Duration{time.Hour, 25 * time.Hour, 8 * 24 * time.Hour, 32 * 24 * time.Hour, 367 * 24 * time.Hour, 5 * 366 * 24 * time.Hour} {
+		var last time.Time
+		for x := c.Next(t.Add(-back - time.Minute)); !x.IsZero() && !x.After(t); x = c.Next(x) {
+			last = x
+		}
+		if !last.IsZero() {
+			return last
+		}
+	}
+	return time.Time{}
+}
+
+// PeriodEnd is the cron time that ends the period t falls in: the first at
+// or after t. A cron period runs from one cron time to the next, (previous,
+// T], so a run at T is in the period ending at T.
+func (c Cron) PeriodEnd(t time.Time) time.Time {
+	m := t.Truncate(time.Minute)
+	if m.Equal(t) {
+		m = m.Add(-time.Minute)
+	}
+	return c.Next(m)
+}

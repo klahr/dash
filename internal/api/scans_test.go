@@ -306,3 +306,46 @@ func TestDashScanEndpoints(t *testing.T) {
 		t.Fatalf("built-in back: %+v", sec)
 	}
 }
+
+// "Run early if there's spare usage" is set per scan, needs a cron
+// schedule, keeps the overrides it isn't sent, and shows in the scan.
+func TestScanEarlyEndpoint(t *testing.T) {
+	parallel(t)
+
+	s, _, p := boardServer(t)
+	p, _ = raw(s).UpdateProject(p.ID, func(x *model.Project) error { x.Path = t.TempDir(); return nil })
+	h := loggedIn(t, s.Routes())
+	url := "/api/projects/" + p.ID + "/scans/"
+
+	if w := do(t, h, "PATCH", url+"breaking-changes", `{"early":{"on":true}}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("early without a schedule: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, h, "PATCH", url+"security", `{"early":{"on":true,"when":"sometimes"}}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("bad when: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, h, "PATCH", url+"security", `{"early":{"on":true,"when":"night","lead_minutes":30,"max_percent":50}}`); w.Code != http.StatusOK {
+		t.Fatalf("early on: %d %s", w.Code, w.Body)
+	}
+	w := do(t, h, "PATCH", url+"security", `{"early":{"when":"any"}}`)
+	var info struct {
+		Schedule struct {
+			Early *model.EarlyRun `json:"early"`
+		} `json:"schedule"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &info); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("when: %d %s", w.Code, w.Body)
+	}
+	want := model.EarlyRun{On: true, When: model.EarlyAnyTime, LeadMinutes: 30, MaxPercent: 50}
+	if info.Schedule.Early == nil || *info.Schedule.Early != want {
+		t.Fatalf("early %+v, want %+v", info.Schedule.Early, want)
+	}
+	if set, _ := raw(s).ScanSetting(p.ID, "security"); set.Early == nil || *set.Early != want {
+		t.Fatalf("stored %+v", set.Early)
+	}
+	if w := do(t, h, "PATCH", url+"security", `{"reset":true}`); w.Code != http.StatusOK {
+		t.Fatalf("reset: %d", w.Code)
+	}
+	if set, _ := raw(s).ScanSetting(p.ID, "security"); set.Early != nil {
+		t.Fatalf("early after reset: %+v", set.Early)
+	}
+}

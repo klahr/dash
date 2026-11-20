@@ -81,8 +81,17 @@ const (
 	ScanInterrupted = "interrupted"
 )
 
-// TriggerResume is the trigger of a run that starts over an interrupted one.
-const TriggerResume = "resume"
+// What started a scan run (ScanRun.Trigger).
+const (
+	TriggerManual   = "manual"   // a person, with Run now
+	TriggerSchedule = "schedule" // its cron schedule, at the cron time
+	// TriggerEarly is a scheduled run started before its cron time, as the
+	// 5-hour usage window was about to reset with usage to spare
+	// (EarlyRun).
+	TriggerEarly = "early"
+	// TriggerResume is a run that starts over an interrupted one.
+	TriggerResume = "resume"
+)
 
 // ScanRun is one run of a scan template on a project. A scan only reads the
 // code; what it finds goes into the project's Issues, never onto a branch.
@@ -90,7 +99,7 @@ type ScanRun struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id"`
 	Scan      string `json:"scan"`    // template name; its issues have source "scan:<name>"
-	Trigger   string `json:"trigger"` // "manual", "schedule" or "resume"
+	Trigger   string `json:"trigger"` // TriggerManual, TriggerSchedule, TriggerEarly or TriggerResume
 	// StartedBy is, on a hub, the user the run is for: who started it, or
 	// for a scheduled run who last turned its schedule on or changed it
 	// (ScanSetting.ScheduledBy). 0: no one's; it runs only on a runner
@@ -152,10 +161,34 @@ type ScanSetting struct {
 	// user approved; once the template asks for other tools, it no longer
 	// applies and the scan runs with read-only tools.
 	ApprovedTools []string `json:"approved_tools,omitempty"`
+	// Early lets the scheduled scan run before its cron time when the
+	// Claude usage has room to spare (nil: off).
+	Early *EarlyRun `json:"early,omitempty"`
 	// ScheduledBy is who last turned the schedule on or changed it: its
 	// scheduled runs are theirs (ScanRun.StartedBy).
 	ScheduledBy int64     `json:"scheduled_by,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// EarlyRun values for When.
+const (
+	EarlyAnyTime = "any"   // whenever the 5-hour window resets
+	EarlyNight   = "night" // only when it resets at night
+)
+
+// EarlyRun is a scheduled scan's "Run early if there's spare usage": it
+// still runs once per cron period, but early, shortly before the 5-hour
+// usage window resets, while that window has usage to spare. The scan
+// package has the defaults (scan.EarlyLead, scan.EarlyCeiling).
+type EarlyRun struct {
+	On   bool   `json:"on"`
+	When string `json:"when,omitempty"` // EarlyAnyTime ("") or EarlyNight
+	// LeadMinutes overrides how long before the reset the scan may start
+	// (0: the default).
+	LeadMinutes int `json:"lead_minutes,omitempty"`
+	// MaxPercent overrides the 5-hour window's utilization the scan starts
+	// below (0: the default).
+	MaxPercent int `json:"max_percent,omitempty"`
 }
 
 // ScanTemplate is a custom scan a user wrote in Dash, kept per project next

@@ -71,14 +71,14 @@ func TestScanRunnerNeedsClaudeCodeNotTheProjectsAgent(t *testing.T) {
 	fx.fleet.set(withAgents(runnerOf("codex-box", fx.orgA, true), "codex"))
 	p := fx.project(t, fx.orgA, "claude-box", "codex-box")
 	p.Agent = "codex"
-	r, why, linked := fx.d.scanRunner(p, []int64{1})
+	r, why, linked := fx.d.scanRunner(p, []int64{1}, "")
 	if r == nil || r.ID != "claude-box" || !linked {
 		t.Fatalf("scan runner = %v (%q, linked %v), want claude-box", r, why, linked)
 	}
 
 	// No runner has Claude Code: no runner takes the scan.
 	fx.fleet.set(withAgents(runnerOf("claude-box", fx.orgA, true), "codex"))
-	if r, why, _ := fx.d.scanRunner(p, []int64{1}); r != nil {
+	if r, why, _ := fx.d.scanRunner(p, []int64{1}, ""); r != nil {
 		t.Fatalf("scan went to %s, which has no Claude Code (%q)", r.ID, why)
 	}
 }

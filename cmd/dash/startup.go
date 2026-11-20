@@ -896,6 +896,8 @@ func (a *app) setupHub() {
 	// While the hub doesn't run Claude, scans run their Claude part on
 	// a runner linked to the project (the hub keeps the runs and issues).
 	a.scans.Remote = d
+	// A scan set to run early weighs the usage of its runners' accounts.
+	a.scheduler.Spare = d.ScanSpare
 	// The hub never runs Claude (the chat and short calls go to the
 	// caller's runner, tasks of projects not linked to a runner wait,
 	// saying one must be linked), nor anything else: a project's git,

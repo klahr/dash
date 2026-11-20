@@ -318,7 +318,7 @@ func TestDispatchSkipsRunnersInMaintenance(t *testing.T) {
 	if got := fx.fleet.callsTo("laptop"); len(got) != 0 {
 		t.Errorf("a runner in maintenance was sent work: %q", got)
 	}
-	if _, why, _ := fx.d.scanRunner(p, []int64{1}); !strings.Contains(why, "laptop is updating") {
+	if _, why, _ := fx.d.scanRunner(p, []int64{1}, ""); !strings.Contains(why, "laptop is updating") {
 		t.Errorf("scan: %q, want laptop is updating", why)
 	}
 	// Paused too: it still says it is updating (the pause is the user's, and stays).

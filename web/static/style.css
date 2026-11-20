@@ -3157,6 +3157,10 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .scan-switch:has(input:disabled) { color: var(--faint); }
 .scan-next, .scan-hint { color: var(--muted); font-size: var(--fs-s); }
 .scan-hint { font-style: italic; }
+.scan-early .scan-sched { margin-top: 4px; }
+.scan-early-when { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
+.scan-early-when select { min-height: 32px; }
+.scan-early-hint { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-s); }
 .scan-approve { margin-top: 10px; padding: 8px 12px; border-radius: var(--r-s); background: var(--raised); border-left: 3px solid var(--failed); font-size: var(--fs-m); }
 .scan-approve p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0; }
 .scan-approve p + p { margin-top: 8px; }

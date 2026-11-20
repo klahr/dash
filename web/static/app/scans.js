@@ -279,6 +279,7 @@ function scanCard(s) {
         sch.enabled && s.next_run ? h("span", { class: "scan-next", title: dateTimeText(s.next_run) }, `next ${until(s.next_run)}`) : null,
         sch.custom ? h("button", { type: "button", class: "link scan-reset", title: `Back to the template's schedule${sch.default ? ` (${sch.default})` : ""}, off` , onclick: attempt(() => patch({ reset: true })) }, "Reset") : null,
         !sch.enabled && sch.cron && s.builtin && !sch.custom ? h("span", { class: "scan-hint" }, "suggested; off until turned on") : null),
+      scanEarly(s, patch),
       s.last_run ? scanReport(s.last_run, false, true) : null,
       s.last_report && s.last_report.id !== s.last_run?.id ? scanReport(s.last_report, true) : null,
       !s.last_run ? null : h("div", { class: "scan-foot" },
@@ -287,6 +288,27 @@ function scanCard(s) {
         }) }, hist ? "Hide earlier runs" : "Earlier runs")),
       hist ? h("ol", { class: "scan-history" }, ...earlier.map((r) => h("li", {}, scanReport(r, true))),
         earlier.length ? null : h("li", { class: "scan-never" }, "No earlier runs.")) : null));
+}
+
+// scanEarly is the schedule's "Run early if there's spare usage": once per
+// cron period, early when the 5-hour usage window is about to reset with
+// usage to spare, otherwise at the cron time. It needs a cron schedule.
+function scanEarly(s, patch) {
+  const sch = s.schedule;
+  const e = sch.early || {};
+  const on = !!(e.on && sch.cron);
+  return h("div", { class: "scan-early" },
+    h("div", { class: "scan-sched" },
+      h("label", { class: "scan-switch", title: sch.cron ? null : "Set a schedule first" },
+        h("input", { type: "checkbox", role: "switch", checked: on, disabled: !sch.cron,
+          onchange: attempt((ev) => patch({ early: { on: ev.target.checked } })) }),
+        h("span", {}, "Run early if there's spare usage")),
+      !sch.cron ? h("span", { class: "scan-hint" }, "needs a schedule") : null,
+      on ? h("label", { class: "scan-early-when" }, h("span", {}, "When"),
+        h("select", { onchange: attempt((ev) => patch({ early: { when: ev.target.value } })) },
+          h("option", { value: "any", selected: e.when !== "night" }, "Any time"),
+          h("option", { value: "night", selected: e.when === "night" }, "At night only"))) : null),
+    h("p", { class: "scan-early-hint" }, "Runs the scan up to an hour before your Claude usage resets if less than 70% is used. Otherwise it runs at the scheduled time."));
 }
 
 // shadowedScanCard is a repository scan that doesn't run because a scan
@@ -477,6 +499,14 @@ function severityBadge({ critical, high }, urgent) {
   return h("span", { class: "sev sev-high scan-urgent", title }, text);
 }
 
+// RUN_TRIGGER says why a run started.
+const RUN_TRIGGER = {
+  schedule: "scheduled",
+  early: "started early (spare usage)",
+  resume: "↻ resumed after restart",
+  manual: "by hand",
+};
+
 // scanReport is a run's full report. For the run the card's status line
 // already sums up (lead), what that line says is left out.
 function scanReport(r, compact = false, lead = false) {
@@ -487,7 +517,7 @@ function scanReport(r, compact = false, lead = false) {
   const link = (n, text, which) => n ? h("button", { type: "button", class: `scan-count link${which === "new" ? " new" : ""}`, title: "Show them in Issues", onclick: () => showRunIssues(r, which) }, `${n} ${text}`) : null;
   const bits = [
     agoText(r.started_at),
-    r.trigger === "schedule" ? "scheduled" : r.trigger === "resume" ? "↻ resumed after restart" : "by hand",
+    RUN_TRIGGER[r.trigger] || "by hand",
     r.commit ? (r.incremental && r.since ? `${r.since.slice(0, 7)}…${r.commit.slice(0, 7)}` : r.commit.slice(0, 7)) : null,
     r.finished_at ? `${Math.max(1, Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000))}s` : null,
     r.cost_usd ? `≈$${r.cost_usd.toFixed(2)}` : null,

@@ -144,6 +144,21 @@ Look for vulnerabilities in {{path}} …
   change it, in the Scans section. A run missed while Dash was down runs once at
   startup, and a scan never runs twice at the same time. Scheduled scans wait while the
   subscription usage pauses the task queue. `-scan-schedules=false` turns schedules off.
+- **Run early if there's spare usage.** Turn it on under a scan's schedule to spend Claude usage
+  that would otherwise go unused. The scan still runs once per cron period (from one cron time to
+  the next). It starts early when your 5-hour usage window resets within the hour and less than
+  70% of it is used. Otherwise it runs at the cron time, as before. A scan that already started
+  in the period (early, scheduled or by hand) skips the cron time, and it doesn't start early
+  less than half a period after its last run. It needs a cron schedule, and it waits for the same
+  things a scheduled run waits for.
+  - **When:** **Any time**, or **At night only**: the window must reset between 22:00 and 07:00,
+    in this computer's time zone, as cron uses. The window only resets at night if someone used
+    Claude in the evening, so on other nights the scan runs at the cron time.
+  - The lead time (1 hour), the ceiling (70%) and the night range are fixed. The API takes
+    `lead_minutes` and `max_percent` to change the first two for one scan.
+  - On a hub, it weighs the usage of the Claude account of each runner that could take the scan,
+    and sends the scan to a runner on an account with spare usage.
+  - A run started early says **started early (spare usage)** in the scan's runs.
 - **On a hub.** The hub runs no Claude (see [several computers](several-computers.md#claude-runs-on-each-users-own-runner)): it
   sends each run's Claude part to one of the project's runners of the member the run is for (who
   pressed **Run**, or who last turned its schedule on or changed it), or to a shared runner (see
@@ -179,4 +194,7 @@ Look for vulnerabilities in {{path}} …
   "group", "enqueue"}`. `combine` makes one task for them all; `group` one for each group of
   similar ones (503 if no runner of yours is online).
 - `PATCH /api/projects/{pid}/scans/{name}` changes any scan's schedule and approvals, and
-  `POST …/scans/{name}/run` runs it.
+  `POST …/scans/{name}/run` runs it. `{"early": {"on": true, "when": "any" | "night",
+  "lead_minutes": 0, "max_percent": 0}}` sets **Run early if there's spare usage**; fields left
+  out keep their value, and `0` means the default. The scan's `schedule.early` shows it, and each
+  run's `trigger` is `manual`, `schedule`, `early` or `resume`.

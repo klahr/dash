@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ func (d *Dispatcher) Scan(ctx context.Context, p model.Project, job scan.Job, h 
 	if !ok {
 		return scan.Outcome{}, errors.New("this Dash can't send scans to runners")
 	}
-	r, why, linked := d.scanRunner(p, []int64{job.For})
+	r, why, linked := d.scanRunner(p, []int64{job.For}, job.Account)
 	if !linked {
 		return scan.Outcome{}, fmt.Errorf("no runner works on %s: this hub runs Claude only on runners; give one the labels it runs on, or change them in Project settings → Runners", p.Name)
 	}
@@ -102,7 +103,8 @@ func (d *Dispatcher) Scan(ctx context.Context, p model.Project, job scan.Job, h 
 // runners that are online and not paused. linked is false when p has none
 // at all. A scan runs on Claude Code whatever agent p's tasks run on, so it
 // needs a runner with Claude Code's label (model.Project.OnDefaultAgent).
-func (d *Dispatcher) scanRunner(p model.Project, users []int64) (r *tunnel.Runner, why string, linked bool) {
+// account, if set, takes only runners logged in to that Claude account.
+func (d *Dispatcher) scanRunner(p model.Project, users []int64, account string) (r *tunnel.Runner, why string, linked bool) {
 	p = p.OnDefaultAgent()
 	var cands []tunnel.Runner
 	var reasons, notFor []string
@@ -110,6 +112,10 @@ func (d *Dispatcher) scanRunner(p model.Project, users []int64) (r *tunnel.Runne
 		linked = true
 		if ok, why := x.WorksFor(users); !ok {
 			notFor = append(notFor, why)
+			continue
+		}
+		if account != "" && x.Account() != account {
+			reasons = append(reasons, x.Name+" is on another Claude account")
 			continue
 		}
 		switch {
@@ -266,4 +272,38 @@ func HeldCommands(p model.Project, r tunnel.Runner) map[string]string {
 		}
 	}
 	return held
+}
+
+// ScanSpare lists the Claude accounts of p's runners that could take a
+// scan for the hub's user by now (online, not paused or updating), with
+// each account's freshest usage and why it may not start work, if it may
+// not (scan.Scheduler.Spare). Runners that haven't said which account they
+// are on are left out: an early run needs to know whose usage it spends.
+func (d *Dispatcher) ScanSpare(p model.Project, by int64) []scan.Spare {
+	if d.Pacer == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []scan.Spare
+	for _, x := range tunnel.Serving(d.Fleet.List(), p.OnDefaultAgent()) {
+		acct := x.Account()
+		if ok, _ := x.WorksFor([]int64{by}); !ok || !active(x) || acct == "" || seen[acct] {
+			continue
+		}
+		seen[acct] = true
+		g := d.Pacer.Account(acct)
+		if g == nil {
+			continue
+		}
+		sp := scan.Spare{Account: acct, Hold: g.Stop}
+		if g.Usage != nil {
+			sp.Usage = *g.Usage
+		}
+		if sp.Hold == "" && g.Pace.Waiting() {
+			sp.Hold = g.Pace.Reason()
+		}
+		out = append(out, sp)
+	}
+	slices.SortFunc(out, func(a, b scan.Spare) int { return strings.Compare(a.Account, b.Account) })
+	return out
 }

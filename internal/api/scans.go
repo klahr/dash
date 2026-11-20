@@ -119,7 +119,8 @@ func (s *Server) runScan(w http.ResponseWriter, r *http.Request) {
 // approves the tools and schedule the template asks for: approve_tools and
 // approve_schedule name exactly what the user saw, and are refused if the
 // template asks for something else by now. approve_tools [] withdraws the
-// approval.
+// approval. early changes "Run early if there's spare usage": the fields
+// sent, the others kept.
 func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 	sv, p, ok := s.project(w, r)
 	if !ok {
@@ -131,6 +132,12 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 		Reset           bool      `json:"reset"`
 		ApproveTools    *[]string `json:"approve_tools"`
 		ApproveSchedule *string   `json:"approve_schedule"`
+		Early           *struct {
+			On          *bool   `json:"on"`
+			When        *string `json:"when"`
+			LeadMinutes *int    `json:"lead_minutes"`
+			MaxPercent  *int    `json:"max_percent"`
+		} `json:"early"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
@@ -161,7 +168,7 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 	}
 	apply := func(st *model.ScanSetting) {
 		if req.Reset {
-			st.Enabled, st.Schedule, st.ApprovedSchedule = nil, "", ""
+			st.Enabled, st.Schedule, st.ApprovedSchedule, st.Early = nil, "", "", nil
 		}
 		if req.Schedule != nil {
 			st.Schedule = *req.Schedule
@@ -190,6 +197,31 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 		if req.ApproveTools != nil {
 			st.ApprovedTools = slices.Clone(*req.ApproveTools)
 		}
+		if e := req.Early; e != nil {
+			var x model.EarlyRun
+			if st.Early != nil {
+				x = *st.Early
+			}
+			if e.On != nil {
+				x.On = *e.On
+			}
+			if e.When != nil {
+				x.When = *e.When
+			}
+			if e.LeadMinutes != nil {
+				x.LeadMinutes = *e.LeadMinutes
+			}
+			if e.MaxPercent != nil {
+				x.MaxPercent = *e.MaxPercent
+			}
+			st.Early = &x
+			if *st.Early == (model.EarlyRun{}) {
+				st.Early = nil
+			}
+			if st.ScheduledBy == 0 {
+				st.ScheduledBy = sv.c.User
+			}
+		}
 		if req.Reset || req.Schedule != nil || req.ApproveSchedule != nil || (req.Enabled != nil && *req.Enabled) {
 			// Its scheduled runs are theirs: on a hub, on their runners.
 			st.ScheduledBy = sv.c.User
@@ -201,6 +233,16 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil && *req.Enabled && !scan.Effective(t, next, true).Enabled {
 		writeErr(w, fmt.Errorf("%w: scan %q has no schedule; set one first", errBadRequest, t.Name))
 		return
+	}
+	if next.Early != nil {
+		if err := scan.ValidEarly(*next.Early); err != nil {
+			writeErr(w, fmt.Errorf("%w: early: %w", errBadRequest, err))
+			return
+		}
+		if req.Early != nil && next.Early.On && scan.Effective(t, next, true).Cron == "" {
+			writeErr(w, fmt.Errorf("%w: scan %q has no schedule; set one before it can run early", errBadRequest, t.Name))
+			return
+		}
 	}
 	if _, err := sv.data.SetScanSetting(p.ID, t.Name, apply); err != nil {
 		writeErr(w, err)
