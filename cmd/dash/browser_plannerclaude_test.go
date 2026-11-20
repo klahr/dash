@@ -73,6 +73,11 @@ func TestBrowserPlannerClaude(t *testing.T) {
 		document.querySelector("#runners-sheet .rail-section[data-section=overview]").classList.contains("current")`)
 	shot(b, "planner-runners-wide")
 	b.until("close Runners", `!document.querySelector("#runners-sheet").open`, chromedp.Click(chromedp.CSS(`#runners-sheet .sheet-head button`)))
+	// "pias-mac is connected" sits bottom right, over the chat's Send and the
+	// brief's Next, and a toast under the pointer stays: dismiss it, as a
+	// user would, so the clicks below reach their buttons.
+	b.run("dismiss the toast", `document.querySelectorAll("#toasts .toast-close").forEach((x) => x.click()); true`)
+	b.waitJS("no toast", `!document.querySelector("#toasts .toast")`)
 
 	// The chat, on it.
 	b.waitJS("the composer, on the runner", `!document.querySelector("#pl-chat-form").hidden && document.querySelector("#pl-chat-runner-text").textContent === "On your runner pias-mac"`)
