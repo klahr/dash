@@ -49,6 +49,9 @@ On the board the keys act on the task under the cursor; in an open task, on that
 |----------------------|-------------------------------------------------------------------|
 | `h` `j` `k` `l`      | move the cursor (board); `h`/`l` switch timeline and changes (open task) |
 | `w` `b`              | next / previous lane with tasks                                   |
+| `gg` `G`             | first / last task in the lane                                     |
+| `Ctrl-d` `Ctrl-u`    | scroll half a page                                                |
+| `j` `k`              | scroll (open task)                                                |
 | `Enter`              | approve a task in Review (close it when it changed no files; open its pull request when GitHub reviews it), queue a draft, else open it |
 | `Space`              | open the task                                                     |
 | `a`                  | approve (a task in Review), or close one that changed no files    |
@@ -68,6 +71,19 @@ On the board the keys act on the task under the cursor; in an open task, on that
 | `u`                  | revert a merged task                                              |
 | `gx`                 | open its pull request                                             |
 | `i`                  | type in the task chat                                             |
+
+## Drawing
+
+On a live preview, `P` starts drawing (see [Draw](draw.md)).
+
+| Key                     | Does                             |
+|-------------------------|----------------------------------|
+| `p` `a` `o` `b` `c`     | pen, arrow, circle, box, crop    |
+| `1` `2` `3`             | colour                           |
+| `x`                     | exact capture (desktop Chrome)   |
+| `Ctrl-z`                | undo                             |
+| `Enter`                 | add to the rework notes          |
+| `Esc`                   | done                             |
 
 ## Approvals
 
@@ -92,18 +108,65 @@ On the board the keys act on the task under the cursor; in an open task, on that
 ## History, Goals, Deploys and Checklist
 
 - **History**: `j`/`k` next / previous commit, `gg`/`G` first / last, `n`/`p` next / previous
-  changed file of the open commit, `q`/`Esc` close it.
+  changed file of the open commit, `Ctrl-d`/`Ctrl-u` scroll it, `q`/`Esc` close it.
 - **Goals**: `j`/`k` open the next / previous goal, `q`/`Esc` close it.
 - **Deploys**: `j`/`k` open the next / previous deploy, `q`/`Esc` close it.
 - **Checklist**: `j`/`k` move, `x`/`Space` check, `a` add, `e` edit, `dd` delete, `+`/`-` move up
   or down, `m` move to a draft task, `M` move and queue, `r` read TODO.md again.
 
+## Chat
+
+| Key         | Does                                                                 |
+|-------------|----------------------------------------------------------------------|
+| `Enter`     | send                                                                 |
+| `!command`  | run a shell command in a project or task chat (Claude sees it next turn) |
+| `Esc`       | stop typing; again to close the overlay                              |
+
+## Forms
+
+| Key                     | Does                                                  |
+|-------------------------|-------------------------------------------------------|
+| `Enter`                 | new task sheet: save a draft                          |
+| `Shift-Enter`           | new task sheet: another task                          |
+| `Backspace`             | new task sheet: in an empty field, remove it          |
+| `Ctrl-Enter`            | new task sheet and task form: queue                   |
+| `Ctrl-Shift-Enter` `Ctrl-s` | task form: save a draft                           |
+| `Esc`                   | close or cancel                                       |
+
+On a Mac, `Ctrl` here is `Cmd`.
+
 ## Commands
 
-Type `:` and a command: `:project name`, `:newproject name [path]`, `:task …`, `:new`,
-`:run cmd`, `:shell`, `:try` (the Shell at a commit), `:push`, `:ci`, `:cleanup`, `:pause`,
-`:resume`, `:usage`, `:settings`, `:prefs`, `:connector`, `:perms`, `:board`, `:mine`, `:chat`,
-`:pin`, `:history`, `:clear`, `:notify`, `:vim`, `:list`, `:q`.
+Type `:` and a command.
+
+| Command                         | Does                                                      |
+|---------------------------------|-----------------------------------------------------------|
+| `:project name`                 | switch project (`name@runner` picks the runner)           |
+| `:newproject [name]`            | **Add project**, with the name filled in                  |
+| `:addclone`                     | **Runners**, to add a repository already on your runner   |
+| `:task …`                       | queue a task                                              |
+| `:new [prompt]`                 | the new task form                                         |
+| `:run cmd` `:shell`             | run a command / open the **Shell**                        |
+| `:try`                          | the **Shell** at a commit                                 |
+| `:push`                         | push merged work                                          |
+| `:ci`                           | builds                                                    |
+| `:cleanup`                      | clean up leftovers                                        |
+| `:pause` `:resume`              | pause or resume the whole queue, every project (platform admins only) |
+| `:usage`                        | Claude usage                                              |
+| `:settings` `:prefs`            | **Project settings** / preferences                        |
+| `:connector`                    | connect Claude                                            |
+| `:runners` `:org` `:account`    | **Runners**, **Organization**, **Account**                |
+| `:perms`                        | permission requests                                       |
+| `:board` `:mine`                | the board / only your tasks                               |
+| `:chat` `:pin` `:clear`         | chat: open, pin, clear                                    |
+| `:history`                      | **History**                                               |
+| `:notify` `:vim` `:list`        | notifications, vim keys in the editor, invisibles         |
+| `:refresh`                      | load the projects again                                   |
+| `:help` `:logout`               | the **Keyboard** sheet / sign out                         |
+| `:5`                            | the cursor to the fifth task in the lane                  |
+| `:q`                            | close                                                     |
+
+To pause one project rather than the queue, use **Pause this project** in `Ctrl-k`.
 
 ## Changed keys
 

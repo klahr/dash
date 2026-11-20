@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import { ask, attempt, railOf, toast } from "./dialogs.js";
 import { LANES, projectFirst, state } from "./state.js";
 import { showView } from "./nav.js";
-import { cleanup, loadProjects, openProjects, selectProject } from "./projects.js";
+import { cleanup, isHub, loadProjects, openNewProject, openProjects, selectProject } from "./projects.js";
 import { pushDone } from "./board.js";
 import { closable, closeTodo, hasPriority, laneItems, renderBoard, title, toggleMine } from "./branches.js";
 import { multiMember } from "./people.js";
@@ -16,7 +16,9 @@ import { previewTodo } from "./preview.js";
 import { revertTodo, reworkTodo } from "./drawmode.js";
 import { toggleInvisibles, toggleVim } from "./diffedit.js";
 import { openPrefs } from "./prefs.js";
-import { logout } from "./account.js";
+import { logout, openOrg } from "./account.js";
+import { openAccount } from "./accountsheet.js";
+import { openRunners } from "./runners.js";
 import { openConnector } from "./wallview.js";
 import { toggleNotifications } from "./notifications.js";
 import { renderUsage } from "./usage.js";
@@ -171,24 +173,27 @@ export async function runCommand(line) {
       if (!p) throw new Error(`No project matching "${arg}".`);
       return selectProject(p);
     }
+    // Projects are added on a runner, from the hub's Add project sheet (the
+    // hub keeps none on its own disk): open it, with the name typed.
     case "np": case "newproject": {
-      const [pname, path = ""] = arg.split(/\s+/, 2);
-      if (!pname) throw new Error("Usage: :newproject <name> [path]");
-      const p = await api("POST", "/api/projects", { name: pname, path });
-      const machine = state.project?.machine || state.machines?.[0]?.name;
-      await loadProjects();
-      await selectProject(state.projects.find((x) => x.id === p.id && x.machine === machine));
-      return toast(`Created ${p.name}`);
+      openNewProject();
+      const f = $("#new-project");
+      if (arg && $("#new-project-sheet").open && !f.name.value.trim()) f.name.value = arg;
+      return;
     }
+    // A clone already on a runner is added from that runner's page in Runners:
+    // open yours, when you have one.
     case "ac": case "addclone": {
-      const [path, pname = ""] = arg.split(/\s+/, 2);
-      if (!path) throw new Error("Usage: :addclone <path> [name]");
-      const p = await api("POST", "/api/projects", { existing: true, path, name: pname });
-      const machine = state.project?.machine || state.machines?.[0]?.name;
-      await loadProjects();
-      await selectProject(state.projects.find((x) => x.id === p.id && x.machine === machine));
-      return toast(`Added ${p.name}`);
+      if (!isHub()) throw new Error("Projects are added from the hub's dashboard.");
+      const mine = state.runners.filter((r) => r.mine);
+      await openRunners(mine.length === 1 ? mine[0].id : undefined);
+      return toast(mine.length === 1 ? "Add from this runner… adds a repository already on it" : "Pick your runner, then Add from this runner…");
     }
+    case "runners":
+      if (!isHub()) throw new Error("Runners are on the hub's dashboard.");
+      return openRunners();
+    case "org": case "organization": return openOrg();
+    case "account": return openAccount();
     case "new": case "o":
       need(); openTodoForm(); if (arg) $("#todo-form").prompt.value = arg; return;
     case "todo": case "task":
