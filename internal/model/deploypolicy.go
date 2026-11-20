@@ -162,9 +162,6 @@ func weekly(s string) (time.Weekday, int, bool) {
 	return time.Weekday(slices.Index(weekdays, strings.ToLower(m[1]))), h*60 + mi, true
 }
 
-// Weekly reports whether f repeats every week.
-func (f Freeze) Weekly() bool { _, _, ok := weekly(f.From); return ok }
-
 func (f Freeze) clean() (Freeze, error) {
 	f.From, f.To, f.Note = strings.Join(strings.Fields(f.From), " "), strings.Join(strings.Fields(f.To), " "), strings.TrimSpace(f.Note)
 	if len(f.Note) > 200 {

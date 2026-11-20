@@ -38,7 +38,7 @@ func TestFreezes(t *testing.T) {
 		t.Fatal(err)
 	}
 	e = envs[0]
-	if e.Freezes[0].From != "fri 15:00" || e.Freezes[0].To != "mon 00:00" || !e.Freezes[0].Weekly() || e.Freezes[1].Weekly() {
+	if e.Freezes[0].From != "fri 15:00" || e.Freezes[0].To != "mon 00:00" {
 		t.Fatalf("cleaned: %+v", e.Freezes)
 	}
 	loc, _ := time.LoadLocation("Europe/Stockholm")

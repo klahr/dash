@@ -96,11 +96,8 @@ func GitServerConfig(url, token string) map[string]any {
 	}
 }
 
-// GitTools are git_diff, git_log, git_show and git_blame on the repository
-// checked out in dir.
-func GitTools(dir string) []mcptools.Tool { return gitTools(dir, nil) }
-
-// gitTools is GitTools with env added to git's environment.
+// gitTools are git_diff, git_log, git_show and git_blame on the repository
+// checked out in dir, with env added to git's environment.
 func gitTools(dir string, env []string) []mcptools.Tool {
 	pathsParam := mcptools.Param{Name: "paths", Type: "array", Desc: "Limit to these files or directories (relative to the repository root)."}
 	return []mcptools.Tool{

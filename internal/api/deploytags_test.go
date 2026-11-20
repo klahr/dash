@@ -256,8 +256,8 @@ func TestReleaseTagsOnly(t *testing.T) {
 	if n := len(raw(s).ListDeploys(p.ID, "merged")); n != 1 { // the one from before
 		t.Errorf("on: merge deploys: %d", n)
 	}
-	if e, _ := p.Environment("merged"); !e.MergeDeploysHeld() || e.DeploysOnMerge() {
-		t.Errorf("merged: held %v, deploys on merge %v", e.MergeDeploysHeld(), e.DeploysOnMerge())
+	if e, _ := p.Environment("merged"); e.Trigger != model.EnvTriggerMerge || !e.ReleaseTagsOnly || e.DeploysOnMerge() {
+		t.Errorf("merged: trigger %q, release tags only %v, deploys on merge %v", e.Trigger, e.ReleaseTagsOnly, e.DeploysOnMerge())
 	}
 	staging, _ := p.Environment("staging")
 	if d, err := s.as(Caller{Org: p.OrgID}).requestDeploy(p, deployAsk{Environment: "staging", Commit: c[3], Trigger: model.DeployByRelease, TriggerRef: "2.0.0"}); err != nil || d.Tag != "2.0.0" {

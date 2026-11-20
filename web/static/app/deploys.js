@@ -23,7 +23,7 @@ export const DEPLOY_STATUS = {
   awaiting_approval: "Awaiting approval", rejected: "Rejected",
 };
 const ACTIVE = ["building", "deploying", "verifying"];
-const TRIGGER = { user: "", merge: "after a merge", release: "for a release", goal: "for a goal", auto_rollback: "automatically, its checks failed", agent: "by Claude" };
+const TRIGGER = { user: "", merge: "after a merge", release: "for a release", auto_rollback: "automatically, its checks failed", agent: "by Claude" };
 const ENV_TRIGGER = { merge: "Deploys each merge to the default branch", release: "Deploys each release tag" };
 
 // startedBy says who or what started deploy d: "by ana", "by Claude for

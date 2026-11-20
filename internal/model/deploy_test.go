@@ -103,7 +103,7 @@ func TestCleanEnvironmentChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := out[0]
-	if e.HealthPath != "/healthz" || e.VerifyCommand != "./smoke" || e.HealthURL(e.URL) != "https://example.com/healthz" || e.HealthWait() != 30*time.Second {
+	if e.HealthPath != "/healthz" || e.VerifyCommand != "./smoke" || e.HealthWait() != 30*time.Second {
 		t.Errorf("cleaned %+v", e)
 	}
 	if !strings.Contains(DeployScripts(out), "verify: ./smoke") {

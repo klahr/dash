@@ -85,7 +85,7 @@ type Environment struct {
 	Trigger string `json:"trigger,omitempty"`
 	// ReleaseTagsOnly: a deploy here must be of a commit with a release tag
 	// (in the project's tag format), whatever asks for it; a rollback too.
-	// Merges deploy nothing while it is on (MergeDeploysHeld), and a release
+	// Merges deploy nothing while it is on (see DeploysOnMerge), and a release
 	// tag's own deploy always may.
 	ReleaseTagsOnly bool `json:"release_tags_only,omitempty"`
 }
@@ -98,14 +98,8 @@ const (
 )
 
 // DeploysOnMerge reports whether e deploys each merge to the default branch
-// (not while it takes release tags only: see MergeDeploysHeld).
+// (not while it takes release tags only).
 func (e Environment) DeploysOnMerge() bool { return e.Trigger == EnvTriggerMerge && !e.ReleaseTagsOnly }
-
-// MergeDeploysHeld reports whether e is set to deploy each merge but takes
-// release tags only, so its merges deploy nothing.
-func (e Environment) MergeDeploysHeld() bool {
-	return e.Trigger == EnvTriggerMerge && e.ReleaseTagsOnly
-}
 
 // DeploysOnRelease reports whether e deploys each release tag.
 func (e Environment) DeploysOnRelease() bool { return e.Trigger == EnvTriggerRelease }
@@ -124,15 +118,6 @@ func (e Environment) HasCommands() bool {
 
 // ClearCommands empties what e runs (held on a runner that mustn't run it).
 func (e *Environment) ClearCommands() { e.DeployCommand, e.BuildCommand, e.VerifyCommand = "", "", "" }
-
-// HealthURL is what e's health check asks for at url (a deploy's, else
-// e's own): url with HealthPath on it ("" without a url).
-func (e Environment) HealthURL(url string) string {
-	if url == "" || e.HealthPath == "" {
-		return url
-	}
-	return strings.TrimRight(url, "/") + e.HealthPath
-}
 
 // HealthWait is how long e's health check keeps trying.
 func (e Environment) HealthWait() time.Duration {
@@ -361,7 +346,6 @@ const (
 	DeployByUser    = "user"
 	DeployByMerge   = "merge"
 	DeployByRelease = "release"
-	DeployByGoal    = "goal"
 	// DeployByAutoRollback: Dash rolled back a deploy whose checks failed
 	// (Environment.AutoRollback).
 	DeployByAutoRollback = "auto_rollback"

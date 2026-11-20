@@ -52,7 +52,7 @@ func gitRepo(t *testing.T) string {
 
 func gitTool(t *testing.T, dir, name string) mcptools.Tool {
 	t.Helper()
-	for _, tool := range GitTools(dir) {
+	for _, tool := range gitTools(dir, nil) {
 		if tool.Name == name {
 			return tool
 		}
