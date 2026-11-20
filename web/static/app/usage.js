@@ -118,7 +118,7 @@ function renderPace(p) {
   box.checked = follow;
   box.disabled = hub && !p.account;
   $("#pace-help").textContent = hub
-    ? "Paces every runner logged in to your Claude account as one budget: no new tasks while ahead of the pace line, more at once while behind."
+    ? "Paces every runner on your Claude account as one budget: no new tasks while ahead of the pace line, more at once while behind."
     : "Keeps weekly usage on the pace line: no new tasks while ahead of it, more at once while behind.";
   const acct = $("#pace-account");
   acct.hidden = !hub;

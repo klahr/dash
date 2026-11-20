@@ -311,10 +311,14 @@ function chatSendButton(c, form, mode, composing) {
 function chatSuggestion(c, input, form, att, mode) {
   const placeholder = input.placeholder, placeholderTitle = input.title, inputLabel = input.getAttribute("aria-label");
   c.suggestion = "";
+  // A small cue beside the grayed-out suggestion: Tab takes it to edit.
+  const cue = h("div", { class: "suggest-cue", "aria-hidden": "true", hidden: true }, h("kbd", {}, "Tab"), " to edit");
+  form.prepend(cue);
   // A suggestion is for the chat: a message sent elsewhere doesn't show it.
   const shown = () => !!c.suggestion && !input.value && !att.items().length && !mode()?.send;
   const show = () => {
     const on = shown();
+    cue.hidden = !on;
     input.placeholder = on ? c.suggestion : mode()?.placeholder || placeholder;
     if (inputLabel) input.setAttribute("aria-label", mode()?.inputLabel || inputLabel);
     input.title = on ? (matchMedia("(pointer: coarse)").matches ? "Send sends this suggestion" : "Enter sends this suggestion; Tab puts it in the box to edit") : placeholderTitle;

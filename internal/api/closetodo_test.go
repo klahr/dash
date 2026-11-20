@@ -60,7 +60,7 @@ func TestCloseTaskWithoutChanges(t *testing.T) {
 	}
 }
 
-// The project's "Close tasks that change no files" is saved like its other settings.
+// The project's "Skip Review for tasks that change no files" is saved like its other settings.
 func TestProjectCloseNoChangesSetting(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")

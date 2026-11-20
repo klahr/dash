@@ -48,7 +48,8 @@ it answers it; if Claude offered something, it accepts or turns it down. It neve
 message or asks for something Claude already did, such as a task it just created or queued.
 
 - <kbd>Enter</kbd> or **Send** sends the suggestion as it is.
-- <kbd>Tab</kbd> puts it in the box, so you can edit it before sending.
+- <kbd>Tab</kbd> puts it in the box, so you can edit it before sending. A small *Tab to edit*
+  cue shows above the box while there is a suggestion.
 - Typing hides it. Erase what you wrote and it shows again.
 - Sending or a new reply clears it. No suggestion shows when no reply clearly fits, for example
   after a finished answer with no question or offer.

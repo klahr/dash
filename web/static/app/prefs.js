@@ -103,7 +103,7 @@ export function connectorSteps(c) {
         "Dash's sign-in page opens. Sign in as you do here, then choose Allow.",
         org ? ` If you're in several organizations, pick the one Claude should work in (you're in ${org} now).` : " If you're in several organizations, pick the one Claude should work in.")),
       step("Use it in a chat.", h("p", { class: "hint" }, "Turn Dash on in the chat's tools menu. The connector also works in the Claude desktop and mobile apps."))),
-    h("p", { class: "hint" }, "A connector stays signed in while it's used at least every 30 days. Revoke it under Tokens & apps; changing your password signs every connector out."),
+    h("p", { class: "hint" }, "Changing your password signs every connector out."),
     h("footer", { class: "sheet-actions" },
       h("button", { class: "btn", type: "button", onclick: attempt(openConnector) }, ico("redo"), "Check again")),
   ];

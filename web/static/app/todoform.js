@@ -259,10 +259,10 @@ function openSplit(parts) {
   const one = parts.length === 1;
   const g = split.goal;
   $("#split-hint").textContent = g
-    ? `The coordinator proposes ${plural(parts.length, "task")} for “${g.title}”. Edit, remove or add tasks and set which ones each waits for; nothing is made until you save.`
+    ? `The coordinator proposes ${plural(parts.length, "task")} for “${g.title}”. Nothing is made until you save.`
     : (one
-      ? "Claude thinks this is small enough for one task. Add more below if you still want to split it."
-      : `Claude proposes ${parts.length} tasks. Edit, remove or add tasks; nothing is saved until you do.`)
+      ? "Claude thinks this is small enough for one task."
+      : `Claude proposes ${parts.length} tasks. Nothing is saved until you do.`)
       + (editing ? ` They replace “${title(editing)}”.` : "");
   $("#split-replan").hidden = !g;
   renderSplit();

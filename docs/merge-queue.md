@@ -25,8 +25,8 @@ back for rework.
 When many tasks are approved at once, each one waits for a full test run. A batch tests several
 of them in one run instead. It is off by default.
 
-To turn it on, set **Project settings → Approval & push → Merge queue batch size** to more than 1
-(at most 10). The setting shows in "Merge it" mode only: in pull request mode GitHub merges the
+To turn it on, set **Project settings → Approval & push → Test approved tasks** to **Up to N
+together** (at most 10). **One at a time** turns it off. The setting shows in "Merge it" mode only: in pull request mode GitHub merges the
 work, and a project that runs on runners merges one task at a time.
 
 With more than one approved task waiting, Dash:

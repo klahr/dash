@@ -145,7 +145,7 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    merge. Its card in *Review* says *No changes* and shows Claude's answer. Click **Close** to
    close it, or **Ask for changes…** to send Claude a message and have it run again. A closed task
    is in *Merged*, marked *Closed · no changes*, with no commit. To skip Review for these tasks,
-   see [Close tasks that change no files](docs/boards.md#close-tasks-that-change-no-files).
+   see [Skip Review for tasks that change no files](docs/boards.md#skip-review-for-tasks-that-change-no-files).
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 

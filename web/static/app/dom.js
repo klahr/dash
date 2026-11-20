@@ -54,6 +54,13 @@ export const h = (tag, props = {}, ...kids) => {
 // fill replaces el's children like replaceChildren, but skips null/false kids
 // the way h() does (replaceChildren would print them as "null"/"false").
 export const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
+// docsURL is the address of a page in docs/ ("deploys.md#secrets").
+export const docsURL = (page) => `https://github.com/klahr/dash/blob/main/docs/${page}`;
+// docsLink is a "Learn more" style link to a page in docs/.
+export const docsLink = (page, text = "Learn more") => h("a", { href: docsURL(page), target: "_blank", rel: "noopener" }, text);
+// The page's own docs links name their page in data-docs: index.html
+// links to no other site itself.
+for (const a of document.querySelectorAll("a[data-docs]")) a.href = docsURL(a.dataset.docs);
 // entering marks a node just arriving (not one redrawn from history) so it
 // animates in once; the class goes when its animation ends, so showing a
 // hidden pane again doesn't replay it.

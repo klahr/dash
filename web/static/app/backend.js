@@ -49,9 +49,9 @@ function renderBoardForm() {
   const native = !!reg.native;
   const saved = cfg.backend || "dash";
   const same = name === saved;
-  $("#board-backend-hint").textContent = native
-    ? (st.backends.length > 1 ? "Tasks are planned on Dash's board." : "Tasks are planned on Dash's board. External trackers such as Trello and Jira appear here as their backends are added.")
-    : `Tasks are planned in ${reg.label || name}: titles, descriptions, priority, dependencies, status and comments sync both ways. Runs, reviews, checks and costs stay in Dash.`;
+  const backendHint = $("#board-backend-hint");
+  backendHint.textContent = native ? "" : "Runs, reviews, checks and costs stay in Dash.";
+  backendHint.hidden = native;
   $("#board-external").hidden = native;
   const values = same && cfg.config ? cfg.config : {};
   const fields = reg.fields || [];

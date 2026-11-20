@@ -41,7 +41,7 @@ async function loadNotify() {
 function renderNotify() {
   const s = view.settings;
   const org = state.me?.org?.name;
-  $("#notify-intro").textContent = `Kept for you in ${org || "this organization"}, on every device you sign in on.`;
+  $("#notify-intro").textContent = `Kept for you in ${org || "this organization"}, on every device.`;
   const off = $("#notify-off");
   off.hidden = view.enabled;
   off.textContent = view.enabled ? "" : "This Dash doesn't send summaries (a runner: its hub does).";
@@ -78,9 +78,9 @@ function renderDests(dests) {
     ? view.webhooks.map((w) => h("label", { class: "toggle notify-dest-hook" },
       h("input", { type: "checkbox", name: "dest", value: w.id, checked: dests.has(w.id) }),
       h("span", {}, hookName(w), h("em", {}, ` · ${WEBHOOK_FORMATS[w.format] || w.format}${w.enabled ? "" : " · paused"}`))))
-    : h("p", { class: "hint" }, "No webhooks yet: add one under ", h("button", { type: "button", class: "link inline",
-      onclick: () => $("#notify-webhooks").scrollIntoView({ block: "start", behavior: "smooth" }) }, "Webhooks"), " to get the summary in Slack or ntfy."));
+    : null);
 }
+$("#notify-dest-add").addEventListener("click", () => $("#me-webhook-add").click());
 
 // syncNotify shows what applies to the choices made so far.
 function syncNotify() {

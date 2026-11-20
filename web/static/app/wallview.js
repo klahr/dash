@@ -38,7 +38,6 @@ async function loadWall() {
   f.privacy.checked = !!saved.privacy;
   wall.secret = "";
   $("#wall-token-secret").hidden = true;
-  $("#wall-org").textContent = state.me.org.name;
   renderWallLink();
   await renderWallTokens();
 }
@@ -49,7 +48,7 @@ function renderWallLink() {
     h("div", { class: "copy-row" },
       h("code", { class: "copy-text" }, url),
       h("a", { class: "btn small shrink", href: url, target: "_blank", rel: "noopener" }, ico("external"), "Open")),
-    h("p", { class: "hint" }, "Opened signed in, it shows your active organization. On a TV, use a TV link below instead."));
+    h("p", { class: "hint" }, "It needs you signed in: a TV needs a TV link."));
   if (wall.secret) {
     const link = wallURL(wall.secret);
     $("#wall-token-secret").replaceChildren(

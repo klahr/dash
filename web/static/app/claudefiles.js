@@ -1,4 +1,4 @@
-import { $, h, ib } from "./dom.js";
+import { $, fill, h, ib } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -13,12 +13,12 @@ import { loadFiles, newFile, openFile } from "./files.js";
 // CLAUDE.local.md). They are shortcuts into the file editor, not settings:
 // saving a tracked file opens a task that commits it, like any edit there.
 const CLAUDE_GROUPS = [
-  { kind: "claude_md", title: "CLAUDE.md", note: "The root file only: project instructions Claude Code reads at the start of every session." },
-  { kind: "skill", title: "Skills", note: "One folder per skill under .claude/skills, each with a SKILL.md.", add: "New skill" },
-  { kind: "agent", title: "Subagents", note: "Markdown files under .claude/agents.", add: "New subagent" },
-  { kind: "mcp", title: "MCP servers", note: "Servers shared with everyone who works on the repo." },
-  { kind: "settings", title: "Hooks & permissions", note: "Shared Claude Code settings: hooks, permission rules and more." },
-  { kind: "local_md", title: "CLAUDE.local.md", note: "Your personal instructions, kept out of git." },
+  { kind: "claude_md", title: "CLAUDE.md" },
+  { kind: "skill", title: "Skills", add: "New skill" },
+  { kind: "agent", title: "Subagents", add: "New subagent" },
+  { kind: "mcp", title: "MCP servers", note: "Shared with everyone who works on the repo." },
+  { kind: "settings", title: "Hooks & permissions", note: "Shared with everyone who works on the repo." },
+  { kind: "local_md", title: "CLAUDE.local.md", note: "Yours only, kept out of git." },
 ];
 const CLAUDE_TEMPLATES = {
   "CLAUDE.md": "# CLAUDE.md\n\nGuidance for Claude Code in this repository.\n\n## Commands\n\n## Architecture\n\n## Conventions\n",
@@ -43,7 +43,7 @@ export async function loadClaudeFiles() {
 
 function renderClaudeFiles(res) {
   const p = state.project;
-  $("#claude-files-hint").textContent = `Files Claude Code reads from the project, as on ${res.branch}. Edit opens them in the file editor: saving a tracked file opens a task to commit the change; files git doesn't track are saved straight to disk.`;
+  fill($("#claude-files-branch"), res.branch ? h("code", {}, res.branch) : "");
   const groups = CLAUDE_GROUPS.map((g) => {
     const files = res.files.filter((f) => f.kind === g.kind);
     if (g.kind === "local_md" && !files.length) return null;
@@ -52,7 +52,7 @@ function renderClaudeFiles(res) {
       g.add ? ib({ type: "button", class: "btn small", onclick: () => newClaudeItem(g.kind).catch(fail) }, "plus", g.add) : null);
     const rows = files.map((f) => claudeFileRow(f, p));
     if (!rows.length) rows.push(h("li", { class: "claude-file empty" }, h("span", { class: "hint" }, g.kind === "skill" ? "No skills yet." : "No subagents yet.")));
-    return h("section", { class: "claude-group" }, head, h("p", { class: "hint" }, g.note), h("ul", { class: "claude-file-list" }, rows));
+    return h("section", { class: "claude-group" }, head, g.note ? h("p", { class: "hint" }, g.note) : null, h("ul", { class: "claude-file-list" }, rows));
   });
   $("#claude-files").replaceChildren(...groups.filter(Boolean));
 }
@@ -99,7 +99,7 @@ function localMdWarning(p) {
       }) }, "Add to copy_files"));
   }
   box.append(h("p", { class: "hint warn" }, p.runs_on?.length
-    ? "This project's tasks run on runners, which never get this file: put what they need in CLAUDE.md or the extra instructions below."
+    ? "This project's tasks run on runners, which never get this file: put what they need in CLAUDE.md or in Extra instructions for Dash tasks."
     : "Runners never get this file, even when it is copied."));
   return box;
 }

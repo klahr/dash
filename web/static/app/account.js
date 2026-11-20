@@ -102,8 +102,7 @@ async function renderOrg() {
     $("#org-slug").value = org.org.slug;
   }
   $("#org-role").textContent = `You are ${ROLE_ARTICLE[mine] || "a member"} of ${org.org.name}.` +
-    (org.org.personal ? " This is your personal workspace: create an organization to work with others." :
-      manage ? " Owners and admins invite people and change roles; only owners make owners." : "");
+    (org.org.personal ? " This is your personal workspace: create an organization to work with others." : "");
   const roleSelect = (m) => {
     const sel = h("select", { "aria-label": `Role of ${m.username}`, class: "org-role-select" },
       ...Object.keys(ROLE_LABEL).filter((r) => RANK[r] <= RANK[mine]).map((r) => h("option", { value: r, selected: r === m.role }, ROLE_LABEL[r])));
@@ -197,7 +196,7 @@ async function renderOrgSSO(o, mine) {
   };
   const status = s.available
     ? (s.own_client ? `Members sign in with ${o.name}'s own Google client.` : "Members can sign in with this Dash's Google client.")
-    : "Google sign-in isn't set up: this Dash has no Google client. An owner can enter the organization's own below.";
+    : "Google sign-in isn't set up: this Dash has no Google client.";
 
   // Domains
   const domainInput = h("input", { type: "text", placeholder: "example.com", autocomplete: "off", spellcheck: false, "aria-label": "Google Workspace domain" });
@@ -214,7 +213,7 @@ async function renderOrgSSO(o, mine) {
     h("span", { class: "runner-name" }, d.domain),
     h("span", { class: `item-sub hint ${d.verified ? "tag-ok" : "tag-wait"}` }, d.verified
       ? `Verified${d.how === "admin" ? " by a platform admin" : d.how === "dns" ? " by its DNS record" : d.how === "google" ? " by an owner's Google sign-in" : ""}`
-      : "Not verified yet: add the TXT record below to its DNS, or a platform admin approves it"),
+      : "Not verified yet: add the TXT record to its DNS, or a platform admin approves it"),
     !d.verified && d.token ? h("button", { class: "btn small", type: "button", onclick: attempt(async () => {
       await api("POST", `/api/orgs/${o.id}/sso/domains/${encodeURIComponent(d.domain)}/check`, {}, "");
       toast(`${d.domain} verified`, { tone: "ok" });
@@ -366,7 +365,7 @@ export async function sendInvite() {
   $("#org-invite-link").replaceChildren(
     h("p", {}, `Send ${email} this link. Dash doesn't email it.`),
     copyBlock(link, "Invitation link copied", { pre: true }),
-    h("p", { class: "hint" }, `Whoever opens it can join as ${ROLE_LABEL[role].toLowerCase()}, with an account they have or a new one, so share it only with them. It works once, for 7 days; inviting the same address again replaces it.`));
+    h("p", { class: "hint" }, `Whoever opens it can join as ${ROLE_LABEL[role].toLowerCase()}, so share it only with them. It works once, for 7 days.`));
   $("#org-invite-link").hidden = false;
   $("#org-invite-email").value = "";
   await renderOrg();

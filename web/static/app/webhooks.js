@@ -193,11 +193,13 @@ function syncWebhookForm() {
   f.token.placeholder = w?.has_token ? "Saved: type a new one to replace it" : "";
   f.url.placeholder = { slack: "https://hooks.slack.com/services/…", ntfy: "https://ntfy.sh/my-dash-topic", json: "https://example.com/dash-webhook" }[fmt];
   const priv = info && !info.allow_private ? " Private and local network addresses aren't allowed on this Dash." : "";
-  $("#webhook-format-hint").textContent = {
-    slack: "A short message with a link to the task.",
-    ntfy: "Approvals and failures arrive with high priority; tapping opens the task. Approval requests get Approve and Deny buttons that work for 15 minutes.",
+  const hint = $("#webhook-format-hint");
+  hint.textContent = ({
+    slack: "",
+    ntfy: "Approval requests get Approve and Deny buttons that work for 15 minutes.",
     json: "Dash shows the signing secret once, after you save.",
-  }[fmt] + priv;
+  }[fmt] + priv).trim();
+  hint.hidden = !hint.textContent;
 }
 $("#webhook-form").addEventListener("change", (e) => { if (e.target.name === "format") syncWebhookForm(); });
 $("#webhook-add").addEventListener("click", () => editWebhook(null, hookScopes.project));

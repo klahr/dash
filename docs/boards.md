@@ -20,7 +20,7 @@ interface the tracker backends are written against (`internal/tracker`).
 A project whose stored backend this Dash doesn't have (one that was
 removed) is treated as being on Dash's own board, and the hub logs it.
 
-## Close tasks that change no files
+## Skip Review for tasks that change no files
 
 When Claude finishes a task without changing any files, the task waits in *Review* with a
 *No changes* badge and Claude's answer on its card. There is nothing to merge:
@@ -29,8 +29,8 @@ When Claude finishes a task without changing any files, the task waits in *Revie
   no tests run.
 - **Ask for changes…** sends Claude a message. It continues in the same worktree and runs again.
 
-To skip Review for these tasks, turn on **Project settings → Board → Close tasks that change no
-files**. It is off by default. A task that changes no files is then closed as soon as Claude
+To skip Review for these tasks, turn on **Project settings → Board → Skip Review for tasks that
+change no files**. It is off by default. A task that changes no files is then closed as soon as Claude
 finishes, with Claude's answer in its chat. To ask for more, add a task that builds on it.
 Tasks that change files go to Review as before.
 

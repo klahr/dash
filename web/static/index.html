@@ -806,7 +806,7 @@
       <header class="sheet-head"><h2 id="quick-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint warn runner-note" id="quick-runner-note" hidden></p>
       <div class="quick-rows" id="quick-rows"></div>
-      <p class="hint quick-hint"><kbd>Enter</kbd> save draft · <kbd><span data-mod>Ctrl</span>-Enter</kbd> queue · <kbd>Shift-Enter</kbd> another task · Claude names each task.</p>
+      <p class="hint quick-hint"><kbd>Enter</kbd> save draft · <kbd><span data-mod>Ctrl</span>-Enter</kbd> queue · <kbd>Shift-Enter</kbd> another task</p>
       <div class="quick-tools">
         <button class="link" type="button" id="quick-another" data-icon="plus">Another task</button>
         <button class="link" type="button" id="quick-goal" data-icon="target">New goal…</button>
@@ -880,7 +880,6 @@
           <label class="field inline"><span>Max tasks</span><input type="number" name="max_tasks" min="0" max="1000" step="1" placeholder="None" inputmode="numeric"></label>
           <label class="field inline"><span>Share of weekly usage %</span><input type="number" name="weekly_share" min="0" max="100" step="1" placeholder="None" inputmode="numeric"></label>
         </div>
-        <p class="hint">Max tasks caps how many tasks it may make. Share of weekly usage caps how much of the weekly usage window its tasks may use.</p>
       </fieldset>
       <fieldset class="field choice">
         <legend>Its tasks</legend>
@@ -926,7 +925,7 @@
                  then one of the sources below for the repository, and Launch. -->
             <section class="rail-section" data-section="plan">
               <div class="plan-home" id="plan-home">
-                <p class="hint np-lead">Describe an idea in a sentence or two. Claude asks about the decisions you haven't made yet, a few at a time, each with a suggested answer, and writes a project brief as you go. Then Dash creates the project, commits the brief and starts a goal from it.</p>
+                <p class="hint np-lead">Claude asks about what you haven't decided yet and writes a brief to start the project from. <a data-docs="plan-project.md" target="_blank" rel="noopener">Learn more</a></p>
                 <button type="button" class="btn primary plan-new" id="plan-new" data-icon="spark">New plan</button>
                 <h3 class="plan-drafts-head" id="plan-drafts-head" hidden>Drafts</h3>
                 <ul class="plan-drafts" id="plan-drafts"></ul>
@@ -970,13 +969,13 @@
                   <div class="plan-open" id="plan-open"></div>
                 </div>
                 <div class="plan-pane" data-step="repo">
-                  <p class="hint np-lead">Where does the repository come from? Pick a source, fill it in, and come back with <strong>Use for the plan</strong>.</p>
+                  <p class="hint np-lead">Where does the repository come from?</p>
                   <div class="plan-sources" id="plan-sources"></div>
                   <p class="np-picked" id="plan-repo" hidden></p>
                 </div>
                 <div class="plan-pane" data-step="launch">
                   <dl class="plan-summary" id="plan-summary"></dl>
-                  <p class="hint">Launch adds the project, commits <code>BRIEF.md</code> and a starter <code>CLAUDE.md</code>, and starts a goal from the brief: its coordinator reads them and proposes the first tasks for you to check.</p>
+                  <p class="hint">Launch commits these two files and starts a goal that proposes the first tasks.</p>
                   <details class="np-advanced"><summary>BRIEF.md</summary><div class="md plan-brief-md" id="plan-launch-brief"></div></details>
                   <details class="np-advanced"><summary>CLAUDE.md</summary><div class="md plan-brief-md" id="plan-launch-claude"></div></details>
                 </div>
@@ -998,7 +997,7 @@
               <label class="field"><span>Git remote</span><input name="remote_url" placeholder="https://github.com/owner/repo.git or git@host:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
             </section>
             <section class="rail-section" data-section="local">
-              <p class="hint np-lead">A new git repository with a first commit, in <span id="new-project-local-where">the runner</span>'s projects folder. It has no remote and stays on that runner; deleting the project deletes its folder too.</p>
+              <p class="hint np-lead">No remote: it stays on <span id="new-project-local-where">the runner</span>, and deleting the project deletes its folder.</p>
             </section>
             <div class="np-common">
               <p class="np-plan-note" id="new-project-plan-note" hidden></p>
@@ -1010,13 +1009,12 @@
                 <div class="field" id="new-project-runs-on-row"><span>Runs on <em>runners with every label</em></span><input type="hidden" name="runs_on"></div>
                 <p class="hint" id="new-project-runs-on-hint"></p>
                 <label class="field" id="new-project-clone-row"><span>Clone URL <em>optional, used as it is</em></span><input name="clone_url" placeholder="e.g. git@github-deploy:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
-                <p class="hint" id="new-project-clone-hint">Used as it is, a URL only. How runners clone: see docs/several-computers.md.</p>
+                <p class="hint" id="new-project-clone-hint"><a data-docs="several-computers.md" target="_blank" rel="noopener">How runners clone</a></p>
                 <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
                 <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
                 <label class="field"><span>Deploy command <em>a bash script; it becomes the environment production (more in Project settings → Deploy)</em></span><textarea name="deploy_command" class="script-field" rows="4" placeholder="set -e&#10;npm run build&#10;./deploy.sh production" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></label>
                 <div class="field" id="new-project-deploy-runs-on-row"><span>Deploy runs on <em>empty: any runner above</em></span><input type="hidden" name="deploy_runs_on"></div>
                 <p class="hint" id="new-project-deploy-runs-on-hint"></p>
-                <p class="hint">You can set or change the commands later in Project settings.</p>
               </details>
             </div>
           </div>
@@ -1040,8 +1038,7 @@
       <header class="sheet-head"><h2 id="scan-sheet-title">Create custom scan</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
             <p class="hint" id="scan-form-from" hidden></p>
       <label class="field"><span>Title</span><input name="title" required autocomplete="off" placeholder="e.g. API error handling"></label>
-      <label class="field"><span>What should it look for?</span><textarea name="prompt" rows="8" required class="scan-prompt" placeholder="e.g. Find HTTP handlers that return internal error messages to the client, or that don't check the request body's size. Point out each handler and say what to change."></textarea></label>
-      <p class="hint">Dash adds how to report findings, so this only needs to say what to look for. It scans the whole repository with read-only tools unless you change that below.</p>
+      <label class="field"><span>What should it look for? <em>Dash adds how to report findings</em></span><textarea name="prompt" rows="8" required class="scan-prompt" placeholder="e.g. Find HTTP handlers that return internal error messages to the client, or that don't check the request body's size. Point out each handler and say what to change."></textarea></label>
       <details class="np-advanced scan-advanced" id="scan-advanced">
         <summary>Advanced</summary>
         <div class="scan-form-grid">
@@ -1063,7 +1060,7 @@
           <label class="field"><span>Schedule <em>cron; empty: run by hand</em></span><input name="schedule" autocomplete="off" spellcheck="false" placeholder="0 6 * * *"></label>
         </div>
         <label class="field"><span>Tools <em>one per line; empty: read-only tools and Dash's git tools</em></span><textarea name="tools" rows="2" spellcheck="false" placeholder="Bash(npm audit:*)"></textarea></label>
-        <p class="hint">In the prompt, <code>{{path}}</code> becomes the path scanned (<code>.</code> for the whole repository) and <code>{{since}}</code> the commit an incremental scope compares with. A schedule runs once saved; you can turn it off in the list.</p>
+        <p class="hint">In the prompt, <code>{{path}}</code> is the path scanned and <code>{{since}}</code> the commit an incremental scope compares with.</p>
       </details>
       <footer class="sheet-actions">
         <button class="btn primary" value="save" data-icon="check">Save scan</button>
@@ -1075,13 +1072,13 @@
   <dialog class="sheet small" id="delete-project-sheet" aria-labelledby="delete-project-title">
     <form method="dialog" id="delete-project">
       <header class="sheet-head"><h2 id="delete-project-title">Delete project</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
-      <p class="hint">Its tasks, chats and worktrees are removed from Dash. Tasks running or merging must finish first.</p>
+      <p class="hint">Removes its tasks, chats and worktrees from Dash; running or merging tasks must finish first.</p>
       <fieldset class="field choice">
         <legend>Local clone</legend>
         <label class="radio"><input type="radio" name="files" value="keep" checked><span>Keep the folder <em id="delete-project-path"></em></span></label>
         <label class="radio"><input type="radio" name="files" value="delete"><span>Delete the folder <em>everything in it, including uncommitted and unpushed work</em></span></label>
       </fieldset>
-      <p class="hint" id="delete-local-only" hidden>A local-only project: its folder <em id="delete-local-path"></em> is deleted with it, with everything in it.</p>
+      <p class="hint" id="delete-local-only" hidden>Its folder <em id="delete-local-path"></em> is deleted, with everything in it.</p>
       <label class="toggle" id="delete-github-row"><input type="checkbox" name="github"><span>Also delete the GitHub repository</span></label>
       <p class="hint" id="delete-github-hint"></p>
       <label class="field"><span>Password <em>to confirm</em></span><input type="password" name="password" required autocomplete="current-password"></label>
@@ -1097,7 +1094,7 @@
       <header class="sheet-head"><h2 id="usage-title" tabindex="-1" autofocus>Claude usage</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="usage-reason"></p>
       <div class="meters" id="usage-meters"></div>
-      <p class="hint">The queue pauses automatically when a window's limit is reached. Platform admins pause it by hand in the project menu.</p>
+      <p class="hint">The queue pauses when a window's limit is reached.</p>
       <section class="pace-settings" aria-labelledby="pace-follow-label">
         <label class="toggle"><input type="checkbox" id="pace-follow"><span id="pace-follow-label">Follow weekly pace</span></label>
         <p class="hint" id="pace-help">Keeps weekly usage on the pace line: no new tasks while ahead of it, more at once while behind.</p>
@@ -1152,7 +1149,7 @@
           <p class="hint" id="release-custom-hint"></p>
         </fieldset>
         <label class="field"><span>Release notes <em>the tag's message; from the tasks merged since the last release</em></span><textarea name="notes" rows="7" spellcheck="true"></textarea></label>
-        <p class="hint">Dash creates an annotated tag on this commit and pushes it to origin, which starts the repository's release workflow.</p>
+        <p class="hint">Pushing the tag starts the repository's release workflow.</p>
       </div>
       <footer class="sheet-actions">
         <button class="btn primary" value="ok" data-icon="tag" id="release-ok" disabled>Tag and push</button>
@@ -1195,11 +1192,10 @@
         </nav>
         <div class="rail-main">
           <section class="rail-section" data-section="general">
-            <label class="field"><span>Name <em>shown in the project lists</em></span><input name="name" required maxlength="200" autocomplete="off" spellcheck="false"></label>
-            <p class="hint">Only the name Dash shows: the repository and its folder keep theirs.</p>
+            <label class="field"><span>Name <em>in Dash only; the repository keeps its name</em></span><input name="name" required maxlength="200" autocomplete="off" spellcheck="false"></label>
             <!-- One picker: None, a few colors (app/settings.js adds them) or any other color. -->
             <fieldset class="field choice color-pick" id="settings-color">
-              <legend>Project color <em>marks the top bar and the project lists, so you can tell projects apart at a glance</em></legend>
+              <legend>Project color</legend>
               <div class="swatches" id="settings-swatches">
                 <label class="swatch swatch-none" title="No color"><input type="radio" name="color_pick" value=""><span>None</span></label>
                 <label class="swatch swatch-custom" title="Another color"><input type="radio" name="color_pick" value="custom" aria-label="Another color"><input type="color" name="color" aria-label="Pick another color" value="#8aa4ff"></label>
@@ -1212,7 +1208,6 @@
               <button class="btn small" type="button" id="settings-icon-clear">Delete</button>
               <input type="hidden" name="icon">
             </div>
-            <p class="hint">An image shown in the project lists instead of the first letter.</p>
           </section>
           <section class="rail-section" data-section="commands">
             <div id="settings-approve" hidden>
@@ -1220,19 +1215,15 @@
               <button class="btn small" type="button" id="settings-approve-commands" data-icon="check">Approve commands</button>
             </div>
             <label class="field"><span>Test command <em>runs before review; failures go back to Claude</em></span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
-            <label class="field inline"><span>Automatic fix attempts</span><input type="number" name="max_auto_fixes" min="0" max="10" inputmode="numeric"></label>
-            <p class="hint">How often failing tests or merge conflicts go back to Claude before Dash asks you.</p>
+            <label class="field inline"><span>Automatic fix attempts <em>before Dash asks you</em></span><input type="number" name="max_auto_fixes" min="0" max="10" inputmode="numeric"></label>
             <label class="field inline"><span>Tasks at once <em>most of this project's tasks running in parallel</em></span><input type="number" name="max_parallel" min="1" max="64" inputmode="numeric" placeholder="no limit"></label>
-            <p class="hint">The others stay queued until one finishes. Empty: as many as the computers running them take.</p>
             <label class="field"><span>Setup command <em>runs once in each new worktree</em></span><input name="setup_command" placeholder="npm ci" spellcheck="false"></label>
             <label class="field"><span>Files to copy into worktrees <em>one per line</em></span><textarea name="copy_files" rows="2" placeholder=".env" spellcheck="false"></textarea></label>
             <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
             <label class="field inline"><span>Preview tasks in</span><select name="preview_kind"><option value="web">a browser (start server command)</option><option value="terminal">a terminal (CLI tools)</option></select></label>
-            <label class="field"><span>Terminal preview command <em>runs in the task's worktree; ./.dash-bin is on PATH as $DASH_BIN</em></span><input name="preview_command" placeholder="go build -o $DASH_BIN/tool . &amp;&amp; exec $SHELL" spellcheck="false"></label>
-            <p class="hint">Empty: a plain shell in the task's worktree.</p>
+            <label class="field"><span>Terminal preview command <em>empty: a plain shell; ./.dash-bin is on PATH as $DASH_BIN</em></span><input name="preview_command" placeholder="go build -o $DASH_BIN/tool . &amp;&amp; exec $SHELL" spellcheck="false"></label>
           </section>
           <section class="rail-section" data-section="deploy">
-            <p class="hint">Each environment is a place the project is deployed to, with the script that deploys it. Dash runs the script on a runner, in a checkout of the commit, and records what is live where on the <strong>Deploys</strong> page. The script gets <code>$DASH_ENV</code>, <code>$DASH_COMMIT</code> and <code>$DASH_PREV_COMMIT</code>, and the secrets in the runner's <code>~/.dash/env/&lt;environment&gt;.env</code>. More in the docs: <code>docs/deploys.md</code>.</p>
             <ul class="env-edit-list" id="settings-envs"></ul>
             <button class="btn small" type="button" id="settings-env-add" data-icon="plus">Add environment</button>
             <h3 class="env-history-head" id="settings-env-history-head" hidden>History</h3>
@@ -1245,15 +1236,12 @@
             <label class="field" id="settings-agent-field"><span>Agent <em>the agent CLI that runs this project's tasks</em></span><select name="agent" id="settings-agent"></select></label>
             <p class="hint" id="settings-agent-hint" aria-live="polite"></p>
             <div class="claude-scope">
-              <h3 class="claude-scope-head">In the repository <span class="scope-tag repo">repo files</span></h3>
-              <p class="hint" id="claude-files-hint">Files Claude Code reads from the project. Edit opens them in the file editor; saving a tracked file opens a task to commit the change, files git doesn't track are saved straight to disk.</p>
+              <h3 class="claude-scope-head">In the repository <span class="scope-tag repo">repo files</span> <span class="claude-scope-branch" id="claude-files-branch"></span></h3>
               <div id="claude-files" class="claude-files" aria-live="polite"></div>
             </div>
             <div class="claude-scope">
               <h3 class="claude-scope-head">Stored by Dash <span class="scope-tag dash">Dash settings</span></h3>
-              <p class="hint">Not in the repository and nothing to commit: saved as you change it and used from the next run on.</p>
-              <label class="field"><span>Extra instructions for Dash tasks <em>added to Claude's system prompt in every task, on this computer and on runners</em></span><textarea name="task_instructions" rows="4" maxlength="32768" placeholder="e.g. Use pnpm, not npm. Keep commits small."></textarea></label>
-              <p class="hint">For guidance that belongs to the whole team, prefer CLAUDE.md above: it lives in the repo and also applies when people run Claude Code themselves.</p>
+              <label class="field"><span>Extra instructions for Dash tasks <em>added to every task's system prompt</em></span><textarea name="task_instructions" rows="4" maxlength="32768" placeholder="e.g. Use pnpm, not npm. Keep commits small."></textarea></label>
             <fieldset class="field choice">
               <legend>Chat permissions</legend>
               <label class="radio"><input type="radio" name="chat_permission_mode" value=""><span>Ask every time <em>each tool call not already allowed waits for you</em></span></label>
@@ -1261,13 +1249,12 @@
               <label class="radio"><input type="radio" name="chat_permission_mode" value="acceptEdits"><span>Accept edits <em>file edits run on their own; commands still ask</em></span></label>
             </fieldset>
             <label class="field"><span>Always-allowed tools <em>one per line</em></span><textarea name="allowed_tools" rows="2" placeholder="Bash" spellcheck="false"></textarea></label>
-            <p class="hint">Claude uses these without asking. "Always allow" on a request adds to this list.</p>
             <label class="field"><span>Review prompt <em>what the Review button asks Claude; empty uses the default</em></span><textarea name="review_prompt" rows="4"></textarea></label>
             <div class="field-row">
               <label class="field inline"><span>Time limit per run <em>minutes</em></span><input type="number" name="max_run_minutes" min="1" inputmode="numeric" placeholder="60"></label>
               <label class="field inline"><span>Turn limit per run</span><input type="number" name="max_turns" min="1" inputmode="numeric" placeholder="200"></label>
             </div>
-            <p class="hint">Stops a run that goes on too long. Time spent waiting for your approval doesn't count.</p>
+            <p class="hint">Time waiting for your approval doesn't count.</p>
             </div>
           </section>
           <section class="rail-section" data-section="runners">
@@ -1281,11 +1268,11 @@
             <p class="hint" id="settings-runners-hint" hidden></p>
           </section>
           <section class="rail-section" data-section="board">
-            <label class="toggle"><input type="checkbox" name="close_no_changes"><span>Close tasks that change no files</span></label>
-            <p class="hint">A task Claude finishes without changing any files (an answer, an investigation) skips Review and is closed at once, with Claude's answer in its chat. Off, it waits in Review, where you close it or ask for changes.</p>
+            <label class="toggle"><input type="checkbox" name="close_no_changes"><span>Skip Review for tasks that change no files</span></label>
+            <p class="hint">They close at once, with Claude's answer in the chat.</p>
             <!-- The project's boards (app/boards.js). Saved as they change, by their own API. -->
             <fieldset class="field choice" id="settings-boards">
-              <legend>Boards <em>a project's tasks can be split over several boards; the board shows one at a time</em></legend>
+              <legend>Boards <em>the board shows one at a time</em></legend>
               <ul class="item-list boards-list" id="boards-list"></ul>
               <div class="board-actions">
                 <button class="btn small" type="button" id="boards-add" data-icon="plus">Add board…</button>
@@ -1293,9 +1280,9 @@
             </fieldset>
             <!-- The project's board backend (app/backend.js). Saved as it changes, once the tracker's settings are complete; its inputs have no names. -->
             <fieldset class="field choice" id="settings-board-field" hidden>
-              <legend>Task board <em>where this project's tasks are planned: Dash's own board, or an external tracker kept in sync both ways</em></legend>
+              <legend>Task board <em>Dash's own, or a tracker kept in sync both ways</em></legend>
               <label class="field"><span>Board</span><select id="board-backend"></select></label>
-              <p class="hint" id="board-backend-hint"></p>
+              <p class="hint" id="board-backend-hint" hidden></p>
               <div id="board-external" hidden>
                 <div id="board-fields"></div>
                 <label class="field" id="board-config-raw-row" hidden><span>Settings <em>JSON, as the backend expects them</em></span><textarea id="board-config-raw" rows="3" spellcheck="false"></textarea></label>
@@ -1324,7 +1311,7 @@
           </section>
           <section class="rail-section" data-section="approval">
             <label class="toggle"><input type="checkbox" name="auto_approve"><span>Approve tasks automatically</span></label>
-            <p class="hint" id="auto-approve-hint">Finished tasks whose tests pass go straight to the merge queue instead of waiting for review, and the Review column is hidden while it's empty.</p>
+            <p class="hint" id="auto-approve-hint"></p>
             <fieldset class="field choice">
               <legend>How finished tasks land</legend>
               <label class="radio"><input type="radio" name="merge_mode" value="pr"><span>Open a pull request <em>as soon as Claude finishes; review it on GitHub, where its checks run</em></span></label>
@@ -1339,17 +1326,24 @@
             <label class="toggle" id="auto-push-row"><input type="checkbox" name="auto_push"><span>Push after every merge</span></label>
             <p class="hint" id="merge-hint"></p>
             <div id="merge-batch-row">
-              <label class="field inline"><span>Merge queue batch size</span><input type="number" name="merge_batch" min="1" max="10" inputmode="numeric" placeholder="1"></label>
-              <p class="hint">With several approved tasks waiting, test up to this many together in one run of the test command, then land each as its own commit. When the run fails, Dash tests them one by one and sends back only the tasks that fail. 1 merges one task at a time. Pull requests aren't batched: GitHub merges them.</p>
+              <label class="field"><span>Test approved tasks <em><a data-docs="merge-queue.md#testing-several-tasks-together" target="_blank" rel="noopener">Learn more</a></em></span><select name="merge_batch">
+                <option value="1">One at a time</option>
+                <option value="2">Up to 2 together</option>
+                <option value="3">Up to 3 together</option>
+                <option value="4">Up to 4 together</option>
+                <option value="5">Up to 5 together</option>
+                <option value="6">Up to 6 together</option>
+                <option value="8">Up to 8 together</option>
+                <option value="10">Up to 10 together</option>
+              </select></label>
             </div>
-            <label class="toggle"><input type="checkbox" name="investigate_ci"><span>Fix failed builds automatically</span></label>
-            <p class="hint">When GitHub Actions fails on the default branch, Claude gets a task with the failed log to investigate and fix it.</p>
+            <label class="toggle"><input type="checkbox" name="investigate_ci"><span>Fix failed builds automatically <em>a task for Claude when GitHub Actions fails on the default branch</em></span></label>
             <label class="field"><span>Release tag format <em>X, Y and Z are the major, minor and patch version, e.g. vX.Y.Z</em></span><input name="tag_format" placeholder="X.Y.Z" spellcheck="false" autocomplete="off"></label>
-            <p class="hint" id="tag-format-hint">Tag releases from a commit in History.</p>
+            <p class="hint" id="tag-format-hint"></p>
           </section>
           <section class="rail-section" data-section="webhooks">
             <fieldset class="field choice" id="settings-webhooks-field" hidden>
-              <legend>Notification webhooks <em>tell Slack, ntfy or your own service when tasks are ready, fail or merge, Claude needs approval or the build fails</em></legend>
+              <legend>Notification webhooks <em>Slack, ntfy or your own service</em></legend>
               <ul class="item-list" id="settings-webhooks"></ul>
               <div id="webhook-secret" hidden></div>
               <p class="hint" id="settings-webhooks-hint" hidden></p>
@@ -1368,7 +1362,7 @@
       <fieldset class="field choice">
         <legend>Format</legend>
         <label class="radio"><input type="radio" name="format" value="slack"><span>Slack <em>an incoming webhook URL from a Slack app</em></span></label>
-        <label class="radio"><input type="radio" name="format" value="ntfy"><span>ntfy <em>a topic URL, e.g. https://ntfy.sh/my-dash-topic, for phone notifications</em></span></label>
+        <label class="radio"><input type="radio" name="format" value="ntfy"><span>ntfy <em>phone notifications</em></span></label>
         <label class="radio"><input type="radio" name="format" value="json"><span>JSON <em>a signed JSON POST to your own service</em></span></label>
       </fieldset>
       <label class="field"><span>URL</span><input name="url" type="url" required spellcheck="false" autocomplete="off" placeholder="https://hooks.slack.com/services/…"></label>
@@ -1419,7 +1413,6 @@
           <section class="rail-section" data-section="editors">
             <label class="toggle"><input type="checkbox" name="vim" form="prefs-form"><span>Vim keys in the task and file editors</span></label>
             <label class="toggle"><input type="checkbox" name="invisibles" form="prefs-form"><span>Show invisible characters (spaces, tabs, trailing whitespace) in the editors</span></label>
-            <p class="hint">Preferences only apply in this browser.</p>
           </section>
           <section class="rail-section" data-section="clock">
             <label class="field"><span>Time format</span>
@@ -1432,7 +1425,6 @@
           </section>
           <section class="rail-section" data-section="chat">
             <label class="toggle"><input type="checkbox" name="chatSuggest" form="prefs-form"><span>Suggest what to say next</span></label>
-            <p class="hint">After each reply, Claude's small model (Haiku) guesses your next message and shows it grayed out in the empty message box. <kbd>Enter</kbd> or Send sends it as it is; <kbd>Tab</kbd> puts it in the box to edit. Each guess is a short call on the same Claude login as the chat. Off: no call is made.</p>
           </section>
           <!-- The user's profile picture (app/avatar.js): shown in the account menu and members lists -->
           <section class="rail-section" data-section="picture">
@@ -1442,7 +1434,6 @@
               <button class="btn small" type="button" id="avatar-pick" data-icon="up">Choose picture…</button>
               <button class="btn small" type="button" id="avatar-clear">Delete</button>
             </div>
-            <p class="hint">Shown in the account menu and to the members of your organizations. Dash crops it to a square and makes it small before saving it.</p>
           </section>
           <!-- All of the user's own notifications (app/notifysettings.js): whose tasks, the summary (when,
                which projects, where it goes, what's in it), push (this browser's switch, a preference,
@@ -1451,15 +1442,13 @@
             <form id="notify-form" class="notify-form" novalidate>
               <p class="hint" id="notify-intro">Kept for you in this organization, on every device.</p>
               <p class="hint err-text" id="notify-off" hidden></p>
-              <h3 class="section-head">Tasks</h3>
-              <p class="hint">Whose tasks you hear about when one is ready for review, failed, merged or waits for your approval, by push and in the summary. Tasks Dash made, or whose creator is gone, reach everyone.</p>
+              <h3 class="section-head">Tasks you hear about</h3>
               <fieldset class="field choice">
                 <legend class="sr-only">Tasks</legend>
                 <label class="radio"><input type="radio" name="tasks" value="mine"><span>Tasks I created</span></label>
                 <label class="radio"><input type="radio" name="tasks" value="all"><span>All tasks <em>everyone's on the board</em></span></label>
               </fieldset>
               <h3 class="section-head">Summary</h3>
-              <p class="hint">What happened since the last summary, in one message. Nothing to report sends nothing.</p>
               <fieldset class="field choice notify-freq">
                 <legend class="sr-only">Summary</legend>
                 <label class="radio"><input type="radio" name="summary" value="off"><span>Off</span></label>
@@ -1488,6 +1477,7 @@
                   <label class="toggle" id="notify-email-row"><input type="checkbox" name="email"><span>Email <em id="notify-email"></em></span></label>
                   <p class="hint" id="notify-email-note" hidden></p>
                   <div id="notify-dests"></div>
+                  <div><button class="link" type="button" id="notify-dest-add" data-icon="plus">Add webhook…</button></div>
                 </fieldset>
                 <fieldset class="field choice">
                   <legend>What goes in it</legend>
@@ -1512,15 +1502,14 @@
                 <button class="btn small" type="button" id="notify-test">Send the summary now</button>
               </div>
               <h3 class="section-head">Push</h3>
-              <p class="hint">The events ticked below reach your browsers and the installed app, even with Dash closed. Turn push on in each browser you want them in.</p>
               <!-- A preference of this browser: it belongs to #prefs-form (app/prefs.js), not this form. -->
               <label class="toggle"><input type="checkbox" name="notify" form="prefs-form"><span>Push to this browser</span></label>
-              <p class="hint" id="push-hint" hidden>On: this device gets the events below. <button type="button" class="link inline" id="push-test">Send a test</button></p>
+              <p class="hint" id="push-hint" hidden><button type="button" class="link inline" id="push-test">Send a test</button></p>
               <div class="notify-push" id="notify-push"></div>
             </form>
             <div id="notify-webhooks">
               <h3 class="section-head">Webhooks</h3>
-              <p class="hint" id="me-webhooks-intro">Slack, ntfy or your own service hear about each event the moment it happens, in every project of this organization. Only you see them. Tick one under <em>Send it to</em> above to get the summary there too. A project's own webhooks are in its settings.</p>
+              <p class="hint" id="me-webhooks-intro">Each event as it happens, from every project in this organization; only you get them.</p>
               <ul class="item-list" id="me-webhooks"></ul>
               <div id="me-webhook-secret" hidden></div>
               <p class="hint" id="me-webhooks-hint" hidden></p>
@@ -1538,21 +1527,20 @@
           <!-- Your data: download it all as JSON, or delete the account (docs/privacy.md) -->
           <section class="rail-section" data-section="data">
             <h3 class="section-head">Download your data</h3>
-            <p class="hint">A JSON file of what this Dash keeps about you: your account, organizations, sign-ins, sessions, tokens, devices, webhooks, notification settings, and the tasks and chat messages you wrote.</p>
             <div><a class="btn small" id="account-export" href="/api/account/export" download data-icon="down">Download</a></div>
             <h3 class="section-head">Delete your account</h3>
-            <p class="hint">Your account, sessions, tokens, devices, webhooks, notification settings and your chats with Claude are deleted at once, and so is each organization only you are in. Tasks and messages you wrote in other organizations stay there, without your name. Runners you registered stop connecting.</p>
+            <p class="hint">Deletes your account, your chats and each organization only you are in; tasks and messages you wrote in other organizations stay, without your name. <a data-docs="privacy.md" target="_blank" rel="noopener">Learn more</a></p>
             <p class="hint" id="account-delete-hint" hidden></p>
             <div><button class="btn small danger" type="button" id="account-delete" data-icon="trash">Delete account…</button></div>
           </section>
           <!-- Connect Claude: guide to adding Dash as a claude.ai custom connector -->
           <section class="rail-section" data-section="connector">
-            <p class="hint">Add Dash as a connector in claude.ai to use it from the Claude apps on any device. Claude can then list projects, create tasks, read diffs and approve work.</p>
+            <p class="hint">Use Dash from the Claude apps on any device.</p>
             <div id="connector-body"></div>
           </section>
           <!-- The user's credentials: API tokens and authorised OAuth clients (runners' are in Runners) -->
           <section class="rail-section" data-section="tokens">
-            <p class="hint">Each of these acts as you, in one organization only. It stops working when you revoke it or leave that organization. Tokens can't manage members, invitations or tokens.</p>
+            <p class="hint">Each acts as you in one organization, but can't manage members, invitations or tokens.</p>
             <h3 class="section-head">Connected apps</h3>
             <ul class="item-list" id="tokens-oauth"></ul>
             <h3 class="section-head">API tokens</h3>
@@ -1567,7 +1555,6 @@
               <button class="btn primary" id="token-create" type="button" data-icon="plus">Create</button>
             </div>
             <div id="token-secret" hidden></div>
-            <p class="hint">Runners you registered are in <strong>Runners</strong>.</p>
           </section>
         </div>
       </div>
@@ -1611,7 +1598,6 @@
                 </select>
                 <button class="btn primary" id="org-invite-send" type="button" data-icon="send">Invite</button>
               </div>
-              <p class="hint">A planner (a product owner) uses Planning only: the org's plan, without projects, tasks, chats or terminals.</p>
               <label class="org-require-2fa" id="org-invite-any-row" hidden><input type="checkbox" id="org-invite-any"> Let them join with any Google account, not just this address</label>
               <div id="org-invite-link" hidden></div>
               <h3 class="section-head" id="org-pending-head">Pending invitations</h3>
@@ -1628,23 +1614,22 @@
                 <input type="text" id="org-slug" autocomplete="off" spellcheck="false" autocapitalize="off" pattern="[a-z0-9](?:[a-z0-9-]{1,38})[a-z0-9]" minlength="3" maxlength="40" aria-label="Subdomain name" aria-describedby="org-slug-hint">
                 <button class="btn" id="org-slug-save" type="button">Rename</button>
               </div>
-              <p class="hint" id="org-slug-hint" hidden>3 to 40 lower-case letters, digits or hyphens. The old address keeps leading here for 30 days, and no other organization can take it meanwhile.</p>
+              <p class="hint" id="org-slug-hint" hidden>The old address keeps leading here for 30 days.</p>
             </div>
             <div id="org-sso" hidden></div>
           </section>
           <!-- The wall view (/wall): its options, and the links org admins make for TVs (app/wallview.js) -->
           <section class="rail-section" data-section="wall">
             <form method="dialog" id="wall-form">
-              <p class="hint">A read-only, full-screen dashboard of <span id="wall-org">the organization</span>'s work for a TV in the office. It refreshes by itself every few seconds.</p>
               <h3 class="section-head">Show</h3>
               <label class="field"><span>Projects</span>
                 <select name="project" id="wall-project"><option value="">All projects</option></select>
               </label>
-              <label class="toggle"><input type="checkbox" name="privacy"><span>Privacy: hide task titles, prompts, issue titles, activity and costs (for screens visitors walk past)</span></label>
+              <label class="toggle"><input type="checkbox" name="privacy"><span>Privacy <em>hide titles, prompts, activity and costs</em></span></label>
               <h3 class="section-head">Open it here</h3>
               <div id="wall-link"></div>
               <h3 class="section-head">Links for TVs</h3>
-              <p class="hint">A TV shouldn't keep anyone's session. A TV link opens the wall of this organization, with the options above, without signing in, and nothing else. Anyone with the link sees the wall: treat it like a password.</p>
+              <p class="hint">Anyone with the link sees the wall: treat it like a password.</p>
               <ul class="item-list" id="wall-tokens"></ul>
               <div class="org-invite" id="wall-token-new">
                 <input type="text" id="wall-token-name" placeholder="Name, e.g. Office TV" autocomplete="off" maxlength="100" aria-label="TV link name">
@@ -1661,7 +1646,7 @@
           <!-- Platform admins (this whole Dash): follow Claude's status page (status.claude.com) with its webhooks (app/claudestatus.js) -->
           <section class="rail-section" data-section="claudestatus">
             <div id="claude-status-admin" hidden>
-              <p class="hint">Follow Claude's status page. Everyone in every organization of this Dash then sees Claude's incidents beside the board, as they happen.</p>
+              <p class="hint">Everyone in every organization of this Dash sees it.</p>
               <label class="toggle"><input type="checkbox" id="claude-status-on"><span>Show Claude's status</span></label>
               <div id="claude-status-config"></div>
             </div>
@@ -1687,16 +1672,11 @@
               <div class="runners-stats" id="runners-stats" role="status"></div>
               <button class="btn primary small" id="runners-add" type="button" data-icon="plus">Add a runner</button>
             </div>
-            <details class="runners-about">
-              <summary>What is a runner?</summary>
-              <p class="hint">A computer that runs this organization's tasks with <code>dash runner</code>, using its owner's Claude subscription. It connects out to this dashboard, so it needs no open port, VPN or sudo, and adding one takes a single command. Everyone in the organization sees it; its owner and the admins manage it. Pick a runner on the left to choose the projects it builds, or link runners in each project's settings.</p>
-              <p class="hint">This dashboard doesn't run Claude or tasks itself: chats, tasks and scans run on runners, so link each project to one.</p>
-            </details>
             <div id="runners-list"></div>
             <!-- The runner tokens the user registered, in each of their organizations (app/tokens.js) -->
             <div id="runners-tokens" hidden>
               <h3 class="section-head">Runners you registered</h3>
-              <p class="hint">Each connects as you, in one organization. Revoking one disconnects it and its token stops working.</p>
+              <p class="hint">Revoking one disconnects it.</p>
               <ul class="item-list" id="tokens-runner"></ul>
             </div>
           </section>

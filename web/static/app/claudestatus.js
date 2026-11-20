@@ -263,7 +263,7 @@ function componentPicker(a) {
   }));
   return [
     h("h3", { class: "section-head" }, "Components"),
-    h("p", { class: "hint" }, "The Claude pill and the notices count only these components, the incidents that affect them, and incidents that name no component. The rest still show under Not counted in the status."),
+    h("p", { class: "hint" }, "Only these components, and incidents that name none, count in the Claude pill and notices."),
     comps.length ? list : h("p", { class: "hint" }, "No components yet. Check now reads them from the status page."),
     !comps.some((c) => c.status) ? h("p", { class: "hint" }, "Check now lists all the page's components.") : null,
     a.default_watch ? h("p", { class: "hint" }, "Defaults: Claude Code, the Claude API and claude.ai.")

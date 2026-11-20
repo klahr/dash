@@ -1,4 +1,4 @@
-import { $, fill, h, ib, ico, plural } from "./dom.js";
+import { $, docsLink, fill, h, ib, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
 import { checked, saveField } from "./autosave.js";
@@ -495,11 +495,11 @@ function paintOverview(list) {
   }
   $("#runners-stats").replaceChildren(...(list.length ? runnerStats(list) : []));
   if (!list.length) {
-    $(".runners-about").open = true;
     box.replaceChildren(h("div", { class: "runners-empty" },
       ico("computer"),
       h("p", { class: "empty-title" }, "No runners yet"),
-      h("p", { class: "hint" }, "A runner needs git and Claude Code logged in. Linux, macOS or Windows.")));
+      h("p", { class: "hint" }, "A runner is a computer that runs this organization's tasks and chats with its owner's Claude subscription. It needs git and Claude Code logged in, on Linux, macOS or Windows. ",
+        docsLink("several-computers.md"))));
     return;
   }
   const mine = list.filter((r) => r.mine).sort(byStatus), others = list.filter((r) => !r.mine).sort(byStatus);
@@ -1042,8 +1042,7 @@ async function addRunner() {
       h("div", { class: "segmented", role: "tablist", "aria-label": "How to install" }, tab("One line", oneLine, manual), tab("Manual", manual, oneLine))),
     oneLine, manual,
     h("details", { class: "runner-add-opts" },
-      h("summary", {}, "Name and projects directory"),
-      h("p", { class: "hint" }, "Both optional. The command above updates as you type."),
+      h("summary", {}, "Name and projects directory (optional)"),
       h("div", { class: "runner-add-fields" },
         h("label", { class: "field" }, h("span", {}, "Name"), name),
         h("label", { class: "field" }, h("span", {}, "Projects directory"), dir))),

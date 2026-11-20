@@ -371,7 +371,7 @@ function syncHubMode() {
   if (mode !== "local") {
     matchList($("#new-project-runs-on-hint"), (state.runners || []).filter((r) => servesProject(r, { runs_on: runsOn })));
     matchList($("#new-project-deploy-runs-on-hint"), deployRunners(runsOn, parseLabels(f.deploy_runs_on.value).filter((l) => l.toLowerCase() !== LABEL_ANY)),
-      { lead: "Deploys on", none: "No runner above has these labels: deploys fail." });
+      { lead: "Deploys on", none: "No runner the project runs on has these labels: deploys fail." });
   }
   hint.textContent = why || (mode === "local" ? "" : servesProject(r, { runs_on: runsOn })
     ? `${where} clones it into its projects folder. It runs on ${runsOnText(runsOn)} (Advanced).`

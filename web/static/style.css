@@ -1049,13 +1049,13 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .np-picked .gh-mark { margin: 0; }
 .np-picked > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .np-picked em { margin-left: auto; font-style: normal; font-size: var(--fs-xs); color: var(--muted); }
-/* Folded extras (Advanced, What is a runner?, the runner command's options): one disclosure look. */
+/* Folded extras (Advanced, the runner command's options): one disclosure look. */
 :is(.np-advanced, .runner-add-opts) { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
-:is(.np-advanced, .runners-about, .runner-add-opts) > summary { cursor: pointer; width: fit-content; min-height: 32px; display: flex; align-items: center; gap: 6px; font-size: var(--fs-m); font-weight: 600; color: var(--muted); list-style: none; }
-:is(.np-advanced, .runners-about, .runner-add-opts) > summary::-webkit-details-marker { display: none; }
-:is(.np-advanced, .runners-about, .runner-add-opts) > summary::before { content: "▸"; color: var(--faint); transition: transform .15s var(--ease); }
-:is(.np-advanced, .runners-about, .runner-add-opts)[open] > summary::before { transform: rotate(90deg); }
-:is(.np-advanced, .runners-about, .runner-add-opts) > summary:hover, :is(.np-advanced, .runners-about, .runner-add-opts)[open] > summary { color: var(--text); }
+:is(.np-advanced, .runner-add-opts) > summary { cursor: pointer; width: fit-content; min-height: 32px; display: flex; align-items: center; gap: 6px; font-size: var(--fs-m); font-weight: 600; color: var(--muted); list-style: none; }
+:is(.np-advanced, .runner-add-opts) > summary::-webkit-details-marker { display: none; }
+:is(.np-advanced, .runner-add-opts) > summary::before { content: "▸"; color: var(--faint); transition: transform .15s var(--ease); }
+:is(.np-advanced, .runner-add-opts)[open] > summary::before { transform: rotate(90deg); }
+:is(.np-advanced, .runner-add-opts) > summary:hover, :is(.np-advanced, .runner-add-opts)[open] > summary { color: var(--text); }
 .np-advanced .hint { font-size: var(--fs-s); }
 /* While it is adding: the steps in the pane, the rail dimmed and out of reach. */
 .np-busy .rail-nav { opacity: .5; }
@@ -1303,8 +1303,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-stat.on strong { color: var(--merged); }
 .runner-stat:is(.busy, .paused) strong { color: var(--running); }
 .runner-stat.off strong { color: var(--failed); }
-.runners-about { margin-top: 10px; }
-.runners-about .hint { margin: 6px 0 0; }
 .runners-empty { display: grid; justify-items: center; text-align: center; gap: 2px; margin-top: 16px; padding: 28px 16px; border: 1px dashed var(--line); border-radius: var(--r-m); }
 .runners-empty > .ico { width: 36px; height: 36px; color: var(--faint); margin-bottom: 6px; }
 .runners-empty .hint { max-width: 40ch; margin: 0; }
@@ -1507,6 +1505,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 /* Project settings → Claude: repo files vs settings Dash stores. */
 .claude-scope + .claude-scope { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
 .claude-scope-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 4px; font-size: var(--fs-body); }
+.claude-scope-branch { font-size: var(--fs-s); font-weight: 400; color: var(--muted); }
 .scope-tag.repo, .scope-tag.tracked { border-color: color-mix(in srgb, var(--review) 55%, transparent); color: var(--review); }
 .scope-tag.dash { border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent); }
 .scope-tag.local { border-color: color-mix(in srgb, var(--running) 55%, transparent); color: var(--running); }
@@ -2699,6 +2698,7 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .radio > input { margin-top: 3px; }
 .radio span { font-weight: 600; }
 .radio em { display: block; font-style: normal; font-weight: 400; color: var(--muted); font-size: var(--fs-m); }
+.toggle em { font-style: normal; font-weight: 400; color: var(--muted); }
 #settings-form .field-row { flex-wrap: wrap; justify-content: flex-start; }
 
 /* ---- Account → Notifications (app/notifysettings.js) ---- */
@@ -3297,6 +3297,8 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .shell-tag { flex: 0 0 100%; font-size: var(--fs-xs); color: var(--muted); padding: 0 6px; }
 .shell-tag b { color: var(--text); margin-right: 4px; }
 .composer.shell-mode .shell-tag b { color: var(--accent); font-family: var(--mono); }
+.suggest-cue { flex: 0 0 100%; font-size: var(--fs-xs); color: var(--faint); padding: 0 6px; }
+@media (pointer: coarse) { .suggest-cue { display: none; } }
 .composer.shell-mode textarea { font-family: var(--mono); border-color: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* ---------- goals ----------

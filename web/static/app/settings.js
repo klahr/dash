@@ -1,4 +1,4 @@
-import { $, $$, dateText, fill, h, ib } from "./dom.js";
+import { $, $$, dateText, docsLink, fill, h, ib } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, fail } from "./dialogs.js";
 import { checked, fieldError, saveField, saveQueue } from "./autosave.js";
@@ -40,7 +40,7 @@ export function openSettings() {
   f.close_no_changes.checked = !!p.close_no_changes;
   f.merge_mode.value = p.merge_mode || "local";
   f.merge_method.value = p.merge_method || "";
-  f.merge_batch.value = p.merge_batch > 1 ? p.merge_batch : 1;
+  setMergeBatch(f.merge_batch, p.merge_batch > 1 ? p.merge_batch : 1);
   f.investigate_ci.checked = p.investigate_ci !== false;
   f.tag_format.value = p.tag_format || "X.Y.Z";
   checkTagFormat();
@@ -226,7 +226,8 @@ function envEditor(e, i) {
     h("div", { class: "env-edit-head" },
       field("Name", "a lowercase word", text("name", { placeholder: "production", maxlength: 32, pattern: "[a-z0-9][a-z0-9_\\-]*" })),
       ib({ type: "button", class: "btn small danger", title: `Remove ${e.name || "this environment"}`, onclick: () => removeEnv(i) }, "trash", "Remove")),
-    field("Deploy command", "a bash script, one line or several", text("deploy_command", { rows: 4, class: "script-field", placeholder: "set -e\n./deploy.sh" })),
+    field("Deploy command", ["a bash script · ", docsLink("deploys.md#the-script-contract", "Variables")],
+      text("deploy_command", { rows: 4, class: "script-field", placeholder: "set -e\n# $DASH_ENV, $DASH_COMMIT, $DASH_PREV_COMMIT\n./deploy.sh \"$DASH_ENV\" \"$DASH_COMMIT\"" })),
     field("Build command", "optional; runs first, in the same checkout", text("build_command", { rows: 2, class: "script-field", placeholder: "npm ci && npm run build" })),
     field("URL", "optional; checked once a deploy is done", text("url", { type: "url", placeholder: "https://example.com" })),
     runsOn ? h("div", { class: "field" }, h("span", {}, "Runs on ", h("em", {}, "empty: any runner the project runs on")), runsOn.el) : null,
@@ -418,15 +419,26 @@ function syncMergeHint() {
   $("#merge-method-row").hidden = !pr;
   // Only direct merges here batch: not pull requests, nor merges on runners.
   $("#merge-batch-row").hidden = pr || onRunners;
-  const who = onRunners ? "the runner" : "Dash";
   $("#auto-approve-hint").textContent = pr
-    ? "Pull requests whose checks pass wait for you to merge them, on GitHub or with Merge pull request in Dash, without waiting for an approving review first. Dash never merges a pull request on its own. Reviews asking for changes still go back to Claude."
-    : "Finished tasks whose tests pass go straight to the merge queue instead of waiting for review, and the Review column is hidden while it's empty.";
-  $("#merge-hint").textContent = !p.remote_url
-    ? (pr ? "Connect a GitHub repository (Projects → Create GitHub repository) to open pull requests." : "")
-    : pr ? `When Claude finishes a task, ${who} pushes its branch and opens a draft pull request against ${baseBranch(p)}, marked ready for review once its checks pass. The task waits in Review while you review it on GitHub: failing checks, conflicts and reviews asking for changes go back to Claude, whose fixes are pushed to the same pull request. Closing it rejects the task. Once it is approved and green, merge it on GitHub or with Merge pull request on the task (done with the gh account signed in on ${onRunners ? "the runner that ran it" : "this computer"}); Dash then marks the task merged. Dash never merges it on its own.`
-    : onRunners ? `Approved tasks: the runner squashes the task onto ${baseBranch(p)}, runs the tests and pushes it, without waiting for GitHub's checks. If someone pushed first, it merges again on top; conflicts and failing tests go back to Claude.`
-      : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected. GitHub's checks run only after it's pushed.` : "";
+    ? "Pull requests whose checks pass skip Dash's review; you still merge them."
+    : "Tasks whose tests pass skip Review and go straight to the merge queue.";
+  const merge = $("#merge-hint");
+  fill(merge, !p.remote_url
+    ? (pr ? "Connect a GitHub repository to open pull requests." : "")
+    : pr ? ["Dash never merges a pull request on its own. ", docsLink("github.md#pull-requests")]
+      : onRunners ? `The runner pushes to ${baseBranch(p)} without waiting for GitHub's checks.`
+        : f.auto_push.checked ? `GitHub's checks run only after the push.` : "");
+  merge.hidden = !merge.textContent;
+}
+
+// setMergeBatch picks n in the batch size select, adding a choice for a
+// size it doesn't list (saved before, or set through the API).
+function setMergeBatch(sel, n) {
+  if (![...sel.options].some((o) => o.value === String(n))) {
+    sel.append(h("option", { value: String(n) }, `Up to ${n} together`));
+    [...sel.options].sort((a, b) => a.value - b.value).forEach((o) => sel.append(o));
+  }
+  sel.value = String(n);
 }
 $("#settings-form").addEventListener("change", syncMergeHint);
 $("#settings-runs-on-help").append(" ", docsLabels());
@@ -448,7 +460,7 @@ function checkTagFormat() {
     f.tag_format.setCustomValidity(res.valid ? "" : res.error);
     hint.className = `hint${!res.valid ? " err-text" : res.hint ? " warn" : ""}`;
     if (!res.valid) return hint.replaceChildren(res.error);
-    hint.replaceChildren(`Tags look like ${res.example}. Tag a release from a commit in History.`);
+    hint.replaceChildren(`Tags look like ${res.example}.`);
     if (res.hint) {
       hint.append(" ", res.hint.message);
       if (res.hint.suggest) hint.append(" ", h("button", { type: "button", class: "link inline", onclick: () => { f.tag_format.value = res.hint.suggest; checkTagFormat(); saveSetting("tag_format"); } }, `Use ${res.hint.suggest}`));
