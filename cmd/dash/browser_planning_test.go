@@ -152,7 +152,7 @@ func TestBrowserPlannerShell(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`#foot-menu summary`)))
 	b.until("open Account", `document.querySelector("#account-sheet").open`,
 		chromedp.Click(chromedp.CSS(`#account-open`)))
-	b.waitJS("the planner's sections", `[...document.querySelectorAll("#account-sheet .rail-item")].filter((x) => !x.hidden).map((x) => x.dataset.rail).join() === "picture,twofactor,data"`)
+	b.waitJS("the planner's sections", `[...document.querySelectorAll("#account-sheet .rail-item")].filter((x) => !x.hidden).map((x) => x.dataset.rail).join() === "picture,notifications,twofactor,data"`)
 	b.until("two-factor sign-in", `document.querySelector("#twofactor-body button")?.textContent.includes("Set up")`,
 		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=twofactor]`)))
 	// Closed for sure: an Account still open (modal) takes every click below.
