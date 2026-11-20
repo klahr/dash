@@ -1148,12 +1148,17 @@ func TestBrowserOrgSheet(t *testing.T) {
 	b.waitJS("its rail", `(() => {
 		const items = [...document.querySelectorAll("#org-sheet .rail-item")].map((x) => x.dataset.rail);
 		const heads = [...document.querySelectorAll("#org-sheet .rail-head")].map((x) => x.textContent);
-		return ["members", "signin", "wall", "billing"].every((k) => items.includes(k)) && !items.includes("access") && !items.includes("sso") &&
+		return ["members", "signin", "wall", "billing", "usage"].every((k) => items.includes(k)) && !items.includes("access") && !items.includes("sso") &&
 			heads.includes("Billing") && !heads.includes("Account");
 	})()`)
 	b.until("show Wall view", `document.querySelector("#org-sheet-section-wall").classList.contains("current")`,
 		chromedp.Click(chromedp.ID("org-sheet-rail-wall")))
 	b.waitJS("the wall link", `document.querySelector("#wall-link")?.textContent.includes("/wall")`)
+	// Its owner sees the org's usage, with a CSV of it.
+	b.until("show Usage", `document.querySelector("#org-sheet-section-usage").classList.contains("current")`,
+		chromedp.Click(chromedp.ID("org-sheet-rail-usage")))
+	b.waitJS("the usage", `document.querySelector("#org-usage-body")?.textContent.includes("No Claude runs") &&
+		document.querySelector("#org-usage-csv").href.includes("format=csv")`)
 	// Clicked until closed: a click lost while the sheet settles leaves it
 	// open (modal), and it takes every click after.
 	b.until("close Organization", `!document.querySelector("#org-sheet").open`,

@@ -1579,6 +1579,7 @@
           </div>
           <div class="rail-group"><span class="rail-head">Billing</span>
             <button type="button" class="rail-item" data-rail="billing">Billing</button>
+            <button type="button" class="rail-item" data-rail="usage">Usage</button>
           </div>
           <div class="rail-group" id="org-rail-dash" hidden><span class="rail-head">This Dash</span>
             <button type="button" class="rail-item" data-rail="claudestatus">Claude status</button>
@@ -1664,6 +1665,20 @@
           <section class="rail-section" data-section="billing">
             <div id="org-billing" hidden>
               <div id="org-billing-body"></div>
+            </div>
+          </section>
+          <!-- Owners and admins: Claude usage and cost by member, project and week or month, with CSV (app/teamusage.js) -->
+          <section class="rail-section" data-section="usage">
+            <div id="org-usage" hidden>
+              <div class="usage-controls">
+                <div class="segmented" role="group" aria-label="Group by">
+                  <button type="button" data-period="week" aria-pressed="true">Weeks</button>
+                  <button type="button" data-period="month" aria-pressed="false">Months</button>
+                </div>
+                <a class="btn small" id="org-usage-csv" download data-icon="down">Download CSV</a>
+              </div>
+              <div id="org-usage-body"></div>
+              <p class="hint">What Claude's runs on tasks and scans cost, as Claude Code reports it (the API price, also on a subscription). A task counts for whoever made it.</p>
             </div>
           </section>
           <!-- Platform admins (this whole Dash): follow Claude's status page (status.claude.com) with its webhooks (app/claudestatus.js) -->

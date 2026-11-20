@@ -288,7 +288,7 @@ limit (see **Claude usage**).
 - [Merge queue](docs/merge-queue.md): how approved tasks land one at a time, and conflicts between running tasks found before they merge
 - [GitHub](docs/github.md): merge locally or review and merge through pull requests, work on another branch and open its pull request, auto-approve, revert, tag releases from History
 - [MCP and the claude.ai connector](docs/mcp.md)
-- [Set up a team](docs/team.md): the hub online, invitations, a runner per developer or a shared API-key runner, projects shared by labels, what planners do
+- [Set up a team](docs/team.md): the hub online, invitations, a runner per developer or a shared API-key runner, projects shared by labels, what planners do, who spent what
 - [Several computers](docs/several-computers.md)
 - [Use Dash from your phone](docs/phone.md)
 - [Links](docs/links.md): every view, task, goal, commit and Planning card has its own address; Back and Forward work, and **Copy link** shares one

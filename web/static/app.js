@@ -49,6 +49,7 @@ import "./app/billing.js";
 import "./app/tokens.js";
 import "./app/teamsetup.js";
 import "./app/wallview.js";
+import "./app/teamusage.js";
 import "./app/notifications.js";
 import "./app/pushsub.js";
 import "./app/review.js";

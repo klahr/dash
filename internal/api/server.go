@@ -486,6 +486,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/permissions", s.listPermissions)
 	mux.HandleFunc("POST /api/permissions/{id}", s.decidePermission)
 	mux.HandleFunc("GET /api/usage", s.getUsage)
+	mux.HandleFunc("GET /api/usage/team", s.getTeamUsage)
 	mux.HandleFunc("POST /api/queue/pause", s.pauseQueue(true))
 	mux.HandleFunc("POST /api/queue/resume", s.pauseQueue(false))
 	mux.HandleFunc("PUT /api/queue/pace", s.putQueuePace)

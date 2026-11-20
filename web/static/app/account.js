@@ -95,6 +95,7 @@ async function renderOrg() {
   const manage = RANK[mine] >= RANK.admin;
   $("#org-title").textContent = org.org.name;
   $("#org-name-area").hidden = !manage;
+  $("#org-usage").hidden = !manage; // Organization → Usage (teamusage.js)
   $("#org-name").value = org.org.name;
   $("#org-require-2fa-row").hidden = mine !== "owner";
   $("#org-require-2fa").checked = !!org.org.require_2fa;

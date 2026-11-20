@@ -96,3 +96,29 @@ tasks, chats or runners. Each card shows the status of its work in plain words.
 has no runners, so a task they start runs only on a shared runner, and waits without one. With no
 shared runner, let a developer press **Start…** instead: the work is then theirs and runs on their
 runner. See [Planning](planning.md#start).
+
+## 6. See who spent what
+
+Owners and admins see what Claude cost in **Organization → Usage** (account menu →
+Organization): by member and by project, per week or per month. Hover over an amount for its
+runs and tokens. **Download CSV** saves the same figures, one row per period, member and
+project, to open in a spreadsheet.
+
+It adds up every Claude run on the org's tasks and scans, at the price Claude Code reports
+(the API price, also on a subscription). A task's runs count for the member who made it; a task
+Dash made counts for the member its work was for, and scans count for **Dash**. A deleted task's
+runs are no longer counted.
+
+The same figures come from the API, for an owner's or admin's token:
+
+```sh
+curl -H "Authorization: Bearer $DASH_TOKEN" "https://dash.example.com/api/usage/team?period=month"
+curl -H "Authorization: Bearer $DASH_TOKEN" -o usage.csv \
+  "https://dash.example.com/api/usage/team?period=week&from=2026-01-05&to=2026-03-29&format=csv"
+```
+
+- `period`: `week` (from Monday, the default) or `month`.
+- `from` and `to`: dates, `YYYY-MM-DD`. Without them: the last 8 weeks or 6 months.
+- `tz`: minutes behind UTC (as JavaScript's `getTimezoneOffset()` gives them); the server's
+  time zone without it.
+- `format`: `json` (the default) or `csv`.

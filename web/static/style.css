@@ -1563,6 +1563,18 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .org-invite { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .org-invite input { flex: 1 1 220px; width: auto; }
 .org-invite select { width: auto; flex: none; }
+/* Organization → Usage (app/teamusage.js): cost per member or project per period; scrolls sideways on a phone */
+.usage-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.usage-controls .segmented { margin: 0; }
+.usage-controls .segmented button[aria-pressed="true"] { background: var(--raised); color: var(--text); }
+.usage-total { margin: 0 0 4px; }
+.usage-table-wrap { overflow-x: auto; }
+.usage-table { border-collapse: collapse; font-size: var(--fs-s); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.usage-table th, .usage-table td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--line); }
+.usage-table th[scope="row"], .usage-table thead th:first-child { text-align: left; font-weight: 600; position: sticky; left: 0; background: var(--surface); }
+.usage-table thead th { color: var(--muted); font-weight: 600; }
+.usage-table td.none { color: var(--muted); }
+.usage-table tr > :last-child { font-weight: 600; }
 #org-invite-link { margin-top: 12px; }
 .org-switch { display: flex; flex-direction: column; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
 .org-switch-label { padding: 4px 10px; font-size: var(--fs-xs); color: var(--muted); }
