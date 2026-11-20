@@ -1584,6 +1584,13 @@
         </nav>
         <div class="rail-main">
           <section class="rail-section" data-section="members">
+            <div id="org-name-area" hidden>
+              <h3 class="section-head">Name</h3>
+              <div class="org-invite">
+                <input type="text" id="org-name" autocomplete="off" maxlength="100" required aria-label="Organization name">
+                <button class="btn" id="org-name-save" type="button">Rename</button>
+              </div>
+            </div>
             <p class="hint" id="org-role"></p>
             <ul class="item-list org-members" id="org-members"></ul>
             <div id="org-invite-area" hidden>

@@ -90,6 +90,8 @@ async function renderOrg() {
   const mine = org.role;
   const manage = RANK[mine] >= RANK.admin;
   $("#org-title").textContent = org.org.name;
+  $("#org-name-area").hidden = !manage;
+  $("#org-name").value = org.org.name;
   $("#org-require-2fa-row").hidden = mine !== "owner";
   $("#org-require-2fa").checked = !!org.org.require_2fa;
   // With org subdomains: the org's address, which owners may rename.
@@ -308,6 +310,21 @@ async function renderPlatformSSO(el) {
     }) }, "Save")),
     pending.length ? h("h3", { class: "section-head" }, "Domains waiting for approval") : null,
     pending.length ? h("ul", { class: "item-list" }, ...pending) : null);
+}
+
+// setOrgName renames the org (Organization → Members → Name; owners and admins).
+export async function setOrgName() {
+  const input = $("#org-name");
+  const name = input.value.trim();
+  const org = state.me.org;
+  if (name === org.name) return;
+  if (!name) { input.reportValidity(); return; }
+  const pw = await askPassword(`Rename ${org.name} to ${name}?`);
+  if (pw == null) return;
+  await api("PATCH", `/api/orgs/${org.id}`, { name, password: pw }, "");
+  toast(`Renamed to ${name}`, { tone: "ok" });
+  await loadMe();
+  await renderOrg();
 }
 
 export async function renameOrg() {

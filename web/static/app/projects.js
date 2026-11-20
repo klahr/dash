@@ -17,7 +17,7 @@ import { ghMark, ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
 import { closeDetail } from "./detail.js";
 import { syncPrefs } from "./prefs.js";
 import { loadRunners, openRunners, renderSideRunners, startRunner } from "./runners.js";
-import { loadMe, openOrg, renameOrg, sendInvite, setRequire2FA } from "./account.js";
+import { loadMe, openOrg, renameOrg, sendInvite, setOrgName, setRequire2FA } from "./account.js";
 import { loadBilling, newOrg } from "./billing.js";
 import { createToken } from "./tokens.js";
 import { openAccount } from "./accountsheet.js";
@@ -1026,6 +1026,8 @@ $("#token-create").addEventListener("click", attempt(createToken));
 $("#org-invite-send").addEventListener("click", attempt(sendInvite));
 $("#org-new").addEventListener("click", attempt(newOrg));
 $("#org-require-2fa").addEventListener("change", attempt(setRequire2FA));
+$("#org-name-save").addEventListener("click", attempt(setOrgName));
+$("#org-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); attempt(setOrgName)(); } });
 $("#org-slug-save").addEventListener("click", attempt(renameOrg));
 $("#org-slug").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); attempt(renameOrg)(); } });
 for (const menu of $$(".foot-menu")) {

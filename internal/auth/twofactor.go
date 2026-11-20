@@ -374,11 +374,11 @@ func (a *Auth) newRecoveryCodes(w http.ResponseWriter, r *http.Request, id *Iden
 	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": shown})
 }
 
-// updateOrg handles PATCH /api/orgs/{oid} {require_2fa, slug, password}:
-// owners require two-factor sign-in of every member (members without it are
-// asked to set it up at their next request), and rename the org's slug, its
-// subdomain with org subdomains on (the old one redirects for a while; see
-// store.SetOrgSlug).
+// updateOrg handles PATCH /api/orgs/{oid} {name, require_2fa, slug, password}:
+// owners and admins rename the org; owners require two-factor sign-in of
+// every member (members without it are asked to set it up at their next
+// request), and rename the org's slug, its subdomain with org subdomains on
+// (the old one redirects for a while; see store.SetOrgSlug).
 func (a *Auth) updateOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
 	oid, err := pathID(r, "oid")
 	if err != nil {
@@ -386,6 +386,7 @@ func (a *Auth) updateOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
 		return
 	}
 	var req struct {
+		Name       *string `json:"name"`
 		Require2FA *bool   `json:"require_2fa"`
 		Slug       *string `json:"slug"`
 		Password   string  `json:"password"`
@@ -394,7 +395,7 @@ func (a *Auth) updateOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
 		accountError(w, err)
 		return
 	}
-	if req.Require2FA == nil && req.Slug == nil {
+	if req.Name == nil && req.Require2FA == nil && req.Slug == nil {
 		accountError(w, errBadBody)
 		return
 	}
@@ -405,9 +406,16 @@ func (a *Auth) updateOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
 		accountError(w, err)
 		return
 	}
-	if mine.Role != store.RoleOwner {
+	ownerOnly := req.Require2FA != nil || req.Slug != nil
+	if !mine.Role.AtLeast(store.RoleAdmin) || ownerOnly && mine.Role != store.RoleOwner {
 		accountError(w, store.ErrForbidden)
 		return
+	}
+	if req.Name != nil {
+		if n := strings.TrimSpace(*req.Name); n == "" || len(n) > 100 {
+			accountError(w, store.ErrBadOrgName)
+			return
+		}
 	}
 	if req.Require2FA != nil && *req.Require2FA && !id.User.TOTP {
 		accountError(w, store.ErrTOTPSelf)
@@ -424,6 +432,12 @@ func (a *Auth) updateOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
 		return
 	}
 	o := mine.Org
+	if req.Name != nil {
+		if o, err = a.acc.SetOrgName(id.User.ID, oid, *req.Name); err != nil {
+			accountError(w, err)
+			return
+		}
+	}
 	if req.Slug != nil {
 		if o, err = a.acc.SetOrgSlug(id.User.ID, oid, *req.Slug, a.now()); err != nil {
 			accountError(w, err)

@@ -268,3 +268,29 @@ func (a *Accounts) SlugRedirects(orgID int64, now time.Time) (map[string]time.Ti
 	}
 	return out, rows.Err()
 }
+
+// SetOrgName renames orgID, if actor is one of its owners or admins. The
+// slug (and so the org's address and folder) stays: see SetOrgSlug.
+func (a *Accounts) SetOrgName(actor, orgID int64, name string) (Org, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 100 {
+		return Org{}, ErrBadOrgName
+	}
+	var o Org
+	err := inTx(a.db, func(tx *sql.Tx) error {
+		m, err := membership(tx, actor, orgID)
+		if err != nil {
+			return err
+		}
+		if !m.Role.AtLeast(RoleAdmin) {
+			return ErrForbidden
+		}
+		if _, err := tx.Exec("UPDATE organizations SET name = ? WHERE id = ?", name, orgID); err != nil {
+			return err
+		}
+		o = m.Org
+		o.Name = name
+		return nil
+	})
+	return o, err
+}

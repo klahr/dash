@@ -57,8 +57,9 @@ was allowed (see [tokens](#tokens)), and calls Dash directly rather than through
 
 On first start Dash creates an account from `DASH_USERNAME` and `DASH_PASSWORD`, makes it a
 platform admin and the owner of an org named **Default**, and puts everything already in
-Dash (projects, tasks, issues, scans, chats) in that org. The general chat from before
-becomes that account's own. An install that had a single
+Dash (projects, tasks, issues, scans, chats) in that org. Rename it under
+**Organization → Members → Name** (owners and admins); its address stays. The general chat
+from before becomes that account's own. An install that had a single
 account keeps working with the same `.env`, and nobody is signed out by the upgrade.
 
 That account stays tied to the environment: change `DASH_USERNAME` or `DASH_PASSWORD` and
@@ -300,6 +301,7 @@ To delete an account altogether, see [Your data](privacy.md): everyone can delet
 | `POST /api/auth/switch-org {org_id}`              | work in another org                       |
 | `GET /api/orgs`, `POST /api/orgs {name}`          | your orgs; create one (platform admins, or anyone with open signup) |
 | `GET /api/orgs/{id}/members`                      | members, `member_count`, and for admins the invitations |
+| `PATCH /api/orgs/{id} {name, slug, require_2fa, password}` | rename (owners and admins); the slug and 2FA rule are owners' |
 | `PATCH /api/orgs/{id}/members/{uid} {role, password}` | change a role                         |
 | `DELETE /api/orgs/{id}/members/{uid} {password}`  | remove a member, or leave                 |
 | `POST /api/orgs/{id}/invitations {email, role, any_email, password}` | invite; returns the link's `path` |

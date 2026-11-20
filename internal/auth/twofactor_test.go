@@ -411,3 +411,34 @@ func TestOAuthAsksForSecondFactor(t *testing.T) {
 		t.Fatalf("right code: %v", res)
 	}
 }
+
+func TestRenameOrg(t *testing.T) {
+	t.Parallel()
+
+	a, h := newServer(t)
+	org, _ := a.acc.DefaultOrg()
+	addUser(t, a, org.ID, "bea", store.RoleMember)
+	addUser(t, a, org.ID, "ada", store.RoleAdmin)
+	owner := signIn(t, h, "admin", "s3cret")
+	path := fmt.Sprintf("/api/orgs/%d", org.ID)
+
+	if w := signIn(t, h, "bea", "pw-bea-long").do("PATCH", path, `{"name":"Nope","password":"pw-bea-long"}`); w.Code != http.StatusForbidden {
+		t.Fatalf("member: %d", w.Code)
+	}
+	if w := owner.do("PATCH", path, `{"name":"  ","password":"s3cret"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("blank name: %d %s", w.Code, w.Body)
+	}
+	if w := owner.do("PATCH", path, `{"name":"Northwind","password":"nope"}`); w.Code != http.StatusForbidden {
+		t.Fatalf("wrong password: %d", w.Code)
+	}
+	if w := owner.do("PATCH", path, `{"name":" Northwind ","password":"s3cret"}`); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"name":"Northwind"`) {
+		t.Fatalf("owner renames: %d %s", w.Code, w.Body)
+	}
+	// Admins rename too, but the slug stays.
+	if w := signIn(t, h, "ada", "pw-ada-long").do("PATCH", path, `{"name":"Contoso","password":"pw-ada-long"}`); w.Code != http.StatusOK {
+		t.Fatalf("admin renames: %d %s", w.Code, w.Body)
+	}
+	if got, _ := a.acc.Org(org.ID); got.Name != "Contoso" || got.Slug != org.Slug {
+		t.Fatalf("after rename: %+v", got)
+	}
+}
