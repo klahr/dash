@@ -365,12 +365,36 @@ func (c *CLI) status(ctx context.Context, args []string) error {
 	if running && st.Version != "" && st.Version != c.Version {
 		fmt.Fprintf(w, "              the running runner is %s; restart it to run %s\n", st.Version, c.Version)
 	}
+	fmt.Fprintf(w, "Environment:  %s\n", envState(EnvPath(*data)))
 	svc, err := c.newService(*data)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "Service:      %s\n", svc.State())
 	return nil
+}
+
+// envState describes the runner's env file: the names it sets (never
+// their values), or that there is none.
+func envState(path string) string {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "no " + path
+	}
+	if err != nil {
+		return err.Error()
+	}
+	var names []string
+	for _, l := range strings.Split(string(b), "\n") {
+		l = strings.TrimPrefix(strings.TrimSpace(l), "export ")
+		if k, _, ok := strings.Cut(l, "="); ok && !strings.HasPrefix(l, "#") {
+			names = append(names, strings.TrimSpace(k))
+		}
+	}
+	if len(names) == 0 {
+		return path + " (sets nothing)"
+	}
+	return path + " sets " + strings.Join(names, ", ") + " (restart the runner after changing it)"
 }
 
 // update replaces this dash binary with the hub's release (or --version)

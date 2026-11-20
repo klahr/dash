@@ -228,6 +228,12 @@ dash runner uninstall   # stop and remove it; the registration is kept
 dash runner update      # install the hub's version (or --version X) and restart the service
 ```
 
+Environment variables for the runner (`ANTHROPIC_API_KEY` for a [shared
+runner](#shared-runners-use-an-api-key), `DASH_BASH`, …) go in `runner.env` in its data directory,
+one `KEY=value` per line. The runner reads it each time it starts, so it reaches the background
+service too; `dash runner install` and updates leave it alone. Run `dash runner install` after
+changing it.
+
 Logs: `journalctl --user -u dash-runner` on Linux, `~/Library/Logs/dash-runner.log` on macOS,
 `%LOCALAPPDATA%\dash-runner\dash-runner.log` on Windows.
 
@@ -571,13 +577,33 @@ subscription login:
    env -u ANTHROPIC_API_KEY claude auth status
    claude auth logout
    ```
-2. Start the runner with the key in its environment:
+2. Give the runner the key in `runner.env`, in its data directory. The runner reads this file
+   each time it starts, under its background service too, and `dash runner install` and updates
+   leave it alone. Variables already set in the runner's environment win.
+
+   On Linux or macOS:
 
    ```sh
-   ANTHROPIC_API_KEY=sk-ant-... dash runner
+   umask 077
+   mkdir -p ~/.local/share/dash-runner
+   echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.local/share/dash-runner/runner.env
+   dash runner install
    ```
 
-   Put the variable in the service's environment if the runner runs as a service.
+   On Windows, in PowerShell:
+
+   ```powershell
+   $f = "$HOME\.local\share\dash-runner\runner.env"
+   New-Item -ItemType Directory -Force (Split-Path $f) | Out-Null
+   Add-Content $f 'ANTHROPIC_API_KEY=sk-ant-...'
+   icacls $f /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+   dash runner install
+   ```
+
+   A runner set up with `--data` reads `runner.env` in that directory instead. `dash runner
+   install` restarts the runner so it reads the file; do that again after changing it.
+   `dash runner status` shows the names the file sets (never their values). A runner started
+   by hand can take the key on its command line instead: `ANTHROPIC_API_KEY=sk-ant-... dash runner`.
 3. In **Runners**, open the runner, and under **Settings** turn on **Take other members' tasks**.
    Only its owner or an org admin can.
 

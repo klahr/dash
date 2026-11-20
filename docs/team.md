@@ -48,10 +48,14 @@ The runner is theirs and uses their own Claude login (Pro, Max, Team or Enterpri
 Claude subscription can't be shared, so a shared runner has no Claude login:
 
 ```sh
-ANTHROPIC_API_KEY=sk-ant-... dash runner
+umask 077
+mkdir -p ~/.local/share/dash-runner
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.local/share/dash-runner/runner.env
+dash runner install
 ```
 
-Then in **Runners**, open it, and under **Settings** turn on **Take other members' tasks**. See
+The runner reads `runner.env` in its data directory each time it starts, under its background
+service too. Then in **Runners**, open it, and under **Settings** turn on **Take other members' tasks**. See
 [Shared runners use an API key](several-computers.md#shared-runners-use-an-api-key).
 
 A shared runner runs tasks, scans, tests and deploys for everyone. It doesn't run anything that

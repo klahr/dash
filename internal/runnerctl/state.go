@@ -18,6 +18,12 @@ type State struct {
 	Since     time.Time `json:"since"` // when Connected last changed
 }
 
+// EnvPath is the runner's environment file in a data directory: KEY=VALUE
+// lines (e.g. ANTHROPIC_API_KEY for a shared runner) that `dash runner`
+// loads at start, so they reach it under its background service too, whose
+// definition `dash runner install` rewrites. Variables already set win.
+func EnvPath(dataDir string) string { return filepath.Join(dataDir, "runner.env") }
+
 // StatePath is the state file in a data directory.
 func StatePath(dataDir string) string { return filepath.Join(dataDir, "runner-state.json") }
 

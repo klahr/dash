@@ -70,7 +70,7 @@ func main() {
 	}
 
 	// The env file first: it may set the log format too.
-	envErr := auth.LoadDotEnv(o.envFile)
+	envFile, envErr := loadEnvFiles(o)
 	logOut := io.Writer(os.Stderr)
 	if runnerMode && o.logFile != "" {
 		superviseRunner(o.logFile) // on Windows, from its scheduled task: never returns
@@ -105,12 +105,24 @@ func main() {
 		slog.Warn("-" + name + " is a flag of dash runner, ignored by the hub, which runs no tasks, Claude or commands itself. Remove it from the hub's start command (pass it to dash runner)")
 	}
 	if envErr != nil {
-		fatal("read env file", "path", o.envFile, "err", envErr)
+		fatal("read env file", "path", envFile, "err", envErr)
 	}
 	o.resolveEnv()
 	if u := start(o); u != nil && u.restarting() {
 		restartRunner(u.bin) // updated: on the new binary
 	}
+}
+
+// loadEnvFiles loads -env and, for a runner, runner.env in its data
+// directory: how a runner under its background service (whose definition
+// `dash runner install` rewrites) gets ANTHROPIC_API_KEY and the like.
+// Variables already set win. It returns the file that failed, if one did.
+func loadEnvFiles(o *options) (string, error) {
+	if err := auth.LoadDotEnv(o.envFile); err != nil || !o.runnerMode {
+		return o.envFile, err
+	}
+	path := runnerctl.EnvPath(o.dataDir)
+	return path, auth.LoadDotEnv(path)
 }
 
 // shutdownWait is how long Dash waits, on the way out, for its running tasks
