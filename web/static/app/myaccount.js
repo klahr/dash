@@ -1,4 +1,4 @@
-import { $, h, ico, plural } from "./dom.js";
+import { $, fill, h, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -45,12 +45,12 @@ async function renderGoogle() {
   const body = $("#google-body");
   const g = await api("GET", "/api/account/google", null, "");
   if (!g.linked) {
-    body.replaceChildren(
+    fill(body,
       h("p", { class: "hint" }, "Link your Google account to sign in with it instead of your password."),
       h("a", { class: "btn primary", href: g.link_url }, ico("key"), "Link Google account"));
     return;
   }
-  body.replaceChildren(
+  fill(body,
     h("p", {}, ico("check"), ` Linked to ${g.identity.email}${g.identity.hd ? ` (${g.identity.hd})` : ""}.`),
     g.has_password ? h("button", { class: "btn danger", type: "button", onclick: attempt(async () => {
       const pw = await askPassword("Unlink your Google account?", "You'll sign in with your password.");
@@ -94,7 +94,7 @@ async function renderTwoFactor() {
   const body = $("#twofactor-body");
   const st = await api("GET", "/api/account/2fa", null, "");
   if (!st.enabled) {
-    body.replaceChildren(
+    fill(body,
       h("p", { class: "hint" }, "Sign in with a code from an app on your phone as well as your password, so a stolen password isn't enough."),
       h("button", { class: "btn primary", type: "button", onclick: attempt(async () => {
         await DashTwoFactor.enrol(body, { done: async () => {
@@ -106,7 +106,7 @@ async function renderTwoFactor() {
     return;
   }
   const left = st.recovery_codes_left;
-  body.replaceChildren(
+  fill(body,
     h("p", {}, ico("check"), " On. Signing in asks for a code from your authenticator app."),
     h("p", { class: `hint${left < 3 ? " warn" : ""}` }, `${plural(left, "recovery code")} left.`),
     h("div", { class: "sheet-actions" },
