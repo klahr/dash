@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -76,6 +77,9 @@ type fakeCoordinator struct {
 	// turns are the messages the turns were given (the goal's state in front).
 	turns []string
 	dirs  []string
+	// fail, when set, is what a turn fails with before it runs, as when no
+	// runner of the owner's can run it.
+	fail error
 }
 
 func (f *fakeCoordinator) Stream(ctx context.Context, dir string, history []agent.ChatMessage, emit func(agent.ChatDelta)) error {
@@ -89,6 +93,11 @@ func (f *fakeCoordinator) Stream(ctx context.Context, dir string, history []agen
 	defer release()
 	msg := history[len(history)-1].Content
 	f.mu.Lock()
+	if f.fail != nil {
+		err := f.fail
+		f.mu.Unlock()
+		return err
+	}
 	f.turns, f.dirs = append(f.turns, msg), append(f.dirs, dir)
 	act := f.act
 	f.mu.Unlock()
@@ -420,6 +429,57 @@ func TestGoalQueueModeRunsOutOfBudget(t *testing.T) {
 	_ = json.Unmarshal(do(t, h, "GET", "/api/projects/"+p.ID+"/goals", "").Body.Bytes(), &list)
 	if len(list) != 1 || list[0].Log != nil || len(list[0].Tasks) != 1 || list[0].Tasks[0].ID != id {
 		t.Fatalf("list %+v", list)
+	}
+}
+
+// A goal whose coordinator can't run says why (blocked), rather than
+// looking busy planning; Try again (resume) runs it once it can, which
+// clears that.
+func TestGoalBlocked(t *testing.T) {
+	s, p, fc := goalServer(t)
+	h := loggedIn(t, s.Routes())
+	fc.mu.Lock()
+	fc.fail = errors.New("runner laptop couldn't clone web: fatal: repository not found")
+	fc.mu.Unlock()
+	w := do(t, h, "POST", "/api/goals", `{"project":"`+p.ID+`","description":"Ship it"}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+	var g goalView
+	_ = json.Unmarshal(w.Body.Bytes(), &g)
+	settleGoals(s)
+	g = getGoal(t, h, g.ID)
+	if g.Status != model.GoalPlanning || !g.IsBlocked() || !strings.Contains(g.Blocked, "repository not found") || len(g.Pending) != 1 {
+		t.Fatalf("blocked %+v", g.Goal)
+	}
+	if state, _ := goalState(g.Goal); !strings.Contains(state, "Blocked") {
+		t.Fatalf("planning card: %q", state)
+	}
+	// Trying again while it still can't run keeps it blocked.
+	if w := do(t, h, "POST", "/api/goals/"+g.ID+"/resume", ""); w.Code != http.StatusOK {
+		t.Fatalf("try again: %d %s", w.Code, w.Body)
+	}
+	settleGoals(s)
+	if g = getGoal(t, h, g.ID); !g.IsBlocked() || !hasLog(g.Goal, "try again") {
+		t.Fatalf("still blocked %+v", g.Goal)
+	}
+	fc.mu.Lock()
+	fc.fail = nil
+	fc.mu.Unlock()
+	fc.setAct(func(msg string, call func(string, string) (string, bool)) {
+		if strings.Contains(msg, "propose a plan") {
+			call("propose_plan", `{"tasks":[{"title":"Only","prompt":"Do it all"}]}`)
+		}
+	})
+	if w := do(t, h, "POST", "/api/goals/"+g.ID+"/resume", ""); w.Code != http.StatusOK {
+		t.Fatalf("try again: %d %s", w.Code, w.Body)
+	}
+	settleGoals(s)
+	if g = getGoal(t, h, g.ID); g.Blocked != "" || g.Status != model.GoalWaiting || g.WaitingFor != model.GoalWaitPlan {
+		t.Fatalf("after it ran %+v", g.Goal)
+	}
+	if w := do(t, h, "POST", "/api/goals/"+g.ID+"/resume", ""); w.Code != http.StatusBadRequest {
+		t.Fatalf("resume a goal that runs: %d %s", w.Code, w.Body)
 	}
 }
 

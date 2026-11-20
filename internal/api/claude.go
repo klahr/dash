@@ -331,6 +331,24 @@ func (s *Server) projectChatRunner(c Caller, p model.Project, want string) (tunn
 	return tunnel.Runner{}, fmt.Errorf("your runner %s is offline: start it to chat about %s", linked[0].Name, p.Name)
 }
 
+// cloneForChat makes sure runner x has its clone of p before a chat about
+// p (or a goal's coordinator) is sent to it: a runner clones a hub's
+// project the first time it gets work for it, and one whose clone failed
+// would otherwise refuse the chat with "no clone of that project". Its
+// error is the real cause, the clone's git error included.
+func (sv *service) cloneForChat(ctx context.Context, x tunnel.Runner, p model.Project) error {
+	if sv.s.Dispatch == nil {
+		return nil
+	}
+	if _, err := sv.linkOn(ctx, x, p); err != nil {
+		if errors.Is(err, errNoRunnerOnline) {
+			return fmt.Errorf("your runner %s is offline: start it to chat about %s", x.Name, p.Name)
+		}
+		return fmt.Errorf("%s couldn't clone %s: %w", x.Name, p.Name, err)
+	}
+	return nil
+}
+
 // todoChatOnRunner reports whether t's chat runs on one of the caller's
 // runners rather than here: as p's chat does, and for a task that ran on a
 // runner, whose worktree is there.

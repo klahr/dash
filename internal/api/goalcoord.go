@@ -333,6 +333,7 @@ func (e *goalEngine) turn(id string) bool {
 	g, uerr := data.UpdateGoal(id, func(g *model.Goal) error {
 		g.Running = false
 		if err == nil {
+			g.Blocked = ""
 			return nil
 		}
 		// It couldn't run (no runner online, Claude failed), timed out or
@@ -344,7 +345,12 @@ func (e *goalEngine) turn(id string) bool {
 		case timedOut:
 			g.AddLog(model.GoalLogEntry{Kind: model.GoalLogStatus, Text: "The coordinator's turn took too long and was stopped."})
 		case ctx.Err() == nil:
-			g.AddLog(model.GoalLogEntry{Kind: model.GoalLogStatus, Text: "The coordinator couldn't run: " + textutil.OneLine(err.Error(), 300)})
+			// It needs its owner: say so on the goal, not only in its log.
+			why := textutil.OneLine(err.Error(), 300)
+			if g.Status.Active() {
+				g.Blocked = why
+			}
+			g.AddLog(model.GoalLogEntry{Kind: model.GoalLogStatus, Text: "The coordinator couldn't run: " + why})
 		}
 		return nil
 	})
@@ -468,7 +474,7 @@ func (s *Server) coordinatorTurn(ctx context.Context, g model.Goal, msg string) 
 	if err != nil {
 		return err
 	}
-	chatter, dir, err := s.coordinatorChatter(sv, p, g, "", &chatRelay{})
+	chatter, dir, err := s.coordinatorChatter(ctx, sv, p, g, "", &chatRelay{})
 	if err != nil {
 		return err
 	}
@@ -508,9 +514,12 @@ func ptr[T any](v T) *T { return &v }
 // coordinatorChatter is where g's coordinator runs for sv's caller: here,
 // in p's checkout (dir), or on a hub on the caller's runner linked to p
 // (want, if set and online), in its clone, relaying through relay.
-func (s *Server) coordinatorChatter(sv *service, p model.Project, g model.Goal, want string, relay *chatRelay) (agent.Chatter, string, error) {
+func (s *Server) coordinatorChatter(ctx context.Context, sv *service, p model.Project, g model.Goal, want string, relay *chatRelay) (agent.Chatter, string, error) {
 	if s.projectChatOnRunner(p) {
 		x, err := s.projectChatRunner(sv.c, p, want)
+		if err == nil {
+			err = sv.cloneForChat(ctx, x, p)
+		}
 		if err != nil {
 			return nil, "", err
 		}

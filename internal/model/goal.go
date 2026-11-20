@@ -39,6 +39,10 @@ func (s GoalStatus) Active() bool {
 // user raises the budget and resumes it.
 func (s GoalStatus) Ended() bool { return s == GoalDone || s == GoalOutOfBudget }
 
+// IsBlocked reports whether g's coordinator should run but can't (Blocked):
+// it needs its owner to fix what stops it.
+func (g Goal) IsBlocked() bool { return g.Blocked != "" && g.Status.Active() }
+
 // Goal modes: what the coordinator may do with the tasks it plans.
 const (
 	GoalAsk   = "ask"   // ask before queuing: its plan and new tasks wait for the user (the default)
@@ -84,6 +88,11 @@ type Goal struct {
 	// Note says why the goal waits, ended or can't go on (e.g. the
 	// coordinator's question, or that its budget is used up).
 	Note string `json:"note,omitempty"`
+	// Blocked says why the coordinator couldn't run on its last try (no
+	// runner of the owner's works on the project, the runner couldn't
+	// clone it, …): an active goal with it set needs its owner, whatever
+	// its status. It is cleared once a turn runs, or the goal ends.
+	Blocked string `json:"blocked,omitempty"`
 	// Plan is the coordinator's proposed plan, waiting for the user to
 	// accept it (ask mode); empty once accepted or rejected.
 	Plan []GoalPlanItem `json:"plan,omitempty"`

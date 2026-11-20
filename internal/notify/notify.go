@@ -193,7 +193,7 @@ func (n *Notifier) Start(ctx context.Context) {
 	}
 	if gs, ok := n.Store.(goalLister); ok {
 		for _, g := range gs.ListGoals("") {
-			n.goals[g.ID] = g.Status
+			n.goals[g.ID] = goalSeen(g)
 		}
 	}
 	if ds, ok := n.Store.(deployLister); ok {
@@ -324,20 +324,35 @@ func (n *Notifier) runnerDisk(ctx context.Context, ev model.Event) {
 	n.toWebhooks(ctx, note, rd.Projects)
 }
 
-// goal notifies that a goal started waiting for its user, is done or ran
-// out of budget: each time its status changes to one of those.
+// goalBlocked stands for a blocked goal (model.Goal.IsBlocked) among the
+// statuses the Notifier remembers.
+const goalBlocked model.GoalStatus = "blocked"
+
+// goalSeen is g's status as the Notifier remembers it: goalBlocked for a
+// goal whose coordinator can't run.
+func goalSeen(g model.Goal) model.GoalStatus {
+	if g.IsBlocked() {
+		return goalBlocked
+	}
+	return g.Status
+}
+
+// goal notifies that a goal started waiting for its user, is done, ran
+// out of budget or is blocked (its coordinator can't run): each time its
+// status changes to one of those.
 func (n *Notifier) goal(ctx context.Context, ev model.Event) {
 	g, ok := ev.Data.(model.Goal)
 	if !ok {
 		return
 	}
+	seen := goalSeen(g)
 	prev, known := n.goals[g.ID]
-	n.goals[g.ID] = g.Status
-	if !known || prev == g.Status {
+	n.goals[g.ID] = seen
+	if prev == seen || (!known && seen != goalBlocked) {
 		return // a new goal is first seen planning
 	}
-	switch g.Status {
-	case model.GoalWaiting, model.GoalDone, model.GoalOutOfBudget:
+	switch seen {
+	case model.GoalWaiting, model.GoalDone, model.GoalOutOfBudget, goalBlocked:
 	default:
 		return
 	}
@@ -347,6 +362,9 @@ func (n *Notifier) goal(ctx context.Context, ev model.Event) {
 	}
 	note.Goal = &GoalRef{ID: g.ID, Title: g.Title, Status: g.Status, URL: n.goalURL(g.ProjectID, g.ID)}
 	note.Message = g.Note
+	if seen == goalBlocked {
+		note.Goal.Blocked, note.Message = g.Blocked, g.Blocked
+	}
 	n.record(note, g.Owner)
 	n.push(ctx, note)
 	n.toWebhooks(ctx, note, []string{g.ProjectID})
@@ -440,7 +458,7 @@ func (n *Notifier) record(note Notification, user int64) {
 			}
 		}
 	case model.NotifyGoal:
-		if note.Goal == nil || note.Goal.Status != model.GoalWaiting {
+		if note.Goal == nil || (note.Goal.Status != model.GoalWaiting && note.Goal.Blocked == "") {
 			return
 		}
 		a.Kind, a.Ref, a.Title, a.URL = model.SummaryGoal, note.Goal.ID, note.Goal.Title, note.Goal.URL

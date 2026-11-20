@@ -31,7 +31,7 @@ import { checkForUpdate } from "./updates.js";
 import { onPlanningEvent } from "./planning.js";
 import { renderBoardSettings } from "./boards.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
-import { goalTaskChanged, onGoalEvent, showGoal } from "./goals.js";
+import { goalTaskChanged, onGoalEvent, showGoal, shownStatus } from "./goals.js";
 import { onDeployEvent } from "./deploys.js";
 import { goalChatEvent, projectChatEvent } from "./chatpane.js";
 
@@ -368,18 +368,19 @@ function elsewhere(ev, m) {
   }
 }
 
-// A goal in another project now waits for you (or ended): say so, with a
+// A goal in another project now waits for you, can't run (or ended): say so, with a
 // way to go there.
 function goalElsewhere(g, p, m, where) {
   if (!g?.id) return;
   const key = `${m.name}/goal/${g.id}`;
   const prev = seen.get(key);
-  seen.set(key, g.status);
-  if (!prev || prev === g.status) return;
-  const head = { waiting_for_you: "Goal waits for you", done: "Goal done", out_of_budget: "Goal out of budget" }[g.status];
+  const status = shownStatus(g);
+  seen.set(key, status);
+  if (!prev || prev === status) return;
+  const head = { waiting_for_you: "Goal waits for you", blocked: "Goal can't run", done: "Goal done", out_of_budget: "Goal out of budget" }[status];
   if (!head) return;
   const go = p ? { label: "Go", run: async () => { await selectProject(p); await showGoal(g.id); } } : null;
-  toast(`${g.title} · ${where}`, { tone: g.status === "out_of_budget" ? "error" : g.status === "done" ? "ok" : "review", head, icon: "target", action: go });
+  toast(`${g.title} · ${where}`, { tone: status === "out_of_budget" || status === "blocked" ? "error" : status === "done" ? "ok" : "review", head, icon: "target", action: go });
   notifyGoal(head, g, where, p);
 }
 

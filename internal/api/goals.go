@@ -336,11 +336,29 @@ func (sv *service) pauseGoal(id string) (model.Goal, error) {
 }
 
 // resumeGoal goes on with a paused goal, or one out of budget whose budget
-// now allows more, and wakes its coordinator for what came meanwhile.
+// now allows more, and wakes its coordinator for what came meanwhile. For
+// a goal whose coordinator couldn't run (blocked), it tries again.
 func (sv *service) resumeGoal(id string) (model.Goal, error) {
 	cur, err := sv.data.GetGoal(id)
 	if err != nil {
 		return cur, err
+	}
+	if cur.IsBlocked() {
+		g, err := sv.data.UpdateGoal(id, func(g *model.Goal) error {
+			if !g.IsBlocked() {
+				return nil
+			}
+			if len(g.Pending) == 0 {
+				g.Blocked = "" // nothing left for it to run for
+			}
+			g.AddLog(model.GoalLogEntry{Kind: model.GoalLogUser, Text: "You had the coordinator try again."})
+			return nil
+		})
+		if err != nil {
+			return g, err
+		}
+		sv.s.goals().kick(id)
+		return g, nil
 	}
 	if cur.Status == model.GoalOutOfBudget {
 		if why := sv.s.goalOverBudget(sv, cur); why != "" {
@@ -357,7 +375,7 @@ func (sv *service) resumeGoal(id string) (model.Goal, error) {
 		case model.GoalOutOfBudget:
 			g.Status, g.Note = model.GoalWorking, ""
 		default:
-			return fmt.Errorf("%w: only a paused goal, or one out of budget, can be resumed (this one is %s)", errBadRequest, g.Status)
+			return fmt.Errorf("%w: only a paused goal, one out of budget or one whose coordinator couldn't run can be resumed (this one is %s)", errBadRequest, g.Status)
 		}
 		g.AddLog(model.GoalLogEntry{Kind: model.GoalLogUser, Text: "You resumed the goal."})
 		return nil
@@ -377,7 +395,7 @@ func (sv *service) stopGoal(id string) (model.Goal, error) {
 		if g.Status == model.GoalDone {
 			return fmt.Errorf("%w: the goal is done already", errBadRequest)
 		}
-		g.Status, g.PausedFrom, g.WaitingFor, g.Plan, g.Pending = model.GoalDone, "", "", nil, nil
+		g.Status, g.PausedFrom, g.WaitingFor, g.Plan, g.Pending, g.Blocked = model.GoalDone, "", "", nil, nil, ""
 		g.Note = "Stopped by you."
 		g.AddLog(model.GoalLogEntry{Kind: model.GoalLogUser, Text: "You stopped the goal."})
 		return nil

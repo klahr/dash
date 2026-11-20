@@ -347,7 +347,7 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 			if _, linked := sv.hubProject(msg.Project); !linked {
 				if msg.Hub {
 					// The hub's project, which this runner has no checkout of.
-					return ct, errors.New("this runner has no clone of that project: link the project to it in Project settings → Runners")
+					return ct, errors.New("this runner has no clone of that project: give it the labels the project runs on (Project settings → Runners), or, if it has them, cloning it failed (see the runner's log)")
 				}
 				if _, err := sv.ownProject(msg.Project); err != nil {
 					return ct, errors.New("this runner has no project with that id")
@@ -365,7 +365,7 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 		return mode
 	}
 	if msg.Goal != "" && !ct.forHub && !ownViaHub {
-		return s.resolveGoalChat(sv, msg, shell, relay)
+		return s.resolveGoalChat(ctx, sv, msg, shell, relay)
 	}
 	if msg.Goal != "" {
 		if !ct.forHub || msg.Project == "" || msg.Todo != "" {
@@ -457,6 +457,9 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 		if s.projectChatOnRunner(p) {
 			// Claude runs on the caller's runner, in its clone of the project.
 			x, err := s.projectChatRunner(sv.c, p, msg.Runner)
+			if err == nil {
+				err = sv.cloneForChat(ctx, x, p)
+			}
 			switch c, err := onRunner(x, err, p.ID, "", p.ChatPermissionMode); {
 			case err == nil:
 				ct.chatter = c
@@ -567,7 +570,7 @@ func projectChatAdded(stored []agent.ChatMessage, msg chatRequest) ([]agent.Chat
 // which its wake-ups add to as well), run as the coordinator, read-only,
 // with the goal's tools, as the caller. Turns of one goal take turns with
 // its wake-ups. A message to a coordinator waiting on a question answers it.
-func (s *Server) resolveGoalChat(sv *service, msg chatRequest, shell bool, relay *chatRelay) (chatSetup, error) {
+func (s *Server) resolveGoalChat(ctx context.Context, sv *service, msg chatRequest, shell bool, relay *chatRelay) (chatSetup, error) {
 	ct := chatSetup{endReview: func() {}}
 	if shell {
 		return ct, fmt.Errorf("%w: commands don't run in a goal's chat", errBadRequest)
@@ -586,7 +589,7 @@ func (s *Server) resolveGoalChat(sv *service, msg chatRequest, shell bool, relay
 	if err != nil {
 		return ct, err
 	}
-	chatter, dir, err := s.coordinatorChatter(sv, p, g, msg.Runner, relay)
+	chatter, dir, err := s.coordinatorChatter(ctx, sv, p, g, msg.Runner, relay)
 	if err == nil {
 		if _, remote := chatter.(runnerChat); remote {
 			err = noAttachments(msg.Messages[len(msg.Messages)-1:])

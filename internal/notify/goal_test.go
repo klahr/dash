@@ -17,8 +17,8 @@ type goalStore struct {
 
 func (g goalStore) ListGoals(string) []model.Goal { return g.goals }
 
-// A goal notifies when it starts waiting for its user, is done or runs out
-// of budget: once per change, not for statuses it had when Dash started.
+// A goal notifies when it starts waiting for its user, its coordinator
+// can't run (blocked), it is done or runs out of budget: once per change, not for statuses it had when Dash started.
 func TestGoalNotifications(t *testing.T) {
 	r := newReceiver(t)
 	_, fs, _ := setup(t)
@@ -37,8 +37,15 @@ func TestGoalNotifications(t *testing.T) {
 	goal("g1", model.GoalOutOfBudget, "Out of budget: its 3 tasks are used up and finished.")
 	goal("g2", model.GoalPlanning, "") // a new goal
 	goal("g2", model.GoalDone, "Stopped by you.")
+	blocked := func(why string) {
+		n.Observe(model.Event{Type: model.EvGoalUpdated, ProjectID: "p1", Data: model.Goal{ID: "g3", ProjectID: "p1", Title: "Faster search", Status: model.GoalPlanning, Blocked: why}})
+	}
+	blocked("") // a new goal
+	blocked("no runner of yours works on web")
+	blocked("no runner of yours works on web") // no change
+	blocked("")                                // it ran
 	settle(n)
-	if got := strings.Join(r.events(), " "); got != "goal.attention goal.attention goal.attention" {
+	if got := strings.Join(r.events(), " "); got != "goal.attention goal.attention goal.attention goal.attention" {
 		t.Fatalf("events %s", got)
 	}
 	// Deliveries run at once, so they come in any order.
@@ -56,9 +63,12 @@ func TestGoalNotifications(t *testing.T) {
 		if p.Goal.Status == model.GoalWaiting && (p.Goal.URL != "https://dash.example.com/p/p1/goals/g1" || !strings.Contains(p.Message, "plan of 3 tasks")) {
 			t.Fatalf("payload %s", b)
 		}
+		if p.Goal.ID == "g3" && (p.Goal.Blocked != "no runner of yours works on web" || p.Message != p.Goal.Blocked) {
+			t.Fatalf("blocked payload %s", b)
+		}
 	}
 	slices.Sort(statuses)
-	if got := strings.Join(statuses, " "); got != "g1:out_of_budget g1:waiting_for_you g2:done" {
+	if got := strings.Join(statuses, " "); got != "g1:out_of_budget g1:waiting_for_you g2:done g3:planning" {
 		t.Fatalf("goals told %s", got)
 	}
 	note := Notification{Type: model.NotifyGoal, Project: ProjectRef{ID: "p1", Name: "Shop"}, Goal: &GoalRef{ID: "g1", Title: "Faster search", Status: model.GoalOutOfBudget}}
@@ -67,5 +77,8 @@ func TestGoalNotifications(t *testing.T) {
 	}
 	if pp := pushPayload(note, nil); pp.Tag != "dash-goal-g1" || pp.URL != "/p/p1/goals/g1" {
 		t.Fatalf("push %+v", pp)
+	}
+	if note.Goal.Blocked = "x"; note.Head() != "Goal can't run" {
+		t.Fatalf("blocked head %q", note.Head())
 	}
 }

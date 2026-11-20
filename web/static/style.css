@@ -3329,6 +3329,7 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .g-paused { --c: var(--faint); }
 .g-done { --c: var(--merged); }
 .g-out_of_budget { --c: var(--failed); }
+.g-blocked { --c: var(--failed); }
 
 .goal-detail { z-index: 34; } /* under a task opened from its plan, and the task's scrim */
 

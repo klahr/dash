@@ -201,6 +201,9 @@ func taskState(t model.Todo) (state, tone string) {
 
 // goalState is a goal's state in an owner's words.
 func goalState(g model.Goal) (state, tone string) {
+	if g.IsBlocked() {
+		return "Blocked, needs its owner", "waiting"
+	}
 	switch g.Status {
 	case model.GoalPlanning:
 		return "Being planned", "working"

@@ -126,7 +126,7 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | `task.failed`       | a task failed                                                |
 | `task.merged`       | a task's work landed, or it was closed with no changes       |
 | `permission.needed` | Claude waits for you to approve a tool                       |
-| `goal.attention`    | a [goal](goals.md) waits for you, is done or out of budget   |
+| `goal.attention`    | a [goal](goals.md) waits for you, can't run, is done or out of budget |
 | `issue.new`         | a [scan](scans.md) or Claude (`report_issue`) finds a new issue (off by default) |
 | `build.failing`     | GitHub Actions starts failing on the default branch          |
 | `deploy.failed`     | a [deploy](deploys.md#when-a-deploy-fails) or rollback failed |
@@ -176,7 +176,8 @@ the issue's file in `message`. They fire once per issue: an issue reported again
 type, file and rule or title) doesn't fire, nor does one you add by hand. Existing webhooks
 don't get them until you tick the event; neither do new ones.
 `goal.attention` events have `"goal": {"id", "title", "status", "url"}` instead of `task`, and say
-in `message` what the goal waits for, or why it ended; existing webhooks don't get them until you
+in `message` what the goal waits for, or why it ended. For a goal whose coordinator can't run,
+`goal` also has `"blocked"`, the reason, which is in `message` too; existing webhooks don't get them until you
 tick the event. `permission.needed` events also have `"permission": {"id", "tool"}`, and `build.failing`
 events have `"build": {"branch", "sha", "url"}` (`task` is the task investigating the failure,
 if there is one). `deploy.failed` events have `"deploy": {"id", "environment", "commit", "rollback", "url"}`

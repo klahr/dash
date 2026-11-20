@@ -81,7 +81,9 @@ type GoalRef struct {
 	ID     string           `json:"id"`
 	Title  string           `json:"title"`
 	Status model.GoalStatus `json:"status"`
-	URL    string           `json:"url,omitempty"` // the goal in Dash
+	// Blocked says why the goal's coordinator can't run (model.Goal.Blocked).
+	Blocked string `json:"blocked,omitempty"`
+	URL     string `json:"url,omitempty"` // the goal in Dash
 }
 
 type IssueRef struct {
@@ -152,6 +154,9 @@ func (n Notification) Head() string {
 	}
 	if n.Type == model.NotifyGoal && n.Goal != nil {
 		h = goalHeads[n.Goal.Status]
+		if n.Goal.Blocked != "" {
+			h = "Goal can't run"
+		}
 	}
 	if n.Type == model.NotifyIssue && n.Issue != nil && n.Issue.Severity != "" {
 		h += " (" + string(n.Issue.Severity) + ")"

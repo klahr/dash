@@ -10,7 +10,8 @@ Each goal belongs to one project and has:
 - a **mode**: **ask before queuing** (the default) or **queue on its own**
 - a **budget** (both optional): the most tasks it may create, and the share of the weekly usage
   window its tasks may use
-- a **status**: planning, working, waiting for you, paused, done or out of budget
+- a **status**: planning, working, waiting for you, paused, done or out of budget; a goal whose
+  coordinator can't run shows **Can't run** instead, with the reason
 - a **log** of what the coordinator did, and why
 - the coordinator's **conversation**: its session, which every wake-up and every message you
   send it continues
@@ -45,7 +46,7 @@ again.
 
 **Goals** is in the sidebar, next to **History** and **Checklist** (in the menu on a phone;
 `go` on the keyboard). Each goal shows how many of its tasks are merged ("4 of 7 merged") and
-its status. Goals waiting for you come first.
+its status. Goals waiting for you, and goals that can't run, come first.
 
 Pick a goal to open it beside the list (full screen with **Back** on a phone). `Esc` closes it;
 `j` and `k` open the next and previous goal. It shows:
@@ -57,7 +58,7 @@ Pick a goal to open it beside the list (full screen with **Back** on a phone). `
 - **Log**: what the coordinator did and why, newest first.
 
 Its buttons: **Review plan** (a plan waits), **Queue drafts** (its drafts wait), **Talk to
-coordinator**, **Pause**, **Resume**, **Edit goal**, **Copy link** and **Stop**. **Talk to
+coordinator**, **Pause**, **Resume**, **Try again** (it can't run), **Edit goal**, **Copy link** and **Stop**. **Talk to
 coordinator** opens the goal's chat as a tab in the chat pane; answer its questions there.
 **Copy link** copies the goal's address, which opens it for anyone in the project (see
 [Links](links.md)).
@@ -138,8 +139,9 @@ goal's project. It has no tool to approve, merge, tag a release or change the ch
 can't start a task despite the weekly pace.
 
 On a hub, the coordinator runs on the owner's runner that works on the project, like a project chat.
-If none is online, the events wait and the log says why; the next event, or **Resume**, tries
-again.
+The hub has that runner clone the project first. If the coordinator can't run (no runner of yours
+works on the project, it is offline, or the clone failed), the goal shows **Can't run** with the
+reason, and you are notified. The events wait; the next event, or **Try again**, tries again.
 
 ## Talk to the coordinator
 
