@@ -1275,28 +1275,69 @@ func (s *Server) startDeployHere(ctx context.Context, p model.Project, req deplo
 
 	// Its release tag; an environment that deploys release tags only takes
 	// nothing else (checked again here: it may have been queued before).
-	if f, err := release.ParseFormat(req.TagFormat); err == nil && req.TagFormat != "" {
-		if refs, err := s.Git.TagCommits(ctx, p.ID, p.Path); err == nil {
-			tags := releaseTagsAt(f, refs, c.SHA)
-			if len(tags) == 0 && req.ReleaseTagsOnly && s.fetchTagsNow(ctx, p) {
-				if refs, err = s.Git.TagCommits(ctx, p.ID, p.Path); err == nil {
-					tags = releaseTagsAt(f, refs, c.SHA)
-				}
-			}
-			if len(tags) > 0 {
-				out.Tag = tags[0]
-			}
-		}
-	}
+	out.Tag = s.releaseTagAt(ctx, p, req.TagFormat, c.SHA, req.ReleaseTagsOnly)
 	if req.ReleaseTagsOnly && out.Tag == "" {
 		return out, untaggedErr(e, c.SHA, "")
 	}
+	dir, err := s.deployCheckout(ctx, p, e, c)
+	if err != nil {
+		return out, err
+	}
+	if req.PrevCommit != "" && req.PrevCommit != c.SHA {
+		out.Commits, out.Todos = s.shippedSince(ctx, p, req.PrevCommit, c.SHA)
+	}
+	job, err := s.deployJob(p, e, req, c, dir, shared)
+	if err != nil {
+		return out, err
+	}
+	out.EnvFile = slices.Contains(deploy.EnvFiles(s.envDir()), e.Name)
+	// It runs on, whoever asked; Dash stopping stops it.
+	if err := s.deployRuns.Start(context.WithoutCancel(ctx), key, job); err != nil {
+		if errors.Is(err, deploy.ErrBusy) {
+			return out, fmt.Errorf("%w: %v", errConflict, err)
+		}
+		return out, err
+	}
+	s.deployStarts.Store(req.ID, out)
+	slog.Info("deploy: running", "project", p.Name, "environment", e.Name, "commit", c.Short, "dir", dir)
+	return out, nil
+}
 
-	// Its checkout, kept between deploys so ignored files (dependencies,
-	// build caches) stay.
+// releaseTagAt is the release tag of p's commit sha in tag format format
+// ("" if the format is empty or bad, or no such tag points at sha).
+// fetchIfMissing: with no such tag here, fetch origin's tags and look again.
+func (s *Server) releaseTagAt(ctx context.Context, p model.Project, format, sha string, fetchIfMissing bool) string {
+	if format == "" {
+		return ""
+	}
+	f, err := release.ParseFormat(format)
+	if err != nil {
+		return ""
+	}
+	refs, err := s.Git.TagCommits(ctx, p.ID, p.Path)
+	if err != nil {
+		return ""
+	}
+	tags := releaseTagsAt(f, refs, sha)
+	if len(tags) == 0 && fetchIfMissing && s.fetchTagsNow(ctx, p) {
+		if refs, err = s.Git.TagCommits(ctx, p.ID, p.Path); err != nil {
+			return ""
+		}
+		tags = releaseTagsAt(f, refs, sha)
+	}
+	if len(tags) == 0 {
+		return ""
+	}
+	return tags[0]
+}
+
+// deployCheckout checks commit c of p out in environment e's checkout,
+// kept between deploys so ignored files (dependencies, build caches) stay;
+// a checkout that can't move to c is made again. It returns its directory.
+func (s *Server) deployCheckout(ctx context.Context, p model.Project, e model.Environment, c model.CommitInfo) (string, error) {
 	dir := filepath.Join(s.deployRoot(), p.ID, e.Name)
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
-		return out, err
+		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 		if err := s.Git.CheckoutDetached(ctx, p.ID, dir, c.SHA); err != nil {
@@ -1307,30 +1348,36 @@ func (s *Server) startDeployHere(ctx context.Context, p model.Project, req deplo
 		_ = os.RemoveAll(dir)
 		s.Git.PruneWorktrees(ctx, p.ID, p.Path)
 		if err := s.Git.AddDetachedWorktree(ctx, p.ID, p.Path, dir, c.SHA); err != nil {
-			return out, fmt.Errorf("check out %s for the deploy: %w", c.Short, err)
+			return "", fmt.Errorf("check out %s for the deploy: %w", c.Short, err)
 		}
 	}
+	return dir, nil
+}
 
-	// What it ships: the commits since the previous deploy.
-	if req.PrevCommit != "" && req.PrevCommit != c.SHA {
-		if cs, err := s.Git.CommitsBetween(ctx, p.ID, p.Path, req.PrevCommit, c.SHA, time.Time{}); err == nil {
-			out.Commits = len(cs)
-			for i, rc := range cs {
-				if i >= maxShipped {
-					break
-				}
-				out.Todos = append(out.Todos, rc.Todos...)
-			}
-		}
+// shippedSince is what a deploy of sha ships after prev: how many commits,
+// and the tasks of the first maxShipped of them (none if git can't tell).
+func (s *Server) shippedSince(ctx context.Context, p model.Project, prev, sha string) (n int, todos []string) {
+	cs, err := s.Git.CommitsBetween(ctx, p.ID, p.Path, prev, sha, time.Time{})
+	if err != nil {
+		return 0, nil
 	}
+	for _, rc := range cs[:min(len(cs), maxShipped)] {
+		todos = append(todos, rc.Todos...)
+	}
+	return len(cs), todos
+}
 
+// deployJob is the job deploying commit c of p to environment e in
+// checkout dir: its commands, and its environment (this computer's, or
+// the shared one; the env file's secrets; the deploy's variables).
+func (s *Server) deployJob(p model.Project, e model.Environment, req deployRun, c model.CommitInfo, dir string, shared bool) (deploy.Job, error) {
 	test := ""
 	if req.Tests {
 		if why := p.HeldCommands[model.CmdTest]; why != "" {
-			return out, fmt.Errorf("%w: %s needs passing tests, and the test command may not run here: %s", errForbidden, e.Name, why)
+			return deploy.Job{}, fmt.Errorf("%w: %s needs passing tests, and the test command may not run here: %s", errForbidden, e.Name, why)
 		}
 		if test = model.CleanScript(p.TestCommand); test == "" {
-			return out, fmt.Errorf("%w: %s needs passing tests, and the project has no test command", errBadRequest, e.Name)
+			return deploy.Job{}, fmt.Errorf("%w: %s needs passing tests, and the project has no test command", errBadRequest, e.Name)
 		}
 	}
 	build := e.BuildCommand
@@ -1339,9 +1386,8 @@ func (s *Server) startDeployHere(ctx context.Context, p model.Project, req deplo
 	}
 	secrets, err := deploy.ReadEnvFile(s.envDir(), e.Name)
 	if err != nil {
-		return out, fmt.Errorf("%w: the %s env file: %v", errBadRequest, e.Name, err)
+		return deploy.Job{}, fmt.Errorf("%w: the %s env file: %v", errBadRequest, e.Name, err)
 	}
-	out.EnvFile = slices.Contains(deploy.EnvFiles(s.envDir()), e.Name)
 	base := localrun.Environ()
 	if shared {
 		base = s.sharedEnv()
@@ -1358,18 +1404,8 @@ func (s *Server) startDeployHere(ctx context.Context, p model.Project, req deplo
 		vars = append(vars, model.DeployVarRollback+"=1")
 	}
 	env := append(append(base, secrets...), vars...)
-	job := deploy.Job{ID: req.ID, Dir: dir, Test: test, Build: build, Deploy: e.DeployCommand, Verify: e.VerifyCommand, Env: env, Secrets: secrets,
-		URL: e.URL, HealthPath: e.HealthPath, HealthStatus: e.HealthStatus, HealthWait: e.HealthWait(), Soak: time.Duration(e.Soak) * time.Second}
-	// It runs on, whoever asked; Dash stopping stops it.
-	if err := s.deployRuns.Start(context.WithoutCancel(ctx), key, job); err != nil {
-		if errors.Is(err, deploy.ErrBusy) {
-			return out, fmt.Errorf("%w: %v", errConflict, err)
-		}
-		return out, err
-	}
-	s.deployStarts.Store(req.ID, out)
-	slog.Info("deploy: running", "project", p.Name, "environment", e.Name, "commit", c.Short, "dir", dir)
-	return out, nil
+	return deploy.Job{ID: req.ID, Dir: dir, Test: test, Build: build, Deploy: e.DeployCommand, Verify: e.VerifyCommand, Env: env, Secrets: secrets,
+		URL: e.URL, HealthPath: e.HealthPath, HealthStatus: e.HealthStatus, HealthWait: e.HealthWait(), Soak: time.Duration(e.Soak) * time.Second}, nil
 }
 
 // commitPair asks how many commits Head has that Base hasn't.
