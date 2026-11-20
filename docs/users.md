@@ -296,6 +296,14 @@ domain. **Sessions they already have last until they expire (7 days)**: end them
 on the member (or remove the member, which takes effect at once). Their API tokens keep working
 until revoked or the member is removed: revoke them under **Organization → Members' tokens**.
 
+Removing a member, or a member leaving, moves their queued tasks in the org back to **Drafts**:
+a task runs only on its owner's runners or a shared one (see
+[Whose work a runner does](several-computers.md#whose-work-a-runner-does)), so no runner would take
+them any more. This counts the tasks they made and the ones they queued for someone else. A task
+they made stays theirs: queued again, it needs a shared runner. Dash's own tasks that were theirs
+(a failing build's fix, a tracker card) stay queued and go to the next member in line. Their tasks
+in other states stay as they are.
+
 To delete an account altogether, see [Your data](privacy.md): everyone can delete their own in
 **Account → Your data**, and platform admins can delete someone else's from the members list.
 

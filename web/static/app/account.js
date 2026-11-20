@@ -151,7 +151,8 @@ async function renderOrg() {
       }) }, "Sign out") : null,
       (canEdit || self) ? h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
         const pw = await askPassword(self ? `Leave ${org.org.name}?` : `Remove ${m.username}?`,
-          self ? "You lose access at once. Someone has to invite you again to come back." : `${m.username} loses access to ${org.org.name} at once.`);
+          self ? "You lose access at once, and your queued tasks here go back to Drafts. Someone has to invite you again to come back."
+            : `${m.username} loses access to ${org.org.name} at once. Their queued tasks go back to Drafts, as no runner would take them any more.`);
         if (pw == null) return;
         await api("DELETE", `/api/orgs/${org.org.id}/members/${m.id}`, { password: pw }, "");
         if (self) { location.replace("/"); return; }

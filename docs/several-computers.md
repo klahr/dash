@@ -530,6 +530,8 @@ the org sees it and adds tasks to it, and each member's tasks run on their own r
 - A task that is no one's needs a shared runner: one whose author's account was deleted, or one
   Dash made when none of those above is a member. A goal's
   tasks are the goal's owner's.
+- Removing a member moves their queued tasks back to **Drafts**, as no runner would take them
+  any more (see [Removing people](users.md#removing-people)).
 - A scan run is for the member who pressed **Run**. A scheduled run is for the member who last
   turned its schedule on or changed it.
 - **Run tests again**, and the project's start server, test and deploy commands and previews, run

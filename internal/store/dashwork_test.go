@@ -94,3 +94,63 @@ func TestGiveDashWork(t *testing.T) {
 		t.Errorf("a person's task got RunBy %d", got.RunBy)
 	}
 }
+
+// Removing a member moves their queued tasks in the org to Drafts (no
+// runner would take them any more), and hands Dash's own tasks that were
+// theirs back to Dash to give to the next member. Others' tasks, their
+// tasks in other states and in other orgs stay as they are.
+func TestRemoveMemberDraftsQueued(t *testing.T) {
+	t.Parallel()
+	s, acc, owner, org, _ := tokenAccounts(t)
+	carol := addMember(t, acc, owner, org, "carol", RoleMember)
+	p, err := s.CreateProject(model.Project{Name: "web", OrgID: org})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.CreateProject(model.Project{Name: "elsewhere", OrgID: org + 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, _ := s.CreateQueuedTodo(model.Todo{ProjectID: p.ID, CreatedBy: carol, Title: "carol's", Waiting: "waiting: no runner of carol's"})
+	started, _ := s.CreateQueuedTodo(model.Todo{ProjectID: p.ID, CreatedBy: owner, RunBy: carol, Title: "owner's, queued by carol"})
+	dash, _ := s.CreateQueuedTodo(model.Todo{ProjectID: p.ID, RunBy: carol, Title: "Fix failing build", CIRun: 1})
+	owners, _ := s.CreateQueuedTodo(model.Todo{ProjectID: p.ID, CreatedBy: owner, Title: "owner's"})
+	draft, _ := s.CreateTodo(model.Todo{ProjectID: p.ID, CreatedBy: carol, Title: "carol's draft"})
+	away, _ := s.CreateQueuedTodo(model.Todo{ProjectID: other.ID, CreatedBy: carol, Title: "another org's"})
+
+	if err := acc.RemoveMember(owner, org, carol); err != nil {
+		t.Fatal(err)
+	}
+	get := func(id string) model.Todo {
+		t.Helper()
+		x, err := s.GetTodo(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return x
+	}
+	for _, id := range []string{mine.ID, started.ID} {
+		if x := get(id); x.Status != model.StatusDraft || x.Waiting != "" {
+			t.Errorf("%s: %s waiting %q, want a draft", x.Title, x.Status, x.Waiting)
+		}
+	}
+	if x := get(dash.ID); x.Status != model.StatusQueued || x.RunBy != 0 {
+		t.Errorf("Dash's task: %s RunBy %d, want queued and given to nobody", x.Status, x.RunBy)
+	}
+	for _, id := range []string{owners.ID, away.ID} {
+		if x := get(id); x.Status != model.StatusQueued {
+			t.Errorf("%s: %s, want still queued", x.Title, x.Status)
+		}
+	}
+	if x := get(draft.ID); x.Status != model.StatusDraft {
+		t.Errorf("draft: %s", x.Status)
+	}
+	// It stuck: a reload from the database agrees.
+	data, err := load(s.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if x := data.Todos[mine.ID]; x.Status != model.StatusDraft {
+		t.Errorf("stored: %s", x.Status)
+	}
+}

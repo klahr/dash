@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/passhash"
 )
 
@@ -729,11 +730,19 @@ func (a *Accounts) SetRole(actor, orgID, target int64, role Role) error {
 // RemoveMember takes target out of orgID, as actor (who may be target,
 // leaving), with their general chat in the org, their own chats about
 // the org's projects and their plans there. Their sessions in that org move on at their next
-// request.
+// request. Their queued tasks there go back to Drafts, as no runner would take them any more
+// (see orphanedQueued); Dash's own tasks that were theirs stay queued, for the next member
+// (DashWorkFor).
 func (a *Accounts) RemoveMember(actor, orgID, target int64) error {
 	a.s.mu.Lock()
 	defer a.s.mu.Unlock()
+	orphans := a.s.orphanedQueuedLocked(orgID, target)
 	err := inTx(a.db, func(tx *sql.Tx) error {
+		for _, t := range orphans {
+			if err := putTodo(tx, t); err != nil {
+				return err
+			}
+		}
 		if err := changeMember(tx, actor, orgID, target, ""); err != nil {
 			return err
 		}
@@ -759,7 +768,43 @@ func (a *Accounts) RemoveMember(actor, orgID, target int64) error {
 			delete(a.s.data.ProjectChats, owner)
 		}
 	}
+	for _, t := range orphans {
+		a.s.data.Todos[t.ID] = t
+		a.s.emit(model.EvTodoUpdated, t.ProjectID, t.ID, *t)
+	}
 	return nil
+}
+
+// orphanedQueuedLocked is, changed but not stored, the queued tasks of
+// orgID's projects that only target's runners (or shared ones) would take:
+// those target made, or started a run of. Removing target from the org
+// would leave them waiting for good, so they go back to Drafts.
+// Dash's own tasks given to target (DashWorkFor) stay queued, given to
+// nobody, so the next member takes them. The caller holds the lock.
+func (s *Store) orphanedQueuedLocked(orgID, target int64) []*model.Todo {
+	if target <= 0 {
+		return nil
+	}
+	var out []*model.Todo
+	now := time.Now()
+	for _, t := range s.data.Todos {
+		if t.Status != model.StatusQueued || s.projectOrgLocked(t.ProjectID) != orgID {
+			continue
+		}
+		if t.CreatedBy != target && t.RunBy != target {
+			continue
+		}
+		cp := clone(*t)
+		cp.UpdatedAt = now
+		if cp.CreatedBy == 0 {
+			cp.RunBy = 0 // Dash's own: DashWorkFor gives it to someone else
+		} else {
+			cp.Status, cp.Error = model.StatusDraft, ""
+			cp.Paused, cp.Waiting, cp.StartNow, cp.Rejoin = false, "", false, false
+		}
+		out = append(out, &cp)
+	}
+	return out
 }
 
 // ---- invitations ----
