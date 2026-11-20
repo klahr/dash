@@ -3,11 +3,9 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/klahr/dash/internal/localrun"
@@ -69,26 +67,9 @@ func (c CodexChat) Stream(ctx context.Context, dir string, history []ChatMessage
 	args, env := o.args()
 	cmd := exec.CommandContext(ctx, prov.bin(), args...)
 	cmd.Env = localrun.Environ(env...)
-	cmd.Dir = dir
-	if cmd.Dir == "" {
-		cmd.Dir = c.Dir
-	}
-	if cmd.Dir == "" {
-		cmd.Dir = os.TempDir()
-	} else if err := os.MkdirAll(cmd.Dir, 0o755); err != nil {
-		return err
-	}
-	emit(ChatDelta{Kind: "cwd", Text: cmd.Dir})
-	cmd.Stdin = strings.NewReader(transcript(history))
-	localrun.Group(cmd, syscall.SIGTERM, 5*time.Second)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	stdout, err := cmd.StdoutPipe()
+	stdout, stderr, err := startChat(cmd, dir, c.Dir, history, emit)
 	if err != nil {
 		return err
-	}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start %s: %w", prov.bin(), err)
 	}
 	started := time.Now()
 	var tr codexTranslator

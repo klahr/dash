@@ -1,19 +1,12 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"regexp"
-	"slices"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
-	"github.com/klahr/dash/internal/localrun"
+	"github.com/klahr/dash/internal/clicheck"
 	"github.com/klahr/dash/internal/textutil"
 )
 
@@ -25,12 +18,10 @@ import (
 type codexChecker struct {
 	Bin string
 
-	mu       sync.Mutex
-	onChange func()
-	st       CLIStatus
-	probe    []string // warnings from the last Check
-	seen     []string // warnings from runs with this version
-	run      func(ctx context.Context, bin string, args ...string) (string, error)
+	cli       clicheck.Base // the version and the warnings; its lock guards the fields below too
+	checked   time.Time
+	loggedOut bool
+	run       func(ctx context.Context, bin string, args ...string) (string, error)
 }
 
 var _ CLIChecker = (*codexChecker)(nil)
@@ -58,9 +49,7 @@ func (c *codexChecker) OnChange(f func()) {
 	if c == nil {
 		return
 	}
-	c.mu.Lock()
-	c.onChange = f
-	c.mu.Unlock()
+	c.cli.OnChange(f)
 }
 
 // CLIStatus is what the checker found last, with the warnings of the runs
@@ -69,10 +58,10 @@ func (c *codexChecker) CLIStatus() CLIStatus {
 	if c == nil {
 		return CLIStatus{}
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	s := c.st
-	s.Warnings = append(slices.Clone(c.probe), c.seen...)
+	var s CLIStatus
+	c.cli.Read(func(version string, warnings []string) {
+		s = CLIStatus{Version: version, Warnings: warnings, CheckedAt: c.checked, LoggedOut: c.loggedOut}
+	})
 	return s
 }
 
@@ -82,29 +71,8 @@ func (c *codexChecker) Run(ctx context.Context, every time.Duration) {
 	if c == nil {
 		return
 	}
-	if every <= 0 {
-		every = time.Hour
-	}
-	login := time.NewTicker(min(5*time.Minute, every))
-	defer login.Stop()
-	for {
-		c.Check(ctx)
-		full := time.After(every)
-	wait:
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-full:
-				break wait
-			case <-login.C:
-				c.checkLogin(ctx)
-			}
-		}
-	}
+	clicheck.Loop(ctx, every, 5*time.Minute, func(ctx context.Context) { c.Check(ctx) }, c.checkLogin)
 }
-
-var codexVersion = regexp.MustCompile(`\b(\d+\.\d+\.\d+[0-9A-Za-z.+-]*)`)
 
 // Check runs the CLI's version, help and login status now.
 func (c *codexChecker) Check(ctx context.Context) CLIStatus {
@@ -115,7 +83,7 @@ func (c *codexChecker) Check(ctx context.Context) CLIStatus {
 	var warns []string
 	version := ""
 	out, err := run(ctx, bin, "--version")
-	switch v := codexVersion.FindStringSubmatch(out); {
+	switch v := clicheck.VersionRe.FindStringSubmatch(out); {
 	case err != nil && (out == "" || v == nil):
 		warns = append(warns, fmt.Sprintf("Couldn't run `%s --version`: %v. Install the Codex CLI (npm install -g @openai/codex) to run this project's tasks here", bin, err))
 	case v == nil:
@@ -136,38 +104,25 @@ func (c *codexChecker) Check(ctx context.Context) CLIStatus {
 		}
 		loggedOut = codexLoggedOut(run(ctx, bin, "login", "status"))
 	}
-	c.mu.Lock()
-	changed := version != c.st.Version || loggedOut != c.st.LoggedOut || !slices.Equal(warns, c.probe)
-	if version != c.st.Version {
-		c.seen = nil // warnings from runs belong to the version that ran them
-	}
-	c.st = CLIStatus{Version: version, CheckedAt: time.Now(), LoggedOut: loggedOut}
-	c.probe = warns
-	notify := c.onChange
-	c.mu.Unlock()
-	if changed && notify != nil {
-		notify()
-	}
+	c.cli.Set(version, warns, func() bool {
+		changed := loggedOut != c.loggedOut
+		c.checked, c.loggedOut = time.Now(), loggedOut
+		return changed
+	})
 	return c.CLIStatus()
 }
 
 // checkLogin asks only whether the CLI is signed in.
 func (c *codexChecker) checkLogin(ctx context.Context) {
-	c.mu.Lock()
-	installed := c.st.Version != ""
-	c.mu.Unlock()
-	if !installed {
-		return
+	if c.CLIStatus().Version == "" {
+		return // not installed
 	}
 	out := codexLoggedOut(c.runner()(ctx, c.bin(), "login", "status"))
-	c.mu.Lock()
-	changed := out != c.st.LoggedOut
-	c.st.LoggedOut = out
-	notify := c.onChange
-	c.mu.Unlock()
-	if changed && notify != nil {
-		notify()
-	}
+	c.cli.Update(func() bool {
+		changed := out != c.loggedOut
+		c.loggedOut = out
+		return changed
+	})
 }
 
 // codexLoggedOut reads `codex login status`: "Logged in using ChatGPT" or
@@ -186,26 +141,11 @@ func codexLoggedOut(out string, err error) bool {
 
 // observed records warnings a run found (its output changed).
 func (c *codexChecker) observed(ws []string) {
-	if c == nil || len(ws) == 0 {
+	if c == nil {
 		return
 	}
-	c.mu.Lock()
-	added := false
-	for _, w := range ws {
-		if len(c.seen) >= maxWarnings || slices.Contains(c.seen, w) || slices.Contains(c.probe, w) {
-			continue
-		}
-		c.seen, added = append(c.seen, w), true
-	}
-	notify := c.onChange
-	c.mu.Unlock()
-	if added && notify != nil {
-		notify()
-	}
+	c.cli.Observed(ws)
 }
-
-// maxWarnings caps the warnings kept from runs.
-const maxWarnings = 8
 
 // runCodexCLI runs the CLI briefly, with no input, in a temporary
 // directory, and returns its output.
@@ -213,13 +153,5 @@ func runCodexCLI(ctx context.Context, bin string, args ...string) (string, error
 	if err := checkLocal(); err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = os.TempDir()
-	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
-	err := cmd.Run()
-	return strings.TrimSpace(out.String()), err
+	return clicheck.Run(ctx, nil, bin, args...)
 }

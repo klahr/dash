@@ -268,7 +268,7 @@ func TestCodexMissing(t *testing.T) {
 	// Signed out (as its checker found): a clear message, nothing run.
 	bin, dir := fakeCodex(t, "task.jsonl", 0, "")
 	cli := &codexChecker{Bin: bin}
-	cli.st = CLIStatus{Version: "0.50.0", LoggedOut: true, CheckedAt: time.Now()}
+	cli.cli.Set("0.50.0", nil, func() bool { cli.checked, cli.loggedOut = time.Now(), true; return true })
 	_, err = Codex{Bin: bin, CLI: cli}.Run(context.Background(), ExecRequest{Dir: t.TempDir()}, func(model.RunEvent) {})
 	if !errors.Is(err, errCodexLoggedOut) {
 		t.Errorf("err %v", err)

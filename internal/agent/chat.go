@@ -5,12 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
 
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -154,4 +160,35 @@ func (c *Chat) Stream(ctx context.Context, _ string, history []ChatMessage, emit
 	emit(usageDelta(usage))
 	emit(ChatDelta{Kind: "done"})
 	return nil
+}
+
+// startChat starts a chat's CLI process: in dir, else fallback, else a
+// temporary directory (made when it is dir or fallback and missing), which
+// it emits as a "cwd" delta, with the transcript of history as its input
+// and in its own process group (SIGTERM, then a kill 5s later). It returns
+// the process's output and what it printed to stderr so far, a builder
+// read after the output ends.
+func startChat(cmd *exec.Cmd, dir, fallback string, history []ChatMessage, emit func(ChatDelta)) (io.ReadCloser, *strings.Builder, error) {
+	cmd.Dir = dir
+	if cmd.Dir == "" {
+		cmd.Dir = fallback
+	}
+	if cmd.Dir == "" {
+		cmd.Dir = os.TempDir()
+	} else if err := os.MkdirAll(cmd.Dir, 0o755); err != nil {
+		return nil, nil, err
+	}
+	emit(ChatDelta{Kind: "cwd", Text: cmd.Dir})
+	cmd.Stdin = strings.NewReader(transcript(history))
+	localrun.Group(cmd, syscall.SIGTERM, 5*time.Second)
+	stderr := new(strings.Builder)
+	cmd.Stderr = stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, nil, fmt.Errorf("start %s: %w", cmd.Args[0], err)
+	}
+	return stdout, stderr, nil
 }

@@ -8,20 +8,15 @@
 package claudecli
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
 	"regexp"
-	"slices"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
+	"github.com/klahr/dash/internal/clicheck"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/textutil"
 )
@@ -79,24 +74,16 @@ var ProbeFlags = []string{
 	"--permission-prompt-tool", "mcp__dash_perm__approve",
 }
 
-// maxWarnings caps the warnings kept from runs, so a badly changed stream
-// doesn't grow the report without bound.
-const maxWarnings = 8
-
 // Monitor keeps the latest Status. The zero value is ready to use; a nil
 // Monitor checks nothing and reports nothing.
 type Monitor struct {
 	Bin string // default "claude"
 
-	mu       sync.Mutex
-	onChange func()
-	version  string
-	checked  time.Time
-	probe    []string // from the last Check
-	account  *Account // from the last Check or CheckAccount
-	auth     *Auth    // likewise
-	seen     []string // from runs with this version
-	run      func(ctx context.Context, bin string, args ...string) (string, error)
+	cli     clicheck.Base // the version and the warnings; its lock guards the fields below too
+	checked time.Time
+	account *Account // from the last Check or CheckAccount
+	auth    *Auth    // likewise
+	run     func(ctx context.Context, bin string, args ...string) (string, error)
 	// runNoKey runs the CLI without KeyEnv (see Auth.Login).
 	runNoKey func(ctx context.Context, bin string, args ...string) (string, error)
 }
@@ -107,9 +94,7 @@ func (m *Monitor) OnChange(f func()) {
 	if m == nil {
 		return
 	}
-	m.mu.Lock()
-	m.onChange = f
-	m.mu.Unlock()
+	m.cli.OnChange(f)
 }
 
 // Status is a copy of what the monitor knows.
@@ -117,18 +102,18 @@ func (m *Monitor) Status() Status {
 	if m == nil {
 		return Status{}
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	s := Status{Version: m.version, CheckedAt: m.checked}
-	if m.account != nil {
-		a := *m.account
-		s.Account = &a
-	}
-	if m.auth != nil {
-		a := *m.auth
-		s.Auth = &a
-	}
-	s.Warnings = append(append(s.Warnings, m.probe...), m.seen...)
+	var s Status
+	m.cli.Read(func(version string, warnings []string) {
+		s = Status{Version: version, Warnings: warnings, CheckedAt: m.checked}
+		if m.account != nil {
+			a := *m.account
+			s.Account = &a
+		}
+		if m.auth != nil {
+			a := *m.auth
+			s.Auth = &a
+		}
+	})
 	return s
 }
 
@@ -147,26 +132,7 @@ func (m *Monitor) Run(ctx context.Context, every time.Duration) {
 	if m == nil {
 		return
 	}
-	if every <= 0 {
-		every = time.Hour
-	}
-	acct := time.NewTicker(min(AccountEvery, every))
-	defer acct.Stop()
-	for {
-		m.Check(ctx)
-		full := time.After(every)
-	wait:
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-full:
-				break wait
-			case <-acct.C:
-				m.CheckAccount(ctx)
-			}
-		}
-	}
+	clicheck.Loop(ctx, every, AccountEvery, func(ctx context.Context) { m.Check(ctx) }, func(ctx context.Context) { m.CheckAccount(ctx) })
 }
 
 // CheckAccount asks the CLI which account it is logged in to.
@@ -175,14 +141,11 @@ func (m *Monitor) CheckAccount(ctx context.Context) *Account {
 		return nil
 	}
 	a, auth := m.account1(ctx, m.bin(), m.runner())
-	m.mu.Lock()
-	changed := !sameAccount(a, m.account) || !sameAuth(auth, m.auth)
-	m.account, m.auth = a, auth
-	notify := m.onChange
-	m.mu.Unlock()
-	if changed && notify != nil {
-		notify()
-	}
+	m.cli.Update(func() bool {
+		changed := !sameAccount(a, m.account) || !sameAuth(auth, m.auth)
+		m.account, m.auth = a, auth
+		return changed
+	})
 	return a
 }
 
@@ -236,8 +199,6 @@ func (m *Monitor) runner() func(context.Context, string, ...string) (string, err
 	return m.run
 }
 
-var versionRe = regexp.MustCompile(`\b(\d+\.\d+\.\d+[0-9A-Za-z.+-]*)`)
-
 // Check asks the CLI for its version and whether it still takes ProbeFlags.
 func (m *Monitor) Check(ctx context.Context) Status {
 	if m == nil {
@@ -247,7 +208,7 @@ func (m *Monitor) Check(ctx context.Context) Status {
 	var warns []string
 	version := ""
 	out, err := run(ctx, bin, "--version")
-	switch v := versionRe.FindStringSubmatch(out); {
+	switch v := clicheck.VersionRe.FindStringSubmatch(out); {
 	case err != nil && out == "":
 		warns = append(warns, fmt.Sprintf("Couldn't run `%s --version`: %v", bin, err))
 	case v == nil:
@@ -271,38 +232,20 @@ func (m *Monitor) Check(ctx context.Context) Status {
 }
 
 func (m *Monitor) set(version string, probe []string, acct *Account, auth *Auth) Status {
-	m.mu.Lock()
-	changed := version != m.version || !slices.Equal(probe, m.probe) || !sameAccount(acct, m.account) || !sameAuth(auth, m.auth)
-	if version != m.version {
-		m.seen = nil // warnings from runs belong to the version that ran them
-	}
-	m.version, m.probe, m.checked, m.account, m.auth = version, probe, time.Now(), acct, auth
-	notify := m.onChange
-	m.mu.Unlock()
-	if changed && notify != nil {
-		notify()
-	}
+	m.cli.Set(version, probe, func() bool {
+		changed := !sameAccount(acct, m.account) || !sameAuth(auth, m.auth)
+		m.checked, m.account, m.auth = time.Now(), acct, auth
+		return changed
+	})
 	return m.Status()
 }
 
 // observed records warnings a run found, and reports the ones new to m.
 func (m *Monitor) observed(ws []string) {
-	if m == nil || len(ws) == 0 {
+	if m == nil {
 		return
 	}
-	m.mu.Lock()
-	added := false
-	for _, w := range ws {
-		if len(m.seen) >= maxWarnings || slices.Contains(m.seen, w) || slices.Contains(m.probe, w) {
-			continue
-		}
-		m.seen, added = append(m.seen, w), true
-	}
-	notify := m.onChange
-	m.mu.Unlock()
-	if added && notify != nil {
-		notify()
-	}
+	m.cli.Observed(ws)
 }
 
 var unknownOption = regexp.MustCompile(`unknown option '([^']+)'`)
@@ -328,28 +271,12 @@ func probeWarnings(out string, err error) []string {
 // runCLI runs the CLI briefly, with no input, in a temporary directory, and
 // returns its output.
 func runCLI(ctx context.Context, bin string, args ...string) (string, error) {
-	return runCLIEnv(ctx, nil, bin, args...)
+	return clicheck.Run(ctx, nil, bin, args...)
 }
 
 // runCLINoKey is runCLI without KeyEnv in the CLI's environment.
 func runCLINoKey(ctx context.Context, bin string, args ...string) (string, error) {
-	return runCLIEnv(ctx, withoutKey(localrun.Environ()), bin, args...)
-}
-
-// runCLIEnv is runCLI with env (nil: this process's).
-func runCLIEnv(ctx context.Context, env []string, bin string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = os.TempDir()
-	cmd.Env = env
-	// Its own process group, so the timeout stops what claude started too,
-	// and Run doesn't block on a grandchild holding the output pipe.
-	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
-	err := cmd.Run()
-	return strings.TrimSpace(out.String()), err
+	return clicheck.Run(ctx, withoutKey(localrun.Environ()), bin, args...)
 }
 
 func oneLine(s string) string { return textutil.Summary(s, 200) }
