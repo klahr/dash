@@ -153,3 +153,28 @@ func TestHubCanTagOverridesTheRunners(t *testing.T) {
 		t.Errorf("denied: %s", got)
 	}
 }
+
+// A member's reads and git work go to their own runner before another
+// member's: a runner does git work with its owner's git login.
+func TestMineFirst(t *testing.T) {
+	own := func(id string, user int64) tunnel.Runner {
+		return tunnel.Runner{ID: id, Name: id, Online: true, Owner: &store.RunnerOwner{UserID: user}}
+	}
+	runs := []tunnel.Runner{own("ada-1", 1), own("dev-1", 2), own("ada-2", 1), own("dev-2", 2)}
+	ids := func(rs []tunnel.Runner) string {
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.ID)
+		}
+		return strings.Join(out, " ")
+	}
+	if got := ids(mineFirst(runs, 2)); got != "dev-1 dev-2 ada-1 ada-2" {
+		t.Errorf("for dev: %s", got)
+	}
+	if got := ids(mineFirst(runs, 0)); got != "ada-1 dev-1 ada-2 dev-2" {
+		t.Errorf("for no one: %s", got)
+	}
+	if got := ids(runs); got != "ada-1 dev-1 ada-2 dev-2" {
+		t.Errorf("changed its argument: %s", got)
+	}
+}

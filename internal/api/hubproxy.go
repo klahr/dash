@@ -105,7 +105,7 @@ func (sv *service) projectRunnerAmong(ctx context.Context, p model.Project, cand
 		}
 		return tunnel.Runner{}, "", errNoRunnerOnline
 	}
-	r := cands[0]
+	r := mineFirst(cands, sv.c.User)[0]
 	for _, c := range cands {
 		if c.ID == prefer {
 			r = c
@@ -113,6 +113,26 @@ func (sv *service) projectRunnerAmong(ctx context.Context, p model.Project, cand
 	}
 	rpid, err := sv.linkOn(ctx, r, p)
 	return r, rpid, err
+}
+
+// mineFirst orders runners for work done for user (0: no one in
+// particular): user's own runners first, then shared ones, then other
+// members'. A runner does its git work with its owner's git login, so a
+// member's reads and git work go to someone else's runner only when none of
+// their own, and no shared one, is online. It returns a sorted copy.
+func mineFirst(runs []tunnel.Runner, user int64) []tunnel.Runner {
+	rank := func(r tunnel.Runner) int {
+		if user != 0 && r.OwnerID() == user {
+			return 0
+		}
+		if ok, _ := r.TakesOthers(); ok {
+			return 1
+		}
+		return 2
+	}
+	out := slices.Clone(runs)
+	slices.SortStableFunc(out, func(a, b tunnel.Runner) int { return rank(a) - rank(b) })
+	return out
 }
 
 // onlineRunners are p's runners that are online, in p's org.
