@@ -76,7 +76,10 @@ func TestBrowserPlannerClaude(t *testing.T) {
 
 	// The chat, on it.
 	b.waitJS("the composer, on the runner", `!document.querySelector("#pl-chat-form").hidden && document.querySelector("#pl-chat-runner-text").textContent === "On your runner pias-mac"`)
-	b.do("ask", chromedp.SendKeys(chromedp.CSS(`#pl-chat-form textarea`), "What's planned?"),
+	// Send shows the question in the log at once; a click that missed (or a
+	// failed send, which puts the question back) is tried again.
+	b.do("ask", chromedp.SendKeys(chromedp.CSS(`#pl-chat-form textarea`), "What's planned?"))
+	b.until("send", `[...document.querySelectorAll("#pl-chat-log .msg.user")].some((m) => m.textContent.includes("What's planned?"))`,
 		chromedp.Click(chromedp.CSS(`#pl-chat-send`)))
 	b.waitJS("the runner's answer", `[...document.querySelectorAll("#pl-chat-log .msg.assistant .reply")].some((r) => r.textContent.includes("Hello from the runner")) &&
 		!document.querySelector("#pl-chat-log .msg.pending")`)

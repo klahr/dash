@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/chromedp/chromedp"
@@ -50,9 +51,15 @@ func TestBrowserNavigation(t *testing.T) {
 	b.waitJS("commit… pressed", `document.querySelector("#shell-at-commit").getAttribute("aria-pressed") === "true" && !document.querySelector("#try-status").hidden`)
 	b.until("back to main", `document.querySelector("#view-run.active:not(.at-commit)") && location.pathname === "/p/`+pid+`/run"`, chromedp.Click(chromedp.ID("shell-at-main")))
 
-	// ? opens the Keyboard sheet at the page's area, a table per area.
-	b.run("leave the terminal", `document.activeElement?.blur(); true`)
-	key("?", "?", `document.querySelector("#keys-sheet").open`)
+	// ? opens the Keyboard sheet at the page's area, a table per area. The
+	// Shell's terminal focuses itself once it starts, which may be after a
+	// blur: each try leaves it again before the key.
+	b.until("?", `document.querySelector("#keys-sheet").open`, func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+		if _, err := chromedp.Evaluate[bool](`document.activeElement?.blur(), true`)(ctx, t); err != nil {
+			return chromedp.Void{}, err
+		}
+		return chromedp.KeyEvent("?")(ctx, t)
+	})
 	b.waitJS("at the Shell's keys", `document.querySelector("#keys-sheet .rail-item[aria-current]")?.dataset.rail === "shell" && document.querySelector('#keys-sheet .rail-section.current table.keys-table th kbd')`)
 	b.waitJS("an area per table", `document.querySelectorAll("#keys-sheet .rail-section").length === document.querySelectorAll("#keys-sheet .rail-section > table.keys-table").length`)
 	b.until("its Approvals: X denies", `document.querySelector("#keys-sheet .rail-section.current")?.dataset.section === "perms"`,
