@@ -2983,6 +2983,7 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .issue-type { flex: none; }
 .issue-type.type-vuln { color: var(--accent2); }
 .issue-status { flex: none; color: var(--faint); }
+.issue-reports { flex: none; font-variant-numeric: tabular-nums; }
 .issue-loc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-xs) var(--mono); color: var(--faint); }
 .issue.status-resolved .issue-title, .issue.status-dismissed .issue-title, .issue.status-task_created .issue-title { color: var(--muted); }
 .issue.status-resolved .issue-title { text-decoration: line-through; text-decoration-color: var(--faint); }

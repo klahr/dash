@@ -43,7 +43,7 @@ func TestTaskFromIssues(t *testing.T) {
 	title, prompt := TaskFromIssues([]Issue{{
 		Title: "SQL injection", Type: IssueVuln, Severity: SevHigh, File: "db.go", Line: 42,
 		Details: "query built with Sprintf", Fix: "use placeholders", Source: "scan:gosec",
-	}})
+	}}, nil)
 	if title != "Fix: SQL injection" {
 		t.Errorf("title %q", title)
 	}
@@ -52,8 +52,33 @@ func TestTaskFromIssues(t *testing.T) {
 			t.Errorf("prompt lacks %q:\n%s", want, prompt)
 		}
 	}
-	title, prompt = TaskFromIssues([]Issue{{Title: "a"}, {Title: "b"}})
+	// Reporters are named by the reporter func, and repeat reports counted.
+	_, prompt = TaskFromIssues([]Issue{{Title: "x", Source: "agent:t1", Reports: 15, LastSource: "agent:t2"}}, func(src string) string {
+		if src == "agent:t1" {
+			return `task t1, "First"`
+		}
+		return ""
+	})
+	for _, want := range []string{`Reported by: task t1, "First"`, "Reported 15 times, last by: agent:t2"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+	title, prompt = TaskFromIssues([]Issue{{Title: "a"}, {Title: "b"}}, nil)
 	if !strings.HasPrefix(title, "Fix 2 issues") || !strings.Contains(prompt, "## 2. b") {
 		t.Errorf("combined: %q\n%s", title, prompt)
+	}
+}
+
+func TestIssueAddReport(t *testing.T) {
+	i := Issue{Source: "scan:gosec"}
+	if i.AddReport("scan:gosec") || i.ReportCount() != 1 {
+		t.Fatalf("the same reporter again counted: %+v", i)
+	}
+	if !i.AddReport("agent:a") || !i.AddReport("agent:b") || i.AddReport("agent:b") {
+		t.Fatalf("other reporters not counted once each: %+v", i)
+	}
+	if i.ReportCount() != 3 || i.LatestSource() != "agent:b" || i.Source != "scan:gosec" {
+		t.Fatalf("after reports: %+v", i)
 	}
 }

@@ -32,8 +32,17 @@ type Issue struct {
 	// Rule is the check that found it (e.g. a scanner's rule id); it stands
 	// in for the title in the fingerprint so rewording doesn't duplicate.
 	Rule string `json:"rule,omitempty"`
-	// Source is who reported it: "manual", "scan:<name>" or "agent:<todo id>".
+	// Source is who reported it first: "manual", "scan:<name>", "agent:chat"
+	// or "agent:<todo id>".
 	Source string `json:"source"`
+	// Reports is how many times it was reported, counting a report again only
+	// when it comes from another reporter than the last one (so a scan that
+	// finds it on every run counts once). 0 in issues saved before it was
+	// kept; see ReportCount.
+	Reports int `json:"reports,omitempty"`
+	// LastSource is who reported it last, in Source's form; "" when only
+	// Source did.
+	LastSource string `json:"last_source,omitempty"`
 	// ScanKind is the kind of scan that reported it (ScanKinds: "security",
 	// "tests", "performance", …); "" when no scan did.
 	ScanKind string      `json:"scan_kind,omitempty"`
@@ -174,6 +183,30 @@ func (i Issue) ComputeFingerprint() string {
 	return hex.EncodeToString(sum[:8])
 }
 
+// ReportCount is how many times the issue was reported: at least 1.
+func (i Issue) ReportCount() int {
+	return max(i.Reports, 1)
+}
+
+// LatestSource is who reported the issue last.
+func (i Issue) LatestSource() string {
+	if i.LastSource != "" {
+		return i.LastSource
+	}
+	return i.Source
+}
+
+// AddReport counts a report of the issue from source, unless source is the
+// last reporter again. It reports whether it counted one.
+func (i *Issue) AddReport(source string) bool {
+	if source == "" || source == i.LatestSource() {
+		return false
+	}
+	i.Reports = i.ReportCount() + 1
+	i.LastSource = source
+	return true
+}
+
 // Location is "file:line", "file" or "".
 func (i Issue) Location() string {
 	if i.File != "" && i.Line > 0 {
@@ -220,7 +253,17 @@ func (c *UpsertCounts) Add(r UpsertResult) {
 
 // TaskFromIssues is the title and prompt of a task that fixes issues, with
 // everything known about each so the task can run without scanning again.
-func TaskFromIssues(issues []Issue) (title, prompt string) {
+// reporter names a source ("agent:<todo id>" as its task, say) for the
+// prompt; nil, or "" from it, leaves the source as it is.
+func TaskFromIssues(issues []Issue, reporter func(source string) string) (title, prompt string) {
+	who := func(src string) string {
+		if reporter != nil {
+			if s := reporter(src); s != "" {
+				return s
+			}
+		}
+		return src
+	}
 	var b strings.Builder
 	switch len(issues) {
 	case 0:
@@ -246,7 +289,10 @@ func TaskFromIssues(issues []Issue) (title, prompt string) {
 			fmt.Fprintf(&b, "- Rule: %s\n", i.Rule)
 		}
 		if i.Source != "" && i.Source != "manual" {
-			fmt.Fprintf(&b, "- Reported by: %s\n", i.Source)
+			fmt.Fprintf(&b, "- Reported by: %s\n", who(i.Source))
+		}
+		if n := i.ReportCount(); n > 1 {
+			fmt.Fprintf(&b, "- Reported %d times, last by: %s\n", n, who(i.LatestSource()))
 		}
 		if i.Details != "" {
 			fmt.Fprintf(&b, "\n### Details\n\n%s\n", i.Details)

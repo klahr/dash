@@ -110,7 +110,18 @@ function issueVisible(i) {
 }
 
 const issueLoc = (i) => i.file ? (i.line ? `${i.file}:${i.line}` : i.file) : "";
-const sourceLabel = (s) => s === "manual" ? "Added by hand" : s.startsWith("scan:") ? `Scan: ${s.slice(5)}` : s === "agent:chat" ? "Reported from the chat" : s.startsWith("agent:") ? "Reported by a task" : s;
+// sourceLabel says who reported an issue; a task by its title when it is still on the board.
+function sourceLabel(s) {
+  if (s === "manual") return "Added by hand";
+  if (s.startsWith("scan:")) return `Scan: ${s.slice(5)}`;
+  if (s === "agent:chat") return "Reported from the chat";
+  if (!s.startsWith("agent:")) return s;
+  const t = state.todos.get(s.slice(6));
+  return t ? `Reported by the task “${title(t)}”` : "Reported by a task";
+}
+
+// reportsText is how often an issue was reported and by whom last, or "" for once.
+const reportsText = (i) => (i.reports || 1) > 1 ? `Reported ${i.reports} times, last: ${sourceLabel(i.last_source || i.source)}` : "";
 
 function renderIssueBadge() {
   const n = iss.list.filter((i) => i.status === "open").length;
@@ -251,6 +262,7 @@ function issueRow(i) {
           h("span", { class: `sev sev-${i.severity}`, title: `Severity: ${i.severity}` }, i.severity),
           h("span", { class: `issue-type type-${i.type}` }, ISSUE_TYPES[i.type] || i.type),
           closed ? h("span", { class: "issue-status" }, ISSUE_STATUSES[i.status]) : null,
+          (i.reports || 1) > 1 ? h("span", { class: "issue-reports", title: reportsText(i) }, `×${i.reports}`) : null,
           issueLoc(i) ? h("span", { class: "issue-loc" }, issueLoc(i)) : null),
         h("span", { class: "issue-chev", "aria-hidden": "true" }, ico("down"))),
       tasks.length ? h("span", { class: "issue-chips" }, ...tasks) : null),
@@ -292,7 +304,8 @@ function issueBody(i) {
     h("p", { class: "issue-meta" },
       `${ISSUE_TYPES[i.type] || i.type} · ${sourceLabel(i.source)} · ${agoText(i.created_at)}`,
       i.updated_at !== i.created_at ? ` · updated ${agoText(i.updated_at)}` : "",
-      i.rule ? ` · rule ${i.rule}` : ""),
+      i.rule ? ` · rule ${i.rule}` : "",
+      reportsText(i) ? ` · ${reportsText(i)}` : ""),
     issueTaskNote(i),
     i.status === "dismissed" ? h("p", { class: "issue-reason" }, `Dismissed${i.dismiss_reason ? `: ${i.dismiss_reason}` : ""}`) : null,
     i.details ? h("div", { class: "issue-md", innerHTML: renderMarkdown(i.details) }) : h("p", { class: "issue-none" }, "No details yet."),

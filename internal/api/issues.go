@@ -254,7 +254,7 @@ func (sv *service) tasksForIssues(ctx context.Context, pid string, ids []string,
 	}
 	var out []model.Todo
 	for _, g := range groups {
-		title, prompt := model.TaskFromIssues(g.issues)
+		title, prompt := model.TaskFromIssues(g.issues, sv.issueReporter)
 		if g.title != "" {
 			title = g.title
 		}
@@ -278,6 +278,22 @@ func (sv *service) tasksForIssues(ctx context.Context, pid string, ids []string,
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// issueReporter names an issue's source for a task prompt: a task that
+// reported it by its id and title, rather than "agent:<id>".
+func (sv *service) issueReporter(source string) string {
+	switch {
+	case source == "agent:chat":
+		return "the chat"
+	case strings.HasPrefix(source, "agent:"):
+		id := strings.TrimPrefix(source, "agent:")
+		if t, err := sv.data.GetTodo(id); err == nil && t.Title != "" {
+			return fmt.Sprintf("task %s, %q", id, t.Title)
+		}
+		return "task " + id
+	}
+	return ""
 }
 
 // An issueBatch is issues one task fixes, with that task's title ("": made

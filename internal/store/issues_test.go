@@ -203,12 +203,15 @@ func TestResolvedIssueReopensWhenReportedAgain(t *testing.T) {
 	if b.ID != a.ID || b.Status != model.IssueOpen {
 		t.Fatalf("not reopened: %+v", b)
 	}
-	counts, _, err := s.UpsertIssueBatch(p.ID, "scan:x", []model.Issue{in})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if counts != (model.UpsertCounts{Known: 1}) {
-		t.Fatalf("counts %+v", counts)
+	// A scan finding it is another reporter; finding it again changes nothing.
+	for _, want := range []model.UpsertCounts{{Updated: 1}, {Known: 1}} {
+		counts, _, err := s.UpsertIssueBatch(p.ID, "scan:x", []model.Issue{in})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if counts != want {
+			t.Fatalf("counts %+v, want %+v", counts, want)
+		}
 	}
 }
 
@@ -320,5 +323,29 @@ func TestDeletedTodoReopensItsIssues(t *testing.T) {
 	}
 	if is, _ := s.GetIssue(a.ID); is.Status != model.IssueOpen || len(is.TodoIDs) != 0 {
 		t.Fatalf("no task left: %+v", is)
+	}
+}
+
+// Each task that reports a known issue counts; a scan finding it again doesn't.
+func TestUpsertIssueCountsReports(t *testing.T) {
+	t.Parallel()
+
+	s, p, path := issueStore(t)
+	in := model.Issue{ProjectID: p.ID, Title: "Leaky goroutine", File: "run.go", Source: "agent:t1"}
+	a := mustUpsert(t, s, in, model.UpsertNew)
+	if a.ReportCount() != 1 || a.LatestSource() != "agent:t1" {
+		t.Fatalf("new: %+v", a)
+	}
+	mustUpsert(t, s, in, model.UpsertKnown)
+	in.Source = "agent:t2"
+	mustUpsert(t, s, in, model.UpsertUpdated)
+	in.Source = "agent:t3"
+	b := mustUpsert(t, s, in, model.UpsertUpdated)
+	if b.ID != a.ID || b.ReportCount() != 3 || b.Source != "agent:t1" || b.LatestSource() != "agent:t3" {
+		t.Fatalf("after three reporters: %+v", b)
+	}
+	s = openTest(t, path)
+	if c, err := s.GetIssue(a.ID); err != nil || c.Reports != 3 || c.LastSource != "agent:t3" {
+		t.Fatalf("after reopen: %+v %v", c, err)
 	}
 }

@@ -20,7 +20,8 @@ var ErrBadIssue = errors.New("invalid issue")
 
 // UpsertIssue adds an issue to its project, or updates the one with the same
 // fingerprint: a dismissed issue stays dismissed (and unchanged), a resolved
-// one is reopened, an open one takes the new details. The fingerprint is
+// one is reopened, an open one takes the new details and counts the report
+// when another reporter made it (see Issue.AddReport). The fingerprint is
 // computed unless in has one.
 func (s *Store) UpsertIssue(in model.Issue) (model.Issue, model.UpsertResult, error) {
 	s.mu.Lock()
@@ -109,6 +110,7 @@ func (s *Store) upsertIssueLocked(in model.Issue) (model.Issue, model.UpsertResu
 		in.ID = NewID()
 		in.Status = model.IssueOpen
 		in.TodoIDs, in.DismissReason = nil, ""
+		in.Reports, in.LastSource = 1, ""
 		in.CreatedAt, in.UpdatedAt = now, now
 		if s.data.Issues == nil {
 			s.data.Issues = map[string]*model.Issue{}
@@ -139,6 +141,7 @@ func (s *Store) upsertIssueLocked(in model.Issue) (model.Issue, model.UpsertResu
 	if in.ScanKind != "" {
 		cp.ScanKind = in.ScanKind
 	}
+	cp.AddReport(in.Source)
 	res := model.UpsertUpdated
 	if cp.Status == model.IssueResolved {
 		cp.Status, res = model.IssueOpen, model.UpsertReopened // it came back
@@ -406,7 +409,7 @@ func cloneIssue(is model.Issue) model.Issue {
 func issueEqual(a, b model.Issue) bool {
 	return a.Title == b.Title && a.Type == b.Type && a.Severity == b.Severity &&
 		a.File == b.File && a.Line == b.Line && a.Details == b.Details && a.Fix == b.Fix &&
-		a.Rule == b.Rule && a.Source == b.Source && a.ScanKind == b.ScanKind && a.Status == b.Status &&
+		a.Rule == b.Rule && a.Source == b.Source && a.Reports == b.Reports && a.LastSource == b.LastSource && a.ScanKind == b.ScanKind && a.Status == b.Status &&
 		a.Fingerprint == b.Fingerprint && a.DismissReason == b.DismissReason &&
 		slices.Equal(a.TodoIDs, b.TodoIDs)
 }

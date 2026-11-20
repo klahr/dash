@@ -188,7 +188,9 @@ A task's own Claude run gets these `dash_board` tools, in its project only, and 
 without asking:
 
 - `list_issues` and `report_issue`: the project's Issues list. Claude reports problems it notices
-  outside its task there instead of fixing them on the task's branch.
+  outside its task there instead of fixing them on the task's branch. When another task reports
+  an issue that is already listed, the issue counts the report and shows it (e.g. "×15") with
+  who reported it last.
 - `active_work(paths?)`: what the project's other tasks are doing. It lists every other task that
   is queued, running, in review or merging, with its id, status, title, a short intent from its
   prompt, and the files it has changed so far compared with the branch it lands on (a running
