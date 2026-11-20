@@ -1,6 +1,7 @@
 package gitops
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -86,11 +87,12 @@ func RemoteProtocol(remote string) string {
 	return "file"
 }
 
-// AccessError is a remote this computer can't read: no SSH key GitHub
+// AccessError is a remote this computer can't read: no SSH key the host
 // accepts, no HTTPS credentials, a repository that doesn't exist.
 type AccessError struct {
 	Runner   string // this computer's name
 	Repo     string // OWNER/REPO, or the URL when it isn't GitHub's
+	Host     string // the remote's host ("github.com" for GitHub's); see remoteHost
 	Protocol string // see RemoteProtocol
 	Detail   string // a summary of git's output
 }
@@ -103,6 +105,16 @@ func (e *AccessError) Error() string {
 	msg := fmt.Sprintf("%s cannot access %s over %s", who, e.Repo, e.Protocol)
 	if e.Detail != "" {
 		msg += ": " + e.Detail
+	}
+	if e.Host != "github.com" {
+		// gh and -github-protocol only help with GitHub's repositories.
+		switch host := cmp.Or(e.Host, "this host"); e.Protocol {
+		case ProtocolSSH:
+			msg += fmt.Sprintf(" (check that this computer's SSH key is accepted by %s, and that %s is in ~/.ssh/known_hosts)", host, host)
+		case ProtocolHTTPS, "http":
+			msg += fmt.Sprintf(" (check this computer's git credentials for %s, e.g. its credential helper)", host)
+		}
+		return msg
 	}
 	switch e.Protocol {
 	case ProtocolSSH:
@@ -227,7 +239,28 @@ func (g *Git) CheckAccess(ctx context.Context, projectID, runner, remote string)
 	if repo == "" {
 		repo = RedactRemote(remote)
 	}
-	return &AccessError{Runner: runner, Repo: repo, Protocol: RemoteProtocol(remote), Detail: summarizeGitOutput(out)}
+	return &AccessError{Runner: runner, Repo: repo, Host: remoteHost(remote), Protocol: RemoteProtocol(remote), Detail: summarizeGitOutput(out)}
+}
+
+// remoteHost is the host of a URL or scp-style (user@host:path) remote,
+// "github.com" for any of GitHub's (ssh.github.com included), else "".
+func remoteHost(remote string) string {
+	if GitHubOwnerRepo(remote) != "" {
+		return "github.com"
+	}
+	r := strings.TrimSpace(remote)
+	if strings.Contains(r, "://") {
+		if u, err := url.Parse(r); err == nil {
+			return strings.ToLower(u.Hostname())
+		}
+		return ""
+	}
+	if scpRemoteRe.MatchString(r) {
+		_, after, _ := strings.Cut(r, "@")
+		host, _, _ := strings.Cut(after, ":")
+		return strings.ToLower(host)
+	}
+	return ""
 }
 
 // batchSSHEnv makes ssh fail rather than ask (for a passphrase or a

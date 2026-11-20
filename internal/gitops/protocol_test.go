@@ -86,7 +86,7 @@ func TestCheckAccessFailsClearly(t *testing.T) {
 		t.Errorf("error %q gives the host key hint for a key GitHub refused", msg)
 	}
 
-	https := (&AccessError{Runner: "r1", Repo: "klahr/dash-infra", Protocol: ProtocolHTTPS,
+	https := (&AccessError{Runner: "r1", Repo: "klahr/dash-infra", Host: "github.com", Protocol: ProtocolHTTPS,
 		Detail: "fatal: could not read Username for 'https://github.com': terminal prompts disabled"}).Error()
 	if !strings.HasPrefix(https, "runner r1 cannot access klahr/dash-infra over https: fatal: could not read Username") {
 		t.Errorf("https error = %q", https)
@@ -119,9 +119,49 @@ func TestAccessErrorSSHHint(t *testing.T) {
 		{"git@github.com: Permission denied (publickey).; fatal: Could not read from remote repository.",
 			"check this computer's SSH key with `ssh -T git@github.com`", "ssh-keygen"},
 	} {
-		msg := (&AccessError{Runner: "r1", Repo: "klahr/dash-infra", Protocol: ProtocolSSH, Detail: c.detail}).Error()
+		msg := (&AccessError{Runner: "r1", Repo: "klahr/dash-infra", Host: "github.com", Protocol: ProtocolSSH, Detail: c.detail}).Error()
 		if !strings.Contains(msg, c.want) || !strings.Contains(msg, "-github-protocol=https") || strings.Contains(msg, c.notWant) {
 			t.Errorf("error %q: want %q and -github-protocol=https, not %q", msg, c.want, c.notWant)
+		}
+	}
+}
+
+// A remote that isn't GitHub's gets no gh or -github-protocol advice, which
+// can't help it, but a hint naming its host.
+func TestAccessErrorOtherHostHint(t *testing.T) {
+	for _, c := range []struct {
+		remote, want string
+	}{
+		{"https://example.com/northwind/booking.git", "check this computer's git credentials for example.com"},
+		{"https://token@git.example.dev:8443/team/app.git", "check this computer's git credentials for git.example.dev"},
+		{"git@git.example.com:team/app.git", "check that this computer's SSH key is accepted by git.example.com"},
+		{"ssh://git@git.example.com:2222/team/app.git", "check that this computer's SSH key is accepted by git.example.com"},
+	} {
+		msg := (&AccessError{Runner: "r1", Repo: RedactRemote(c.remote), Host: remoteHost(c.remote),
+			Protocol: RemoteProtocol(c.remote), Detail: "fatal: Authentication failed"}).Error()
+		if !strings.Contains(msg, c.want) {
+			t.Errorf("%s: error %q lacks %q", c.remote, msg, c.want)
+		}
+		for _, bad := range []string{"gh auth login", "-github-protocol", "git@github.com"} {
+			if strings.Contains(msg, bad) {
+				t.Errorf("%s: error %q has GitHub's advice %q", c.remote, msg, bad)
+			}
+		}
+	}
+}
+
+func TestRemoteHost(t *testing.T) {
+	for remote, want := range map[string]string{
+		"https://github.com/klahr/dash-infra.git":           "github.com",
+		"ssh://git@ssh.github.com:443/klahr/dash-infra.git": "github.com",
+		"git@github.com:klahr/dash-infra.git":               "github.com",
+		"https://Example.com/northwind/booking.git":         "example.com",
+		"git@git.example.com:team/app.git":                  "git.example.com",
+		"ssh://git@git.example.com:2222/group/sub/app.git":  "git.example.com",
+		"/srv/git/app.git":                                  "",
+	} {
+		if got := remoteHost(remote); got != want {
+			t.Errorf("remoteHost(%q) = %q, want %q", remote, got, want)
 		}
 	}
 }
@@ -211,7 +251,7 @@ func TestPickCloneRemote(t *testing.T) {
 		https  = "https://github.com/klahr/dash-infra.git"
 	)
 	denied := func(u string) error {
-		return &AccessError{Repo: "klahr/dash-infra", Protocol: RemoteProtocol(u), Detail: "Host key verification failed."}
+		return &AccessError{Repo: "klahr/dash-infra", Host: "github.com", Protocol: RemoteProtocol(u), Detail: "Host key verification failed."}
 	}
 	for _, c := range []struct {
 		name                    string

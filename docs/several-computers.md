@@ -827,7 +827,8 @@ is installed and logged in (`gh auth login`), it clones over **HTTPS**
 e.g. "SSH: Host key verification failed; HTTPS: gh isn't logged in (run `gh auth login`)".
 `-github-protocol=ssh` or `-github-protocol=https` (or `DASH_GITHUB_PROTOCOL`) forces one, with no
 fallback. The clone's origin is the URL it was cloned from, so fetches and pushes use the same
-protocol. Clones made before keep their origin.
+protocol. Clones made before keep their origin. A remote that isn't GitHub's is cloned as it is,
+with the computer's own SSH keys or git credentials for that host.
 
 Over HTTPS, Dash's own git commands (clone, fetch, push, in every worktree) get their credentials
 from gh: they run with `gh auth git-credential` as a credential helper for `https://github.com`,
