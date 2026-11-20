@@ -1,14 +1,18 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/branding"
+	"github.com/klahr/dash/internal/store"
 )
 
 // The planner role (store.RolePlanner): a product owner who uses Planning
-// and their own account, and nothing else. plannerGate enforces it for
+// and their own account, and, with a runner of their own, Claude for the
+// general chat and feature briefs, and nothing else. plannerGate enforces it for
 // every route, in one place: a planner's request reaches a route only if
 // its pattern is in plannerRoutes; everything else (projects, tasks,
 // chats, terminals, runners, previews, scans, the MCP tools, other events)
@@ -82,6 +86,32 @@ var plannerRoutes = map[string]bool{
 	"GET /api/planning/projects/{pid}/icon":            true,
 	"GET /api/planning/people":                         true,
 
+	// Their own runners (and no one else's: see sees), which run only their
+	// general chat and feature brief interviews with their own Claude login
+	// (tunnel.Runner.ClaudeOnly): pairing one, renaming and removing it.
+	"GET /api/runners":         true,
+	"POST /api/runners/codes":  true,
+	"PATCH /api/runners/{id}":  true,
+	"DELETE /api/runners/{id}": true,
+	"GET /api/claude":          true,
+
+	// The general chat, on their runner, with Planning's tools only (see
+	// plannerBoard); project, task and goal chats stay members' (chatWS).
+	"GET /ws/chat":     true,
+	"GET /api/chat":    true,
+	"DELETE /api/chat": true,
+
+	// Write a feature brief, on their runner. Not a project's brief, which
+	// launches a project (createPlan refuses it to planners).
+	"GET /api/plans":                 true,
+	"POST /api/plans":                true,
+	"GET /api/plans/{id}":            true,
+	"PATCH /api/plans/{id}":          true,
+	"DELETE /api/plans/{id}":         true,
+	"POST /api/plans/{id}/interview": true,
+	"POST /api/plans/{id}/feature":   true,
+	"GET /api/org/planner-settings":  true,
+
 	// Deploys, to look at: what is live where, the deploys and the
 	// environments' settings history. Deploying, approving and changing
 	// settings stay refused (and their roles rank a planner below them all).
@@ -92,7 +122,7 @@ var plannerRoutes = map[string]bool{
 }
 
 // errPlanner is what a planner gets for any other route.
-const errPlanner = "planners can use Planning and their own account, and see deploys, only"
+const errPlanner = "planners can use Planning, their own account and runners, the general chat and feature briefs, and see deploys, only"
 
 // planner reports whether r is a planner's (a session or token of someone
 // whose role in the org they work in is planner).
@@ -138,4 +168,57 @@ func (m recordingMux) Handle(pattern string, h http.Handler) {
 func (m recordingMux) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
 	*m.patterns = append(*m.patterns, pattern)
 	m.ServeMux.HandleFunc(pattern, h)
+}
+
+// plannerSettingsRoutes are the org's settings for its planners: GET for
+// everyone in the org (a planner's feature brief sheet says what its rounds
+// are sent), PUT for owners.
+//
+//	GET /api/org/planner-settings → {"project_context": bool}
+//	PUT /api/org/planner-settings {"project_context": bool}
+//
+// project_context: planners' feature brief rounds are sent the project's
+// CLAUDE.md, README and file tree, as members' are (on by default); off,
+// only the card and the project's name.
+func (s *Server) plannerSettingsRoutes(mux routeMux) {
+	type settings struct {
+		ProjectContext *bool `json:"project_context"`
+	}
+	mux.HandleFunc("GET /api/org/planner-settings", func(w http.ResponseWriter, r *http.Request) {
+		sv, ok := s.service(w, r)
+		if !ok {
+			return
+		}
+		on, err := s.Store.Accounts().PlannerContext(sv.c.Org)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, settings{&on})
+	})
+	mux.HandleFunc("PUT /api/org/planner-settings", func(w http.ResponseWriter, r *http.Request) {
+		sv, ok := s.service(w, r)
+		if !ok {
+			return
+		}
+		var req settings
+		if err := decode(r, &req); err != nil {
+			writeErr(w, err)
+			return
+		}
+		if req.ProjectContext == nil {
+			writeErr(w, fmt.Errorf("%w: project_context is required", errBadRequest))
+			return
+		}
+		err := s.Store.Accounts().SetPlannerContext(sv.c.User, sv.c.Org, *req.ProjectContext)
+		if errors.Is(err, store.ErrForbidden) || errors.Is(err, store.ErrNotMember) {
+			writeError(w, http.StatusForbidden, "only an owner of the organization can change that")
+			return
+		}
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, settings{req.ProjectContext})
+	})
 }

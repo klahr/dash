@@ -194,8 +194,10 @@ func deleteEmptyOrg(tx *sql.Tx, orgID int64) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec("DELETE FROM auth_events WHERE org_id = ?", orgID); err != nil {
-		return err
+	for _, t := range []string{"auth_events", "org_planner_settings"} {
+		if _, err := tx.Exec("DELETE FROM "+t+" WHERE org_id = ?", orgID); err != nil {
+			return err
+		}
 	}
 	_, err := tx.Exec("DELETE FROM organizations WHERE id = ?", orgID)
 	return err

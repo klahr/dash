@@ -205,7 +205,11 @@ func TestFeaturePlanLaunch(t *testing.T) {
 	launch(pp, "task", http.StatusBadRequest)
 }
 
-// The guide is for members: a planner is refused its routes.
+// A planner's guide runs on their own runner, so on a Dash that isn't a
+// hub (which runs Claude with its own login) it is refused them, and
+// nothing runs. A project's brief launches a project, which planners can't
+// add: refused them anywhere (see TestPlannerRunsFeatureBriefsOnTheirRunner
+// for a hub).
 func TestFeaturePlanRefusesPlanners(t *testing.T) {
 	s, p, _, fp := featureServer(t)
 	h := s.Routes()
@@ -216,7 +220,12 @@ func TestFeaturePlanRefusesPlanners(t *testing.T) {
 		{"POST", "/api/plans/x/interview", `{}`},
 		{"POST", "/api/plans/x/feature", `{"start":"task"}`},
 	} {
-		if w := send(ph, x.method, x.path, x.body); w.Code != http.StatusForbidden {
+		if w := send(ph, x.method, x.path, x.body); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "hub") {
+			t.Errorf("planner %s %s: %d %s", x.method, x.path, w.Code, w.Body)
+		}
+	}
+	for _, x := range []struct{ method, path string }{{"GET", "/api/plans/x/launch"}, {"POST", "/api/plans/x/launched"}, {"POST", "/api/projects/" + p.ID + "/brief"}} {
+		if w := send(ph, x.method, x.path, "{}"); w.Code != http.StatusForbidden {
 			t.Errorf("planner %s %s: %d %s", x.method, x.path, w.Code, w.Body)
 		}
 	}

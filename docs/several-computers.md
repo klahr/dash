@@ -14,7 +14,7 @@ runners (see [Whose work a runner does](#whose-work-a-runner-does)).
 ## Contents
 
 - [Two kinds of projects](#two-kinds-of-projects): a runner's own, or shared on labels
-- [Add a runner](#add-a-runner): install, update, manage, Windows
+- [Add a runner](#add-a-runner): install, update, manage, Windows, a planner's runner
 - [Shared projects: tasks on runners](#shared-projects-tasks-on-runners)
   - [Runner labels](#runner-labels)
   - [Where deploys run](#where-deploys-run)
@@ -347,6 +347,21 @@ Its owner and the org's admins can:
   install command with a new code (revoking frees its name for that).
 
 Runners registered with an older hub become the env account's.
+
+### A planner's runner
+
+A [planner](users.md#planners) can add a runner of their own, to use Claude with their own
+Claude login: the general chat and **Write a feature brief**.
+
+1. On the computer, install Claude Code and run `claude` once to sign in.
+2. In Dash, open the account menu → **Runners** → **Add a runner**.
+3. Paste the command it shows. It is the same install command members use.
+
+A planner's runner runs only its owner's chat and feature brief interviews. The hub never gives
+it the org's work: no tasks, goal coordinators, scans, tests, deploys, previews, shared work or
+clones of projects, whatever its labels. It can't take other members' tasks. A planner sees,
+renames and removes only their own runners. Members see it in **Runners**, marked as a
+planner's.
 
 ## Shared projects: tasks on runners
 
@@ -776,7 +791,8 @@ Where each kind of Claude work runs:
   project, read-only in its clone; its chat on yours. With none online the goal's events wait,
   and its log says so. What the coordinator does with its tools happens on the hub's board.
 
-- **General chat**: runs on one of your runners, in a scratch folder (`<-data>/chat` on that
+- **General chat**: runs on one of your runners (a planner's too: see
+  [A planner's runner](#a-planners-runner)), in a scratch folder (`<-data>/chat` on that
   computer), not in any project. The chat's header says which runner it runs on; with several
   online you pick one there, and with none online it says so. The hub keeps the conversation, as
   before. Files can't be attached to it yet.

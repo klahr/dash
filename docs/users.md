@@ -8,7 +8,7 @@ role in each:
 | Owner   | everything an admin can, and make or demote owners                           |
 | Admin   | invite people, change roles up to admin, remove members who aren't owners    |
 | Member  | use Dash in the org, see who else is in it, and leave it                     |
-| Planner | use [Planning](planning.md) and their own account, nothing else (see [Planners](#planners)) |
+| Planner | use [Planning](planning.md) and their own account; with a runner of their own, the general chat and feature briefs (see [Planners](#planners)) |
 
 Each deploy environment also says which of these roles may deploy, approve and change its
 settings (see [Roles and approvals](deploys.md#roles-and-approvals)).
@@ -123,7 +123,8 @@ is what grants access, send it only to the person you're inviting. A
 ## Planners
 
 A **planner** is a product owner: someone who plans what to build, not a developer. They use
-[Planning](planning.md) and their own account, and nothing else.
+[Planning](planning.md) and their own account. With a runner of their own, they also use Claude
+there: the general chat and **Write a feature brief**.
 
 A planner can:
 
@@ -137,12 +138,32 @@ A planner can:
   or added to a card, or a card's work is ready for review, failed or merged
 - use their own account: the account menu at the bottom of the sidebar (in the menu on a phone)
   switches orgs, and has **Account** (**Profile picture**, **Notifications**, **Two-factor
-  sign-in**, **Google account** and **Your data**) and **Sign out**
+  sign-in**, **Google account** and **Your data**), **Runners** and **Sign out**
+- add, see, rename and remove their own runners in **Runners** (see
+  [A planner's runner](several-computers.md#a-planners-runner))
 
-A planner can't see or use projects, tasks, goals, chats, terminals, runners, previews,
-scans, issues, the MCP tools or **Organization**. Every such request answers `403`. They do
-see the names and pictures of the org's members, to add them to cards. Their live updates carry Planning's changes only. When a planner signs in, Dash opens
-Planning, in the same sidebar as everyone else's, with **Planning** as its only section.
+With a runner of their own online, a planner also has:
+
+- **Chat**: the general chat, on their runner, with their own Claude login. Its Dash tools are
+  Planning's only: list, read, create, update, comment on and start cards. See
+  [Chat](chat.md#a-planners-chat).
+- **Write a feature brief** and **Ask in chat** on a card. Each interview round runs on their
+  runner. It reads the project's `CLAUDE.md`, README and file tree, unless an owner turned that
+  off in **Organization → Planners**. Then it gets only the card and the project's name.
+
+Without one, **Chat** and the card say **Install a runner to use Claude here**, which opens the
+setup steps. Everything else works the same. A Claude subscription is one person's, so a
+runner of their own is the only way a planner uses Claude without an org API key.
+
+A planner's runner runs only their chat and feature briefs. It never gets the org's work: no
+tasks, goals, scans, tests, deploys, previews or clones of projects, and it can't be shared.
+
+A planner can't see or use projects, tasks, goals, project and task chats, terminals, other
+people's runners, previews, scans, issues, the MCP tools, **Write a project brief** or
+**Organization**. Every such request answers `403`. They do see the names and pictures of the
+org's members, to add them to cards. Their live updates carry Planning's changes only. When a
+planner signs in, Dash opens Planning, in the same sidebar as everyone else's, with
+**Planning** and **Chat** as its sections.
 
 To make someone a planner, open **Organization**, and either invite them with the role
 **Planner**, or change a member's role to **Planner**. Only owners and admins can. A planner
@@ -153,10 +174,12 @@ A planner's role is per org: someone can be a planner in one org and a member in
 Don't mix these up:
 
 - **Planning**: the org's board of cards, from Ideas to Done. Everyone uses it.
-- **Planner**: the role of someone who uses Planning only.
+- **Planner**: the role of someone who uses Planning (and, with a runner of their own, the chat
+  and feature briefs).
 - **Write a project brief** (in **+ Add project**): Claude interviews a developer about an idea
   and starts a new project from the brief. **Write a feature brief** (on a Planning card) does
-  the same for a feature, onto the card. Planners can't use either.
+  the same for a feature, onto the card. Planners can write feature briefs on their own runner,
+  not project briefs.
 - A goal's **plan**: the tasks its coordinator proposes, which the goal's owner accepts. A
   planner who starts a goal names a developer as its owner (see [Start](planning.md#start)).
 

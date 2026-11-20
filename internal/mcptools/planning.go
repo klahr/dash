@@ -116,6 +116,41 @@ type CardBoard interface {
 // PlanningToolNames are the PlanningTools.
 var PlanningToolNames = []string{"list_cards", "get_card", "create_card", "update_card", "comment_card", "start_card", "link_card"}
 
+// PlannerToolNames are the PlannerTools: the planning tools without
+// link_card, which needs the org's tasks and goals.
+var PlannerToolNames = []string{"list_cards", "get_card", "create_card", "update_card", "comment_card", "start_card"}
+
+// PlannerBoard is the board of a planner's chat (a product owner, who uses
+// Planning only): the Dash tools serve it the PlannerTools and nothing
+// about projects, tasks, goals, runners or issues.
+type PlannerBoard interface {
+	Board
+	CardBoard
+	// PlanningOnly marks the board as a planner's.
+	PlanningOnly()
+}
+
+// PlannerInstructions are the Dash tools' instructions for a planner's chat.
+const PlannerInstructions = "The org's plan on the Planning page: cards of what to build, in the columns ideas, planned, in_progress and done. " +
+	"The user is a planner (a product owner): they plan cards and start them; developers' runners carry out the work. " +
+	"You can list, read, create, change, comment on and start cards, nothing else of Dash."
+
+// PlannerTools returns list_cards, get_card, create_card, update_card,
+// comment_card and start_card on pb, for a planner's chat.
+func PlannerTools(pb PlannerBoard) []Tool {
+	var out []Tool
+	for _, t := range PlanningTools(pb, pb, Options{}) {
+		if !slices.Contains(PlannerToolNames, t.Name) {
+			continue
+		}
+		if t.Name == "create_card" {
+			t.Desc = "Add a card to the org's plan (the Planning page): something to build. It doesn't start any work: start_card does, when the user asks."
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 // PlanningTools returns list_cards, get_card, create_card, update_card,
 // comment_card, start_card and link_card on cb.
 func PlanningTools(b Board, cb CardBoard, o Options) []Tool {

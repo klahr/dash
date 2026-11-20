@@ -1603,6 +1603,7 @@
             <button type="button" class="rail-item" data-rail="members">Members</button>
             <button type="button" class="rail-item" data-rail="signin">Sign-in</button>
             <button type="button" class="rail-item" data-rail="tokens">Members' tokens</button>
+            <button type="button" class="rail-item" data-rail="planners">Planners</button>
           </div>
           <div class="rail-group"><span class="rail-head">Screens</span>
             <button type="button" class="rail-item" data-rail="wall">Wall view</button>
@@ -1639,7 +1640,7 @@
                 <input type="email" id="org-invite-email" placeholder="name@example.com" autocomplete="off" aria-label="Email to invite">
                 <select id="org-invite-role" aria-label="Role">
                   <option value="member">Member</option>
-                  <option value="planner" title="Uses Planning only: no projects, tasks, chats or terminals">Planner</option>
+                  <option value="planner" title="Uses Planning, and with a runner of their own the general chat and feature briefs: no projects, tasks or terminals">Planner</option>
                   <option value="admin">Admin</option>
                   <option value="owner">Owner</option>
                 </select>
@@ -1649,6 +1650,14 @@
               <div id="org-invite-link" hidden></div>
               <h3 class="section-head" id="org-pending-head">Pending invitations</h3>
               <ul class="item-list" id="org-pending"></ul>
+            </div>
+          </section>
+          <!-- Planners: what their feature briefs, on their own runners, are sent (owners; app/account.js) -->
+          <section class="rail-section" data-section="planners">
+            <div id="org-planners" hidden>
+              <p class="hint">Planners use Planning. With a runner of their own they also get the general chat and <strong>Write a feature brief</strong>, with their own Claude login. Their runners never run the organization's work. <a data-docs="users.md#planners" target="_blank" rel="noopener">Learn more</a></p>
+              <label class="org-require-2fa"><input type="checkbox" id="org-planner-context"> Send planners' feature brief interviews the project's CLAUDE.md, README and file tree</label>
+              <p class="hint">Off, each round gets only the card and the project's name.</p>
             </div>
           </section>
           <!-- Sign-in: required two-factor, the org's address (with org subdomains) and Google sign-in -->

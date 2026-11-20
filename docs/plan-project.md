@@ -8,10 +8,9 @@ commits the brief and starts a [goal](goals.md) from it.
 The same guide writes a brief for a feature of a project you have, onto a
 [Planning](planning.md) card. See [Write a feature brief](#write-a-feature-brief).
 
-[Planners](users.md#planners) can't write a project or feature brief: the interview runs on your
-own runner, and Launch adds a project. A planner has neither. Put the idea on a
-[Planning](planning.md) card instead, add a developer to the card, and let them write the brief
-from it.
+[Planners](users.md#planners) can write a feature brief, on a runner of their own (see
+[A planner's runner](several-computers.md#a-planners-runner)). They can't write a project brief:
+Launch adds a project, which planners can't.
 
 ## Start a brief
 
@@ -114,13 +113,17 @@ With each round, Claude also reads the project's `CLAUDE.md`, README and file li
 default branch, cut to a fixed size. It doesn't ask what those already answer. They are read on
 one of the project's runners; when none is online, the interview goes on without them. The
 interview itself runs on your own runner, as above; update Dash on it if it says it is from
-before feature briefs.
+before feature briefs. A planner's rounds read the same, unless an owner turned that off in
+**Organization → Planners**: then they get only the card and the project's name.
 
 On **Start**, pick one:
 
 - **A task**: queued for Claude now.
 - **A goal**: a coordinator breaks it into tasks. See [Goals](goals.md).
 - **Save to Planned**: nothing starts yet. Start it from the card later.
+
+A planner has **A task** and **Save to Planned**. The task runs for a developer, as **Start…**
+does. To start a goal, save to Planned, then use **Start…** on the card to choose its owner.
 
 Dash puts the brief on the card as its description (a new card in **Ideas** if the card was
 deleted), then starts the task or goal the way **Start…** on a card does: it is linked to the

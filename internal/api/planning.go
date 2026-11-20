@@ -1238,7 +1238,8 @@ func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (
 }
 
 // startsFor is the service a card's Start makes its task as. A member's
-// own Start is theirs. A planner can't own a runner, and a run is for its
+// own Start is theirs. A planner's runner takes no work (it runs only their
+// chat and interviews: tunnel.Runner.ClaudeOnly), and a run is for its
 // task's creator (model.Todo.WorkFor), so work made in a planner's name
 // would wait for a shared runner for good. A planner's Start is made in a
 // developer's name instead (a member who isn't a planner), so one of their
@@ -1291,8 +1292,8 @@ var errGoalOwner = fmt.Errorf("%w: choose the developer who owns the goal: its c
 
 // goalOwner is who owns a goal the caller starts from a card, given the
 // owner they asked for (0: none). A goal's coordinator acts as its owner,
-// on their runner, and its plan waits for them, so a planner (who has no
-// runner and can't open goals) must name a member of the org who isn't a
+// on their runner, and its plan waits for them, so a planner (whose runner
+// takes no work, and who can't open goals) must name a member of the org who isn't a
 // planner. Anyone else owns the goals they start.
 func (sv *service) goalOwner(want int64) (int64, error) {
 	if !sv.c.Planner {

@@ -2,7 +2,12 @@ import { $, $$, h, ib, ico, plural, setLabel, dateTimeText } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, fail, railOf, toast } from "./dialogs.js";
 import { renderMarkdown } from "../editor.js";
-import { SHEET, planSource, startAdd } from "./projects.js";
+
+// The Add project sheet (projects.js's SHEET). projects.js is the app's, so
+// it is loaded only for a project's brief: the planners' Planning page
+// (planning-page.js) uses this module for feature briefs without it.
+const SHEET = "new-project-sheet";
+const projects = () => import("./projects.js");
 
 // ------------------------------------------------------------- write a brief
 // The Add project sheet's first section: the user describes an idea and
@@ -640,7 +645,7 @@ function renderRepo() {
   const sources = $$("#new-project-nav .np-src").filter((b) => b.dataset.rail !== "plan" && !b.hidden);
   $("#plan-sources").replaceChildren(...sources.map((b) => h("button", {
     type: "button", class: `plan-source${pl.repo?.mode === b.dataset.rail ? " is-picked" : ""}`,
-    onclick: () => planSource(b.dataset.rail, pl.cur.name || briefTitle(pl.cur.brief)),
+    onclick: attempt(async () => (await projects()).planSource(b.dataset.rail, pl.cur.name || briefTitle(pl.cur.brief))),
   }, h("span", { class: "plan-source-name" }, b.firstElementChild.textContent), h("span", { class: "plan-source-desc" }, b.lastElementChild.textContent))));
   const picked = $("#plan-repo");
   picked.hidden = !pl.repo;
@@ -675,7 +680,7 @@ function renderLaunch() {
 async function launch() {
   await flushBrief();
   await loadLaunch();
-  if (!startAdd({ plan: pl.cur, mode: pl.repo.mode, launch: pl.launch })) {
+  if (!(await projects()).startAdd({ plan: pl.cur, mode: pl.repo.mode, launch: pl.launch })) {
     throw new Error("The repository picked for the brief isn't ready any more: choose it again.");
   }
 }

@@ -1006,3 +1006,32 @@ func (a *Accounts) DeclineInvitation(tok string) error {
 	}
 	return nil
 }
+
+// PlannerContext reports whether org's planners' feature brief interviews
+// are sent their project's context (CLAUDE.md, README, file tree): on
+// unless an owner turned it off (SetPlannerContext).
+func (a *Accounts) PlannerContext(orgID int64) (bool, error) {
+	var off bool
+	err := a.db.QueryRow("SELECT no_project_context FROM org_planner_settings WHERE org_id = ?", orgID).Scan(&off)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	return !off, err
+}
+
+// SetPlannerContext turns sending org's planners' feature brief interviews
+// their project's context on or off, as actor, who must be an owner.
+func (a *Accounts) SetPlannerContext(actor, orgID int64, on bool) error {
+	return inTx(a.db, func(tx *sql.Tx) error {
+		mine, err := membership(tx, actor, orgID)
+		if err != nil {
+			return err
+		}
+		if mine.Role != RoleOwner {
+			return ErrForbidden
+		}
+		_, err = tx.Exec(`INSERT INTO org_planner_settings (org_id, no_project_context) VALUES (?, ?)
+			ON CONFLICT (org_id) DO UPDATE SET no_project_context = excluded.no_project_context`, orgID, !on)
+		return err
+	})
+}

@@ -7,6 +7,14 @@ changes). Each conversation is saved, so it survives reloads and restarts. On a 
 runs on one of your own runners, with its Claude login (see
 [Several computers](several-computers.md#claude-runs-on-each-users-own-runner)).
 
+## A planner's chat
+
+A [planner](users.md#planners) has the general chat only: **Chat** in their sidebar. It runs on
+their own runner, with their own Claude login. Its Dash tools are Planning's: list, read,
+create, update, comment on and start cards, nothing about projects, tasks, goals, runners or
+issues. Without a runner of theirs online, **Chat** says **Install a runner to use Claude here**
+and links to the setup steps. See [A planner's runner](several-computers.md#a-planners-runner).
+
 ## Task chat: Ask Claude or Rework
 
 A switch above the task chat's message box says where your message goes. The send button's label

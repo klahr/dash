@@ -52,8 +52,18 @@ func (s *Server) boardHandler() *mcptools.Handler {
 			}
 			sc.Project = t.ProjectID // a task's run works in its own project only
 		}
-		if !s.Member(model.Owner{User: c.User, Org: c.Org}) {
+		m, err := s.membership(model.Owner{User: c.User, Org: c.Org})
+		if err != nil {
 			return nil, errors.New("this run's user no longer belongs to its organization")
+		}
+		if m.Role.Planner() {
+			// A planner's chat (on their own runner): Planning only, in no
+			// project, task or goal.
+			if sc.Project != "" || sc.Todo != "" || sc.Goal != "" {
+				return nil, errors.New("a planner's chat is the general chat, with Planning's tools only")
+			}
+			c.Planner = true
+			return plannerBoard{board{s.as(c)}}, nil
 		}
 		if sc.Goal != "" {
 			g, err := s.Store.ForOrg(sc.Org).GetGoal(sc.Goal)
@@ -205,12 +215,23 @@ func (s *Server) runnerScope(x tunnel.Runner, hubTodo, hubProject, hubGoal strin
 
 // Member reports whether owner's user still belongs to owner's org.
 func (s *Server) Member(owner model.Owner) bool {
-	if !owner.Valid() || s.Auth == nil {
-		return false
-	}
-	_, err := s.Auth.Accounts().Membership(owner.User, owner.Org)
+	_, err := s.membership(owner)
 	return err == nil
 }
+
+// membership is owner's user's membership of owner's org.
+func (s *Server) membership(owner model.Owner) (store.Membership, error) {
+	if !owner.Valid() || s.Auth == nil {
+		return store.Membership{}, store.ErrNotMember
+	}
+	return s.Auth.Accounts().Membership(owner.User, owner.Org)
+}
+
+// plannerBoard is a planner's board for their chat's Dash tools: the
+// org's plan only (mcptools.PlannerBoard), as they see it on Planning.
+type plannerBoard struct{ board }
+
+func (plannerBoard) PlanningOnly() {}
 
 // TaskOwner is who a task's runs act as: the user who created it, in the
 // task's org. A task Dash made by itself acts as the member it was given to

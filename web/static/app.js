@@ -24,6 +24,7 @@ import { connectAll } from "./app/events.js";
 import "./app/github.js";
 import "./app/projects.js";
 import "./app/planner.js";
+import "./app/plannerclaude.js"; // planning.html's; nothing on the app's page
 import "./app/board.js";
 import "./app/boards.js";
 import { renderBoard } from "./app/branches.js";

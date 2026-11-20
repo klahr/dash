@@ -106,9 +106,13 @@ const paneEl = () => $("#card-detail");
 //   visible()    whether the board shows (default: always), to load it
 //   background() the elements the pane covers on a phone (made inert)
 //   openWork(link) opens a linked task or goal (members)
-//   askChat(card) opens the card's project chat, about the card (members)
-//   featureBrief({ card, project, idea }) opens the feature brief guide
-//                (members): for card, or for a new card from idea
+//   askChat(card) opens the chat about the card: its project's chat, or
+//                the general chat (a planner's only one)
+//   featureBrief({ card, project, idea }) opens the feature brief guide:
+//                for card, or for a new card from idea
+//   claudeNeeded() what shows in place of those two when Claude can't run
+//                for the user (a planner without a runner online): a new
+//                element each call, or null when it can
 //   me()         the signed-in user: { id, admin } (to delete comments)
 // The card's pane goes in paneParent (default root): outside what
 // background() returns, which a phone makes inert while the pane is open.
@@ -763,14 +767,14 @@ async function openComposer(col) {
     // Write a feature brief: what was typed is the idea, and the guide
     // makes the card (in Ideas) when it saves it. Pressing it keeps the
     // focus in the text, so leaving the composer doesn't add the card first.
-    const brief = pl.hooks.featureBrief ? ib({ type: "button", class: "link pl-compose-brief", title: "Claude interviews you about it and writes a brief onto the card",
+    const brief = pl.hooks.claudeNeeded?.() || (pl.hooks.featureBrief ? ib({ type: "button", class: "link pl-compose-brief", title: "Claude interviews you about it and writes a brief onto the card",
       onmousedown: (e) => e.preventDefault(),
       onclick: () => {
         if (c.busy) return;
         const idea = ta.value.trim();
         closeComposer(false);
         pl.hooks.featureBrief({ project: pl.filter, idea });
-      } }, "spark", "Write a feature brief") : null;
+      } }, "spark", "Write a feature brief") : null);
     const li = h("li", { class: "pl-card pl-composer" },
       h("div", { class: "todo t-none" },
         h("span", { class: "todo-main" }, ta,
@@ -1158,6 +1162,23 @@ function descriptionEl(c) {
   return el;
 }
 
+// claudeActions are the card's buttons that ask Claude, or what Claude
+// needs instead (hooks.claudeNeeded: a planner without a runner online).
+function claudeActions(c) {
+  const needed = pl.hooks.claudeNeeded?.();
+  if (needed) return [needed];
+  return [
+    pl.hooks.featureBrief ? ib({ type: "button", class: "btn small", title: c.description ? "Claude interviews you about this card and refines its description into a brief" : "Claude interviews you about this card and writes its description as a brief",
+      onclick: () => pl.hooks.featureBrief({ card: c, project: pl.filter }) }, "spark", "Write a feature brief") : null,
+    pl.hooks.askChat ? ib({ type: "button", class: "btn small", title: c.project_id && !pl.planner ? "Ask Claude about this card in its project's chat" : "Ask Claude about this card in the general chat",
+      onclick: () => pl.hooks.askChat(c) }, "comment", "Ask in chat") : null,
+  ];
+}
+
+// claudeChanged shows the open card's Claude buttons again, after whether
+// Claude can run for the user changed (hooks.claudeNeeded).
+export function claudeChanged() { renderCard(); }
+
 function renderCard() {
   const c = pl.detail;
   if (!c || paneEl().hidden) return;
@@ -1170,10 +1191,7 @@ function renderCard() {
   fill($("#pd-actions"),
     ib({ type: "button", class: `btn small ${started ? "" : "primary"}`, title: "Make a task or a goal in a project for this card", onclick: attempt(() => startSheet(c)) }, "play", "Start…"),
     pl.planner ? null : ib({ type: "button", class: "btn small", title: "Link a task or goal that's already on a board", onclick: attempt(() => linkExistingSheet(c)) }, "link", "Link existing…"),
-    !pl.planner && pl.hooks.featureBrief ? ib({ type: "button", class: "btn small", title: c.description ? "Claude interviews you about this card and refines its description into a brief" : "Claude interviews you about this card and writes its description as a brief",
-      onclick: () => pl.hooks.featureBrief({ card: c, project: pl.filter }) }, "spark", "Write a feature brief") : null,
-    !pl.planner && pl.hooks.askChat ? ib({ type: "button", class: "btn small", title: c.project_id ? "Ask Claude about this card in its project's chat" : "Ask Claude about this card in the general chat",
-      onclick: () => pl.hooks.askChat(c) }, "comment", "Ask in chat") : null,
+    ...claudeActions(c),
     ib({ type: "button", class: "btn small", title: "Change the title", onclick: () => { pl.editing = true; renderCard(); $("#pd-edit-title")?.focus(); } }, "edit", "Rename"),
     ib({ type: "button", class: "btn small", title: "Copy a link that opens this card", onclick: () => copy(linkTo({ view: "planning", card: c.id }), "Link copied") }, "link", "Copy link"));
   const body = $("#pd-body");

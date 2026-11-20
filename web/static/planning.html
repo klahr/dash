@@ -15,10 +15,11 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <!-- Planning for planners (product owners): the org's plan and their own account, nothing
-       else. Members, admins and owners have the same board in the app's Planning view. The
-       shell is the app's (index.html): the top bar, the sidebar on desktop and the menu drawer
-       on a phone, with Planning its one section and the account menu at the bottom. -->
+  <!-- Planning for planners (product owners): the org's plan, their own account and runners,
+       and, with a runner of theirs online, the general chat and feature briefs. Members, admins
+       and owners have the same board in the app's Planning view. The shell is the app's
+       (index.html): the top bar, the sidebar on desktop and the menu drawer on a phone, with
+       Planning and Chat its sections and the account menu at the bottom. -->
   <div class="app planning-app">
     <header class="topbar">
       <button class="icon-btn menu-btn" id="menu-open" type="button" aria-label="Menu" aria-controls="menu" aria-expanded="false">
@@ -38,6 +39,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Planning</span>
       </button>
+      <button data-view="chat" title="Chat: ask Claude about the plan, on your runner">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span>Chat</span>
+      </button>
       <div class="menu-scrim" id="menu-scrim" hidden></div>
       <div class="menu" id="menu">
         <div class="menu-head">
@@ -49,6 +54,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
             <span>Planning</span>
           </button>
+          <button class="menu-view" data-view="chat" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            <span>Chat</span>
+          </button>
         </div>
         <div class="side-bottom">
         <div class="nav-foot">
@@ -57,6 +66,7 @@
             <div class="foot-menu-list">
               <div class="org-switch" id="org-switch" hidden></div>
               <button id="account-open" type="button" data-icon="user">Account</button>
+              <button id="runners-open" type="button" data-icon="computer">Runners</button>
               <button id="logout" type="button" data-icon="logout">Sign out</button>
               <span class="foot-version" title="Dash version">{{DASH_RELEASE}}</span>
               <!--DASH_FOOTER-->
@@ -69,6 +79,38 @@
     </div>
 
     <main id="planning-main"></main>
+    <!-- The general chat, on the planner's own runner, with Planning's tools only
+         (app/plannerclaude.js). Without a runner online it says what it needs instead. -->
+    <main id="chat-main" class="pl-chat" hidden>
+      <section class="chat-panel" aria-label="Chat">
+        <header class="cl-head pl-chat-head">
+          <h2 class="cl-title page-title">Chat</h2>
+          <button class="icon-btn" id="pl-chat-clear" type="button" aria-label="Clear the chat" title="Clear the chat" data-icon="trash"></button>
+        </header>
+        <div class="chat-runner online" id="pl-chat-runner" role="status" hidden>
+          <span class="chat-runner-dot" aria-hidden="true"></span>
+          <span class="chat-runner-text" id="pl-chat-runner-text"></span>
+        </div>
+        <div class="chat-log" id="pl-chat-log" aria-live="polite">
+          <div class="empty chat-empty" id="pl-chat-empty">
+            <img class="empty-art" src="/img/empty-chat.webp" alt="" width="480" height="360" loading="lazy" data-optional>
+            <p class="empty-title">Ask Claude about the plan</p>
+            <p>Claude lists, reads, adds, changes, comments on and starts the cards on Planning. It runs on your runner, with your own Claude login.</p>
+          </div>
+        </div>
+        <div class="empty pl-chat-needed" id="pl-chat-needed" hidden>
+          <p class="empty-title">Claude runs on your own runner</p>
+          <p>A runner is Dash on your computer, signed in to Claude with your own account. Here it runs only your chat and Write a feature brief.</p>
+          <p id="pl-chat-needed-link"></p>
+        </div>
+        <form class="composer" id="pl-chat-form" hidden>
+          <textarea name="q" rows="1" placeholder="Message Claude" aria-label="Message Claude"></textarea>
+          <button class="icon-btn primary" id="pl-chat-send" aria-label="Send">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 3.5 21 12 3.5 20.5 7 12Z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          </button>
+        </form>
+      </section>
+    </main>
   </div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
@@ -126,6 +168,107 @@
         </div>
       </div>
     </div>
+  </dialog>
+
+  <!-- Runners: the planner's own runners (app/plannerclaude.js), which run only their chat
+       and feature briefs. The same pairing as the app's Runners sheet; no one else's runners. -->
+  <dialog class="sheet rail-sheet" id="runners-sheet" aria-labelledby="runners-title">
+    <form method="dialog" id="runners-form">
+      <header class="sheet-head"><h2 id="runners-title" tabindex="-1" autofocus>Runners</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
+      <div class="rail-layout">
+        <nav class="rail-nav" aria-label="Runners">
+          <div class="rail-group"><span class="rail-head">Your runners</span>
+            <button type="button" class="rail-item" data-rail="overview">Overview</button>
+            <button type="button" class="rail-item" data-rail="add">Add a runner</button>
+          </div>
+        </nav>
+        <div class="rail-main">
+          <section class="rail-section" data-section="overview">
+            <p class="hint">A runner of your own lets you use Claude here, with your own Claude login: the <strong>Chat</strong> and <strong>Write a feature brief</strong> on a card. It runs nothing else: no tasks or other project work. <a data-docs="several-computers.md#a-planners-runner" target="_blank" rel="noopener">Learn more</a></p>
+            <p class="hint" id="pl-runners-none" hidden>You have no runner yet.</p>
+            <ul class="item-list" id="pl-runners-list"></ul>
+            <div class="runners-top"><button class="btn primary small" id="pl-runners-add" type="button" data-icon="plus">Add a runner</button></div>
+          </section>
+          <section class="rail-section" data-section="add">
+            <h3 class="section-head">Add a runner</h3>
+            <div id="pl-runner-add"></div>
+          </section>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Write a feature brief (app/planner.js), on the planner's runner: the app's markup
+       (index.html), for a feature only. A planner starts a task from it, or saves the card to
+       Planned; a goal needs its owner, a developer, which the card's Start… asks for. -->
+  <dialog class="sheet plan-sheet" id="feature-sheet" aria-labelledby="feature-title">
+    <form method="dialog" id="feature-form">
+      <header class="sheet-head"><h2 id="feature-title">Write a feature brief</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
+      <div class="plan-main" id="feature-main"><div id="feature-slot">
+        <div class="plan-home" id="plan-home">
+          <p class="hint np-lead" data-kind="feature">Claude asks about what you haven't decided yet, reads the project's CLAUDE.md, README and files (unless your organization turned that off), and writes the brief onto a Planning card. <a data-docs="plan-project.md#write-a-feature-brief" target="_blank" rel="noopener">Learn more</a></p>
+          <button type="button" class="btn primary plan-new" id="plan-new" data-icon="spark">New brief</button>
+          <h3 class="plan-drafts-head" id="plan-drafts-head" hidden>Drafts</h3>
+          <ul class="plan-drafts" id="plan-drafts"></ul>
+        </div>
+        <div class="plan-work" id="plan-work" hidden>
+          <div class="plan-bar">
+            <button type="button" class="link plan-all" id="plan-all" data-icon="left">All briefs</button>
+            <ol class="plan-stepper" id="plan-stepper" aria-label="Brief steps"></ol>
+            <p class="plan-stepper-compact" id="plan-stepper-compact" aria-hidden="true"></p>
+          </div>
+          <div class="plan-pane" data-step="idea">
+            <label class="field" data-kind="feature"><span>Project</span><select id="plan-project"></select></label>
+            <label class="field"><span>Your idea</span><textarea id="plan-idea" rows="4" maxlength="2000" placeholder="e.g. Let people export the board as a CSV file, with each task's status and who did it."
+              data-feature-placeholder="e.g. Let people export the board as a CSV file, with each task's status and who did it."></textarea></label>
+            <label class="field"><span><span data-kind="feature">Feature name</span> <em>optional</em></span><input id="plan-name" maxlength="100" autocomplete="off" spellcheck="false" placeholder="e.g. CSV export" data-feature-placeholder="e.g. CSV export"></label>
+            <p class="hint" id="plan-card" data-kind="feature"></p>
+            <p class="hint" id="plan-where"></p>
+          </div>
+          <div class="plan-pane" data-step="interview">
+            <ul class="plan-topics" id="plan-topics" aria-label="Topics"></ul>
+            <div class="segmented plan-tabs" role="tablist" aria-label="Show">
+              <button type="button" role="tab" data-view="talk" aria-selected="true">Questions</button>
+              <button type="button" role="tab" data-view="brief" aria-selected="false">Brief</button>
+            </div>
+            <div class="plan-split" id="plan-split" data-view="talk">
+              <div class="plan-talk" id="plan-talk" aria-live="polite"></div>
+              <aside class="plan-live" aria-label="Brief so far">
+                <h3 class="plan-live-head">Brief so far</h3>
+                <div class="md plan-brief-md" id="plan-live"></div>
+              </aside>
+            </div>
+          </div>
+          <div class="plan-pane" data-step="brief">
+            <div class="plan-verdict" id="plan-verdict"></div>
+            <div class="plan-brief-head">
+              <div class="segmented" role="tablist" aria-label="Brief">
+                <button type="button" role="tab" data-brief="edit" aria-selected="true">Edit</button>
+                <button type="button" role="tab" data-brief="preview" aria-selected="false">Preview</button>
+              </div>
+              <span class="plan-saved hint" id="plan-saved" aria-live="polite"></span>
+            </div>
+            <textarea class="plan-brief-edit" id="plan-brief" spellcheck="true" aria-label="Brief (Markdown)"></textarea>
+            <div class="md plan-brief-md plan-brief-preview" id="plan-brief-preview" hidden></div>
+            <div class="plan-open" id="plan-open"></div>
+          </div>
+          <div class="plan-pane" data-step="start">
+            <dl class="plan-summary" id="plan-start-summary"></dl>
+            <p class="hint">The brief becomes the card's description.</p>
+            <fieldset class="field choice plan-start-choice">
+              <legend>What to start</legend>
+              <label class="radio"><input type="radio" name="plan-start" value="task" checked><span>A task <em>one piece of work, queued for Claude now, run by a developer</em></span></label>
+              <label class="radio"><input type="radio" name="plan-start" value="planned"><span>Save to Planned <em>nothing starts yet: Start it from the card later, as a task or a goal</em></span></label>
+            </fieldset>
+            <p class="hint">A task is linked to the card, like <strong>Start…</strong> on a card. Nothing is committed to the repository.</p>
+          </div>
+        </div>
+      </div></div>
+      <footer class="sheet-actions" id="feature-actions">
+        <button type="button" class="btn" id="plan-back" data-icon="left" hidden>Back</button>
+        <button type="button" class="btn primary" id="plan-next" hidden>Next</button>
+      </footer>
+    </form>
   </dialog>
 
   <dialog class="sheet small" id="password-sheet" aria-labelledby="password-title">

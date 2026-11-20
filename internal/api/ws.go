@@ -316,6 +316,16 @@ func (s *Server) chatFor(p model.Project) agent.Chatter {
 // project's checkout or a task's worktree. Its error is the client's to see.
 func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *service, msg chatRequest, shell bool, relay *chatRelay) (chatSetup, error) {
 	ct := chatSetup{chatter: s.Chat, endReview: func() {}, general: msg.general()}
+	if sv.c.Planner {
+		// A planner has the general chat only, on their own runner (their
+		// Claude login), with Planning's tools (see plannerBoard).
+		if !msg.general() {
+			return ct, errPlannerChat
+		}
+		if !s.hub() {
+			return ct, errors.New("a planner's chat runs on their own runner, which connects to a hub; this Dash isn't one")
+		}
+	}
 	// Each conversation is saved with who wrote its new questions.
 	user := sv.c.User
 	ct.save = func(msgs []agent.ChatMessage) error {
@@ -538,6 +548,9 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 }
 
 var errChatUnavailable = errors.New("chat is not available on this Dash")
+
+// errPlannerChat: project, task and goal chats are for members.
+var errPlannerChat = errors.New("planners have the general chat only: project, task and goal chats are for members")
 
 // errStaleChat refuses a turn sent from an out-of-date copy of a project's
 // chat (another device of the user's added to it or cleared it since): the

@@ -67,20 +67,21 @@ func TestPlannerGateRefusesEveryOtherRoute(t *testing.T) {
 	}
 
 	// Every route a planner may use is a route (no typo leaves one out),
-	// except those that depend on how this Dash is set up.
+	// except those that depend on how this Dash is set up: Google sign-in,
+	// and the runners of a hub (this Dash isn't one).
 	registered := map[string]bool{}
 	for _, p := range s.routes {
 		registered[p] = true
 	}
 	for p := range plannerRoutes {
-		if !registered[p] && !strings.Contains(p, "/auth/google") {
+		if !registered[p] && !strings.Contains(p, "/auth/google") && !strings.Contains(p, "/api/runners") {
 			t.Errorf("%s is allowed for planners but isn't a route", p)
 		}
 	}
 }
 
-// A planner lands on Planning and uses it; projects, tasks, chats and the
-// remote MCP tools are refused, and a member is unaffected.
+// A planner lands on Planning and uses it; projects, tasks, project chats
+// and the remote MCP tools are refused, and a member is unaffected.
 func TestPlannerUsesPlanningOnly(t *testing.T) {
 	s, _, p := boardServer(t)
 	h := s.Routes()
@@ -97,7 +98,7 @@ func TestPlannerUsesPlanningOnly(t *testing.T) {
 		{"GET", "/api/projects", ""},
 		{"GET", "/api/projects/" + p.ID + "/todos", ""},
 		{"POST", "/api/projects/" + p.ID + "/todos", `{"title":"x"}`},
-		{"GET", "/api/chat", ""},
+		{"GET", "/api/projects/" + p.ID + "/chat", ""},
 		{"GET", "/api/goals", ""},
 		{"GET", "/api/planning/work", ""},
 		{"POST", "/api/planning/cards/x/links", `{"kind":"task","id":"x"}`},

@@ -1220,7 +1220,11 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, sc Scope) {
 		Instructions: "The tasks on the Dash board. Each runs Claude Code in its own git worktree once queued.",
 		Tools:        Tools(board, Options{Project: sc.Project, Draft: true}),
 	}
+	pb, planner := board.(PlannerBoard)
 	switch {
+	case planner:
+		srv.Instructions = PlannerInstructions
+		srv.Tools = PlannerTools(pb)
 	case sc.Todo != "":
 		srv.Instructions = "The project's Issues list (known bugs, vulnerabilities and other problems the user triages into tasks), " +
 			"and what the project's other tasks are working on (active_work)."

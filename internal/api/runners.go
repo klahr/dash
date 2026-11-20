@@ -45,6 +45,9 @@ type runnerView struct {
 	// members' tasks can't be turned on, or has no effect ("": it can).
 	TakesOthers bool   `json:"takes_others"`
 	CantShare   string `json:"cant_share,omitempty"`
+	// ClaudeOnly: a planner's runner, which runs only its owner's general
+	// chat and feature brief interviews, never the org's work.
+	ClaudeOnly bool `json:"claude_only,omitempty"`
 }
 
 func (s *Server) fleet() *tunnel.Hub {
@@ -81,17 +84,24 @@ func (s *Server) canManageRunner(c Caller, r tunnel.Runner) bool {
 	return r.Owner.UserID == c.User || s.orgAdmin(c) || c.PlatformAdmin
 }
 
-// orgRunner is runner id if it belongs to c's org.
+// orgRunner is runner id if it belongs to c's org (for a planner, if it is
+// their own: they don't see anyone else's).
 func (s *Server) orgRunner(c Caller, id string) (tunnel.Runner, bool) {
 	fl := s.fleet()
 	if fl == nil {
 		return tunnel.Runner{}, false
 	}
 	r, ok := fl.Get(id)
-	if !ok || r.OrgID() != c.Org {
+	if !ok || !sees(c, r) {
 		return tunnel.Runner{}, false
 	}
 	return r, true
+}
+
+// sees reports whether c sees runner r: everyone sees their org's runners,
+// except a planner, who sees only their own (see plannerRoutes).
+func sees(c Caller, r tunnel.Runner) bool {
+	return r.OrgID() == c.Org && (!c.Planner || r.OwnerID() == c.User)
 }
 
 // youHaveNoRunner is the advice for a member without a runner of their own.
@@ -110,8 +120,11 @@ func (s *Server) view(c Caller, r tunnel.Runner) runnerView {
 		r.Running = s.Dispatch.Busy(r.ID)
 	}
 	v := runnerView{Runner: r, Mine: r.Owner != nil && r.Owner.UserID == c.User, CanManage: s.canManageRunner(c, r),
-		SignIn: r.Auth().Plan(), CantShare: r.Auth().NotShared()}
+		SignIn: r.Auth().Plan(), CantShare: r.Auth().NotShared(), ClaudeOnly: r.ClaudeOnly()}
 	v.TakesOthers, _ = r.TakesOthers()
+	if v.ClaudeOnly {
+		v.CantShare = "it is a planner's runner"
+	}
 	return v
 }
 
@@ -125,7 +138,7 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 		}
 		out := []runnerView{}
 		for _, x := range rh.List() {
-			if x.OrgID() == c.Org {
+			if sees(c, x) {
 				out = append(out, s.view(c, x))
 			}
 		}
@@ -163,6 +176,7 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 	})))
 	mux.HandleFunc("PATCH /api/runners/{id}", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
+			Name       *string        `json:"name"`
 			Parallel   *int           `json:"parallel"`
 			Paused     *bool          `json:"paused"`
 			AutoUpdate *bool          `json:"auto_update"`
@@ -177,6 +191,11 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 		}
 		if err := decode(r, &req); err != nil {
 			writeErr(w, err)
+			return
+		}
+		if c.Planner && (req.Parallel != nil || req.Paused != nil || req.AutoUpdate != nil || req.Disk != nil || req.Labels != nil || req.Shared != nil) {
+			// A planner's runner takes no work: there is nothing to tune.
+			writeErr(w, fmt.Errorf("%w: a planner can rename and remove their runner only", errBadRequest))
 			return
 		}
 		if req.Parallel != nil && (*req.Parallel < 0 || *req.Parallel > 64) {
@@ -196,6 +215,19 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 			// that signs in to Claude with a subscription (or doesn't say).
 			if why := x.CanShare(rh.Release); why != "" {
 				writeErr(w, fmt.Errorf("%w: %s", errBadRequest, why))
+				return
+			}
+		}
+		if req.Name != nil {
+			switch err := rh.Rename(x.ID, *req.Name); {
+			case errors.Is(err, tunnel.ErrNameTaken):
+				writeErr(w, fmt.Errorf("%w: another runner is called %s: pick another name", errConflict, strings.ToLower(strings.TrimSpace(*req.Name))))
+				return
+			case errors.Is(err, tunnel.ErrNameHub):
+				writeErr(w, fmt.Errorf("%w: that name is the hub's own: pick another", errConflict))
+				return
+			case err != nil:
+				writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 				return
 			}
 		}

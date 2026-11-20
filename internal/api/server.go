@@ -353,6 +353,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	s.goalRoutes(mux)
 	// Plans: a new project planned with Claude, launched as a project and a goal
 	s.planRoutes(mux)
+	s.plannerSettingsRoutes(mux)
 	// Planning: the org's plan for a product owner, cards linked to tasks and goals
 	s.planningRoutes(mux)
 

@@ -181,6 +181,9 @@ function signInChip(r) {
 // setting is on but has no effect.
 function whoseTasks(r) {
   const owner = r.owner?.username || "its owner";
+  if (r.claude_only) {
+    return h("p", { class: "hint" }, `No tasks: ${owner} is a planner, and their runner runs only their chat and feature briefs.`);
+  }
   if (r.takes_others) {
     return h("p", { class: "hint" }, `${owner}'s and other members' tasks, on its API key.`);
   }

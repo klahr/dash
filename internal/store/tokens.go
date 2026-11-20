@@ -358,13 +358,17 @@ type RunnerOwner struct {
 	UserID   int64  `json:"user_id"`
 	Username string `json:"username"`
 	Org      Org    `json:"org"`
+	// Planner: the owner's role in that org is planner. Their runner runs
+	// only their own chat and short calls, never the org's work (see
+	// tunnel.Runner.ClaudeOnly).
+	Planner bool `json:"planner,omitempty"`
 }
 
 // RunnerOwners maps runner ids to their owners. A runner whose owner is no
 // longer a member of its token's org has no owner, and so no org: it gets
 // none of that org's work.
 func (a *Accounts) RunnerOwners() (map[string]RunnerOwner, error) {
-	rows, err := a.db.Query(`SELECT t.runner_id, u.id, u.username, o.id, o.name, o.slug FROM tokens t
+	rows, err := a.db.Query(`SELECT t.runner_id, u.id, u.username, o.id, o.name, o.slug, m.role FROM tokens t
 		JOIN users u ON u.id = t.user_id JOIN organizations o ON o.id = t.org_id
 		JOIN org_memberships m ON m.user_id = t.user_id AND m.org_id = t.org_id
 		WHERE t.kind = 'runner'`)
@@ -376,9 +380,11 @@ func (a *Accounts) RunnerOwners() (map[string]RunnerOwner, error) {
 	for rows.Next() {
 		var id string
 		var o RunnerOwner
-		if err := rows.Scan(&id, &o.UserID, &o.Username, &o.Org.ID, &o.Org.Name, &o.Org.Slug); err != nil {
+		var role Role
+		if err := rows.Scan(&id, &o.UserID, &o.Username, &o.Org.ID, &o.Org.Name, &o.Org.Slug, &role); err != nil {
 			return nil, err
 		}
+		o.Planner = role.Planner()
 		out[id] = o
 	}
 	return out, rows.Err()

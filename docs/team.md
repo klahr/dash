@@ -23,7 +23,8 @@ Open the account menu → **Organization** and invite each person. Dash gives yo
 them; it sends no email.
 
 - Developers get the role **Member** (or **Admin**, to manage the org).
-- Product owners get the role **Planner**. They see [Planning](planning.md) only.
+- Product owners get the role **Planner**. They see [Planning](planning.md), and with a runner of
+  their own they get the chat and feature briefs.
 
 Rename the org under **Organization → Members → Name**, and require two-factor sign-in under
 **Organization → Sign-in** (owners).
@@ -90,13 +91,19 @@ admin approves them in **Project settings → Commands**. See
 ## 5. What planners do
 
 Planners keep the org's plan in **Planning**: cards from Ideas to Done. They can't see projects,
-tasks, chats or runners. Each card shows the status of its work in plain words.
+tasks, project chats or other people's runners. Each card shows the status of its work in plain
+words.
+
+A planner who wants Claude installs a runner of their own: account menu → **Runners** → **Add a
+runner**. It uses their own Claude login and runs only their **Chat** and **Write a feature
+brief**, never the org's work. Without one, they use Planning as before. To keep the project's
+files out of their feature briefs, an owner turns that off in **Organization → Planners**. See
+[Planners](users.md#planners).
 
 **Start…** on a card makes a task or a goal in a project. A goal needs an **Owner**, a developer:
-its coordinator runs on their runner, and they accept its plan. A task is the planner's, and a
-planner has no runners, so a task they start runs only on a shared runner, and waits without one. With no
-shared runner, let a developer press **Start…** instead: the work is then theirs and runs on their
-runner. See [Planning](planning.md#start).
+its coordinator runs on their runner, and they accept its plan. A task runs for a developer (its
+**Runs for**), on their runners: a planner's own runner never runs tasks. See
+[Planning](planning.md#start).
 
 ## 6. See who spent what
 

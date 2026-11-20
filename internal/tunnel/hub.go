@@ -145,9 +145,11 @@ func defaultLabels(goos, goarch string, rep *Reported) []string {
 // Serves reports whether the runner works on hub project p: it is in p's
 // org and has every label p runs on, and its agent's
 // (model.Project.RunnerLabels, model.LabelsMatch). A runner of nobody's
-// (its owner unknown) serves no project.
+// (its owner unknown) serves no project, nor does a planner's (ClaudeOnly),
+// whatever its labels: every kind of a project's work picks its runners
+// with Serves, so this keeps all of it off a planner's runner.
 func (r Runner) Serves(p model.Project) bool {
-	return r.OrgID() != 0 && r.OrgID() == p.OrgID && model.LabelsMatch(r.AllLabels(), p.RunnerLabels())
+	return r.OrgID() != 0 && r.OrgID() == p.OrgID && !r.ClaudeOnly() && model.LabelsMatch(r.AllLabels(), p.RunnerLabels())
 }
 
 // HasAgent reports whether the runner can run agent provider name: it
@@ -727,6 +729,34 @@ func (h *Hub) SetDisk(id string, s disk.Settings) error {
 		return ErrUnknownName
 	}
 	h.runners[i].Disk = s.Clean()
+	h.saveLocked()
+	h.mu.Unlock()
+	h.changed()
+	return nil
+}
+
+// Rename names runner id name (lowercase letters, digits and dashes, unique
+// on the hub). The runner keeps its token, so it needs nothing done on its
+// computer; links to it under /peer/{name}/ follow the new name.
+func (h *Hub) Rename(id, name string) error {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if !nameRe.MatchString(name) {
+		return ErrBadName
+	}
+	if h.Taken != nil && h.Taken(name) {
+		return ErrNameHub
+	}
+	h.mu.Lock()
+	i := slices.IndexFunc(h.runners, func(r *record) bool { return r.ID == id })
+	if i < 0 {
+		h.mu.Unlock()
+		return ErrUnknownName
+	}
+	if slices.ContainsFunc(h.runners, func(r *record) bool { return r.Name == name && r.ID != id }) {
+		h.mu.Unlock()
+		return ErrNameTaken
+	}
+	h.runners[i].Name = name
 	h.saveLocked()
 	h.mu.Unlock()
 	h.changed()

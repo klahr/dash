@@ -3750,5 +3750,18 @@ select.pl-more-filter { width: auto; min-height: 32px; max-width: 12em; font-siz
   .planning-app .nav { display: contents; }
   .planning-app .nav > button { display: none; }
 }
+/* planning.html's Chat (app/plannerclaude.js): the planner's general chat as a page, the
+   composer at its foot; without a runner online, what it needs in its place. */
+.planning-app #chat-main { display: flex; flex-direction: column; overflow: hidden; height: calc(100dvh - var(--top-h)); }
+.pl-chat .chat-panel { flex: 1; min-height: 0; }
+.pl-chat-head { justify-content: space-between; margin: 0; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--line); }
+.pl-chat .chat-log { padding-inline: max(16px, calc((100% - 80ch) / 2)); }
+.pl-chat .composer { padding-bottom: max(10px, var(--safe-b)); }
+.pl-chat-needed { margin: auto; }
+.claude-needed { display: inline-flex; align-items: center; text-align: left; }
+.pl-compose-brief.claude-needed, .pl-composer .claude-needed { font-size: var(--fs-s); padding: 4px 10px 8px; }
+@media (max-width: 1023px) {
+  .planning-app #chat-main { height: calc(100dvh - var(--top-h) - var(--safe-b)); }
+}
 @media (max-width: 400px) { .chat-mode .ico { display: none; } .chat-mode button { padding: 0 8px; } }
 #keys-sheet .rail-body > .site-footer { flex: none; padding: 8px 0 calc(8px + var(--safe-b)); }

@@ -46,10 +46,13 @@ import (
 // task or a goal from it, or the card waits in Planned. Nothing is
 // committed.
 //
-// Plans are for members: a planner is refused every route here by
-// plannerGate, as these aren't in plannerRoutes. To open the feature guide
-// to planners, add the plan routes there; planService is where a check of
-// the caller would go.
+// Planners write feature briefs too, on their own runner (plannerRoutes
+// has the routes a feature brief uses): planService refuses them a hub
+// that isn't one, and createPlan a project's brief, which only members
+// launch (planners can't add projects). Their rounds are sent the
+// project's context unless an owner turned that off (Organization →
+// Planners; store.Accounts.PlannerContext), when they get only the card
+// and the project's name.
 
 func (s *Server) planRoutes(mux routeMux) {
 	mux.HandleFunc("GET /api/plans", s.listPlans)
@@ -77,8 +80,19 @@ func (s *Server) planService(w http.ResponseWriter, r *http.Request) (*service, 
 		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, store.ErrNoUser))
 		return nil, false
 	}
+	if sv.c.Planner && !s.hub() {
+		writeError(w, http.StatusServiceUnavailable, errPlannerNoHub.Error())
+		return nil, false
+	}
 	return sv, true
 }
+
+// errPlannerNoHub: a planner's interview runs on their own runner, which
+// needs a hub to connect to.
+var errPlannerNoHub = errors.New("a planner's feature brief runs on their own runner, which connects to a hub; this Dash isn't one")
+
+// errPlannerProjectBrief: planners can't add projects.
+var errPlannerProjectBrief = fmt.Errorf("%w: a project's brief is for members, who add projects; write a feature brief from a Planning card", errBadRequest)
 
 func (s *Server) listPlans(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.planService(w, r)
@@ -134,6 +148,10 @@ func (s *Server) createPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := model.Plan{Kind: req.Kind, Rounds: []model.PlanRound{}}
+	if sv.c.Planner && p.Kind != model.PlanFeature {
+		writeErr(w, errPlannerProjectBrief)
+		return
+	}
 	if p.Kind == model.PlanFeature {
 		if err := sv.fromCard(&p, req.Card); err != nil {
 			writeErr(w, err)
@@ -323,6 +341,10 @@ func (s *Server) interviewPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kind := model.KindOf(next)
+	if sv.c.Planner && !next.Feature() {
+		writeErr(w, errPlannerProjectBrief)
+		return
+	}
 	var pc *agent.PlanContext
 	if next.Feature() {
 		pc = sv.featureContext(r.Context(), next.ProjectID)
@@ -439,9 +461,12 @@ func (sv *service) featureContext(ctx context.Context, projectID string) *agent.
 	if err != nil {
 		return nil
 	}
+	pc := &agent.PlanContext{Project: p.Name}
+	if sv.c.Planner && !sv.plannerContext() {
+		return pc // the owners keep the project's files from planners' rounds
+	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	pc := &agent.PlanContext{Project: p.Name}
 	read := func(name string) string {
 		var f fileContent
 		var err error
@@ -478,6 +503,18 @@ func (sv *service) featureContext(ctx context.Context, projectID string) *agent.
 		}
 	}
 	return pc
+}
+
+// plannerContext reports whether the caller's org sends its planners'
+// feature brief rounds the project's context (on unless an owner turned it
+// off; off if the setting can't be read, which may be the owners' "off").
+func (sv *service) plannerContext() bool {
+	on, err := sv.s.Store.Accounts().PlannerContext(sv.c.Org)
+	if err != nil {
+		slog.Warn("planner context setting", "org", sv.c.Org, "err", err)
+		return false
+	}
+	return on
 }
 
 // planLaunchView is what launching a plan commits and starts: BRIEF.md and
@@ -754,6 +791,11 @@ func (s *Server) launchFeature(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Start != model.LinkTask && req.Start != model.LinkGoal && req.Start != string(model.CardPlanned) {
 		writeErr(w, fmt.Errorf("%w: start a task or a goal, or save the card to Planned", errBadRequest))
+		return
+	}
+	if sv.c.Planner && req.Start == model.LinkGoal {
+		// A planner's goal needs its owner, a developer: Start… on the card asks for one.
+		writeErr(w, fmt.Errorf("%w: start a task, or save the card to Planned and start a goal from the card's Start…, where you choose its owner", errBadRequest))
 		return
 	}
 	id := r.PathValue("id")

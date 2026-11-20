@@ -7,8 +7,8 @@ belongs to the org.
 
 Open it from the sidebar: **Planning**, below the **Organization** divider, apart from the
 project's sections (or `gp`). On a phone it is in the menu. A
-[planner](users.md#planners) lands on it when they sign in. Their sidebar has only
-**Planning** and their account.
+[planner](users.md#planners) lands on it when they sign in. Their sidebar has **Planning**,
+**Chat** and their account.
 
 ## Cards
 
@@ -80,8 +80,9 @@ for anyone in the org, after signing in if needed (see [Links](links.md)).
 
 **Ask in chat** in the card's head opens the chat about the card: its project's chat, or the
 **General** chat for a card of no project. The message box starts with the card's title and id;
-add your question and send it. Claude reads the card with `get_card`. Planners don't have it:
-they have no chat.
+add your question and send it. Claude reads the card with `get_card`. A planner's opens their
+**Chat**, on their own runner. Without one online, the card says **Install a runner to use
+Claude here** instead.
 
 ## Dependencies
 
@@ -149,10 +150,11 @@ moves a card to **Done** on its own.
 
 ## Write a feature brief
 
-Members can have Claude interview them about a card and write its description as a feature
+You can have Claude interview you about a card and write its description as a feature
 brief: **Write a feature brief** on the card, or **New card** then **Write a feature brief**.
 The brief's last step starts a task or a goal from the card, or saves it to **Planned**. See
-[Write a feature brief](plan-project.md#write-a-feature-brief). Planners don't have it.
+[Write a feature brief](plan-project.md#write-a-feature-brief). Planners have it with a runner of
+their own online (see [Planners](users.md#planners)).
 
 ## Start
 
@@ -178,7 +180,7 @@ runners yet. Dash links the new work to the card and moves the card to
 **In progress**.
 
 Planners and members can both press **Start**. Work a member starts is theirs and runs on
-their runners. A planner can't own a runner, so a task a planner starts is made in the name of
+their runners. A planner's own runner runs no tasks, so a task a planner starts is made in the name of
 the developer it **Runs for**, and runs on that developer's runners (or a shared one). A goal
 a planner starts belongs to its **Owner** the same way. Without a choice for a task (the
 `start_card` tool), Dash picks the card's first developer, else whoever added the project,

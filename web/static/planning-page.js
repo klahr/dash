@@ -2,17 +2,22 @@
 // use nothing else (internal/api/planner.go). The board is app/planning.js,
 // as in the app's Planning view. This page adds the app's shell around it:
 // the sidebar on desktop (which the menu button collapses to its icons) and
-// the menu drawer on a phone, with Planning as the one section and the
-// account menu at the bottom (Account, org switch, Sign out). It also keeps
-// the live updates, whose stream sends a planner Planning's events only.
-// Anyone else is sent to the app, on its Planning view.
+// the menu drawer on a phone, with Planning and Chat as its sections and the
+// account menu at the bottom (Account, Runners, org switch, Sign out). Chat,
+// a card's Write a feature brief and Ask in chat run on the planner's own
+// runner (app/plannerclaude.js, app/planner.js); without one online they
+// show what's needed instead. It also keeps the live updates, whose stream
+// sends a planner Planning's events only. Anyone else is sent to the app, on
+// its Planning view.
 import { $, $$, h, ico } from "./app/dom.js";
 import { api } from "./app/api.js";
 import { attempt, fail, toast } from "./app/dialogs.js";
 import * as store from "./app/store.js";
 import { state } from "./app/state.js";
 import { desktop, wsURL } from "./app/viewport.js";
-import { cardError, cardId, closeCard, loadPlanning, mountPlanning, onPlanningEvent, openCard } from "./app/planning.js";
+import { cardError, cardId, claudeChanged, closeCard, loadPlanning, mountPlanning, onPlanningEvent, openCard } from "./app/planning.js";
+import { askAbout, chatShown, claudeNeeded, loadClaude, onClaudeChange, openRunners } from "./app/plannerclaude.js";
+import { openFeatureBrief } from "./app/planner.js";
 import { accountSection, openAccount } from "./app/accountsheet.js";
 import { pushSubscribe, pushSupported, pushTest, pushUnsubscribe } from "./app/pushsub.js";
 import { showOwnAvatar } from "./app/avatar.js";
@@ -37,8 +42,11 @@ function start() {
     await fetch("/api/logout", { method: "POST" });
     location.replace("/login.html");
   }));
-  // Planning is the one section: picking it only closes the drawer.
-  for (const b of $$("[data-view=planning]")) b.addEventListener("click", () => setMenu(false));
+  $("#runners-open").addEventListener("click", attempt(async () => { closeMenus(); await openRunners(); }));
+  // The sections: Planning and Chat.
+  for (const b of $$(".nav > [data-view], .menu-views [data-view]")) {
+    b.addEventListener("click", () => { setMenu(false); showView(b.dataset.view); });
+  }
 
   mountPlanning($("#planning-main"), {
     planner: true,
@@ -46,12 +54,34 @@ function start() {
     hooks: {
       background: () => [$(".topbar"), $(".sidebar"), $("#planning-main")],
       me: () => ({ id: me.user.id, admin: false }),
+      claudeNeeded,
+      askChat: (c) => { closeCard(); showView("chat"); askAbout(c); },
+      // The brief lands on the card, which Planning shows open.
+      featureBrief: ({ card, project, idea }) => openFeatureBrief({ card, project, idea,
+        onDone: (c) => loadPlanning().then(() => openCard(c.id)).catch(fail) }).catch(fail),
     },
   });
+  onClaudeChange(claudeChanged);
+  loadClaude().catch(fail);
   loadPlanning().catch(fail);
   connect();
   followCards();
   notifications();
+}
+
+// showView shows a section: planning (the board) or chat.
+function showView(view) {
+  const chat = view === "chat";
+  if (chat) closeCard(); // the card's pane would cover the chat
+  $("#planning-main").hidden = chat;
+  $("#chat-main").hidden = !chat;
+  for (const b of $$(".nav > [data-view], .menu-views [data-view]")) {
+    const on = b.dataset.view === view;
+    b.classList.toggle("active", on);
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  }
+  document.title = `${chat ? "Chat" : "Planning"} · ${me.org.name}`;
+  if (chat) chatShown().catch(fail);
 }
 
 // notifications: a planner's only ones are card news (they were mentioned
@@ -203,7 +233,7 @@ function setMenu(open) {
   app.classList.toggle("menu-open", open);
   $("#menu-scrim").hidden = !open;
   if (open !== wasOpen) {
-    for (const el of [$(".topbar"), $("#planning-main")]) el.inert = open;
+    for (const el of [$(".topbar"), $("#planning-main"), $("#chat-main")]) el.inert = open;
     if (open) { menu.setAttribute("role", "dialog"); menu.setAttribute("aria-modal", "true"); menu.setAttribute("aria-label", "Menu"); }
     else { menu.removeAttribute("role"); menu.removeAttribute("aria-modal"); menu.removeAttribute("aria-label"); }
     if (open) $(".menu-view", menu).focus();

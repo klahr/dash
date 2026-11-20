@@ -46,12 +46,26 @@ func (r Runner) ownerName() string {
 	return r.Owner.Username
 }
 
+// ClaudeOnly reports whether r is a planner's runner: it runs only its
+// owner's general chat and short calls (feature brief interviews), never
+// the org's work: no tasks, goal coordinators, scans, tests, deploys,
+// previews, shared work or clones of projects (it Serves none).
+func (r Runner) ClaudeOnly() bool { return r.Owner != nil && r.Owner.Planner }
+
+// claudeOnlyWhy is why a planner's runner does no work.
+func (r Runner) claudeOnlyWhy() string {
+	return r.Name + " is " + r.ownerName() + "'s runner, a planner's: it runs only their chat and feature brief interviews"
+}
+
 // TakesOthers reports whether r does other members' work now: Shared is on
 // and it reports an API key and no subscription login. Otherwise it says
-// why not ("" when it isn't Shared).
+// why not ("" when it isn't Shared). A planner's runner never does.
 func (r Runner) TakesOthers() (bool, string) {
 	if !r.Shared {
 		return false, ""
+	}
+	if r.ClaudeOnly() {
+		return false, r.claudeOnlyWhy()
 	}
 	if why := r.Auth().NotShared(); why != "" {
 		return false, why
@@ -63,6 +77,9 @@ func (r Runner) TakesOthers() (bool, string) {
 // all of them are its owner, or it takes other members' work. Otherwise it
 // says why not, e.g. "laptop is bob's runner and only takes bob's tasks".
 func (r Runner) WorksFor(users []int64) (bool, string) {
+	if r.ClaudeOnly() {
+		return false, r.claudeOnlyWhy()
+	}
 	owner := r.OwnerID()
 	if owner > 0 && len(users) > 0 && !slices.ContainsFunc(users, func(u int64) bool { return u != owner }) {
 		return true, ""
@@ -83,6 +100,9 @@ func (r Runner) WorksFor(users []int64) (bool, string) {
 // hasn't said how Claude signs in and runs another version, it says to
 // update r.
 func (r Runner) CanShare(release string) string {
+	if r.ClaudeOnly() {
+		return r.claudeOnlyWhy()
+	}
 	a := r.Auth()
 	why := a.NotShared()
 	if why == "" {

@@ -99,6 +99,11 @@ async function renderOrg() {
   $("#org-name").value = org.org.name;
   $("#org-require-2fa-row").hidden = mine !== "owner";
   $("#org-require-2fa").checked = !!org.org.require_2fa;
+  // Planners: owners choose what planners' feature brief rounds are sent.
+  $("#org-planners").hidden = mine !== "owner";
+  if (mine === "owner") {
+    api("GET", "/api/org/planner-settings", null, "").then((v) => { $("#org-planner-context").checked = v.project_context !== false; }).catch(() => {});
+  }
   // With org subdomains: the org's address, which owners may rename.
   $("#org-address").hidden = !org.url;
   if (org.url) {
@@ -374,6 +379,17 @@ export async function setRequire2FA() {
   await loadMe();
   await renderOrg();
 }
+
+// setPlannerContext turns sending planners' feature brief rounds the
+// project's context on or off (Organization → Planners, owners).
+async function setPlannerContext() {
+  const box = $("#org-planner-context");
+  try {
+    await api("PUT", "/api/org/planner-settings", { project_context: box.checked }, "");
+  } catch (err) { box.checked = !box.checked; throw err; }
+  toast(box.checked ? "Planners' feature briefs read the project's files" : "Planners' feature briefs get only the card and the project's name", { tone: "ok" });
+}
+$("#org-planner-context")?.addEventListener("change", attempt(setPlannerContext));
 
 // deleteUserAccount is a platform admin deleting m's account (Organization → members).
 async function deleteUserAccount(m) {
