@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -87,3 +88,70 @@ func (a *Auth) revokeToken(w http.ResponseWriter, r *http.Request, id *Identity)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// orgTokens handles GET /api/orgs/{oid}/tokens (admins): the API tokens and
+// connected apps of the org's members, so an admin can see what still
+// signs in as someone, and revoke it.
+func (a *Auth) orgTokens(w http.ResponseWriter, r *http.Request, id *Identity) {
+	m, ok := a.adminOf(w, r, id, store.RoleAdmin)
+	if !ok {
+		return
+	}
+	ts, err := a.acc.OrgTokens(m.ID)
+	if err != nil {
+		accountError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ts)
+}
+
+// revokeOrgToken handles DELETE /api/orgs/{oid}/tokens/{id} {password}
+// (admins): a member's API token or connected app, if the member's role
+// isn't above the admin's. Runners are revoked in Runners.
+func (a *Auth) revokeOrgToken(w http.ResponseWriter, r *http.Request, id *Identity) {
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := decodeBody(w, r, &req); err != nil {
+		accountError(w, err)
+		return
+	}
+	m, ok := a.adminOf(w, r, id, store.RoleAdmin)
+	if !ok {
+		return
+	}
+	tid, err := pathID(r, "id")
+	if err != nil {
+		accountError(w, err)
+		return
+	}
+	t, err := a.acc.OrgToken(m.ID, tid)
+	if err != nil {
+		accountError(w, err)
+		return
+	}
+	owner, err := a.acc.Membership(t.UserID, m.ID)
+	if err != nil {
+		accountError(w, store.ErrNotFound) // a former member's: it works no more
+		return
+	}
+	if !m.Role.AtLeast(owner.Role) {
+		writeError(w, http.StatusForbidden, errRevokeHigher.Error())
+		return
+	}
+	if err := a.ConfirmPassword(r, req.Password); err != nil {
+		accountError(w, err)
+		return
+	}
+	if err := a.acc.DeleteToken(t.ID); err != nil {
+		accountError(w, err)
+		return
+	}
+	if a.OnRevoke != nil {
+		a.OnRevoke(t)
+	}
+	a.audit(r, store.AuthEvent{OrgID: m.ID, UserID: t.UserID, Actor: id.User.ID, Kind: "token.revoked", Detail: t.Name})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+var errRevokeHigher = errors.New("you can't revoke the token of someone with a higher role than yours")

@@ -191,6 +191,10 @@ tokens or two-factor sign-in, change org settings, switch orgs or confirm a pass
 a signed-in browser. While an org of yours requires two-factor sign-in that you haven't set up,
 your API tokens and connectors are refused too (your runners keep working).
 
+Owners and admins see every member's API tokens and connected apps in the org under
+**Organization → Members' tokens**, with when each was last used. They can revoke those of members
+whose role isn't above theirs; it asks for the password. Runner tokens are under **Runners**.
+
 The tokens Dash gives its own Claude runs (for the task tools and permission prompts) carry the
 task's user and org too: the user who created the task (or, for tasks from before users, the env
 account) in the task's org. Their tools only see that org's projects, and stop working if the user
@@ -290,7 +294,7 @@ Dash checks with Google at every sign-in: someone suspended or removed in Google
 sign in with Google again, and an org that requires Google refuses an account no longer in its
 domain. **Sessions they already have last until they expire (7 days)**: end them with **Sign out**
 on the member (or remove the member, which takes effect at once). Their API tokens keep working
-until revoked or the member is removed.
+until revoked or the member is removed: revoke them under **Organization → Members' tokens**.
 
 To delete an account altogether, see [Your data](privacy.md): everyone can delete their own in
 **Account → Your data**, and platform admins can delete someone else's from the members list.
@@ -312,6 +316,8 @@ To delete an account altogether, see [Your data](privacy.md): everyone can delet
 | `GET /api/tokens`                                 | your API tokens, connected apps, runners  |
 | `POST /api/tokens {name, org_id, scopes, password}` | an API token; returns its `secret` once |
 | `DELETE /api/tokens/{id}`                         | revoke a token, disconnect an app or runner |
+| `GET /api/orgs/{id}/tokens`                       | admins: members' API tokens and connected apps |
+| `DELETE /api/orgs/{id}/tokens/{tid} {password}`   | admins: revoke one (not of a higher role) |
 | `POST /api/login/totp {ticket, code}`             | second sign-in step: `/api/login` answers `{totp_required, ticket}` |
 | `GET /api/account/2fa`                            | on?, recovery codes left, required?       |
 | `POST /api/account/2fa/setup`                     | a new secret, its `otpauth://` URI and QR |

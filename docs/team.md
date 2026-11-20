@@ -7,6 +7,11 @@ How to set up Dash for a small team, for example 2 planners and 2 developers. Th
 owner's login, so the hub never sends one member's work to another member's runner. Each
 developer needs their own runner, or a shared runner that uses an API key.
 
+**Organization → Set up your team** checks these steps for owners and admins: the org's name,
+invitations, required two-factor sign-in, a runner for each developer (or a shared one), project
+labels and commands waiting for approval. Each item has a button to where it's set. The sheet
+opens on it until every item is done.
+
 ## 1. Put the hub online
 
 Runners connect to the hub over HTTPS. Put it on a server or behind a tunnel, as
@@ -19,6 +24,9 @@ them; it sends no email.
 
 - Developers get the role **Member** (or **Admin**, to manage the org).
 - Product owners get the role **Planner**. They see [Planning](planning.md) only.
+
+Rename the org under **Organization → Members → Name**, and require two-factor sign-in under
+**Organization → Sign-in** (owners).
 
 See [Invitations](users.md#invitations) and [Planners](users.md#planners).
 

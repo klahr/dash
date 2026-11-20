@@ -1,6 +1,6 @@
 import { $, dateText, dateTimeText, fill, h, ico, plural } from "./dom.js";
 import { api } from "./api.js";
-import { ask, attempt, toast } from "./dialogs.js";
+import { ask, attempt, railOf, toast } from "./dialogs.js";
 import { savedNote } from "./autosave.js";
 import { changed } from "./routes.js";
 import { state } from "./state.js";
@@ -10,6 +10,7 @@ import { pushUnsubscribe } from "./notifications.js";
 import { avatar, showOwnAvatar } from "./avatar.js";
 import { accountHooks, askPassword } from "./myaccount.js";
 import { loadOrgSection } from "./accountsheet.js";
+import { renderTeamSetup } from "./teamsetup.js";
 
 // Your own account's sections (two-factor, Google, your data) are in
 // myaccount.js, shared with a planner's Planning page.
@@ -75,9 +76,12 @@ const RANK = { planner: 0, member: 1, admin: 2, owner: 3 };
 const ROLE_ARTICLE = { owner: "an owner", admin: "an admin", member: "a member", planner: "a planner" };
 
 export async function openOrg() {
-  await renderOrg();
+  const ready = await renderOrg();
   $("#org-invite-link").hidden = true;
   const d = $("#org-sheet");
+  // Opened afresh, it shows Set up your team (the rail's first) until every
+  // item is done, then Members. A link to a section shows that one after this.
+  if (!d.open && ready) railOf("org-sheet").show("members");
   await loadOrgSection();
   if (!d.open) d.showModal();
   changed("push");
@@ -176,15 +180,18 @@ async function renderOrg() {
   }
   $("#org-new").hidden = !me.can_create_orgs;
   $("#org-invite-any-row").hidden = !me.google_available;
+  // Members' tokens (owners and admins): loads when picked (teamsetup.js).
+  $("#org-tokens-area").hidden = !manage || !!org.org.personal;
   await renderOrgSSO(org.org, mine).catch((err) => toast(err.message, true));
   renderOrgBilling(await loadBilling().catch(() => null));
+  return renderTeamSetup(org, mine);
 }
 
 // ---- Google sign-in for the org (owners and admins)
 const SSO_EVENTS = {
   "signin.google": "signed in with Google", "signin.google.failed": "Google sign-in failed", "signin.google.2fa": "signed in with Google, code next",
   "google.linked": "linked Google", "google.unlinked": "unlinked Google", "google.link_pending": "Google waits for the password to link",
-  "member.joined.domain": "joined by domain", "member.joined.invitation": "joined by invitation", "member.signed_out": "signed out by an admin",
+  "member.joined.domain": "joined by domain", "member.joined.invitation": "joined by invitation", "member.signed_out": "signed out by an admin", "token.revoked": "token revoked by an admin",
   "sso.settings": "settings changed", "sso.domain.added": "domain added", "sso.domain.removed": "domain removed",
   "sso.domain.verified": "domain verified", "sso.test.ok": "test passed", "sso.test.failed": "test failed",
 };

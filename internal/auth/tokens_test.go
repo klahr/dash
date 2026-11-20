@@ -388,3 +388,66 @@ func TestTokensAndTwoFactor(t *testing.T) {
 		t.Errorf("org settings with a token: %d %s", w.Code, w.Body)
 	}
 }
+
+// Admins see the API tokens and connected apps of their org's members (not
+// runners, nor another org's) and may revoke those of members not above them.
+func TestOrgTokens(t *testing.T) {
+	t.Parallel()
+
+	a, h := newServer(t)
+	owner := signIn(t, h, "admin", "s3cret")
+	me := owner.me()
+	org := me.Org.ID
+	two, err := a.acc.CreateOrg(me.User.ID, "Two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addUser(t, a, org, "eva", store.RoleMember)
+	addUser(t, a, org, "ada", store.RoleAdmin)
+	eva := signIn(t, h, "eva", "pw-eva-long")
+	ada := signIn(t, h, "ada", "pw-ada-long")
+	evaSecret, evaTok := eva.newToken(org, `["read"]`, "pw-eva-long")
+	_, ownerTok := owner.newToken(org, `["read"]`, "s3cret")
+	owner.newToken(two.ID, `["read"]`, "s3cret") // another org's
+	var revoked []store.Token
+	a.OnRevoke = func(t store.Token) { revoked = append(revoked, t) }
+
+	path := fmt.Sprintf("/api/orgs/%d/tokens", org)
+	if w := eva.do("GET", path, ""); w.Code != http.StatusForbidden {
+		t.Errorf("member lists tokens: %d %s", w.Code, w.Body)
+	}
+	var list []store.MemberToken
+	w := ada.do("GET", path, "")
+	decode(t, w, &list)
+	if w.Code != http.StatusOK || len(list) != 2 || list[0].ID != ownerTok.ID || list[1].ID != evaTok.ID || list[1].Username != "eva" ||
+		strings.Contains(w.Body.String(), evaSecret) {
+		t.Fatalf("list: %d %s", w.Code, w.Body)
+	}
+	// Not the owner's, by an admin; nor without the password; nor another org's path.
+	if w := ada.do("DELETE", fmt.Sprintf("%s/%d", path, ownerTok.ID), `{"password":"pw-ada-long"}`); w.Code != http.StatusForbidden {
+		t.Errorf("admin revokes owner's token: %d %s", w.Code, w.Body)
+	}
+	if w := ada.do("DELETE", fmt.Sprintf("%s/%d", path, evaTok.ID), `{"password":"nope"}`); w.Code != http.StatusForbidden {
+		t.Errorf("revoke with a wrong password: %d %s", w.Code, w.Body)
+	}
+	if w := owner.do("DELETE", fmt.Sprintf("/api/orgs/%d/tokens/%d", two.ID, evaTok.ID), `{"password":"s3cret"}`); w.Code != http.StatusNotFound {
+		t.Errorf("revoke through another org: %d %s", w.Code, w.Body)
+	}
+	if w := withBearer(h, evaSecret, "GET", "/api/me", ""); w.Code != http.StatusOK {
+		t.Fatalf("token before revoking: %d", w.Code)
+	}
+	if w := ada.do("DELETE", fmt.Sprintf("%s/%d", path, evaTok.ID), `{"password":"pw-ada-long"}`); w.Code != http.StatusNoContent {
+		t.Fatalf("revoke: %d %s", w.Code, w.Body)
+	}
+	if len(revoked) != 1 || revoked[0].ID != evaTok.ID {
+		t.Errorf("OnRevoke got %+v", revoked)
+	}
+	if w := withBearer(h, evaSecret, "GET", "/api/me", ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("revoked token: %d", w.Code)
+	}
+	// A token can't use it.
+	secret, _ := owner.newToken(org, `["read","write"]`, "s3cret")
+	if w := withBearer(h, secret, "GET", path, ""); w.Code != http.StatusForbidden {
+		t.Errorf("list with a token: %d", w.Code)
+	}
+}

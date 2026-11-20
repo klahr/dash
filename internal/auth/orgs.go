@@ -34,6 +34,8 @@ type Mux interface {
 //	GET    /api/tokens                           the user's tokens and OAuth grants
 //	POST   /api/tokens {name, org_id, scopes, password}
 //	DELETE /api/tokens/{id}
+//	GET    /api/orgs/{oid}/tokens                admins: members' API tokens and connected apps
+//	DELETE /api/orgs/{oid}/tokens/{id} {password} admins: revoke one
 //	GET    /api/account/export, DELETE /api/account   the user's own data (see erasure.go)
 //	PUT    /api/account/avatar, …                profile pictures (see avatar.go)
 //	GET    /go/{slug}                            with org subdomains: hand the browser to the org's (see orghosts.go)
@@ -63,6 +65,8 @@ func (a *Auth) Routes(mux Mux) {
 	mux.HandleFunc("GET /api/tokens", a.sessionOnly(a.listTokens))
 	mux.HandleFunc("POST /api/tokens", a.sessionOnly(a.createToken))
 	mux.HandleFunc("DELETE /api/tokens/{id}", a.sessionOnly(a.revokeToken))
+	mux.HandleFunc("GET /api/orgs/{oid}/tokens", a.sessionOnly(a.orgTokens))
+	mux.HandleFunc("DELETE /api/orgs/{oid}/tokens/{id}", a.sessionOnly(a.revokeOrgToken))
 	a.twoFactorRoutes(mux)
 	a.signupRoutes(mux)
 	a.googleRoutes(mux)

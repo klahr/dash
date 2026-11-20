@@ -291,6 +291,61 @@ func (a *Accounts) RevokeToken(uid, id int64) (Token, error) {
 	return t, err
 }
 
+// MemberToken is a member's API token or connected app, as their org's
+// admins see it: with whose it is.
+type MemberToken struct {
+	Token
+	Username string `json:"username"`
+	Role     Role   `json:"role"`
+}
+
+// OrgTokens lists the API tokens and connected apps (OAuth grants) of
+// orgID's members that act in orgID, newest first. Runner tokens are not
+// listed: runners are managed in Runners.
+func (a *Accounts) OrgTokens(orgID int64) ([]MemberToken, error) {
+	members, err := a.Members(orgID)
+	if err != nil {
+		return nil, err
+	}
+	of := make(map[int64]Member, len(members))
+	for _, m := range members {
+		of[m.ID] = m
+	}
+	ts, err := queryAll(a.db, scanToken, tokenCols+" WHERE t.org_id = ? AND t.kind != 'runner' ORDER BY t.created_at DESC, t.id DESC", orgID)
+	if err != nil {
+		return nil, err
+	}
+	out := []MemberToken{}
+	for _, t := range ts {
+		m, ok := of[t.UserID]
+		if !ok {
+			continue // a former member's: it no longer works
+		}
+		out = append(out, MemberToken{Token: t, Username: m.Username, Role: m.Role})
+	}
+	return out, nil
+}
+
+// OrgToken returns orgID's API token or OAuth grant id (ErrNotFound for a
+// runner's, or another org's).
+func (a *Accounts) OrgToken(orgID, id int64) (Token, error) {
+	t, err := a.token(id)
+	if err != nil {
+		return t, err
+	}
+	if t.Org.ID != orgID || t.Kind == TokenRunner {
+		return Token{}, ErrNotFound
+	}
+	return t, nil
+}
+
+// DeleteToken deletes token id, whoever's it is: the caller checked that
+// they may.
+func (a *Accounts) DeleteToken(id int64) error {
+	_, err := a.db.Exec("DELETE FROM tokens WHERE id = ?", id)
+	return err
+}
+
 // DeleteRunnerToken deletes the token of the runner runnerID.
 func (a *Accounts) DeleteRunnerToken(runnerID string) error {
 	_, err := a.db.Exec("DELETE FROM tokens WHERE kind = 'runner' AND runner_id = ?", runnerID)

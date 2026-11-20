@@ -1569,8 +1569,10 @@
       <div class="rail-layout">
         <nav class="rail-nav" aria-label="Organization sections">
           <div class="rail-group"><span class="rail-head">People</span>
+            <button type="button" class="rail-item" data-rail="setup">Set up your team</button>
             <button type="button" class="rail-item" data-rail="members">Members</button>
             <button type="button" class="rail-item" data-rail="signin">Sign-in</button>
+            <button type="button" class="rail-item" data-rail="tokens">Members' tokens</button>
           </div>
           <div class="rail-group"><span class="rail-head">Screens</span>
             <button type="button" class="rail-item" data-rail="wall">Wall view</button>
@@ -1583,6 +1585,13 @@
           </div>
         </nav>
         <div class="rail-main">
+          <!-- Set up your team: a checklist for owners and admins, each item leading to its place (app/teamsetup.js) -->
+          <section class="rail-section" data-section="setup">
+            <div id="team-setup" hidden>
+              <p class="hint">What a team needs before everyone can work. Each item leads to where it's set.</p>
+              <ul class="team-setup" id="team-setup-list"></ul>
+            </div>
+          </section>
           <section class="rail-section" data-section="members">
             <div id="org-name-area" hidden>
               <h3 class="section-head">Name</h3>
@@ -1624,6 +1633,13 @@
               <p class="hint" id="org-slug-hint" hidden>The old address keeps leading here for 30 days.</p>
             </div>
             <div id="org-sso" hidden></div>
+          </section>
+          <!-- Members' API tokens and connected apps, for owners and admins (app/teamsetup.js). Runners are in Runners. -->
+          <section class="rail-section" data-section="tokens">
+            <div id="org-tokens-area" hidden>
+              <p class="hint">What signs in as a member without a browser: API tokens and connected apps, in this organization. Each works until it's revoked, its member changes their password or leaves. Runners are under <strong>Runners</strong>.</p>
+              <ul class="item-list" id="org-tokens"></ul>
+            </div>
           </section>
           <!-- The wall view (/wall): its options, and the links org admins make for TVs (app/wallview.js) -->
           <section class="rail-section" data-section="wall">
