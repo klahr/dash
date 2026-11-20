@@ -47,6 +47,14 @@ func TestBrowserScanEarly(t *testing.T) {
 		return nil
 	}
 	card := func(name string) string { return `.scan-card[data-scan="` + name + `"]` }
+	// Scrolled to in the page: the cards are drawn again as the scans
+	// refresh, so a node found first may be gone by the time it is scrolled.
+	scrollTo := func() {
+		t.Helper()
+		b.run("scroll to it", `const e = document.querySelector('`+card("security")+` .scan-early');
+			e?.scrollIntoView({ block: "center" });
+			!!e`)
+	}
 
 	b.do("a wide screen", chromedp.EmulateViewport(1280, 900))
 	b.until("open the scans", `document.querySelector("#view-scans.active")`,
@@ -79,7 +87,7 @@ func TestBrowserScanEarly(t *testing.T) {
 	waitFor(t, nil, "night saved", func() bool { return early()["when"] == "night" })
 	noSideways := `document.documentElement.scrollWidth <= document.documentElement.clientWidth`
 	b.waitJS("no sideways scroll", noSideways)
-	b.do("scroll to it", chromedp.ScrollIntoView(chromedp.CSS(card("security")+` .scan-early`)))
+	scrollTo()
 	shot("scan-early-wide")
 
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
@@ -87,6 +95,6 @@ func TestBrowserScanEarly(t *testing.T) {
 		const e = document.querySelector('`+card("security")+` .scan-early');
 		return e.getBoundingClientRect().right <= document.documentElement.clientWidth;
 	})()`)
-	b.do("scroll to it", chromedp.ScrollIntoView(chromedp.CSS(card("security")+` .scan-early`)))
+	scrollTo()
 	shot("scan-early-phone")
 }

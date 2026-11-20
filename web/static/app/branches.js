@@ -363,26 +363,46 @@ function swipeLane(d) {
   return i < 0 ? null : shown[i + d] ?? null;
 }
 
+// A touch's moves and end go to the element it started on, even once a
+// re-render (renderBoard replaces every lane) has taken that element out of
+// the board, and then they no longer bubble up to it: so they are listened
+// for on that element.
+let unlistenSwipe = null;
+
 $("#board").addEventListener("touchstart", (e) => {
   swipe = null;
+  unlistenSwipe?.();
+  unlistenSwipe = null;
   if (desktop.matches || e.touches.length !== 1 || drag.active) return;
   const t = e.touches[0];
   if (t.clientX < SWIPE.edge || t.clientX > innerWidth - SWIPE.edge) return;
   if (inSideScroller(e.target)) return;
   swipe = { x: t.clientX, y: t.clientY, dx: 0, dy: 0 };
+  const el = e.target;
+  const opts = { passive: true };
+  const cancel = () => { swipe = null; unlisten(); };
+  const end = (ev) => { unlisten(); swipeEnd(ev); };
+  const unlisten = () => {
+    el.removeEventListener("touchmove", swipeMove, opts);
+    el.removeEventListener("touchend", end, opts);
+    el.removeEventListener("touchcancel", cancel, opts);
+    if (unlistenSwipe === unlisten) unlistenSwipe = null;
+  };
+  el.addEventListener("touchmove", swipeMove, opts);
+  el.addEventListener("touchend", end, opts);
+  el.addEventListener("touchcancel", cancel, opts);
+  unlistenSwipe = unlisten;
 }, { passive: true });
 
-$("#board").addEventListener("touchmove", (e) => {
+function swipeMove(e) {
   if (!swipe) return;
   if (drag.active || e.touches.length !== 1) { swipe = null; return; }
   const t = e.touches[0];
   swipe.dx = t.clientX - swipe.x;
   swipe.dy = t.clientY - swipe.y;
-}, { passive: true });
+}
 
-$("#board").addEventListener("touchcancel", () => { swipe = null; }, { passive: true });
-
-$("#board").addEventListener("touchend", (e) => {
+function swipeEnd(e) {
   const s = swipe;
   swipe = null;
   if (!s || drag.active || desktop.matches) return;
@@ -399,7 +419,7 @@ $("#board").addEventListener("touchend", (e) => {
   $("#board .col.active")?.animate(
     [{ transform: `translateX(${d * 48}px)`, opacity: 0.4 }, { transform: "none", opacity: 1 }],
     { duration: 220, easing: EASE });
-}, { passive: true });
+}
 
 // ------------------------------------------------------------------ Mine filter
 // Only the tasks the signed-in user created; in an org of one it is hidden.
