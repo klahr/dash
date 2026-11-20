@@ -140,6 +140,23 @@ type CardLink struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// titleFromText takes a card's title from the first line of its text and
+// returns it with the rest of the text. A line too long for the title stays
+// in the text, as the title holds only its start.
+func titleFromText(text string, max int) (title, rest string) {
+	title = firstLine(text, max)
+	if title == "" || title != firstLine(text, len(text)) {
+		return title, text // cut short: the text keeps the whole line
+	}
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		if firstLine(l, len(l)) != "" {
+			return title, strings.TrimSpace(strings.Join(lines[i+1:], "\n"))
+		}
+	}
+	return title, text
+}
+
 // CleanCard trims a card's text and checks it, and its column and priority.
 func CleanCard(c *Card) error {
 	c.Title = strings.TrimSpace(c.Title)
@@ -159,7 +176,7 @@ func CleanCard(c *Card) error {
 		return errors.New("the target is one line")
 	}
 	if c.Title == "" {
-		c.Title = firstLine(c.Description, 80)
+		c.Title, c.Description = titleFromText(c.Description, 80)
 	}
 	if c.Column == "" {
 		c.Column = CardIdeas
