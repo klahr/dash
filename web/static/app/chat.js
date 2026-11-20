@@ -60,7 +60,8 @@ function usageLine(u) {
 //
 // mode() (the task chat's switch) names where the composer sends: null for the
 // chat itself, or {text, label, title, placeholder} for the send button's text
-// and labels and the box's placeholder, with send(q, files) when the message
+// and labels and the box's placeholder, reply: {text, label, title} for the
+// button once Claude has answered, with send(q, files) when the message
 // goes elsewhere (Rework): it returns whether it was sent, which empties the
 // composer. c.modeChanged() shows a new mode.
 //
@@ -154,6 +155,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     suggest();
     recall.end();
     c.history = [...saved];
+    c.busyButton();
     const nodes = merge(saved.map((m) => m.role === "user" ? user(m) : assistant(m)), saved);
     empty.hidden = nodes.length > 0;
     log.replaceChildren(empty, ...nodes);
@@ -297,7 +299,8 @@ function chatSendButton(c, form, mode, composing) {
   const sendLook = { html: sendBtn.innerHTML, label: sendBtn.getAttribute("aria-label") };
   const stopLook = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>`;
   c.busyButton = () => {
-    const m = mode();
+    // Once Claude has answered, the next message is a reply, not a first question.
+    const m0 = mode(), m = m0?.reply && c.history.some((x) => x.role === "assistant") ? { ...m0, ...m0.reply } : m0;
     // A message sent elsewhere doesn't wait for the reply, so it's never queued.
     const replying = !!c.current && !m?.send;
     const stopping = replying && !composing();
@@ -994,7 +997,9 @@ const EDITABLE = ["draft", "queued", "failed"];
 // for a task in review with a worktree; opening another task goes back to Ask.
 const TODO_MODES = {
   chat: { text: "Ask", label: "Ask Claude in the side chat", title: "Ask Claude in the side chat: the agent doesn't see it",
-    placeholder: "Ask Claude about this task", inputLabel: "Ask Claude about this task in the side chat; the agent doesn't see it" },
+    placeholder: "Ask Claude about this task", inputLabel: "Ask Claude about this task in the side chat; the agent doesn't see it",
+    // How the button reads once Claude has answered in the side chat (see chatSendButton).
+    reply: { text: "Reply", label: "Reply to Claude in the side chat", title: "Reply to Claude in the side chat: the agent doesn't see it" } },
   rework: { text: "Rework", label: "Rework: send this to the agent", title: "Rework: the agent continues in its worktree with this",
     placeholder: "Tell the agent what to change", inputLabel: "Rework notes for the agent, which continues in its worktree", send: sendRework },
 };

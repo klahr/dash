@@ -22,7 +22,8 @@ follows it:
 
 - **Ask Claude (side chat)**: a side conversation about the task. Claude sees the task's
   instructions and changes, so it can help you sharpen a draft into a better prompt. The agent
-  working on the task doesn't see this chat. The button says **Ask**.
+  working on the task doesn't see this chat. The button says **Ask**, and **Reply** once Claude
+  has answered in it.
 - **Rework (to the agent)**: sends the message (and any pictures or files attached to it) to the
   agent as rework notes. It continues in the task's worktree. The button says **Rework**; with an
   empty box it opens the **Rework** sheet. Only for a task in review or failed that has a worktree.
