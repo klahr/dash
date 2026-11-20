@@ -337,11 +337,11 @@ func (s *Server) relinkHubProject(ctx context.Context, sv *service, p model.Proj
 // protocol. It checks both remotes and that this runner has a projects root.
 func (s *Server) hubCloneURL(req dispatch.Link) (string, error) {
 	if err := gitops.CheckRemote(req.RemoteURL); err != nil {
-		return "", errors.Join(errBadRequest, err)
+		return "", fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	cloneURL := gitops.CloneRemote(req.RemoteURL, req.CloneURL, s.GitHubProtocol)
 	if err := gitops.CheckRemote(cloneURL); err != nil {
-		return "", errors.Join(errBadRequest, err)
+		return "", fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	if s.ProjectRoot == "" {
 		return "", fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest)
@@ -402,7 +402,7 @@ func (s *Server) cloneHubProject(ctx context.Context, id string, place hubPlacem
 		// cloned over HTTPS with gh's login; that URL is the clone's origin.
 		cloneURL, err := s.Git.PickCloneRemote(ctx, id, s.machineName(), req.RemoteURL, req.CloneURL, s.GitHubProtocol)
 		if err != nil {
-			return "", errors.Join(errBadRequest, err)
+			return "", fmt.Errorf("%w: %w", errBadRequest, err)
 		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return "", err
@@ -411,7 +411,7 @@ func (s *Server) cloneHubProject(ctx context.Context, id string, place hubPlacem
 			// hubPlace picked a folder that didn't exist: what the failed
 			// clone left there would look like a clone of this remote.
 			_ = os.RemoveAll(path)
-			return "", errors.Join(errBadRequest, err)
+			return "", fmt.Errorf("%w: %w", errBadRequest, err)
 		}
 	}
 	branch := s.hubBranch(ctx, id, path, req.DefaultBranch)

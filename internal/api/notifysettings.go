@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -118,7 +119,7 @@ func (s *Server) putNotifySettings(w http.ResponseWriter, r *http.Request) {
 		set.Summary = model.SummaryOff // a summary tells of tasks, which planners don't see
 	}
 	if err := set.Normalize(); err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	if set.On() && s.Summaries == nil {
@@ -132,13 +133,13 @@ func (s *Server) putNotifySettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if note := s.emailNote(u.Email); note != "" {
-			writeErr(w, errors.Join(errBadRequest, errors.New(note)))
+			writeErr(w, fmt.Errorf("%w: %s", errBadRequest, note))
 			return
 		}
 	}
 	set, st, err := sv.data.SaveNotifySettings(set, time.Now())
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		err = errors.Join(errBadRequest, err)
+		err = fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	if err != nil {
 		writeErr(w, err)
@@ -167,7 +168,7 @@ func (s *Server) testSummary(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res, err := s.Summaries.Test(ctx, sv.c.User, sv.c.Org)
 	if errors.Is(err, notify.ErrNoDestination) {
-		err = errors.Join(errBadRequest, err)
+		err = fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	if err != nil {
 		writeErr(w, err)

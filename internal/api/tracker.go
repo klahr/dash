@@ -194,7 +194,7 @@ func (s *Server) putTracker(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	case err != nil:
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	st, err := s.trackerState(sv, pid)
@@ -284,7 +284,7 @@ func (s *Server) trackerOptions(w http.ResponseWriter, r *http.Request) {
 	opts, err := s.Trackers.Options(ctx, cfg, r.URL.Query().Get("field"))
 	switch {
 	case errors.Is(err, tracker.ErrNoOptions):
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 	case err != nil:
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 	default:
@@ -352,7 +352,7 @@ func (s *Server) rotateTrackerSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Trackers.Reconfigure(pid); err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"secret": cfg.WebhookSecret, "path": tracker.WebhookPath(pid), "url": s.Trackers.WebhookURL(pid)})
@@ -372,7 +372,7 @@ func (s *Server) trackerWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	if err := s.Trackers.Webhook(r.PathValue("pid"), r, body); err != nil {

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -64,10 +65,10 @@ func (s *Server) pushInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) checkEndpoint(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.Host == "" || len(raw) > 2048 {
-		return errors.Join(errBadRequest, errors.New("the subscription's endpoint must be an https URL"))
+		return fmt.Errorf("%w: the subscription's endpoint must be an https URL", errBadRequest)
 	}
 	if err := notify.CheckURL(raw, s.Notify.AllowPrivate); err != nil {
-		return errors.Join(errBadRequest, err)
+		return fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	return nil
 }
@@ -91,7 +92,7 @@ func (s *Server) subscribePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := notify.CheckPushKeys(in.Keys.P256dh, in.Keys.Auth); err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	sub, err := s.Store.Accounts().SavePushSubscription(model.PushSubscription{

@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/klahr/dash/internal/claudecli"
@@ -76,12 +77,26 @@ func (r Runner) WorksFor(users []int64) (bool, string) {
 	return false, r.Name + " is " + r.ownerName() + "'s runner and only takes " + r.ownerName() + "'s tasks"
 }
 
-// CanShare says why runner r can't be made shared ("" when it can).
-func (r Runner) CanShare() string {
-	if why := r.Auth().NotShared(); why != "" {
-		return "it can't take other members' tasks: " + why
+// CanShare says why runner r can't be made shared ("" when it can), e.g.
+// "laptop can't take other members' tasks: it uses a Claude Max
+// subscription; …". release is the hub's version (Hub.Release): when r
+// hasn't said how Claude signs in and runs another version, it says to
+// update r.
+func (r Runner) CanShare(release string) string {
+	a := r.Auth()
+	why := a.NotShared()
+	if why == "" {
+		return ""
 	}
-	return ""
+	if a == nil {
+		if r.Reported == nil || r.Reported.Claude == nil {
+			why = "it hasn't said how Claude is signed in on it yet"
+		}
+		if r.Version != "" && release != "" && !sameVersion(r.Version, release) {
+			why += "; it runs Dash " + r.Version + " and the hub " + release + ": update it"
+		}
+	}
+	return r.Name + " can't take other members' tasks: " + why
 }
 
 // SetShared turns runner id's Take other members' tasks on or off. On is
@@ -93,8 +108,8 @@ func (h *Hub) SetShared(id string, on bool) error {
 		if !ok {
 			return ErrUnknownName
 		}
-		if why := r.CanShare(); why != "" {
-			return errors.Join(ErrNotAPIKey, errors.New(r.Name+": "+why))
+		if why := r.CanShare(h.Release); why != "" {
+			return fmt.Errorf("%s (%w)", why, ErrNotAPIKey)
 		}
 	}
 	return h.settleShared(id, on)

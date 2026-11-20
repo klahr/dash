@@ -154,7 +154,7 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 		*req.Schedule = strings.TrimSpace(*req.Schedule)
 		if *req.Schedule != "" {
 			if _, err := scan.ParseCron(*req.Schedule); err != nil {
-				writeErr(w, errors.Join(errBadRequest, err))
+				writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 				return
 			}
 		}
@@ -231,7 +231,7 @@ func customScan(projectID string, req scanRequest) (scan.Template, error) {
 		Tools: req.Tools, Prompt: req.Prompt,
 	})
 	if err != nil {
-		return t, errors.Join(errBadRequest, err)
+		return t, fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	return t, nil
 }

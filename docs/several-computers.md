@@ -77,7 +77,8 @@ none.
   projects is marked and can't be picked again.
 - **New GitHub repository**: a name (or `owner/name` for an organization) creates an empty
   repository with the runner's `gh`, private unless you tick **Public**, and makes the project from it.
-- **From URL**: any `https://`, `ssh://` or `git@host:path` remote.
+- **From URL**: any `https://`, `ssh://` or `git@host:path` remote. A local path or `file://` URL
+  is refused: runners clone the remote, and another computer can't reach a path on this one.
 - **Local only**: no remote and no GitHub, for throwaway work. The runner makes a new repository
   in a new folder named after the project in its projects folder (in the org's folder there),
   with `git init` and an initial commit, and the project is that runner's own (not shared). Only
@@ -609,7 +610,8 @@ subscription login:
 
 The runner's page says how Claude signs in on it ("API key", or which subscription) and whose tasks
 it takes. **Take other members' tasks** can't be turned on for a runner that reports a
-subscription login, or doesn't say (an older runner: update it); the page says why next to it.
+subscription login, or doesn't say how Claude signs in on it; the page says why next to it. When
+that runner runs an older Dash than the hub, update it.
 
 A shared runner also takes other members' tasks with labels it has. It runs them, and their
 project commands, with the API key only: Dash removes `CLAUDE_CODE_OAUTH_TOKEN` and other login

@@ -154,3 +154,20 @@ func TestMigrateShared(t *testing.T) {
 		t.Fatalf("API-key runner of its owner alone: settled %v on %v", settled, on)
 	}
 }
+
+// CanShare names the runner once, and says to update it only when it runs
+// another version than the hub.
+func TestCanShareSaysWhy(t *testing.T) {
+	t.Parallel()
+	r := Runner{Name: "team-laptop", Version: "1.2.0", Reported: &Reported{Claude: &claudecli.Status{}}}
+	got := r.CanShare("1.2.0")
+	if got != "team-laptop can't take other members' tasks: `claude auth status` gave no answer Dash understands" {
+		t.Errorf("same version: %q", got)
+	}
+	if got := r.CanShare("1.3.0"); !strings.Contains(got, "it runs Dash 1.2.0 and the hub 1.3.0: update it") {
+		t.Errorf("older runner: %q", got)
+	}
+	if got := (Runner{Name: "box"}).CanShare(""); got != "box can't take other members' tasks: it hasn't said how Claude is signed in on it yet" {
+		t.Errorf("nothing reported: %q", got)
+	}
+}

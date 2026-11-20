@@ -194,8 +194,8 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 		if req.Shared != nil && *req.Shared && !x.Shared {
 			// Refused here, before anything else changes, for a runner
 			// that signs in to Claude with a subscription (or doesn't say).
-			if why := x.CanShare(); why != "" {
-				writeErr(w, fmt.Errorf("%w: %s %s", errBadRequest, x.Name, why))
+			if why := x.CanShare(rh.Release); why != "" {
+				writeErr(w, fmt.Errorf("%w: %s", errBadRequest, why))
 				return
 			}
 		}
@@ -217,7 +217,7 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 		}
 		if req.Shared != nil {
 			if err := rh.SetShared(x.ID, *req.Shared); err != nil {
-				writeErr(w, errors.Join(errBadRequest, err))
+				writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 				return
 			}
 			if !*req.Shared && s.Dispatch != nil {
@@ -226,7 +226,7 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 		}
 		if req.Labels != nil {
 			if err := rh.SetLabels(x.ID, *req.Labels); err != nil {
-				writeErr(w, errors.Join(errBadRequest, err))
+				writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 				return
 			}
 			s.unlinkLater(gone, []string{x.ID})

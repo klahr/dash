@@ -587,11 +587,20 @@ func (a *Auth) signedInFrom(ip string) {
 	a.mu.Unlock()
 }
 
-// ErrBadPassword and ErrLockedOut are what ConfirmPassword reports.
+// ErrBadPassword, ErrPasswordRequired and ErrLockedOut are what
+// ConfirmPassword reports.
 var (
 	ErrBadPassword = errors.New("wrong password")
-	ErrLockedOut   = errLockedOut
+	// ErrPasswordRequired is ErrBadPassword (errors.Is) for no password at
+	// all.
+	ErrPasswordRequired error = passwordRequired{}
+	ErrLockedOut              = errLockedOut
 )
+
+type passwordRequired struct{}
+
+func (passwordRequired) Error() string { return "password required" }
+func (passwordRequired) Unwrap() error { return ErrBadPassword }
 
 // ConfirmPassword re-checks the signed-in user's password before something
 // destructive or sensitive. Wrong guesses count towards the same lockout as
@@ -617,6 +626,9 @@ func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
 			return nil
 		}
 		return ErrReauthGoogle
+	}
+	if password == "" {
+		return ErrPasswordRequired // not a guess: it doesn't count towards the lockout
 	}
 	f, ok := a.reserveLocal(a.clientIP(r))
 	if !ok {

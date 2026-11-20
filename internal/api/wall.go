@@ -665,7 +665,7 @@ func (s *Server) wallTokenRoutes(mux routeMux) {
 		}
 		secret, t, err := s.Store.Accounts().CreateWallToken(c.Org, c.User, req.Name, req.Public, time.Now())
 		if errors.Is(err, store.ErrBadTokenName) {
-			err = errors.Join(errBadRequest, err)
+			err = fmt.Errorf("%w: %w", errBadRequest, err)
 		}
 		if err != nil {
 			writeErr(w, err)
@@ -680,7 +680,7 @@ func (s *Server) wallTokenRoutes(mux routeMux) {
 		}
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
-			writeErr(w, errors.Join(errBadRequest, err))
+			writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 			return
 		}
 		if err := s.Store.Accounts().RevokeWallToken(c.Org, id); err != nil {

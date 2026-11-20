@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -92,5 +93,17 @@ func TestUploadRoundTrip(t *testing.T) {
 	s.upload(w, asOwner(t, s, httptest.NewRequest("POST", "/api/uploads?name=a."+strings.Repeat("b", 90), strings.NewReader("x"))))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want long extension rejected, got %d", w.Code)
+	}
+}
+
+// A bad body is one line, "bad request: …", and still errBadRequest.
+func TestDecodeErrorIsOneLine(t *testing.T) {
+	t.Parallel()
+	var v struct {
+		Priority int `json:"priority"`
+	}
+	err := decode(httptest.NewRequest("POST", "/", strings.NewReader(`{"priority":"high"}`)), &v)
+	if !errors.Is(err, errBadRequest) || strings.Contains(err.Error(), "\n") || !strings.HasPrefix(err.Error(), "bad request: json: ") {
+		t.Errorf("%q", err)
 	}
 }

@@ -43,7 +43,7 @@ func TestTakeOtherMembersTasksNeedsAnAPIKey(t *testing.T) {
 	reportAuth(t, f, "c-box", maxSignIn)
 
 	w := send(f.c, "PATCH", "/api/runners/"+f.ids["c-box"], `{"shared":true}`)
-	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "a Claude Max subscription; a subscription is one person's") {
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "c-box can't take other members' tasks: it uses a Claude Max subscription; a subscription is one person's") {
 		t.Fatalf("sharing a Max runner: %d %s", w.Code, w.Body)
 	}
 	views := runnerNames(t, send(f.c, "GET", "/api/runners", ""))

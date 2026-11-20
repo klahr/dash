@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -405,6 +406,9 @@ func TestConfirmPassword(t *testing.T) {
 	}
 	if err := a.ConfirmPassword(r, "nope"); err != ErrBadPassword {
 		t.Fatalf("wrong password: %v", err)
+	}
+	if err := a.ConfirmPassword(r, ""); err != ErrPasswordRequired || !errors.Is(err, ErrBadPassword) || err.Error() != "password required" {
+		t.Fatalf("no password: %v", err)
 	}
 	hub := httptest.NewRequest("DELETE", "/api/projects/x", nil)
 	if err := a.ConfirmPassword(hub.WithContext(WithHub(hub.Context())), ""); err != nil {

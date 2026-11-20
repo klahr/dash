@@ -80,7 +80,7 @@ func TestNotShared(t *testing.T) {
 		a    *Auth
 		want string
 	}{
-		{nil, "hasn't said"},
+		{nil, "gave no answer Dash understands"},
 		{&Auth{Method: AuthSubscription, Subscription: "team"}, "Claude Team subscription; a subscription is one person's"},
 		{&Auth{Method: AuthNone}, "isn't signed in"},
 		{&Auth{Method: AuthAPIKey, KeySource: "apiKeyHelper"}, "set it in ANTHROPIC_API_KEY"},

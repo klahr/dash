@@ -418,8 +418,11 @@ func (a *Accounts) AddSSODomain(orgID int64, domain, how string, by int64, now t
 		return SSODomain{}, err
 	}
 	ds, err := a.domains("WHERE d.org_id = ? AND d.domain = ?", orgID, domain)
-	if err != nil || len(ds) == 0 {
-		return SSODomain{}, errors.Join(err, ErrNotFound)
+	if err != nil {
+		return SSODomain{}, err
+	}
+	if len(ds) == 0 {
+		return SSODomain{}, ErrNotFound
 	}
 	return ds[0], nil
 }

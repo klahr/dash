@@ -740,14 +740,14 @@ func isProjectPath(p string) bool {
 func (s *Server) confirmThenForward(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	var req struct {
 		Password string `json:"password"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	if err := s.Auth.ConfirmPassword(r, req.Password); err != nil {
@@ -766,7 +766,7 @@ const maxBody = 1 << 20
 func decode(r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(nil, r.Body, maxBody)
 	if err := decodeJSON(r.Body, v); err != nil {
-		return errors.Join(errBadRequest, err)
+		return fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	return nil
 }
@@ -775,13 +775,13 @@ func decode(r *http.Request, v any) error {
 func decodeOptional(r *http.Request, v any) error {
 	b, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxBody))
 	if err != nil {
-		return errors.Join(errBadRequest, err)
+		return fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	if len(bytes.TrimSpace(b)) == 0 {
 		return nil
 	}
 	if err := decodeJSON(bytes.NewReader(b), v); err != nil {
-		return errors.Join(errBadRequest, err)
+		return fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	return nil
 }

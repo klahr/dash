@@ -241,7 +241,7 @@ func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
 		return model.Project{}, sv.hubHasNoProjects()
 	}
 	if err := gitops.CheckRemote(remote); err != nil {
-		return model.Project{}, errors.Join(errBadRequest, err)
+		return model.Project{}, fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	cloneURL, err := checkCloneURL(req.CloneURL)
 	if err != nil {
@@ -367,7 +367,7 @@ func (s *Server) setupGitHubRemote(ctx context.Context, id string, req *projectR
 			return fmt.Errorf("%w: %s not found on GitHub", errBadRequest, req.GitHub)
 		case exists:
 			if err := s.Git.CloneGitHubRepo(ctx, id, gh.Name, req.Path); err != nil {
-				return errors.Join(errBadRequest, err)
+				return fmt.Errorf("%w: %w", errBadRequest, err)
 			}
 		default:
 			if s.Git.RemoteURL(ctx, id, req.Path) != "" {
@@ -2029,7 +2029,7 @@ func checkCloneURL(u string) (string, error) {
 		return "", nil
 	}
 	if err := gitops.CheckRemote(u); err != nil {
-		return "", errors.Join(errBadRequest, err)
+		return "", fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	if x, err := url.Parse(u); err == nil && x.User != nil {
 		if _, ok := x.User.Password(); ok || (x.Scheme == "https" && x.User.Username() != "") {

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -39,14 +40,14 @@ func (s *Server) claudeStatusWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, claudestatus.MaxBody))
 	if err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	switch err := s.ClaudeStatus.Webhook(r.PathValue("token"), body); {
 	case errors.Is(err, claudestatus.ErrRefused):
 		refused()
 	case errors.Is(err, claudestatus.ErrBadPayload):
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 	case err != nil:
 		writeErr(w, err)
 	default:
@@ -121,13 +122,13 @@ func (s *Server) putClaudeStatusAdmin(w http.ResponseWriter, r *http.Request) {
 		DefaultComponents bool      `json:"default_components"`
 	}
 	if err := decode(r, &in); err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	a, err := s.ClaudeStatus.Configure(claudestatus.Change{Enabled: in.Enabled, PageURL: in.PageURL, Poll: in.Poll,
 		Watch: in.Components, DefaultWatch: in.DefaultComponents})
 	if errors.Is(err, claudestatus.ErrBadPage) || errors.Is(err, claudestatus.ErrBadWatch) {
-		err = errors.Join(errBadRequest, err)
+		err = fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	if err != nil {
 		writeErr(w, err)

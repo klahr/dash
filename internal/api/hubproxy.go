@@ -401,14 +401,14 @@ func (r *recorder) Write(b []byte) (int, error) { return r.buf.Write(b) }
 func (s *Server) switchBranchOnRunner(w http.ResponseWriter, r *http.Request, sv *service, p model.Project) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	var req struct {
 		Branch string `json:"branch"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	res, err := sv.forward(r, p, "", body)
@@ -514,12 +514,12 @@ func (s *Server) listProcessesOnRunners(w http.ResponseWriter, r *http.Request, 
 func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv *service, p model.Project) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
 	// A terminal, or a command the caller names rather than one of the

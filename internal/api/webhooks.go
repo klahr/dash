@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -68,11 +69,11 @@ func (in webhookInput) apply(w *model.Webhook) {
 // against the private-address rule.
 func (s *Server) checkWebhook(w *model.Webhook) error {
 	if err := w.Normalize(); err != nil {
-		return errors.Join(errBadRequest, err)
+		return fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	allow := s.Notify == nil || s.Notify.AllowPrivate
 	if err := notify.CheckURL(w.URL, allow); err != nil {
-		return errors.Join(errBadRequest, err)
+		return fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	return nil
 }

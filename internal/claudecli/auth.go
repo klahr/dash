@@ -95,7 +95,7 @@ func (a *Auth) APIKeyOnly() bool {
 func (a *Auth) NotShared() string {
 	switch {
 	case a == nil:
-		return "it hasn't said how Claude is signed in (update it)"
+		return "`claude auth status` gave no answer Dash understands"
 	case a.APIKeyOnly():
 		return ""
 	case a.Method == AuthSubscription:

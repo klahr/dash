@@ -117,7 +117,7 @@ func (w *Watcher) Refresh(ctx context.Context, projectID string) (Status, error)
 	defer w.release(projectID)
 	p, err := w.Store.GetProject(projectID)
 	if err != nil {
-		return Status{}, errors.Join(errGone, err)
+		return Status{}, fmt.Errorf("%w: %w", errGone, err)
 	}
 	if !w.watched(p) {
 		st := Status{ProjectID: p.ID, Branch: p.DefaultBranch, State: Unknown, Runs: []gitops.Run{},
