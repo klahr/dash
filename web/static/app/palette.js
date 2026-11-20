@@ -85,7 +85,7 @@ function paletteCommands() {
     ["Planning", "plan", go("planning"), "gp", "plan roadmap product owner cards ideas planned"],
     ["Switch project", "repo", openProjects, "p", "projects"],
     ["Add project", "plus", () => openNewProject(), "", "new create local repository runner github clone url"],
-    ["Plan a new project", "spark", () => openPlanner(), "", "idea brief interview plan new project goal"],
+    ["Write a project brief", "spark", () => openPlanner(), "", "idea brief interview plan new project goal"],
     p && ["Project settings", "settings", openSettings, ":settings", "configure commands"],
     p?.run_command && [serve.label || "Run", serve.icon || "play", () => startProc({ kind: "web", preset: "run" }), "R", `run web ${serve.icon || ""}`],
     p?.test_command && ["Run tests", "check", () => startProc({ kind: "task", preset: "test" }), "T", "test"],

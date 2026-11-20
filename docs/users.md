@@ -128,7 +128,8 @@ A **planner** is a product owner: someone who plans what to build, not a develop
 A planner can:
 
 - see, add, edit, move and delete the org's planning cards, and comment on them
-- press **Start** on a card, which makes a task or a goal in a project and links it
+- press **Start** on a card, which makes a task or a goal in a project and links it (a goal
+  needs a developer as its owner)
 - see each card's linked work through its status and titles
 - see deploys through the API, read only: what is live where, the deploys (without their
   logs) and the environments' settings history (see [Deploys](deploys.md#api))
@@ -148,6 +149,15 @@ To make someone a planner, open **Organization**, and either invite them with th
 can be made a member later, the same way.
 
 A planner's role is per org: someone can be a planner in one org and a member in another.
+
+Don't mix these up:
+
+- **Planning**: the org's board of cards, from Ideas to Done. Everyone uses it.
+- **Planner**: the role of someone who uses Planning only.
+- **Write a project brief** (in **+ Add project**): Claude interviews a developer about an idea
+  and starts a new project from the brief. Planners can't use it.
+- A goal's **plan**: the tasks its coordinator proposes, which the goal's owner accepts. A
+  planner who starts a goal names a developer as its owner (see [Start](planning.md#start)).
 
 ## Profile picture
 

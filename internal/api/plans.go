@@ -17,7 +17,8 @@ import (
 	"github.com/klahr/dash/internal/tunnel"
 )
 
-// Plan a new project: the user describes an idea and Claude interviews
+// Write a project brief (once "Plan a new project"; the API keeps
+// /api/plans): the user describes an idea and Claude interviews
 // them about it, a few questions at a time, writing the project's brief as
 // the answers come in. The plan is kept on this Dash (the hub), one user's
 // in one org, so a draft survives a reload and can be picked up later.
@@ -45,7 +46,7 @@ func (s *Server) planRoutes(mux routeMux) {
 	mux.HandleFunc("POST /api/projects/{pid}/brief", s.commitBrief)
 }
 
-var errNoPlanner = errors.New("planning a project is not available here")
+var errNoPlanner = errors.New("writing a project brief is not available here")
 
 // planService is the caller's service for plans, or answers r: plans are
 // a person's.

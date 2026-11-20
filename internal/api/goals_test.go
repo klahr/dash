@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -560,5 +561,71 @@ func TestWeekCosts(t *testing.T) {
 	}
 	if got := weekCosts(nil, week).used(week, "a"); got != 0 {
 		t.Fatalf("no tasks used %v", got)
+	}
+}
+
+// A planner starting a goal from a card names its owner, a developer: the
+// coordinator acts as them and they accept its plan. Without one, or with a
+// planner, it's refused; a member owns the goals they start.
+func TestPlannerStartsGoalForADeveloper(t *testing.T) {
+	s, p, _ := goalServer(t)
+	h := s.Routes()
+	a := loggedIn(t, h)
+	ph, pat := plannerOf(t, s, h)
+	dev := ownerSession(t, s).User.ID
+
+	card := func(by http.Handler) string {
+		w := do(t, by, "POST", "/api/planning/cards", `{"title":"Faster search","description":"Search under 100 ms"}`)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("card: %d %s", w.Code, w.Body)
+		}
+		return decodeCard(t, w).ID
+	}
+	start := func(by http.Handler, cid, owner string) *httptest.ResponseRecorder {
+		return do(t, by, "POST", "/api/planning/cards/"+cid+"/start", `{"project":"`+p.ID+`","kind":"goal"`+owner+`}`)
+	}
+
+	cid := card(ph)
+	if w := start(ph, cid, ""); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "developer who owns the goal") {
+		t.Errorf("a planner's goal without an owner: %d %s", w.Code, w.Body)
+	}
+	if w := start(ph, cid, fmt.Sprintf(`,"owner":%d`, pat.ID)); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "planner") {
+		t.Errorf("a planner as the owner: %d %s", w.Code, w.Body)
+	}
+	if w := start(ph, cid, `,"owner":999999`); w.Code != http.StatusBadRequest {
+		t.Errorf("an owner from outside the org: %d %s", w.Code, w.Body)
+	}
+	w := start(ph, cid, fmt.Sprintf(`,"owner":%d`, dev))
+	if w.Code != http.StatusOK {
+		t.Fatalf("a planner's goal for a developer: %d %s", w.Code, w.Body)
+	}
+	var started struct {
+		Started struct{ Kind, ID string } `json:"started"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &started)
+	g, err := raw(s).GetGoal(started.Started.ID)
+	if err != nil || g.Owner != dev || g.Mode != model.GoalAsk || !hasLog(g, "from a Planning card, for u") {
+		t.Fatalf("the planner's goal: %+v %v", g, err)
+	}
+
+	// A member owns what they start, and can't hand it to someone else.
+	cid = card(a)
+	if w := start(a, cid, fmt.Sprintf(`,"owner":%d`, pat.ID)); w.Code != http.StatusBadRequest {
+		t.Errorf("a member's goal for someone else: %d %s", w.Code, w.Body)
+	}
+	if w := start(a, cid, ""); w.Code != http.StatusOK {
+		t.Fatalf("a member's goal: %d %s", w.Code, w.Body)
+	}
+
+	// Start's owner picker leaves planners out.
+	var people []struct {
+		ID      int64 `json:"id"`
+		Planner bool  `json:"planner"`
+	}
+	_ = json.Unmarshal(do(t, ph, "GET", "/api/planning/people", "").Body.Bytes(), &people)
+	for _, u := range people {
+		if u.Planner != (u.ID == pat.ID) {
+			t.Errorf("people: %+v", people)
+		}
 	}
 }

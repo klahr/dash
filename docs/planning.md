@@ -140,7 +140,9 @@ moves a card to **Done** on its own.
 1. Choose the project.
 2. Choose **A task** (queued for Claude now) or **A goal** (a coordinator plans it into
    tasks; see [Goals](goals.md)).
-3. Click **Start**.
+3. As a planner starting a goal, choose its **Owner**: a developer. The card's first developer
+   is suggested.
+4. Click **Start**.
 
 On a hub, the project list holds the org's shared projects only. A
 [runner's own project](several-computers.md#projects-of-a-runners-own) isn't in it, as the
@@ -163,6 +165,11 @@ A task a planner starts is the card's: its news goes to the card's members who a
 as if they had created it. Put the developer on the card before you press **Start**. The
 planners on the card, and the planner who pressed **Start**, hear of it as card news (see
 [Planning cards](notifications.md#planning-cards)).
+
+A goal a planner starts belongs to the developer they chose as its **Owner**. Its coordinator
+runs as that developer, on their runner. Its first plan of tasks waits for them to accept it on
+**Goals**, and they are notified. The card says **Waiting for a decision** until they do. A
+member who presses **Start** owns the goal themselves.
 
 ## Link existing work
 

@@ -4,14 +4,14 @@ import { ask, attempt, busy, fail, railOf, toast } from "./dialogs.js";
 import { renderMarkdown } from "../editor.js";
 import { SHEET, planSource, startAdd } from "./projects.js";
 
-// ------------------------------------------------------------------ plan a new project
+// ------------------------------------------------------------- write a project brief
 // The Add project sheet's first section: the user describes an idea and
 // Claude interviews them about it, a few questions at a time, each with a
 // suggested answer, writing the project's brief as it goes (internal/api/
 // plans.go keeps the plan, so a draft survives a reload). Five steps:
 // the idea, the interview (the brief beside it on a wide screen), the
 // brief to read and edit, the repository (one of the sheet's own sources,
-// picked with "Use for the plan"), and Launch, which adds the project as
+// picked with "Use for the brief"), and Launch, which adds the project as
 // the sheet does (startAdd) and goes on to commit the brief and start a goal.
 
 const STEPS = [
@@ -50,7 +50,7 @@ const waiting = () => { const r = lastRound(); return r && !r.answered ? r : nul
 export const planner = {
   // open reports whether a plan is open: the sources then pick its repository.
   open: () => !!pl.cur,
-  title: () => pl.cur?.name || pl.cur?.idea?.slice(0, 60) || "new plan",
+  title: () => pl.cur?.name || pl.cur?.idea?.slice(0, 60) || "new brief",
   // shown is called when the sheet's section changes: on (the planner's) or off.
   shown(on) {
     pl.visible = on;
@@ -97,13 +97,13 @@ function renderHome() {
   $("#plan-drafts-head").hidden = !drafts.length;
   list.replaceChildren(...drafts.map((p) => h("li", { class: "plan-draft" },
     h("button", { type: "button", class: "plan-draft-open", onclick: attempt(() => openPlan(p.id)) },
-      h("span", { class: "plan-draft-title" }, p.name || p.idea || "Untitled plan"),
+      h("span", { class: "plan-draft-title" }, p.name || p.idea || "Untitled brief"),
       h("span", { class: "plan-draft-meta" }, `${STEPS[Math.max(0, stepIndex(p.step))].title} · ${plural(p.rounds?.length || 0, "round")} · ${dateTimeText(p.updated_at)}`)),
-    ib({ type: "button", class: "icon-btn", "aria-label": `Delete ${p.name || "plan"}`, title: "Delete", onclick: attempt(() => deleteDraft(p)) }, "trash"))));
+    ib({ type: "button", class: "icon-btn", "aria-label": `Delete ${p.name || "brief"}`, title: "Delete", onclick: attempt(() => deleteDraft(p)) }, "trash"))));
 }
 
 async function deleteDraft(p) {
-  if (!await ask({ title: `Delete ${p.name || "this plan"}?`, body: "Its interview and brief go with it.", ok: "Delete", danger: true })) return;
+  if (!await ask({ title: `Delete ${p.name || "this brief"}?`, body: "Its interview and brief go with it.", ok: "Delete", danger: true })) return;
   await call("DELETE", plansAPI(p.id));
   pl.drafts = (pl.drafts || []).filter((x) => x.id !== p.id);
   render();
@@ -247,7 +247,7 @@ function renderIdea() {
     // Like the other Claude calls without a project: the first of the user's runners online.
     api("GET", "/api/claude", null, "").then((c) => {
       const r = (c.runners || []).find((x) => x.online);
-      whereText = c.local ? "" : r ? `Claude interviews you on your runner ${r.name}.` : "None of your runners is online: start `dash runner` on your computer to plan with Claude.";
+      whereText = c.local ? "" : r ? `Claude interviews you on your runner ${r.name}.` : "None of your runners is online: start `dash runner` on your computer to write the brief with Claude.";
       $("#plan-where").textContent = whereText;
       $("#plan-where").classList.toggle("warn", !r && !c.local);
     }).catch(() => { whereText = null; });
@@ -523,7 +523,7 @@ function renderRepo() {
   }, h("span", { class: "plan-source-name" }, b.firstElementChild.textContent), h("span", { class: "plan-source-desc" }, b.lastElementChild.textContent))));
   const picked = $("#plan-repo");
   picked.hidden = !pl.repo;
-  if (pl.repo) picked.replaceChildren(ico("repo"), h("span", {}, pl.repo.what, pl.repo.runner ? ` · on ${pl.repo.runner}` : ""), h("em", {}, "for the plan"));
+  if (pl.repo) picked.replaceChildren(ico("repo"), h("span", {}, pl.repo.what, pl.repo.runner ? ` · on ${pl.repo.runner}` : ""), h("em", {}, "for the brief"));
 }
 
 // briefTitle is the brief's "# " heading, the project's name when the plan has none.
@@ -555,6 +555,6 @@ async function launch() {
   await flushBrief();
   await loadLaunch();
   if (!startAdd({ plan: pl.cur, mode: pl.repo.mode, launch: pl.launch })) {
-    throw new Error("The repository picked for the plan isn't ready any more: choose it again.");
+    throw new Error("The repository picked for the brief isn't ready any more: choose it again.");
   }
 }

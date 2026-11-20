@@ -26,7 +26,7 @@ Goals work on the hub's shared projects and on a Dash of your own. They don't wo
 the runner doesn't offer goals to the hub, so **New goal…** isn't shown there. Open the project
 in that computer's own Dash to use goals, or make it a shared project.
 
-To start a new project and its first goal from an idea, use [Plan a new project](plan-project.md)
+To start a new project and its first goal from an idea, use [Write a project brief](plan-project.md)
 instead.
 
 1. Open **New task** (the **+** button) or the full task form, and pick **New goal…** (next to

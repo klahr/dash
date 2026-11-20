@@ -92,8 +92,9 @@ admin approves them in **Project settings → Commands**. See
 Planners keep the org's plan in **Planning**: cards from Ideas to Done. They can't see projects,
 tasks, chats or runners. Each card shows the status of its work in plain words.
 
-**Start…** on a card makes a task or a goal in a project. The work is the planner's, and a planner
-has no runners, so a task they start runs only on a shared runner, and waits without one. With no
+**Start…** on a card makes a task or a goal in a project. A goal needs an **Owner**, a developer:
+its coordinator runs on their runner, and they accept its plan. A task is the planner's, and a
+planner has no runners, so a task they start runs only on a shared runner, and waits without one. With no
 shared runner, let a developer press **Start…** instead: the work is then theirs and runs on their
 runner. See [Planning](planning.md#start).
 

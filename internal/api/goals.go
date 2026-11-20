@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -134,6 +135,11 @@ type goalRequest struct {
 	Description *string           `json:"description"`
 	Budget      *model.GoalBudget `json:"budget"`
 	Mode        *string           `json:"mode"`
+
+	// owner is who the goal is for, when not the caller: a planner
+	// starting a goal from a Planning card names the developer (see
+	// startCard). Not taken from JSON.
+	owner int64
 }
 
 func (s *Server) createGoal(w http.ResponseWriter, r *http.Request) {
@@ -155,8 +161,8 @@ func (s *Server) createGoal(w http.ResponseWriter, r *http.Request) {
 }
 
 // createGoal makes a goal, planning, and wakes its coordinator to read the
-// code and propose a plan. Its owner is the caller: the coordinator acts as
-// them.
+// code and propose a plan. Its owner is the caller, or req.owner when set:
+// the coordinator acts as them, and they accept its plan.
 func (sv *service) createGoal(req goalRequest) (model.Goal, error) {
 	if err := sv.writable(); err != nil {
 		return model.Goal{}, err
@@ -168,7 +174,11 @@ func (sv *service) createGoal(req goalRequest) (model.Goal, error) {
 	if err != nil {
 		return model.Goal{}, err
 	}
-	g := model.Goal{ProjectID: p.ID, Owner: sv.c.User}
+	owner := sv.c.User
+	if req.owner != 0 {
+		owner = req.owner
+	}
+	g := model.Goal{ProjectID: p.ID, Owner: owner}
 	set(&g.Title, req.Title)
 	set(&g.Description, req.Description)
 	set(&g.Budget, req.Budget)
@@ -177,7 +187,12 @@ func (sv *service) createGoal(req goalRequest) (model.Goal, error) {
 		return g, fmt.Errorf("%w: %v", errBadRequest, err)
 	}
 	g.Pending = []model.GoalWake{{Event: model.GoalWakeStart, At: now()}}
-	g.Log = []model.GoalLogEntry{{At: now(), Kind: model.GoalLogUser, Text: "Goal created; the coordinator reads the code and proposes a plan."}}
+	created := "Goal created; the coordinator reads the code and proposes a plan."
+	if owner != sv.c.User {
+		created = fmt.Sprintf("Goal created by %s from a Planning card, for %s; the coordinator reads the code and proposes a plan.",
+			cmp.Or(sv.s.username(sv.c.User), "a planner"), cmp.Or(sv.s.username(owner), "its owner"))
+	}
+	g.Log = []model.GoalLogEntry{{At: now(), Kind: model.GoalLogUser, Text: created}}
 	g, err = sv.data.CreateGoal(g)
 	if err != nil {
 		return g, err

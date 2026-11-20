@@ -229,7 +229,7 @@ export function openNewProject() {
   focusSource();
 }
 
-// openPlanner opens the Add project sheet on Plan a new project.
+// openPlanner opens the Add project sheet on Write a project brief.
 export function openPlanner() {
   openNewProject();
   if ($(`#${SHEET}`).open && !np.run) railOf(SHEET)?.show("plan", { focus: true });
@@ -293,7 +293,7 @@ function setHubMode(mode) {
 
 // ---- for a plan: while one is open in the planner, the sources pick its
 // repository. The name is filled in from the plan, the button says "Use for
-// the plan", and the plan's Launch step adds the project with startAdd.
+// the brief", and the plan's Launch step adds the project with startAdd.
 
 // planSource shows source mode for the open plan, its fields filled in
 // from the plan's name where they are empty.
@@ -335,7 +335,7 @@ function newProjectReady(mode = hubMode()) {
   // A plan's goal starts on the new project, and a runner doesn't offer goals
   // on its own (local-only) projects to the hub (goalsOn).
   if (planner.open() && mode === "local") {
-    return { ready: false, why: `Goals don't work on a local-only project on ${r.name} from this dashboard, so the plan couldn't start its goal there. Pick a GitHub repository or a URL.` };
+    return { ready: false, why: `Goals don't work on a local-only project on ${r.name} from this dashboard, so Launch couldn't start its goal there. Pick a GitHub repository or a URL.` };
   }
   const has = { gh: !!ghState.pick, create: !!f.github.value.trim(), url: !!f.remote_url.value.trim(), local: !!f.name.value.trim() }[mode];
   return { ready: has, why: "" };
@@ -383,7 +383,7 @@ function syncHubMode() {
   $("#new-project-github-hint").hidden = !!why;
   $("#new-project-local-where").textContent = r?.name || "the runner";
   const forPlan = planner.open() && mode !== "plan";
-  setLabel($("#new-project-go"), forPlan ? "right" : "plus", forPlan ? "Use for the plan" : {
+  setLabel($("#new-project-go"), forPlan ? "right" : "plus", forPlan ? "Use for the brief" : {
     gh: ghState.pick ? `Add ${ghState.pick.nameWithOwner}` : "Pick a repository",
     create: "Create repository and add",
     url: "Add project",
@@ -393,8 +393,8 @@ function syncHubMode() {
   const note = $("#new-project-plan-note");
   note.hidden = !forPlan;
   if (forPlan) {
-    note.replaceChildren(ico("spark"), h("span", {}, "The repository for the plan ", h("strong", {}, planner.title())),
-      h("button", { type: "button", class: "link inline", onclick: () => planner.backTo("repo") }, "Back to the plan"));
+    note.replaceChildren(ico("spark"), h("span", {}, "The repository for the brief ", h("strong", {}, planner.title())),
+      h("button", { type: "button", class: "link inline", onclick: () => planner.backTo("repo") }, "Back to the brief"));
   }
 }
 labelPicker({ input: $("#new-project").runs_on, any: true, label: "Runs on" });
@@ -583,7 +583,7 @@ export function startAdd(plan = null) {
 // plan marked launched.
 function planSteps(run, step) {
   const { plan, launch } = run.plan;
-  run.title = `Launching ${plan.name || run.name || "the plan"}`;
+  run.title = `Launching ${plan.name || run.name || "the project"}`;
   // Where the project is: the hub's, or a runner's own local-only one.
   const where = () => run.mode === "local" ? (state.machines || []).find((m) => m.name === run.r.name)?.prefix || "" : "";
   step("Committing BRIEF.md and CLAUDE.md", async (s) => {
@@ -643,7 +643,7 @@ function failActions(run) {
     : ib({ type: "button", class: "btn small", onclick: () => {
       np.run = null; showProgress(false); syncHubMode();
       if (run.plan) planner.backTo("launch"); else focusSource();
-    } }, "edit", run.plan ? "Back to the plan" : "Change details");
+    } }, "edit", run.plan ? "Back to the brief" : "Change details");
   return [again, back];
 }
 

@@ -908,7 +908,7 @@
       <div class="rail-layout">
         <nav class="rail-nav" id="new-project-nav" aria-label="Where the repository comes from">
           <div class="rail-group"><span class="rail-head">Start from an idea</span>
-            <button type="button" class="rail-item np-src" data-rail="plan"><span>Plan a new project</span><span class="np-src-desc">Describe an idea, Claude helps you shape it</span></button>
+            <button type="button" class="rail-item np-src" data-rail="plan"><span>Write a project brief</span><span class="np-src-desc">Only an idea? Claude interviews you and writes the brief</span></button>
           </div>
           <div class="rail-group"><span class="rail-head">Repository</span>
             <button type="button" class="rail-item np-src" data-rail="gh" data-rail-first><span>From GitHub</span><span class="np-src-desc">Pick one of your repositories</span></button>
@@ -921,19 +921,19 @@
         </nav>
         <div class="rail-main" id="new-project-main">
           <div id="new-project-fields">
-            <!-- Plan a new project (app/planner.js): an idea, Claude's interview, the brief,
+            <!-- Write a project brief (app/planner.js): an idea, Claude's interview, the brief,
                  then one of the sources below for the repository, and Launch. -->
             <section class="rail-section" data-section="plan">
               <div class="plan-home" id="plan-home">
                 <p class="hint np-lead">Claude asks about what you haven't decided yet and writes a brief to start the project from. <a data-docs="plan-project.md" target="_blank" rel="noopener">Learn more</a></p>
-                <button type="button" class="btn primary plan-new" id="plan-new" data-icon="spark">New plan</button>
+                <button type="button" class="btn primary plan-new" id="plan-new" data-icon="spark">New brief</button>
                 <h3 class="plan-drafts-head" id="plan-drafts-head" hidden>Drafts</h3>
                 <ul class="plan-drafts" id="plan-drafts"></ul>
               </div>
               <div class="plan-work" id="plan-work" hidden>
                 <div class="plan-bar">
-                  <button type="button" class="link plan-all" id="plan-all" data-icon="left">All plans</button>
-                  <ol class="plan-stepper" id="plan-stepper" aria-label="Plan steps"></ol>
+                  <button type="button" class="link plan-all" id="plan-all" data-icon="left">All briefs</button>
+                  <ol class="plan-stepper" id="plan-stepper" aria-label="Brief steps"></ol>
                   <p class="plan-stepper-compact" id="plan-stepper-compact" aria-hidden="true"></p>
                 </div>
                 <div class="plan-pane" data-step="idea">

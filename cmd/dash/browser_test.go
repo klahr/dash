@@ -1646,9 +1646,9 @@ func TestBrowserBuildOn(t *testing.T) {
 	}
 }
 
-// Plan a new project: an idea, Claude's interview (one question, answered
+// Write a project brief: an idea, Claude's interview (one question, answered
 // with its suggestion), the brief, a new repository from a URL picked with
-// "Use for the plan", and Launch, which adds the project, commits BRIEF.md
+// "Use for the brief", and Launch, which adds the project, commits BRIEF.md
 // and CLAUDE.md to it and opens the goal it started.
 func TestBrowserPlanProject(t *testing.T) {
 	chrome := needChrome(t)
@@ -1666,7 +1666,7 @@ func TestBrowserPlanProject(t *testing.T) {
 	b.signIn(h)
 
 	b.until("open Add project", `document.querySelector("#new-project-sheet").open`, chromedp.Click(chromedp.ID("side-new-project")))
-	b.until("choose Plan a new project", `!document.querySelector("#plan-home").hidden`, chromedp.Click(chromedp.CSS(`#new-project-nav [data-rail=plan]`)))
+	b.until("choose Write a project brief", `!document.querySelector("#plan-home").hidden`, chromedp.Click(chromedp.CSS(`#new-project-nav [data-rail=plan]`)))
 	b.until("start a plan", `!document.querySelector("#plan-work").hidden`, chromedp.Click(chromedp.ID("plan-new")))
 	b.do("describe the idea",
 		chromedp.SendKeys(chromedp.ID("plan-idea"), "A recipe box for my family"),

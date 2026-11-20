@@ -66,9 +66,9 @@ repositories and clones the new project. The project runs on the labels under **
 on**: by default the picked runner's own labels, or `any` (any runner of the org) while it has
 none.
 
-- **Plan a new project** (at the top): start from an idea instead. Claude interviews you and
+- **Write a project brief** (at the top): start from an idea instead. Claude interviews you and
   writes a brief, then one of the sources below makes the repository. See
-  [Plan a new project](plan-project.md).
+  [Write a project brief](plan-project.md).
 - **From GitHub** (the default): the repositories of the GitHub account the runner's `gh` is signed in to,
   and of the organizations that account belongs to (one `gh repo list` per owner). Each row shows
   the GitHub mark, `owner/name` and its description, and whether it is private, a fork or

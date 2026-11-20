@@ -125,7 +125,7 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
           onchange: (e) => { const [kind, v] = [e.target.value.slice(0, 1), e.target.value.slice(2)]; e.target.value = ""; if (kind === "t") pickTag(v, true); else if (kind === "m") pickTarget(v); } }),
         h("span", { class: "pl-tag-filter", id: "pl-tag-filter", hidden: true }),
         h("span", { class: "cl-state", id: "pl-state", "aria-live": "polite" }),
-        ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to the plan", onclick: () => openComposer("ideas") }, "plus", "New card")),
+        ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to Planning", onclick: () => openComposer("ideas") }, "plus", "New card")),
       h("p", { class: "hint pl-intro", id: "pl-intro", hidden: true },
         "The plan: cards move from Ideas to Done. Start a card to make a task or a goal for a developer's project; its status follows the work."),
       // The task board's layout (style.css: .lanes, .board, .col): on a
@@ -1292,7 +1292,9 @@ function sheet(title, kids, ok, icon = "check") {
 }
 
 // startSheet asks for the project and whether to make a task or a goal,
-// then starts it: the card's title and description are what to do.
+// then starts it: the card's title and description are what to do. A
+// planner's goal also needs its owner, a developer: its coordinator runs as
+// them and they accept its plan (the card's first developer is suggested).
 async function startSheet(c) {
   if (!pl.projects.length) await loadPlanning();
   if (!pl.projects.length) throw new Error("There are no projects to start work in yet. Planning starts work in shared projects only, not in a runner's own project. Ask a developer to add a shared one with + Add project, from GitHub or a URL.");
@@ -1302,6 +1304,20 @@ async function startSheet(c) {
   const waits = (c.deps || []).filter((d) => !d.done).map((d) => d.title);
   const kinds = new Set(open.map((l) => l.kind));
   const noun = kinds.size > 1 ? "tasks or goals" : `${kinds.has("goal") ? "goal" : "task"}${open.length === 1 ? "" : "s"}`;
+  const devs = pl.people.filter((u) => !u.planner);
+  const onCard = (c.people || []).map((p) => p.id);
+  const suggested = devs.find((u) => onCard.includes(u.id));
+  const owner = pl.planner ? h("label", { class: "field", hidden: true }, h("span", {}, "Owner"),
+    h("select", { name: "owner" },
+      h("option", { value: "", selected: !suggested }, devs.length ? "Choose a developer" : "No developers in the organization"),
+      ...devs.map((u) => h("option", { value: String(u.id), selected: u === suggested }, u.username))),
+    h("small", { class: "hint" }, "The goal is theirs: its coordinator runs on their runner, and they accept its plan.")) : null;
+  const kindChanged = (e) => {
+    if (!owner) return;
+    const goal = e.target.value === "goal";
+    owner.hidden = !goal;
+    owner.querySelector("select").required = goal;
+  };
   const data = await sheet("Start this card", [
     h("p", { class: "hint" }, "Dash makes the work from the card's title and description, links it to the card and moves the card to In progress."),
     open.length ? h("p", { class: "hint warn" }, ico("alert"),
@@ -1312,13 +1328,16 @@ async function startSheet(c) {
         ...pl.projects.map((p) => h("option", { value: p.id, selected: p.id === (c.project_id || pl.filter) }, p.name)))),
     h("fieldset", { class: "field choice" },
       h("legend", {}, "Make"),
-      h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "task", checked: true }),
+      h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "task", checked: true, onchange: kindChanged }),
         h("span", {}, "A task ", h("em", {}, "one piece of work, queued for Claude now"))),
-      h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "goal" }),
-        h("span", {}, "A goal ", h("em", {}, "something bigger: a coordinator plans it into tasks")))),
+      h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "goal", onchange: kindChanged }),
+        h("span", {}, "A goal ", h("em", {}, "something bigger: a coordinator breaks it into tasks")))),
+    owner,
   ], "Start", "play");
   if (!data) return;
-  const v = await call("POST", cardAPI(c.id, "/start"), { project: data.get("project"), kind: data.get("kind") });
+  const body = { project: data.get("project"), kind: data.get("kind") };
+  if (body.kind === "goal" && data.get("owner")) body.owner = Number(data.get("owner"));
+  const v = await call("POST", cardAPI(c.id, "/start"), body);
   toast(data.get("kind") === "goal" ? "Goal started and linked" : "Task queued and linked", { tone: "ok" });
   if (pl.open === c.id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }
   await loadPlanning();

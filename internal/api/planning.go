@@ -206,7 +206,7 @@ func goalState(g model.Goal) (state, tone string) {
 	}
 	switch g.Status {
 	case model.GoalPlanning:
-		return "Being planned", "working"
+		return "Breaking into tasks", "working"
 	case model.GoalWorking:
 		return "In progress", "working"
 	case model.GoalWaiting:
@@ -988,6 +988,8 @@ func (s *Server) planningPeople(w http.ResponseWriter, r *http.Request) {
 		ID       int64  `json:"id"`
 		Username string `json:"username"`
 		Avatar   int64  `json:"avatar,omitempty"`
+		// Planner: they can't own a goal (Start's owner picker).
+		Planner bool `json:"planner,omitempty"`
 	}
 	ms, err := s.Store.Accounts().Members(sv.c.Org)
 	if err != nil {
@@ -996,7 +998,7 @@ func (s *Server) planningPeople(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []person{}
 	for _, m := range ms {
-		out = append(out, person{m.ID, m.Username, m.Avatar})
+		out = append(out, person{m.ID, m.Username, m.Avatar, m.Role.Planner()})
 	}
 	slices.SortFunc(out, func(a, b person) int {
 		return strings.Compare(strings.ToLower(a.Username), strings.ToLower(b.Username))
@@ -1004,10 +1006,11 @@ func (s *Server) planningPeople(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// startCard handles POST /api/planning/cards/{cid}/start: {project, kind}.
-// It makes a task (queued; the card's title and description are its
+// startCard handles POST /api/planning/cards/{cid}/start: {project, kind,
+// owner}. It makes a task (queued; the card's title and description are its
 // prompt) or a goal (kind "goal") in the project, links it to the card,
 // and moves the card to In progress if it was still in Ideas or Planned.
+// A planner starting a goal names its owner, a developer (see goalOwner).
 func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -1016,12 +1019,13 @@ func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Project string `json:"project"`
 		Kind    string `json:"kind"`
+		Owner   int64  `json:"owner"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	id, err := sv.startCard(r.PathValue("cid"), req.Project, req.Kind)
+	id, err := sv.startCard(r.PathValue("cid"), req.Project, req.Kind, req.Owner)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -1047,8 +1051,9 @@ func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
 }
 
 // startCard is what Start does (the REST API's and the start_card tool's):
-// it returns the new task's or goal's id.
-func (sv *service) startCard(cardID, project, kind string) (string, error) {
+// it returns the new task's or goal's id. owner is the goal's owner (0: the
+// caller); see goalOwner.
+func (sv *service) startCard(cardID, project, kind string, owner int64) (string, error) {
 	c, err := sv.data.GetCard(cardID)
 	if err != nil {
 		return "", err
@@ -1081,7 +1086,11 @@ func (sv *service) startCard(cardID, project, kind string) (string, error) {
 		if desc == "" {
 			desc = c.Title
 		}
-		g, err := sv.createGoal(goalRequest{Project: p.ID, Title: &title, Description: &desc})
+		owner, err := sv.goalOwner(owner)
+		if err != nil {
+			return "", err
+		}
+		g, err := sv.createGoal(goalRequest{Project: p.ID, Title: &title, Description: &desc, owner: owner})
 		if err != nil {
 			return "", err
 		}
@@ -1099,6 +1108,37 @@ func (sv *service) startCard(cardID, project, kind string) (string, error) {
 	}
 	sv.cardStarted(c)
 	return id, nil
+}
+
+// errGoalOwner: a planner's goal needs a developer to own it.
+var errGoalOwner = fmt.Errorf("%w: choose the developer who owns the goal: its coordinator runs as them, on their runner, and they accept its plan", errBadRequest)
+
+// goalOwner is who owns a goal the caller starts from a card, given the
+// owner they asked for (0: none). A goal's coordinator acts as its owner,
+// on their runner, and its plan waits for them, so a planner (who has no
+// runner and can't open goals) must name a member of the org who isn't a
+// planner. Anyone else owns the goals they start.
+func (sv *service) goalOwner(want int64) (int64, error) {
+	if !sv.c.Planner {
+		if want != 0 && want != sv.c.User {
+			return 0, fmt.Errorf("%w: a goal you start is yours", errBadRequest)
+		}
+		return 0, nil
+	}
+	if want == 0 {
+		return 0, errGoalOwner
+	}
+	m, err := sv.s.Store.Accounts().Membership(want, sv.c.Org)
+	if errors.Is(err, store.ErrNotMember) {
+		return 0, fmt.Errorf("%w: they aren't in this organization", errGoalOwner)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if m.Role.Planner() {
+		return 0, fmt.Errorf("%w: they are a planner", errGoalOwner)
+	}
+	return want, nil
 }
 
 // cardAttachments are the card's files, for a task started from it. A hub
@@ -1389,7 +1429,7 @@ func (b board) StartCard(id, project, kind string) (mcptools.CardStarted, error)
 	if kind == "" {
 		kind = model.LinkTask
 	}
-	work, err := b.sv.startCard(id, project, kind)
+	work, err := b.sv.startCard(id, project, kind, 0)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) && work == "" {
 			return mcptools.CardStarted{}, fmt.Errorf("no card %q or project %q (see list_cards)", id, project)

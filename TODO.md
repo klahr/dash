@@ -36,8 +36,8 @@ Most important first within each section.
 - [ ] Team usage: tokens and cost by member and project, per week, for owners and admins.
 - [ ] Planning for multi-week work: a "mine" filter, target as a filterable milestone, several
       tag filters, one owner among a card's members.
-- [ ] Let planners use **Plan a new project**, and rename things so Planning, planner, Plan a new
-      project and a goal's plan can be told apart.
+- [ ] Let planners start **Write a project brief** from a card: the interview on a shared runner,
+      the brief kept on the card for a developer to launch.
 
 ## Running it
 

@@ -1,14 +1,18 @@
-# Plan a new project
+# Write a project brief
 
 Start from an idea instead of a repository. Claude interviews you about it, a few questions at a
 time, and writes a project brief as you answer. It asks about the decisions you haven't made yet,
 so you don't have to write a long prompt. When the brief is ready, Dash creates the project,
 commits the brief and starts a [goal](goals.md) from it.
 
-## Start a plan
+[Planners](users.md#planners) can't write a project brief: the interview runs on your own runner,
+and Launch adds a project. A planner has neither. Put the idea on a [Planning](planning.md) card
+instead, add a developer to the card, and let them write the brief from it.
 
-1. Click **+ Add project** and pick **Plan a new project** at the top of the list.
-2. Click **New plan**.
+## Start a brief
+
+1. Click **+ Add project** and pick **Write a project brief** at the top of the list.
+2. Click **New brief**.
 3. Describe the idea in a sentence or two. A project name is optional.
 4. Click **Start the interview**.
 
@@ -50,7 +54,7 @@ rendered. Going back to the interview sends Claude your edited brief.
 1. Click **Choose the repository** and pick a source: **From GitHub**, **New GitHub repository**,
    **From URL** or **Local only**. These are the same as for any [new
    project](several-computers.md#add-project-on-the-hub); the name is filled in from the plan.
-2. Fill it in and click **Use for the plan**.
+2. Fill it in and click **Use for the brief**.
 3. Check the summary on **Launch**. **BRIEF.md** and **CLAUDE.md** show what will be committed.
 4. Click **Launch**.
 
@@ -72,12 +76,12 @@ The goal's coordinator reads the brief and proposes the first tasks for you to c
 
 ## Drafts
 
-A plan is saved as you go. Pick it again from the **Drafts** list under **Plan a new project** to
-carry on where you left off, or delete it there. The repository is picked again after a reload.
-A launched plan leaves the list.
+A brief is saved as you go. Pick it again from the **Drafts** list under **Write a project brief**
+to carry on where you left off, or delete it there. The repository is picked again after a
+reload. A launched brief leaves the list.
 
-A plan is yours: nobody else in the organization sees it, admins included. Leaving the
-organization deletes your plans there.
+A draft is yours: nobody else in the organization sees it, admins included. Leaving the
+organization deletes your drafts there.
 
 ## Where Claude runs
 
