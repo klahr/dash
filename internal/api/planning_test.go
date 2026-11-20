@@ -315,6 +315,41 @@ func TestPlanningCardTags(t *testing.T) {
 	}
 }
 
+// Two planners editing one card: the second edit, made on the version both
+// opened, is refused (409) instead of replacing the first; it goes through
+// with the new version, or with none.
+func TestPlanningCardVersionConflict(t *testing.T) {
+	s, _, _ := boardServer(t)
+	h := s.Routes()
+	a := loggedIn(t, h)
+	ph, _ := plannerOf(t, s, h)
+
+	c := decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Export","description":"First draft"}`))
+	if c.Version == "" {
+		t.Fatal("a card without a version")
+	}
+	pia := decodeCard(t, do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"version":"`+c.Version+`","description":"Pia's criteria"}`))
+	if pia.Description != "Pia's criteria" || pia.Version == c.Version {
+		t.Fatalf("Pia's edit: %q %q", pia.Description, pia.Version)
+	}
+	w := do(t, a, "PATCH", "/api/planning/cards/"+c.ID, `{"version":"`+c.Version+`","description":"Paul's criteria"}`)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "changed the card") {
+		t.Fatalf("Paul's stale edit: %d %s", w.Code, w.Body)
+	}
+	if got := decodeCard(t, do(t, a, "GET", "/api/planning/cards/"+c.ID, "")); got.Description != "Pia's criteria" || got.Version != pia.Version {
+		t.Errorf("a refused edit changed the card: %q %q", got.Description, got.Version)
+	}
+	// A move doesn't change the version: an edit made before it still goes through.
+	do(t, a, "POST", "/api/planning/cards/"+c.ID+"/move", `{"column":"planned"}`)
+	paul := decodeCard(t, do(t, a, "PATCH", "/api/planning/cards/"+c.ID, `{"version":"`+pia.Version+`","description":"Both"}`))
+	if paul.Description != "Both" {
+		t.Errorf("an edit on the current version: %q", paul.Description)
+	}
+	if got := decodeCard(t, do(t, a, "PATCH", "/api/planning/cards/"+c.ID, `{"priority":"high"}`)); got.Priority != "high" {
+		t.Errorf("an edit without a version: %+v", got)
+	}
+}
+
 // tinyPNG is a small picture, for a profile picture.
 func tinyPNG(t *testing.T) []byte {
 	t.Helper()

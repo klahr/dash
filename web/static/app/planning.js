@@ -951,6 +951,48 @@ function applyCard(v) {
 
 const patchCard = (body) => async () => applyCard(await call("PATCH", cardAPI(pl.open), body));
 
+// saveText saves a card's title or description (key), edited on the card as
+// it was at version, when the field was base. If someone changed the card
+// meanwhile (409) but not this field, it saves again on the new version; if
+// they changed this field, the planner picks: keep theirs (reload) or keep
+// mine. It answers the card's new view, or null when theirs stays.
+async function saveText(id, key, text, version, base) {
+  for (;;) {
+    try {
+      const v = await call("PATCH", cardAPI(id), { [key]: text, version });
+      applyCard(v);
+      return v;
+    } catch (e) {
+      if (e.status !== 409) throw e;
+    }
+    const now = await call("GET", cardAPI(id));
+    const theirs = now[key] || "";
+    if (theirs !== base && theirs !== text && !await keepMine(key, theirs)) {
+      if (pl.desc?.id === id && key === "description") pl.desc = null; // the box shows theirs
+      applyCard(now);
+      return null;
+    }
+    version = now.version;
+    base = theirs;
+  }
+}
+
+// keepMine asks whether the planner's text replaces the one someone else
+// just saved in the card's field key.
+async function keepMine(key, theirs) {
+  const what = key === "title" ? "title" : "description";
+  const { closed } = openSheet({ title: `Someone else changed the ${what}`, cls: "pl-sheet",
+    body: [
+      h("p", {}, `They saved this ${what} while you were editing. Keep theirs (your text is dropped) or keep yours (theirs is replaced).`),
+      h("textarea", { class: "pl-desc-edit", rows: key === "title" ? 1 : 6, readonly: true, "aria-label": `Their ${what}` }, theirs),
+    ],
+    footer: [
+      ib({ class: "btn", value: "reload" }, "reload", "Reload theirs"),
+      ib({ class: "btn primary", value: "keep" }, "check", "Keep mine"),
+    ] });
+  return (await closed) === "keep";
+}
+
 // ---- files: attached with the Files section's button, pasted into the
 // description or a comment, or dropped on the card's pane or on the card
 // on the board. A click on one previews it (lightbox.js).
@@ -1085,14 +1127,19 @@ function descriptionEl(c) {
   const el = h("textarea", { class: "pl-desc-edit", rows: 4, maxlength: 20000, "aria-label": "Description",
     placeholder: "What it is, who it's for, and how you'll know it's done. Markdown works." }, c.description || "");
   const save = () => {
-    if (pl.desc?.el !== el || el.value.trim() === (pl.desc.saved || "").trim()) return;
+    const d = pl.desc;
+    if (d?.el !== el || el.value.trim() === (d.saved || "").trim()) return;
     const text = el.value;
-    patchCard({ description: text })().then(() => { if (pl.desc?.el === el) pl.desc.saved = text; }).catch(fail);
+    saveText(d.id, "description", text, d.version, d.saved).then((v) => {
+      if (v && pl.desc?.el === el) Object.assign(pl.desc, { saved: text, version: v.version });
+    }).catch(fail);
   };
   el.addEventListener("change", save);
   el.addEventListener("paste", pasteFiles);
   el.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); } });
-  pl.desc = { id: c.id, el, saved: c.description || "" };
+  // version: the card's when the text was last loaded or saved, which the
+  // save sends to be refused if someone else changed the card since.
+  pl.desc = { id: c.id, el, saved: c.description || "", version: c.version };
   return el;
 }
 
@@ -1136,7 +1183,9 @@ function renderCard() {
   let rename = null;
   if (pl.editing) {
     const t = h("input", { id: "pd-edit-title", value: c.title, maxlength: 200, autocomplete: "off", "aria-label": "Title" });
-    const save = attempt((e) => busy(e.currentTarget, async () => { await patchCard({ title: t.value })(); pl.editing = false; renderCard(); }));
+    const save = attempt((e) => busy(e.currentTarget, async () => {
+      await saveText(c.id, "title", t.value, c.version, c.title || ""); pl.editing = false; renderCard();
+    }));
     t.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); save({ currentTarget: t }); }
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); pl.editing = false; renderCard(); }

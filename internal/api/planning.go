@@ -102,6 +102,9 @@ type linkView struct {
 // cardView is a card as the API answers it.
 type cardView struct {
 	model.Card
+	// Version is the card's model.Card.Version: send it back with a PATCH to
+	// have the edit refused (409) if someone changed the card meanwhile.
+	Version     string `json:"version"`
 	ProjectName string `json:"project_name,omitempty"`
 	// People are the card's members (model.Card.Members, the same order)
 	// with their usernames and pictures, to show their faces on the card.
@@ -328,7 +331,7 @@ func (w *planningWork) views(cards, all []model.Card, links map[string][]model.C
 	}
 	out := make([]cardView, 0, len(cards))
 	for _, c := range cards {
-		v := cardView{Card: c, ProjectName: w.projects[c.ProjectID].Name, Links: []linkView{}, Comments: comments[c.ID],
+		v := cardView{Card: c, Version: c.Version(), ProjectName: w.projects[c.ProjectID].Name, Links: []linkView{}, Comments: comments[c.ID],
 			Deps: []cardRef{}, NeededBy: []cardRef{}}
 		for _, id := range c.DependsOn {
 			if d, ok := byID[id]; ok {
@@ -571,6 +574,9 @@ type cardRequest struct {
 	DependsOn *[]string `json:"depends_on"`
 	// Tags are the card's tags, all of them ([] is none).
 	Tags *[]string `json:"tags"`
+	// Version (PATCH only) is the card's version the edit was made on;
+	// given, the edit is refused with a 409 if the card has changed since.
+	Version *string `json:"version"`
 }
 
 func (req cardRequest) apply(c *model.Card) error {
@@ -684,6 +690,9 @@ func (sv *service) updateCard(id string, req cardRequest) error {
 	}
 	var before []int64
 	c, err := sv.data.UpdateCard(id, func(c *model.Card) error {
+		if req.Version != nil && *req.Version != c.Version() {
+			return fmt.Errorf("%w: someone else changed the card since you opened it: reload it to see their change", errConflict)
+		}
 		before = slices.Clone(c.Members)
 		return req.apply(c)
 	})

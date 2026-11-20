@@ -56,6 +56,8 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   matter: `Backend` and `backend` are the same tag.
 - **Description** (markdown): type in the box. It saves when you click elsewhere, or press
   `Ctrl+Enter`.
+  If someone else saved the title or description while you were editing it, Dash asks:
+  **Reload theirs** drops your text, **Keep mine** replaces theirs.
 - **Files**: pictures (PNG, JPEG, GIF, WebP, SVG), PDFs and text files (`.txt`, `.md`, `.log`,
   `.json`, `.csv`), up to 20 MB each and 30 a card. Click **Attach file**, paste into the
   description or a comment, or drop files on the open card, or on a card on the board. Anyone in
@@ -210,7 +212,7 @@ Planning is under `/api/planning/`:
 |-------------------------------------------------------|--------------------------------------------------|
 | `GET /api/planning/cards?project=<id>`                | the cards, with status and linked work           |
 | `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `members` (user ids; `[]` is nobody), `owner` (a user id, who joins the members if they aren't one; `0` is nobody), `depends_on` (card ids; `[]` is none) |
-| `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments). A card has `deps` and `needed_by` (id, title, column, done) and `waiting`: its dependencies not done yet |
+| `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments). A card has `deps` and `needed_by` (id, title, column, done), `waiting`: its dependencies not done yet, and `version`. Send `version` with `PATCH` to get `409` instead of overwriting a change someone made since; a move or a file doesn't change it |
 | `POST /api/planning/cards/{id}/move`                  | `column` and `position` (0 is the top)           |
 | `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
 | `DELETE /api/planning/cards/{id}/comments/{comment}`  | delete a comment                                 |

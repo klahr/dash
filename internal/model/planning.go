@@ -1,6 +1,9 @@
 package model
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -84,6 +87,20 @@ type Card struct {
 	CreatedBy int64      `json:"created_by"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// Version names the state of the card's fields a PATCH changes (title,
+// description, project, priority, target, members, owner, dependencies and
+// tags): it changes whenever one of them does, and not when the card only
+// moves or gets a file. An edit that sends the version it started from is
+// refused when it no longer matches, so one planner's edit doesn't silently
+// replace another's.
+func (c Card) Version() string {
+	// nil and empty lists are the same card.
+	b, _ := json.Marshal([]any{c.Title, c.Description, c.ProjectID, c.Priority, c.Target,
+		append([]int64{}, c.Members...), c.Owner, append([]string{}, c.DependsOn...), append([]string{}, c.Tags...)})
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:8])
 }
 
 // CardFile is a file attached to a card: an upload (its ID is the upload's
