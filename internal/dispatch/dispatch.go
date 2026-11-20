@@ -346,11 +346,8 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		}
 	}
 	if len(cands) == 0 {
-		if len(why) == 0 && len(notFor) > 0 {
-			return nil, d.noRunnerFor(p, users, notFor), ""
-		}
 		if len(why) == 0 {
-			return nil, "no runner: no runner has the labels this project runs on (" + strings.Join(p.RunnerLabels(), ", ") + "); give one those labels, or change them in the project's settings", ""
+			return nil, d.noRunnerFor(p, users, notFor), ""
 		}
 		return nil, waitReason(append(why, notFor...)), strings.Join(full, "; ")
 	}
@@ -413,15 +410,19 @@ func tooFull(r tunnel.Runner) string {
 	return "runner " + r.Name + " is low on disk space"
 }
 
-// noRunnerFor says why no runner of p's takes work for users
-// (model.Todo.WorkFor), none of them being one that may: "no runner of
-// alice's has the labels …", for work that is no one's (Dash's own) "no
-// runner that takes other members' tasks has the labels …", and for a run
-// for two members (one started another's task) that it needs a runner that
-// takes both's tasks: a shared one, as one member's own runner only takes
-// their tasks. notFor are the runners' reasons (tunnel.Runner.WorksFor).
+// noRunnerFor says why no runner of p's may take work for users
+// (model.Todo.WorkFor): none with p's labels is one that may. It checks
+// whose runners may first, then the labels, and says every reason at once,
+// so following its advice gets the work running. notFor are the reasons of
+// the runners with p's labels that may not (tunnel.Runner.WorksFor).
+//
+// "no runner of alice's has the labels …" (the board's Needs your runner
+// matches it); for work that is no one's (Dash's own) "no runner that takes
+// other members' tasks has the labels …"; and for a run for two members
+// (one started another's task) that it needs a shared runner, as one
+// member's own runner only takes their tasks.
 func (d *Dispatcher) noRunnerFor(p model.Project, users []int64, notFor []string) string {
-	labels := strings.Join(p.RunnerLabels(), ", ")
+	labels := model.ShowLabels(p.RunnerLabels())
 	var names []string
 	for _, u := range users {
 		if u <= 0 {
@@ -430,16 +431,35 @@ func (d *Dispatcher) noRunnerFor(p model.Project, users []int64, notFor []string
 		}
 		names = append(names, d.username(u))
 	}
-	var head string
+	// Whether any of the org's runners, whatever its labels, may take it.
+	may := slices.ContainsFunc(d.Fleet.List(), func(r tunnel.Runner) bool {
+		ok, _ := r.WorksFor(users)
+		return r.OrgID() != 0 && r.OrgID() == p.OrgID && ok
+	})
+	var head, fix string
 	switch len(names) {
 	case 0:
 		head = "no runner that takes other members' tasks has the labels " + labels
+		if !may {
+			fix = "there is no shared runner: ask an admin for one"
+		}
 	case 1:
 		head = "no runner of " + names[0] + "'s has the labels " + labels
+		if !may {
+			fix = names[0] + " has no runner: Runners → Add a runner, or ask an admin for a shared one"
+		}
 	default:
 		head = "needs a runner with the labels " + labels + " that takes both " + strings.Join(names, "'s and ") + "'s tasks (a shared runner)"
+		if !may {
+			fix = "there is no shared runner: ask an admin for one"
+		}
 	}
-	return "waiting: " + head + "; " + strings.Join(notFor, "; ")
+	if may {
+		fix = "give one that takes these tasks those labels in Runners, or change them in Project settings → Runners"
+	} else if len(model.MissingLabels(nil, p.RunsOn)) > 0 {
+		fix += ", and give it those labels"
+	}
+	return "waiting: " + strings.Join(append([]string{head, fix}, notFor...), "; ")
 }
 
 // username is user uid's username, for messages ("user <id>" when unknown).

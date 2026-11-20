@@ -339,12 +339,19 @@ func (s *Server) hubAddRepos(w http.ResponseWriter, r *http.Request) {
 // ---- the hub's side ----
 
 // ownedRunner is the runner in r's path if the caller registered it: only
-// its owner sees and adds the repositories on its computer (the runner
-// checks that too). Another org's runner is "not found".
-func (s *Server) ownedRunner(w http.ResponseWriter, r *http.Request) (Caller, tunnel.Runner, bool) {
+// its owner makes projects on its computer and sees and adds the
+// repositories there (the runner checks that too). Another org's runner is
+// "not found". what is what the caller tried, for the refusal: "create a
+// project on it".
+func (s *Server) ownedRunner(w http.ResponseWriter, r *http.Request, what string) (Caller, tunnel.Runner, bool) {
 	return s.runnerFor(w, r, func(c Caller, x tunnel.Runner) bool {
 		return x.Owner != nil && x.Owner.UserID == c.User
-	}, "only the runner's owner can see and add the repositories on its computer")
+	}, func(c Caller) string {
+		if !s.hasOwnRunner(c) {
+			return "only the runner's owner can " + what + ". " + youHaveNoRunner + " (a project with a git remote can run on a shared runner)"
+		}
+		return "only the runner's owner can " + what + ": use a runner of yours"
+	})
 }
 
 // localProject is a new local-only project: a repository on its runner
@@ -361,7 +368,7 @@ type localProject struct {
 // it in the runner's projects folder, with no remote. For throwaway work:
 // deleting it deletes that folder too.
 func (s *Server) createRunnerProject(w http.ResponseWriter, r *http.Request) {
-	c, x, ok := s.ownedRunner(w, r)
+	c, x, ok := s.ownedRunner(w, r, "create a project on its computer")
 	if !ok {
 		return
 	}
@@ -388,7 +395,7 @@ func (s *Server) createRunnerProject(w http.ResponseWriter, r *http.Request) {
 // runnerRepos handles GET /api/runners/{id}/repos: the repositories in the
 // caller's runner's projects directory that could become its projects.
 func (s *Server) runnerRepos(w http.ResponseWriter, r *http.Request) {
-	c, x, ok := s.ownedRunner(w, r)
+	c, x, ok := s.ownedRunner(w, r, "see the repositories on its computer")
 	if !ok {
 		return
 	}
@@ -411,7 +418,7 @@ func (s *Server) runnerRepos(w http.ResponseWriter, r *http.Request) {
 // addRunnerRepos handles POST /api/runners/{id}/repos: {"paths"} from the
 // listing become the caller's runner's own projects.
 func (s *Server) addRunnerRepos(w http.ResponseWriter, r *http.Request) {
-	c, x, ok := s.ownedRunner(w, r)
+	c, x, ok := s.ownedRunner(w, r, "add the repositories on its computer")
 	if !ok {
 		return
 	}
@@ -494,7 +501,7 @@ func (s *Server) runnerOwnProject(ctx context.Context, w http.ResponseWriter, r 
 // read them (only platform admins reach the runner's whole API through
 // /peer/{runner}/…).
 func (s *Server) runnerProject(w http.ResponseWriter, r *http.Request) {
-	c, x, ok := s.runnerFor(w, r, func(Caller, tunnel.Runner) bool { return true }, "")
+	c, x, ok := s.runnerFor(w, r, func(Caller, tunnel.Runner) bool { return true }, deny(""))
 	if !ok {
 		return
 	}
@@ -512,7 +519,7 @@ func (s *Server) runnerProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updateRunnerProject(w http.ResponseWriter, r *http.Request) {
 	c, x, ok := s.runnerFor(w, r, func(c Caller, x tunnel.Runner) bool {
 		return x.Owner != nil && x.Owner.UserID == c.User
-	}, "only the runner's owner can change its own projects' settings")
+	}, deny("only the runner's owner can change its own projects' settings"))
 	if !ok {
 		return
 	}

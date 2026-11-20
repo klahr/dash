@@ -450,3 +450,36 @@ func TestTwoMembersRunWaitsForASharedRunner(t *testing.T) {
 		t.Errorf("wait reason: %q", why)
 	}
 }
+
+// A member without a runner, on a project no runner has the labels of:
+// the wait says first that they need a runner (giving bob's runner the
+// labels wouldn't run it), then the labels, without "any" or a doubled
+// "no runner".
+func TestMemberWithoutARunnerIsToldSoFirst(t *testing.T) {
+	t.Parallel()
+	fx := newFixture(t)
+	fx.fleet.set(bobsRunner(fx.orgA, maxAuth, false))
+	p := fx.project(t, fx.orgA) // bob-laptop lacks its label
+	td := fx.todo(t, p, func(x *model.Todo) { x.CreatedBy = alice })
+
+	_, _, err := fx.d.Dispatch(context.Background(), p, td)
+	why := waitReasonOf(t, err)
+	want := "waiting: no runner of admin's has the labels " + p.RunsOn[0] + ", claude; admin has no runner: Runners → Add a runner, or ask an admin for a shared one, and give it those labels"
+	if why != want {
+		t.Errorf("wait reason:\n got %q\nwant %q", why, want)
+	}
+
+	// On any runner: "any" is no label to give one.
+	p.RunsOn = []string{model.LabelAny, "devbox"}
+	_, _, err = fx.d.Dispatch(context.Background(), p, td)
+	if why := waitReasonOf(t, err); !strings.Contains(why, "has the labels devbox, claude;") || strings.Contains(why, "any,") {
+		t.Errorf("wait reason: %q", why)
+	}
+
+	// Bob's own task, on his runner that lacks the label: only the labels.
+	td = fx.todo(t, p, func(x *model.Todo) { x.CreatedBy = bob })
+	_, _, err = fx.d.Dispatch(context.Background(), p, td)
+	if why := waitReasonOf(t, err); !strings.HasSuffix(why, "; give one that takes these tasks those labels in Runners, or change them in Project settings → Runners") || strings.Contains(why, "has no runner") {
+		t.Errorf("wait reason: %q", why)
+	}
+}

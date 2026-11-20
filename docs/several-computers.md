@@ -546,7 +546,9 @@ the org sees it and adds tasks to it, and each member's tasks run on their own r
 
 A task that waits because only other members' runners have its labels says so: "waiting: no runner
 of alice's has the labels Linux; laptop is bob's runner and only takes bob's tasks". Its card shows
-**Needs your runner**. Give one of your runners those labels, or ask for a shared runner.
+**Needs your runner**. Give one of your runners those labels, or ask for a shared runner. If alice
+has no runner at all, it says that first ("alice has no runner: Runners → Add a runner, or ask an
+admin for a shared one"), as labels on someone else's runner wouldn't help.
 
 When no runner of yours (and no shared runner) has a project's labels, the board says so above
 the lanes, with **Add a runner**. Admins see how many runners each member has in

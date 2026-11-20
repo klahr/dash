@@ -70,7 +70,7 @@ func (s *Server) runnerLinkRoutes(mux routeMux) {
 // (those with a remote), each marked when the runner works on it. Anyone in
 // the org may look.
 func (s *Server) runnerLinks(w http.ResponseWriter, r *http.Request) {
-	c, x, ok := s.runnerFor(w, r, func(Caller, tunnel.Runner) bool { return true }, "")
+	c, x, ok := s.runnerFor(w, r, func(Caller, tunnel.Runner) bool { return true }, deny(""))
 	if !ok {
 		return
 	}

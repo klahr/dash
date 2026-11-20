@@ -17,8 +17,11 @@ func TestCallerChecksKeepOrglessUsersSignedIn(t *testing.T) {
 		"callerOr":      func(w http.ResponseWriter, r *http.Request) bool { _, ok := s.callerOr(w, r); return ok },
 		"service":       func(w http.ResponseWriter, r *http.Request) bool { _, ok := s.service(w, r); return ok },
 		"managedRunner": func(w http.ResponseWriter, r *http.Request) bool { _, _, ok := s.managedRunner(w, r); return ok },
-		"ownedRunner":   func(w http.ResponseWriter, r *http.Request) bool { _, _, ok := s.ownedRunner(w, r); return ok },
-		"wallAdmin":     func(w http.ResponseWriter, r *http.Request) bool { _, ok := s.wallAdmin(w, r); return ok },
+		"ownedRunner": func(w http.ResponseWriter, r *http.Request) bool {
+			_, _, ok := s.ownedRunner(w, r, "do that")
+			return ok
+		},
+		"wallAdmin": func(w http.ResponseWriter, r *http.Request) bool { _, ok := s.wallAdmin(w, r); return ok },
 	}
 	for name, check := range checks {
 		for _, tc := range []struct {

@@ -55,7 +55,7 @@ func TestDispatchSendsTasksToRunnersWithTheProjectsAgent(t *testing.T) {
 	p.Agent = "gemini"
 	_, _, err := fx.d.Dispatch(context.Background(), p, fx.todo(t, p, nil))
 	var w *WaitError
-	if !errors.As(err, &w) || !strings.Contains(w.Reason, "no runner has the labels this project runs on") || !strings.Contains(w.Reason, "gemini") {
+	if !errors.As(err, &w) || !strings.Contains(w.Reason, "no runner of admin's has the labels ") || !strings.Contains(w.Reason, "gemini") {
 		t.Fatalf("err = %v, want a wait naming gemini", err)
 	}
 }

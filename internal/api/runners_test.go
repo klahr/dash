@@ -643,3 +643,31 @@ func TestRunnerAnswersATaskItFinishedAlready(t *testing.T) {
 		t.Errorf("sent back for rework: %s", td.Status)
 	}
 }
+
+// A member without a runner is told so, plainly, wherever they try to make
+// a project: not about listing repositories, an API field there isn't, or
+// "any" as a label.
+func TestMemberWithoutARunnerIsToldToAddOne(t *testing.T) {
+	parallel(t)
+	f := newFleetServer(t)
+	member(t, f.s, f.web.OrgID, "e", store.RoleMember)
+	e := loginAs(t, f.h, "e", "long-enough-e")
+
+	w := send(e, "POST", "/api/projects", `{"name":"notes"}`)
+	if body := w.Body.String(); w.Code != http.StatusBadRequest || !strings.Contains(body, youHaveNoRunner) || strings.Contains(body, "pick the runner as its computer") {
+		t.Errorf("a project without a remote: %d %s", w.Code, body)
+	}
+	w = send(e, "POST", "/api/projects", `{"name":"web2","remote_url":"https://github.com/x/web2.git"}`)
+	if body := w.Body.String(); w.Code != http.StatusBadRequest || !strings.Contains(body, youHaveNoRunner) || !strings.Contains(body, "it runs on any runner") || strings.Contains(body, "labels any") {
+		t.Errorf("a project on any runner: %d %s", w.Code, body)
+	}
+	w = send(e, "POST", "/api/runners/"+f.ids["u-box"]+"/projects", `{"name":"notes"}`)
+	if body := w.Body.String(); w.Code != http.StatusForbidden || !strings.Contains(body, "only the runner's owner can create a project on its computer") || !strings.Contains(body, youHaveNoRunner) {
+		t.Errorf("a local-only project on someone else's runner: %d %s", w.Code, body)
+	}
+	// c has a runner of their own: told to use it.
+	w = send(f.c, "POST", "/api/runners/"+f.ids["u-box"]+"/projects", `{"name":"notes"}`)
+	if body := w.Body.String(); w.Code != http.StatusForbidden || !strings.Contains(body, "use a runner of yours") || strings.Contains(body, youHaveNoRunner) {
+		t.Errorf("a local-only project on someone else's runner, with one's own: %d %s", w.Code, body)
+	}
+}

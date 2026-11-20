@@ -131,6 +131,16 @@ func MissingLabels(have, want []string) []string {
 	return out
 }
 
+// ShowLabels is labels for a message: joined with ", ", without LabelAny,
+// which is a wildcard and no runner has; "any runner" when that leaves
+// none.
+func ShowLabels(labels []string) string {
+	if shown := MissingLabels(nil, labels); len(shown) > 0 {
+		return strings.Join(shown, ", ")
+	}
+	return "any runner"
+}
+
 // SameLabels reports whether a and b are the same labels, in any order and
 // case.
 func SameLabels(a, b []string) bool {

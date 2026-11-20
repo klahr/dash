@@ -108,7 +108,7 @@ func (s *Server) hubCreateGitHubRepo(w http.ResponseWriter, r *http.Request) {
 // the caller's GitHub repositories, through their runner's gh, each marked
 // with the org's project already made from it.
 func (s *Server) runnerGitHubRepos(w http.ResponseWriter, r *http.Request) {
-	c, x, ok := s.ownedRunner(w, r)
+	c, x, ok := s.ownedRunner(w, r, "list GitHub repositories with its gh")
 	if !ok {
 		return
 	}
@@ -142,7 +142,7 @@ func markLinked(repos []GitHubRepoItem, projects []model.Project) {
 // hub: a new GitHub repository, with the caller's runner's gh, for a new
 // project ({"name", "url"} back).
 func (s *Server) createRunnerGitHubRepo(w http.ResponseWriter, r *http.Request) {
-	c, x, ok := s.ownedRunner(w, r)
+	c, x, ok := s.ownedRunner(w, r, "create a GitHub repository with its gh")
 	if !ok {
 		return
 	}

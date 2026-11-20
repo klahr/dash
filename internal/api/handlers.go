@@ -238,7 +238,7 @@ func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
 		remote = "https://github.com/" + strings.TrimSuffix(gh, ".git") + ".git"
 	}
 	if req.Path != "" || req.Existing || remote == "" {
-		return model.Project{}, errHubHasNoProjects
+		return model.Project{}, sv.hubHasNoProjects()
 	}
 	if err := gitops.CheckRemote(remote); err != nil {
 		return model.Project{}, errors.Join(errBadRequest, err)
@@ -1479,8 +1479,18 @@ func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 var errNotRunYet = fmt.Errorf("%w: this task hasn't run on a runner yet", errBadRequest)
 
 // errHubHasNoProjects is why the hub refuses a project on its own disk.
-var errHubHasNoProjects = fmt.Errorf("%w: the hub keeps no projects on its own computer. Create or add the project on a runner "+
-	"(pick the runner as its computer), or share a repository by giving its remote_url (or github OWNER/REPO) and the runner labels it runs on (runs_on)", errBadRequest)
+var errHubHasNoProjects = fmt.Errorf("%w: the hub keeps no projects on its own computer. Create a local-only project on a runner of yours "+
+	"(POST /api/runners/{id}/projects; in the app, pick it beside Add project's title), add repositories already on it (POST /api/runners/{id}/repos), "+
+	"or share a repository by giving its remote_url (or github OWNER/REPO) and the runner labels it runs on (runs_on)", errBadRequest)
+
+// hubHasNoProjects is errHubHasNoProjects, telling a member without a
+// runner first that they need one.
+func (sv *service) hubHasNoProjects() error {
+	if !sv.s.hasOwnRunner(sv.c) {
+		return fmt.Errorf("%w. %s", errHubHasNoProjects, youHaveNoRunner)
+	}
+	return errHubHasNoProjects
+}
 
 func (s *Server) cleanupProject(w http.ResponseWriter, r *http.Request) {
 	_, _, ok := s.project(w, r)

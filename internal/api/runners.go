@@ -94,6 +94,17 @@ func (s *Server) orgRunner(c Caller, id string) (tunnel.Runner, bool) {
 	return r, true
 }
 
+// youHaveNoRunner is the advice for a member without a runner of their own.
+const youHaveNoRunner = "You have no runner: Runners → Add a runner, or ask an admin for a shared one"
+
+// hasOwnRunner reports whether c registered a runner in their org.
+func (s *Server) hasOwnRunner(c Caller) bool {
+	fl := s.fleet()
+	return fl != nil && slices.ContainsFunc(fl.List(), func(r tunnel.Runner) bool {
+		return r.OrgID() == c.Org && r.Owner != nil && r.Owner.UserID == c.User
+	})
+}
+
 func (s *Server) view(c Caller, r tunnel.Runner) runnerView {
 	if s.Dispatch != nil {
 		r.Running = s.Dispatch.Busy(r.ID)
@@ -285,7 +296,7 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 // runnerFor is the runner in r's path if allowed lets the caller at it;
 // otherwise it answers r (403 with denied) and returns false. Another org's
 // runner is "not found".
-func (s *Server) runnerFor(w http.ResponseWriter, r *http.Request, allowed func(Caller, tunnel.Runner) bool, denied string) (Caller, tunnel.Runner, bool) {
+func (s *Server) runnerFor(w http.ResponseWriter, r *http.Request, allowed func(Caller, tunnel.Runner) bool, denied func(Caller) string) (Caller, tunnel.Runner, bool) {
 	c, ok := s.callerOr(w, r)
 	if !ok {
 		return c, tunnel.Runner{}, false
@@ -296,16 +307,19 @@ func (s *Server) runnerFor(w http.ResponseWriter, r *http.Request, allowed func(
 		return c, x, false
 	}
 	if !allowed(c, x) {
-		writeError(w, http.StatusForbidden, denied)
+		writeError(w, http.StatusForbidden, denied(c))
 		return c, x, false
 	}
 	return c, x, true
 }
 
+// deny is a refusal for runnerFor that is the same for every caller.
+func deny(msg string) func(Caller) string { return func(Caller) string { return msg } }
+
 // managedRunner is the runner in r's path if the caller may manage it, or
 // answers r and returns false.
 func (s *Server) managedRunner(w http.ResponseWriter, r *http.Request) (Caller, tunnel.Runner, bool) {
-	return s.runnerFor(w, r, s.canManageRunner, "only the runner's owner or an admin of the organization can do that")
+	return s.runnerFor(w, r, s.canManageRunner, deny("only the runner's owner or an admin of the organization can do that"))
 }
 
 // checkRunsOn checks a project's new runner labels for c and returns them
@@ -343,8 +357,16 @@ func (sv *service) checkNewRunners(p, np model.Project) error {
 		if shared, _ := r.TakesOthers(); shared {
 			continue // it takes the org's work: what it is shared for
 		}
-		return fmt.Errorf("%w: %s is %s's runner and has the labels %s: only they or an admin of the organization can link projects to it. "+
-			"Pick labels it lacks (give your own runners a label of their own in Runners), or ask them", errBadRequest, r.Name, r.Owner.Username, strings.Join(np.RunnerLabels(), ", "))
+		fix := "Pick labels it lacks (give your own runners a label of their own in Runners), or ask them"
+		if !sv.s.hasOwnRunner(sv.c) {
+			fix = youHaveNoRunner + ", then pick labels only that one has, or ask them"
+		}
+		on := "the labels " + model.ShowLabels(np.RunnerLabels())
+		if len(model.MissingLabels(nil, np.RunsOn)) == 0 {
+			on = "any runner" // LabelAny is no label it has
+		}
+		return fmt.Errorf("%w: %s is %s's runner, and this project would run on it (it runs on %s): only they or an admin of the organization can link projects to it. %s",
+			errBadRequest, r.Name, r.Owner.Username, on, fix)
 	}
 	return nil
 }

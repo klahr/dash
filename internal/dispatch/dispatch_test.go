@@ -250,12 +250,14 @@ func TestDispatchWaitsWhileRunnersAreOffline(t *testing.T) {
 		t.Errorf("offline runners were called: %q", fx.fleet.calls)
 	}
 
-	// Revoked runners leave nothing to wait for but a runner with the labels.
+	// Revoked runners leave nothing to wait for but a runner with the
+	// labels, and the member has none at all: it says both, once.
 	fx.fleet.remove("laptop")
 	fx.fleet.remove("desk")
 	_, _, err = fx.d.Dispatch(context.Background(), p, fx.todo(t, p, nil))
-	if !errors.As(err, &w) || !strings.Contains(w.Reason, "no runner has the labels this project runs on") {
-		t.Fatalf("err = %v, want a wait saying no runner has the project's labels", err)
+	want := "waiting: no runner of admin's has the labels " + p.RunsOn[0] + ", claude; admin has no runner: Runners → Add a runner, or ask an admin for a shared one, and give it those labels"
+	if !errors.As(err, &w) || w.Reason != want {
+		t.Fatalf("err = %v, want %q", err, want)
 	}
 }
 

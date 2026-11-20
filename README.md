@@ -97,6 +97,10 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 ## Your first task
 
+On a hub, tasks run on runners, and a member's tasks run only on their own runner or a shared
+one. If you have none, add one first in **Runners → Add a runner**, or ask an admin for a shared
+one.
+
 1. **Add a project.** Click **Add project** (every project is on a runner; the hub keeps none,
    and with several runners you pick one beside the title). Then pick **From GitHub** (your
    repositories, listed with that runner's `gh`, filterable), **New GitHub repository**, or **From
