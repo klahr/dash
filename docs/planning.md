@@ -119,8 +119,11 @@ stored. It says, for example:
 | All done                  | every task is merged and every goal is finished                |
 | Shipped in 1.4.0          | all of it is in a release (the first release tag that has it)  |
 | Live in production since 4 Nov 2026 | all of it is deployed and live in an environment     |
+| Work was deleted          | every linked task or goal was deleted                          |
 
 With more than one linked piece of work, the card also counts it: "3 of 5 done".
+A linked task or goal that was deleted shows **Removed (work was deleted)**. It is not done,
+and the card leaves it out of the count and the status.
 **Live in** comes from the project's [deploys](deploys.md#where-it-is-live): a task is live in an
 environment once a deploy that shipped it went live there. The card names production when all of
 it is live there, else the environment furthest along that has all of it, and the latest date one

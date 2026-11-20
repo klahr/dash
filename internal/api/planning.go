@@ -66,10 +66,14 @@ type cardStatus struct {
 	// "3 of 5 done".
 	Progress string `json:"progress,omitempty"`
 	// Tone is for color: none, idle, working, waiting, failed, done, shipped.
-	Tone  string `json:"tone"`
-	Done  int    `json:"done"`
-	Total int    `json:"total"`
-	// SuggestDone: everything linked is done but the card isn't in Done.
+	Tone string `json:"tone"`
+	// Done and Total count the linked work that still exists; Removed
+	// counts the linked tasks and goals that were deleted since.
+	Done    int `json:"done"`
+	Total   int `json:"total"`
+	Removed int `json:"removed,omitempty"`
+	// SuggestDone: everything linked that still exists is done, at least
+	// one piece of it, but the card isn't in Done.
 	// Dash suggests the move; it never makes it.
 	SuggestDone bool `json:"suggest_done,omitempty"`
 	// Live is where all of it is live, once it is, and since when
@@ -92,7 +96,10 @@ type linkView struct {
 	// Shipped is the first release with all of it, once done and released.
 	Shipped string `json:"shipped,omitempty"`
 	// Live is where it is live (production if it is there), once deployed.
-	Live    *liveIn  `json:"live,omitempty"`
+	Live *liveIn `json:"live,omitempty"`
+	// Removed: the task or goal was deleted since it was linked. It is
+	// neither done nor counted.
+	Removed bool     `json:"removed,omitempty"`
 	lives   []liveIn // every environment it is live in
 	done    bool
 	failed  bool
@@ -233,6 +240,9 @@ func goalState(g model.Goal) (state, tone string) {
 	return "In progress", "working"
 }
 
+// removedState is the state of a linked task or goal that was deleted.
+const removedState = "Removed (work was deleted)"
+
 // link is one link's view.
 func (w *planningWork) link(l model.CardLink) linkView {
 	v := linkView{Kind: l.Kind, ID: l.WorkID}
@@ -241,7 +251,7 @@ func (w *planningWork) link(l model.CardLink) linkView {
 	case model.LinkTask:
 		t, ok := w.todos[l.WorkID]
 		if !ok {
-			return linkView{Kind: l.Kind, ID: l.WorkID, Title: "Removed task", State: "Removed", Tone: "idle", done: true}
+			return linkView{Kind: l.Kind, ID: l.WorkID, Title: "Removed task", State: removedState, Tone: "idle", Removed: true}
 		}
 		v.Title, v.Project, v.ProjectID = t.Title, project(t.ProjectID), t.ProjectID
 		v.State, v.Tone = taskState(t)
@@ -256,7 +266,7 @@ func (w *planningWork) link(l model.CardLink) linkView {
 	case model.LinkGoal:
 		g, ok := w.goals[l.WorkID]
 		if !ok {
-			return linkView{Kind: l.Kind, ID: l.WorkID, Title: "Removed goal", State: "Removed", Tone: "idle", done: true}
+			return linkView{Kind: l.Kind, ID: l.WorkID, Title: "Removed goal", State: removedState, Tone: "idle", Removed: true}
 		}
 		v.Title, v.Project, v.ProjectID = g.Title, project(g.ProjectID), g.ProjectID
 		v.State, v.Tone = goalState(g)
@@ -388,15 +398,19 @@ func (w *planningWork) views(cards, all []model.Card, links map[string][]model.C
 
 // status adds up a card's links.
 func status(c model.Card, links []linkView) cardStatus {
-	st := cardStatus{Total: len(links)}
 	if len(links) == 0 {
-		st.Text, st.Tone = "Nothing started yet", "none"
-		return st
+		return cardStatus{Text: "Nothing started yet", Tone: "none"}
 	}
+	var st cardStatus
 	var failed, waiting, review, budget, working, queued, stopped int
 	shipped, allShipped := "", true
 	var lives [][]liveIn
 	for _, l := range links {
+		if l.Removed {
+			st.Removed++
+			continue
+		}
+		st.Total++
 		lives = append(lives, l.lives)
 		switch {
 		case l.done:
@@ -427,15 +441,18 @@ func status(c model.Card, links []linkView) cardStatus {
 	if st.Total > 1 {
 		st.Progress = fmt.Sprintf("%d of %d done", st.Done, st.Total)
 	}
+	allDone := st.Done > 0 && st.Done == st.Total
 	switch {
+	case st.Total == 0:
+		st.Text, st.Tone = "Work was deleted", "idle"
 	case failed > 0:
 		st.Text, st.Tone = "Failed, needs a developer", "failed"
-	case st.Done == st.Total && len(commonLive(lives)) > 0:
+	case allDone && len(commonLive(lives)) > 0:
 		l, _ := bestLive(commonLive(lives))
 		st.Text, st.Tone, st.Live = liveText(l), "live", &l
-	case st.Done == st.Total && allShipped:
+	case allDone && allShipped:
 		st.Text, st.Tone = "Shipped in "+shipped, "shipped"
-	case st.Done == st.Total:
+	case allDone:
 		st.Text, st.Tone = "All done", "done"
 	case review > 0 && review == waiting:
 		st.Text, st.Tone = "Waiting for review", "waiting"
@@ -454,7 +471,7 @@ func status(c model.Card, links []linkView) cardStatus {
 	default:
 		st.Text, st.Tone = "Not started", "idle"
 	}
-	st.SuggestDone = st.Done == st.Total && c.Column != model.CardDone
+	st.SuggestDone = allDone && c.Column != model.CardDone
 	return st
 }
 

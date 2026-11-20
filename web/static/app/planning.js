@@ -460,7 +460,7 @@ function cardEl(c) {
   if (c.status?.suggest_done) meta.push(h("span", { class: "pl-suggest" }, "Ready for Done"));
   // Under the title: the status of the linked work, or else the start of the description.
   const about = (c.description || "").replace(/[#*_`>]+/g, "").replace(/\s+/g, " ").trim();
-  const sub = c.status?.total ? h("span", { class: "todo-sub" }, statusEl(c.status))
+  const sub = c.status?.total || c.status?.removed ? h("span", { class: "todo-sub" }, statusEl(c.status))
     : about ? h("span", { class: "todo-sub" }, about) : null;
   // A bordered card (style.css: .pl-card), built from the task board's
   // card parts (app/branches.js: todoRow) but without its rail node: the
@@ -1349,7 +1349,7 @@ async function startSheet(c) {
   if (!pl.projects.length) throw new Error("There are no projects to start work in yet. Planning starts work in shared projects only, not in a runner's own project. Ask a developer to add a shared one with + Add project, from GitHub or a URL.");
   // Dash doesn't stop either, but says so: work already under way for the
   // card (a second Start makes the same work again), and cards it waits for.
-  const open = (c.links || []).filter((l) => l.state !== "Removed" && !["done", "shipped", "live"].includes(l.tone));
+  const open = (c.links || []).filter((l) => !l.removed && !["done", "shipped", "live"].includes(l.tone));
   const waits = (c.deps || []).filter((d) => !d.done).map((d) => d.title);
   const kinds = new Set(open.map((l) => l.kind));
   const noun = kinds.size > 1 ? "tasks or goals" : `${kinds.has("goal") ? "goal" : "task"}${open.length === 1 ? "" : "s"}`;

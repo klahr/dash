@@ -27,6 +27,46 @@ func decodeCard(t *testing.T, w *httptest.ResponseRecorder) cardView {
 	return v
 }
 
+// A deleted task or goal is neither done nor counted: a card whose only
+// work was deleted doesn't say "All done" or suggest Done, and one with a
+// merged and a deleted task counts just the merged one.
+func TestPlanningRemovedWorkIsNotDone(t *testing.T) {
+	s, _, p := boardServer(t)
+	h := s.Routes()
+	a := loggedIn(t, h)
+	ph, _ := plannerOf(t, s, h)
+
+	c := decodeCard(t, do(t, ph, "POST", "/api/planning/cards", `{"title":"Email reminders"}`))
+	gone, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Reminder job", Prompt: "job"})
+	if w := do(t, a, "POST", "/api/planning/cards/"+c.ID+"/links", `{"kind":"task","id":"`+gone.ID+`"}`); w.Code != http.StatusOK {
+		t.Fatalf("link: %d %s", w.Code, w.Body)
+	}
+	if _, err := raw(s).DeleteTodo(gone.ID); err != nil {
+		t.Fatal(err)
+	}
+	got := decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+c.ID, ""))
+	if st := got.Status; st.Text != "Work was deleted" || st.SuggestDone || st.Done != 0 || st.Total != 0 || st.Removed != 1 {
+		t.Errorf("only work deleted: %+v", st)
+	}
+	if len(got.Links) != 1 || !got.Links[0].Removed || got.Links[0].State != "Removed (work was deleted)" {
+		t.Errorf("removed link: %+v", got.Links)
+	}
+
+	merged, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Reminder email", Prompt: "email"})
+	for _, to := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress, model.StatusReview, model.StatusMerged} {
+		if _, err := raw(s).UpdateTodo(merged.ID, func(x *model.Todo) error { x.Status = to; return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if w := do(t, a, "POST", "/api/planning/cards/"+c.ID+"/links", `{"kind":"task","id":"`+merged.ID+`"}`); w.Code != http.StatusOK {
+		t.Fatalf("link: %d %s", w.Code, w.Body)
+	}
+	got = decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+c.ID, ""))
+	if st := got.Status; st.Text != "All done" || !st.SuggestDone || st.Done != 1 || st.Total != 1 || st.Removed != 1 || st.Progress != "" {
+		t.Errorf("merged and deleted: %+v", st)
+	}
+}
+
 // A card started as a task is linked to it and moves to In progress; its
 // status follows the task in an owner's words, and suggests Done (without
 // making the move) once the work is merged. A planner sees the same card
