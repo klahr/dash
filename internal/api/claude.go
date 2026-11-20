@@ -43,9 +43,9 @@ type SmallClaude interface {
 	// one task (see agent.Titler.Group).
 	Group(ctx context.Context, issues string) ([]agent.IssueGroup, error)
 	Suggest(ctx context.Context, transcript string) (string, error)
-	// Plan runs one round of a project plan's interview (agent.PlanInput in,
-	// the interviewer's JSON out).
-	Plan(ctx context.Context, input string) (string, error)
+	// Plan runs one round of the interview of a plan of kind
+	// (model.PlanKinds; agent.PlanInput in, the interviewer's JSON out).
+	Plan(ctx context.Context, kind, input string) (string, error)
 }
 
 // errNoClaudeRunner is why the hub can't run something on the caller's runner.
@@ -455,9 +455,14 @@ func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 		call = s.Small.Refine
 	case "suggest":
 		call = s.Small.Suggest
-	case "plan":
-		call = s.Small.Plan
+	case "plan": // a project's, as before kinds
+		call = func(ctx context.Context, in string) (string, error) { return s.Small.Plan(ctx, model.PlanProject, in) }
 	default:
+		// plan-<kind>: another kind of plan's round.
+		if kind, ok := strings.CutPrefix(r.PathValue("kind"), "plan-"); ok && model.PlanKinds[kind].ID != "" {
+			call = func(ctx context.Context, in string) (string, error) { return s.Small.Plan(ctx, kind, in) }
+			break
+		}
 		writeError(w, http.StatusNotFound, "no such call")
 		return
 	}

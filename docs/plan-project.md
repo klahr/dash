@@ -5,9 +5,13 @@ time, and writes a project brief as you answer. It asks about the decisions you 
 so you don't have to write a long prompt. When the brief is ready, Dash creates the project,
 commits the brief and starts a [goal](goals.md) from it.
 
-[Planners](users.md#planners) can't write a project brief: the interview runs on your own runner,
-and Launch adds a project. A planner has neither. Put the idea on a [Planning](planning.md) card
-instead, add a developer to the card, and let them write the brief from it.
+The same guide writes a brief for a feature of a project you have, onto a
+[Planning](planning.md) card. See [Write a feature brief](#write-a-feature-brief).
+
+[Planners](users.md#planners) can't write a project or feature brief: the interview runs on your
+own runner, and Launch adds a project. A planner has neither. Put the idea on a
+[Planning](planning.md) card instead, add a developer to the card, and let them write the brief
+from it.
 
 ## Start a brief
 
@@ -89,16 +93,54 @@ The interview runs like Dash's other short calls without a project (titles, spli
 the first of your own runners that is online, with that computer's `claude` login. The idea step
 says which. With none of your runners online, start `dash runner` on your computer.
 
+## Write a feature brief
+
+For a feature of a project you have, the guide writes the brief onto a [Planning](planning.md)
+card, and can start a task or a goal from it. The interview, the brief and the drafts work as
+above. Start it from any of these:
+
+- On a card in **Planning**: **Write a feature brief**. The card's description is the idea. A
+  long description is the brief Claude starts from.
+- In **Planning**: **New card**, type the idea, then **Write a feature brief**. The guide adds
+  the card when you start the interview.
+- In **New task** or the full task form: **Write a feature brief**. What you typed is the idea,
+  and the guide adds a card for it.
+
+The steps are **Idea**, **Interview**, **Brief** and **Start**. On **Idea**, pick the project if
+it isn't set. The topics are: the problem and who it's for, behaviour and scope, where it shows
+(screens, commands, API), data changes, edge cases and errors, done when, and out of scope.
+
+With each round, Claude also reads the project's `CLAUDE.md`, README and file list from its
+default branch, cut to a fixed size. It doesn't ask what those already answer. They are read on
+one of the project's runners; when none is online, the interview goes on without them. The
+interview itself runs on your own runner, as above; update Dash on it if it says it is from
+before feature briefs.
+
+On **Start**, pick one:
+
+- **A task**: queued for Claude now.
+- **A goal**: a coordinator breaks it into tasks. See [Goals](goals.md).
+- **Save to Planned**: nothing starts yet. Start it from the card later.
+
+Dash puts the brief on the card as its description (a new card in **Ideas** if the card was
+deleted), then starts the task or goal the way **Start…** on a card does: it is linked to the
+card, and the card moves to **In progress**. **Save to Planned** moves a card in **Ideas** to
+**Planned**. Nothing is committed to the repository.
+
+A feature's draft is listed under **All briefs** in the **Write a feature brief** sheet, as
+"Feature · project name". Opening the guide on a card that has a draft opens that draft.
+
 ## API
 
 | Endpoint | What it does |
 | --- | --- |
 | `GET /api/plans` | your drafts in the org |
-| `POST /api/plans` | make a plan: `{"idea", "name"}` |
+| `POST /api/plans` | make a plan: `{"idea", "name"}`. A feature's: `{"kind": "feature", "project", "card"}` with `idea` and `name`, or without them to take them from the card. Without a card, it adds one |
 | `GET /api/plans/{id}` | a plan, with its rounds, topics, brief, open questions and verdict |
 | `PATCH /api/plans/{id}` | change `idea`, `name`, `brief` or `step` |
 | `DELETE /api/plans/{id}` | delete a plan |
 | `POST /api/plans/{id}/interview` | answer the latest round, `{"answers": [{"question", "text", "default"}], "message"}`, and get Claude's next one; `{}` starts the interview. An empty `text` skips a question |
 | `GET /api/plans/{id}/launch` | `BRIEF.md`, the starter `CLAUDE.md` and the goal's title and description |
 | `POST /api/plans/{id}/launched` | mark it launched: `{"project_id", "goal_id"}` |
+| `POST /api/plans/{id}/feature` | a feature's Start: `{"start": "task"}`, `"goal"` or `"planned"`. Answers `{"plan", "card"}` |
 | `POST /api/projects/{id}/brief` | commit `{"brief", "claude_md"}` as `BRIEF.md` and `CLAUDE.md` on the default branch |

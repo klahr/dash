@@ -109,3 +109,38 @@ func TestPlansArePerUserAndOrg(t *testing.T) {
 		t.Errorf("plans in another org went too: %+v", l)
 	}
 }
+
+// A plan stored before kinds (no "kind", no card) loads as a project's,
+// and stays one when it changes.
+func TestPlanFromBeforeKindsLoads(t *testing.T) {
+	t.Parallel()
+	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	acc := s.Accounts()
+	if err := acc.Bootstrap("admin", "s3cret-pass"); err != nil {
+		t.Fatal(err)
+	}
+	admin, _ := acc.EnvUser()
+	def, _ := acc.DefaultOrg()
+	old := `{"id":"old1","name":"Recipes","idea":"A recipe box","step":"repo","rounds":[],` +
+		`"topics":[{"id":"users","title":"Users & purpose","status":"done"}],"brief":"# Recipes","open":[],` +
+		`"verdict":{"ready":true},"created_at":"2026-01-02T03:04:05Z","updated_at":"2026-01-02T03:04:05Z"}`
+	if _, err := s.db.Exec("INSERT INTO plans (id, org_id, user_id, data, launched, updated_at) VALUES ('old1', ?, ?, ?, 0, 1)", def.ID, admin.ID, old); err != nil {
+		t.Fatal(err)
+	}
+	mine := s.ForOrg(def.ID).AsUser(admin.ID)
+	p, err := mine.GetPlan("old1")
+	if err != nil || p.Kind != "" || model.KindOf(p).ID != model.PlanProject || p.Step != "repo" || p.Brief != "# Recipes" || p.Topics[0].Status != "done" {
+		t.Fatalf("old plan: %+v %v", p, err)
+	}
+	if err := model.CleanPlanDraft(&p); err != nil {
+		t.Errorf("an old plan's step: %v", err)
+	}
+	p, err = mine.UpdatePlan("old1", func(p *model.Plan) error { p.Step = "launch"; return model.CleanPlanDraft(p) })
+	if err != nil || p.Kind != "" || p.Step != "launch" {
+		t.Errorf("changed: %+v %v", p, err)
+	}
+}

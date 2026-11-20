@@ -44,8 +44,12 @@ func (f *fakeSmall) Suggest(_ context.Context, t string) (string, error) { retur
 
 // Plan answers an interview round with one question, the brief saying
 // where it ran.
-func (f *fakeSmall) Plan(_ context.Context, in string) (string, error) {
-	_, err := f.call("plan", in)
+func (f *fakeSmall) Plan(_ context.Context, kind, in string) (string, error) {
+	call := "plan"
+	if kind != model.PlanProject {
+		call += "-" + kind
+	}
+	_, err := f.call(call, in)
 	return `{"note":"","questions":[{"id":"q1","topic":"users","text":"Who uses it?","default":"Just me"}],` +
 		`"topics":[{"id":"users","status":"open"}],"brief":"# Plan from ` + f.where + `","open_questions":[],"verdict":{"ready":false}}`, err
 }

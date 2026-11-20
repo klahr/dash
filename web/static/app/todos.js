@@ -11,6 +11,7 @@ import { showRunnerNeeded } from "./runners.js";
 import { levelPriority, priorityLevel } from "./dnd.js";
 import { goalsOn, openGoalSheet } from "./goals.js";
 import { confirmRunAs } from "./people.js";
+import { openFeatureBrief } from "./planner.js";
 
 // ------------------------------------------------------------------ new / edit todo
 // A task's title, instructions and options can be edited while it is a draft,
@@ -54,6 +55,7 @@ export function openTodoForm(t = null, { pick = false } = {}) {
   $("#todo-clear").hidden = !!t;
   $("#todo-split").hidden = !split.splittable(t);
   $("#todo-goal").hidden = !!t || !goalsOn(state.project); // a goal is new work, not an edit of a task
+  $("#todo-brief").hidden = !!t || !briefsOn(state.project);
   if (t) {
     f.title.value = t.title;
     f.prompt.value = t.prompt;
@@ -113,6 +115,7 @@ export function openQuickAdd(texts = [""]) {
   quick.rows.replaceChildren();
   showRunnerNeeded($("#quick-runner-note"), state.project);
   $("#quick-goal").hidden = !goalsOn(state.project);
+  $("#quick-brief").hidden = !briefsOn(state.project);
   quick.sheet.returnValue = "";
   quick.sheet.showModal();
   texts.forEach((t) => quickAddRow(null, t));
@@ -202,10 +205,29 @@ $("#todo-goal").addEventListener("click", attempt(() => {
   openGoalSheet({ title, description });
 }));
 
+// Write a feature brief: what was typed is the idea; the brief goes onto a
+// new Planning card for the project. Its projects are the hub's own (a
+// runner's own project isn't on Planning).
+const briefsOn = (p) => !!p && !p.prefix;
+function featureBrief(idea) {
+  openFeatureBrief({ project: state.project.id, idea }).catch((e) => toast(e.message || String(e), true));
+}
+$("#quick-brief").addEventListener("click", () => {
+  const text = quickTexts().join("\n\n");
+  quick.sheet.close("brief");
+  featureBrief(text);
+});
+$("#todo-brief").addEventListener("click", () => {
+  const f = $("#todo-form");
+  const text = [f.title.value.trim(), f.prompt.value.trim()].filter(Boolean).join("\n\n");
+  $("#todo-sheet").close("brief");
+  featureBrief(text);
+});
+
 $("#todo-sheet").addEventListener("close", attempt(async () => {
   const action = $("#todo-sheet").returnValue;
   if (action === "split") return draft.done(); // saved as the split's tasks
-  if (action === "goal") return draft.close(); // kept, in case the goal isn't made
+  if (action === "goal" || action === "brief") return draft.close(); // kept, in case the goal or brief isn't made
   if (action !== "draft" && action !== "queue") {
     const kept = draft.has(draftKey(editing));
     draft.close();

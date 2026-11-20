@@ -155,7 +155,8 @@ Don't mix these up:
 - **Planning**: the org's board of cards, from Ideas to Done. Everyone uses it.
 - **Planner**: the role of someone who uses Planning only.
 - **Write a project brief** (in **+ Add project**): Claude interviews a developer about an idea
-  and starts a new project from the brief. Planners can't use it.
+  and starts a new project from the brief. **Write a feature brief** (on a Planning card) does
+  the same for a feature, onto the card. Planners can't use either.
 - A goal's **plan**: the tasks its coordinator proposes, which the goal's owner accepts. A
   planner who starts a goal names a developer as its owner (see [Start](planning.md#start)).
 

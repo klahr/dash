@@ -147,6 +147,13 @@ Linking work that has started moves the card to **In progress** if it was in **I
 a task moved back to drafts leaves its card in **In progress**. When everything linked is done, the card offers **Move to Done**. Dash never
 moves a card to **Done** on its own.
 
+## Write a feature brief
+
+Members can have Claude interview them about a card and write its description as a feature
+brief: **Write a feature brief** on the card, or **New card** then **Write a feature brief**.
+The brief's last step starts a task or a goal from the card, or saves it to **Planned**. See
+[Write a feature brief](plan-project.md#write-a-feature-brief). Planners don't have it.
+
 ## Start
 
 **Start…** on a card makes the work for it:

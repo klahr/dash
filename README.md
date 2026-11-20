@@ -268,7 +268,7 @@ limit (see **Claude usage**).
 - [Codex](docs/codex.md): run a project's tasks on OpenAI's Codex CLI instead of Claude Code, picked in **Project settings → Agent**, and what works differently
 - [Goals](docs/goals.md): a coordinator that plans, dispatches and reviews a goal's tasks, within a budget, and never merges
 - [Deploys](docs/deploys.md): environments, deploy records and the Deploys page; health checks, verify commands and rollback; roles, approvals, freezes, promotion and settings history; your scripts deploy, Dash tracks what is live where, and secrets stay on the runners
-- [Write a project brief](docs/plan-project.md): Claude interviews you about an idea, writes a brief, and Dash starts the project and a goal from it
+- [Write a project brief](docs/plan-project.md): Claude interviews you about an idea, writes a brief, and Dash starts the project and a goal from it; or a feature brief, onto a Planning card
 - [Planning](docs/planning.md): the org's plan for a product owner, cards from Ideas to Done that link to the tasks and goals carrying them out and show their status in plain words; planners see only this
 - [Users and organizations](docs/users.md): accounts, roles (including planners, who use Planning only), invitations, two-factor sign-in
 - [Your data, terms and privacy](docs/privacy.md): download what Dash keeps about you, delete your account, what to publish before strangers sign up (with starter terms and a privacy policy the hub can serve), and what a hub stores

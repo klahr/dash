@@ -1,7 +1,8 @@
 import { $ } from "./dom.js";
 import { state } from "./state.js";
 import { fail } from "./dialogs.js";
-import { mountPlanning, planningShown } from "./planning.js";
+import { loadPlanning, mountPlanning, openCard, planningShown } from "./planning.js";
+import { openFeatureBrief } from "./planner.js";
 import { selectProject } from "./projects.js";
 import { detailBackground, openDetail } from "./detail.js";
 import { showGoal } from "./goals.js";
@@ -21,6 +22,9 @@ mountPlanning($("#view-planning"), {
     me: () => (state.me?.user ? { id: state.me.user.id, admin: ["owner", "admin"].includes(state.me.org?.role) } : null),
     openWork: (l) => openWork(l).catch(fail),
     askChat: (c) => askAboutCard(c).catch(fail),
+    // The brief lands on the card, which Planning shows open.
+    featureBrief: ({ card, project, idea }) => openFeatureBrief({ card, project, idea,
+      onDone: (c) => loadPlanning().then(() => openCard(c.id)).catch(fail) }).catch(fail),
   },
 });
 // A reload that lands on Planning (the saved view) showed it in nav.js

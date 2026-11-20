@@ -24,7 +24,7 @@ type fakePlanner struct {
 	fail    error
 }
 
-func (f *fakePlanner) Plan(_ context.Context, in string) (string, error) {
+func (f *fakePlanner) Plan(_ context.Context, kind, in string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.inputs = append(f.inputs, in)

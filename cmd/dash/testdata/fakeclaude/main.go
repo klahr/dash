@@ -70,6 +70,20 @@ func main() {
 				`"open_questions": [], "verdict": {"ready": true, "summary": "Enough to start.", "can_wait": ["Hosting"]}}`)
 			return
 		}
+		// A feature brief's interviewer: the same, with a feature's topics.
+		if i := slices.Index(args, "--system-prompt"); i >= 0 && i+1 < len(args) && strings.Contains(args[i+1], "feature brief") {
+			if strings.Contains(string(stdin), "Start the interview") {
+				fmt.Println(`{"note": "You didn't say who may use it: everyone, or admins only?", "questions": [{"id": "r1q1", "topic": "problem", ` +
+					`"text": "Who may use it?", "default": "Everyone", "options": ["Everyone", "Admins only"], "missing": true}], ` +
+					`"topics": [{"id": "behaviour", "status": "done"}], "brief": "# Fake feature\nA thing.\n## Problem & who it's for\n_Open:_ who", ` +
+					`"open_questions": ["Who?"], "verdict": {"ready": false, "summary": "Who is open."}}`)
+				return
+			}
+			fmt.Println(`{"note": "That's enough to build it.", "questions": [], "topics": [{"id": "problem", "status": "done"}], ` +
+				`"brief": "# Fake feature\nA thing.\n## Problem & who it's for\nEveryone.\n## Done when\nA test passes.", ` +
+				`"open_questions": [], "verdict": {"ready": true, "summary": "Enough to build it."}}`)
+			return
+		}
 		// A split's system prompt asks for JSON: two tasks, the second
 		// building on the first.
 		if i := slices.Index(args, "--system-prompt"); i >= 0 && i+1 < len(args) && strings.Contains(args[i+1], "JSON") {

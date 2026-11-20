@@ -810,6 +810,7 @@
       <div class="quick-tools">
         <button class="link" type="button" id="quick-another" data-icon="plus">Another task</button>
         <button class="link" type="button" id="quick-goal" data-icon="target">New goal…</button>
+        <button class="link" type="button" id="quick-brief" data-icon="spark" title="Claude interviews you about it and writes a brief onto a Planning card">Write a feature brief</button>
         <button class="link" type="button" id="quick-more" data-icon="edit">More options…</button>
       </div>
       <footer class="sheet-actions">
@@ -833,6 +834,7 @@
         <button class="btn small attach-btn" type="button" id="todo-refine" data-icon="wand" title="Rewrite the instructions without the chatter, e.g. after pasting a chat answer">Clean up</button>
         <button class="btn small attach-btn" type="button" id="todo-split" data-icon="split" title="Claude proposes smaller tasks to do this in; you edit and confirm them">Split…</button>
         <button class="btn small attach-btn" type="button" id="todo-goal" data-icon="target">New goal…</button>
+        <button class="btn small attach-btn" type="button" id="todo-brief" data-icon="spark" title="Claude interviews you about it and writes a brief onto a Planning card">Write a feature brief</button>
       </div>
       <div class="attach" id="todo-attach" data-attach></div>
       <div class="field-row">
@@ -892,6 +894,17 @@
     </form>
   </dialog>
 
+  <!-- Write a feature brief: the project brief's planner (app/planner.js moves #plan-home,
+       #plan-work, #plan-back and #plan-next in here while it shows), for a feature of a
+       project, onto a Planning card. -->
+  <dialog class="sheet plan-sheet" id="feature-sheet" aria-labelledby="feature-title">
+    <form method="dialog" id="feature-form">
+      <header class="sheet-head"><h2 id="feature-title">Write a feature brief</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
+      <div class="plan-main" id="feature-main"><div id="feature-slot"></div></div>
+      <footer class="sheet-actions" id="feature-actions"></footer>
+    </form>
+  </dialog>
+
   <!-- Add project: where the repository comes from down a rail (like Settings), only that
        choice's fields beside it, and the linking's progress in their place once submitted
        (app/projects.js). Every project is on a runner: a git remote its runners clone, or a
@@ -922,10 +935,13 @@
         <div class="rail-main" id="new-project-main">
           <div id="new-project-fields">
             <!-- Write a project brief (app/planner.js): an idea, Claude's interview, the brief,
-                 then one of the sources below for the repository, and Launch. -->
-            <section class="rail-section" data-section="plan">
+                 then one of the sources below for the repository, and Launch. The same markup
+                 writes a feature brief in #feature-sheet (planner.js moves it there): what
+                 differs by kind is marked data-kind, and its last step is Start. -->
+            <section class="rail-section" data-section="plan" id="plan-slot">
               <div class="plan-home" id="plan-home">
-                <p class="hint np-lead">Claude asks about what you haven't decided yet and writes a brief to start the project from. <a data-docs="plan-project.md" target="_blank" rel="noopener">Learn more</a></p>
+                <p class="hint np-lead" data-kind="project">Claude asks about what you haven't decided yet and writes a brief to start the project from. <a data-docs="plan-project.md" target="_blank" rel="noopener">Learn more</a></p>
+                <p class="hint np-lead" data-kind="feature" hidden>Claude asks about what you haven't decided yet, reads the project's CLAUDE.md, README and files, and writes the brief onto a Planning card. <a data-docs="plan-project.md#write-a-feature-brief" target="_blank" rel="noopener">Learn more</a></p>
                 <button type="button" class="btn primary plan-new" id="plan-new" data-icon="spark">New brief</button>
                 <h3 class="plan-drafts-head" id="plan-drafts-head" hidden>Drafts</h3>
                 <ul class="plan-drafts" id="plan-drafts"></ul>
@@ -937,8 +953,11 @@
                   <p class="plan-stepper-compact" id="plan-stepper-compact" aria-hidden="true"></p>
                 </div>
                 <div class="plan-pane" data-step="idea">
-                  <label class="field"><span>Your idea</span><textarea id="plan-idea" rows="4" maxlength="2000" placeholder="e.g. A web app where my climbing club logs routes and sees who climbed what."></textarea></label>
-                  <label class="field"><span>Project name <em>optional</em></span><input id="plan-name" maxlength="100" autocomplete="off" spellcheck="false" placeholder="e.g. cragbook"></label>
+                  <label class="field" data-kind="feature" hidden><span>Project</span><select id="plan-project"></select></label>
+                  <label class="field"><span>Your idea</span><textarea id="plan-idea" rows="4" maxlength="2000" placeholder="e.g. A web app where my climbing club logs routes and sees who climbed what."
+                    data-feature-placeholder="e.g. Let people export the board as a CSV file, with each task's status and who did it."></textarea></label>
+                  <label class="field"><span><span data-kind="project">Project name</span><span data-kind="feature" hidden>Feature name</span> <em>optional</em></span><input id="plan-name" maxlength="100" autocomplete="off" spellcheck="false" placeholder="e.g. cragbook" data-feature-placeholder="e.g. CSV export"></label>
+                  <p class="hint" id="plan-card" data-kind="feature" hidden></p>
                   <p class="hint" id="plan-where"></p>
                 </div>
                 <div class="plan-pane" data-step="interview">
@@ -978,6 +997,17 @@
                   <p class="hint">Launch commits these two files and starts a goal that proposes the first tasks.</p>
                   <details class="np-advanced"><summary>BRIEF.md</summary><div class="md plan-brief-md" id="plan-launch-brief"></div></details>
                   <details class="np-advanced"><summary>CLAUDE.md</summary><div class="md plan-brief-md" id="plan-launch-claude"></div></details>
+                </div>
+                <div class="plan-pane" data-step="start">
+                  <dl class="plan-summary" id="plan-start-summary"></dl>
+                  <p class="hint">The brief becomes the card's description.</p>
+                  <fieldset class="field choice plan-start-choice">
+                    <legend>What to start</legend>
+                    <label class="radio"><input type="radio" name="plan-start" value="task" checked><span>A task <em>one piece of work, queued for Claude now</em></span></label>
+                    <label class="radio"><input type="radio" name="plan-start" value="goal"><span>A goal <em>something bigger: a coordinator breaks it into tasks</em></span></label>
+                    <label class="radio"><input type="radio" name="plan-start" value="planned"><span>Save to Planned <em>nothing starts yet: Start it from the card later</em></span></label>
+                  </fieldset>
+                  <p class="hint">A task or a goal is linked to the card, like <strong>Start…</strong> on a card. Nothing is committed to the repository.</p>
                 </div>
               </div>
             </section>

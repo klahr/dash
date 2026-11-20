@@ -1242,6 +1242,22 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   #new-project-sheet .sheet-actions #plan-back { margin: 0 auto 0 0; min-width: 0; }
 }
 
+/* The Feature brief sheet: the same planner (app/planner.js moves it in),
+   on its own: no rail, the steps across the top, Back and Next below. */
+.sheet.plan-sheet { height: calc(92dvh - var(--kb-h, 0px)); }
+.sheet.plan-sheet[open] { display: flex; flex-direction: column; overflow: hidden; }
+.plan-sheet > form { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.plan-sheet .sheet-head { flex: none; margin: 0 -16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.plan-main { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -16px; padding: 14px var(--sp-4) var(--sp-4); }
+.plan-sheet > form > .sheet-actions { flex: none; margin: 0 -16px; padding: 12px 16px 0; border-top: 1px solid var(--line); }
+.plan-start-choice { margin-top: 4px; }
+@media (min-width: 640px) { .sheet.plan-sheet { height: min(860px, calc(92dvh - var(--kb-h, 0px))); } }
+@media (min-width: 760px) {
+  .sheet.plan-sheet { max-width: 1180px; }
+  .plan-sheet .sheet-actions .btn { flex: 0 1 auto; margin-left: auto; min-width: 200px; }
+  .plan-sheet .sheet-actions #plan-back { margin: 0 auto 0 0; min-width: 0; }
+}
+
 /* ---------- quick add (FAB, n) ---------- */
 .quick-rows { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 0; }
 /* One line per task; a multi-line paste grows the field (app/todos.js sizes it). */
@@ -3620,6 +3636,7 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-card.pl-composer .todo, .pl-card.pl-composer .todo:hover { background: var(--surface); box-shadow: none; cursor: text; -webkit-user-select: text; user-select: text; }
 .pl-card.pl-composer .todo:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .pl-composer[aria-busy="true"] .todo { opacity: .7; }
+.pl-compose-brief { min-height: 32px; margin-top: 4px; padding: 0 2px; font-size: var(--fs-s); }
 .pl-compose-text {
   display: block; width: 100%; min-height: 0; max-height: 40vh; margin: 0; padding: 0; border: 0; border-radius: 0;
   background: transparent; box-shadow: none; outline: none; resize: none; overflow-y: auto;

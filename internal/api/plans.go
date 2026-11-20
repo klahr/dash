@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -23,16 +25,31 @@ import (
 // the answers come in. The plan is kept on this Dash (the hub), one user's
 // in one org, so a draft survives a reload and can be picked up later.
 //
+// The same guide writes a feature brief (a plan of kind feature,
+// model.PlanKinds): for a project, onto a Planning card. What differs by
+// kind is in model.PlanKinds; the routes, the interview and its JSON are
+// the same.
+//
 // Each interview round is one of Claude's short calls (claude.go): on a
 // hub it runs on the caller's own runner, the first of theirs online, with
-// that runner's `claude` login, like titles and splitting a task. It needs
-// no project, so no runner linked to one.
+// that runner's `claude` login, like titles and splitting a task. A project
+// plan needs no project, so no runner linked to one; a feature plan's round
+// also sends its project's CLAUDE.md, README and file tree (featureContext),
+// read from one of the project's runners.
 //
-// Launching is the browser's: it adds the project the way Add project does
-// (the same calls), then commits BRIEF.md and a starter CLAUDE.md
-// (POST /api/projects/{pid}/brief), starts a goal from the brief (POST
-// /api/goals), and marks the plan launched. GET …/launch gives it the
-// files and the goal's text.
+// Launching a project plan is the browser's: it adds the project the way
+// Add project does (the same calls), then commits BRIEF.md and a starter
+// CLAUDE.md (POST /api/projects/{pid}/brief), starts a goal from the brief
+// (POST /api/goals), and marks the plan launched. GET …/launch gives it the
+// files and the goal's text. A feature plan launches here (POST …/feature):
+// the brief becomes its card's description, and the card's Start makes a
+// task or a goal from it, or the card waits in Planned. Nothing is
+// committed.
+//
+// Plans are for members: a planner is refused every route here by
+// plannerGate, as these aren't in plannerRoutes. To open the feature guide
+// to planners, add the plan routes there; planService is where a check of
+// the caller would go.
 
 func (s *Server) planRoutes(mux routeMux) {
 	mux.HandleFunc("GET /api/plans", s.listPlans)
@@ -43,6 +60,7 @@ func (s *Server) planRoutes(mux routeMux) {
 	mux.HandleFunc("POST /api/plans/{id}/interview", s.interviewPlan)
 	mux.HandleFunc("GET /api/plans/{id}/launch", s.planLaunch)
 	mux.HandleFunc("POST /api/plans/{id}/launched", s.planLaunched)
+	mux.HandleFunc("POST /api/plans/{id}/feature", s.launchFeature)
 	mux.HandleFunc("POST /api/projects/{pid}/brief", s.commitBrief)
 }
 
@@ -103,15 +121,38 @@ func (s *Server) createPlan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	var req planRequest
+	// A plan's kind, and a feature plan's project and card, are set once,
+	// here.
+	var req struct {
+		planRequest
+		Kind    string `json:"kind"`
+		Project string `json:"project"`
+		Card    string `json:"card"`
+	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	p := model.Plan{Topics: model.NewPlanTopics(), Rounds: []model.PlanRound{}}
+	p := model.Plan{Kind: req.Kind, Rounds: []model.PlanRound{}}
+	if p.Kind == model.PlanFeature {
+		if err := sv.fromCard(&p, req.Card); err != nil {
+			writeErr(w, err)
+			return
+		}
+	} else if req.Project != "" || req.Card != "" {
+		writeErr(w, fmt.Errorf("%w: only a feature's brief is for a project or a card", errBadRequest))
+		return
+	}
 	if err := req.apply(&p); err != nil {
 		writeErr(w, err)
 		return
+	}
+	p.Topics = model.KindOf(p).NewTopics()
+	if p.Feature() {
+		if err := sv.featureCard(&p, req.Project); err != nil {
+			writeErr(w, err)
+			return
+		}
 	}
 	p, err := sv.data.CreatePlan(p)
 	if err != nil {
@@ -119,6 +160,73 @@ func (s *Server) createPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, p)
+}
+
+// fromCard starts feature plan p from the card id ("" for none): its title
+// is the feature's name, and its description the idea, or the brief to
+// refine when it is longer than an idea. Given name and idea (applied
+// after) take their place.
+func (sv *service) fromCard(p *model.Plan, id string) error {
+	if id == "" {
+		return nil
+	}
+	c, err := sv.data.GetCard(id)
+	if err != nil {
+		return err
+	}
+	p.CardID, p.ProjectID = c.ID, c.ProjectID
+	p.Name = clipBrief(strings.TrimSpace(c.Title), model.MaxPlanName)
+	switch desc := strings.TrimSpace(c.Description); {
+	case desc == "":
+		p.Idea = c.Title
+	case len(desc) <= model.MaxPlanIdea:
+		p.Idea = desc
+	default:
+		p.Idea = clipBrief(c.Title, model.MaxPlanIdea)
+		p.Brief = clipBrief(desc, model.MaxPlanBrief)
+	}
+	return nil
+}
+
+// featureCard sets feature plan p's project (project, or its card's) and
+// makes its card when it has none: in Ideas, named after the plan, with the
+// idea as its description, until the brief takes its place.
+func (sv *service) featureCard(p *model.Plan, project string) error {
+	if project == "" {
+		project = p.ProjectID
+	}
+	if project == "" {
+		return fmt.Errorf("%w: choose the project the feature is for", errBadRequest)
+	}
+	pr, err := sv.data.GetProject(project)
+	if err != nil {
+		return err
+	}
+	p.ProjectID = pr.ID
+	if p.CardID != "" {
+		return nil
+	}
+	title := featureTitle(*p)
+	if title == "" {
+		return fmt.Errorf("%w: describe the idea first", errBadRequest)
+	}
+	col := string(model.CardIdeas)
+	c, err := sv.createCard(cardRequest{Title: &title, Description: &p.Idea, Project: &p.ProjectID, Column: &col})
+	if err != nil {
+		return err
+	}
+	p.CardID, p.CardMade = c.ID, true
+	return nil
+}
+
+// featureTitle is a card's title for feature plan p: its name, its brief's
+// title or its idea's start ("" for none of them).
+func featureTitle(p model.Plan) string {
+	t := planName(p)
+	if p.Name == "" && p.Brief == "" && strings.TrimSpace(p.Idea) == "" {
+		t = ""
+	}
+	return clipBrief(t, model.MaxCardTitle)
 }
 
 func (s *Server) getPlan(w http.ResponseWriter, r *http.Request) {
@@ -214,8 +322,13 @@ func (s *Server) interviewPlan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	out, err := sv.planCall(r.Context(), agent.PlanInput(next))
-	if errors.Is(err, errNoPlanner) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) {
+	kind := model.KindOf(next)
+	var pc *agent.PlanContext
+	if next.Feature() {
+		pc = sv.featureContext(r.Context(), next.ProjectID)
+	}
+	out, err := sv.planCall(r.Context(), kind.ID, agent.PlanInputWith(next, pc))
+	if errors.Is(err, errNoPlanner) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) || errors.Is(err, errOldRunner) {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
@@ -225,7 +338,7 @@ func (s *Server) interviewPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	turn, err := agent.ParsePlanTurn(out)
 	if err == nil {
-		turn, err = model.CleanPlanTurn(turn, next.Topics)
+		turn, err = kind.CleanTurn(turn, next.Topics)
 	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error()+". Try again.")
@@ -237,8 +350,8 @@ func (s *Server) interviewPlan(w http.ResponseWriter, r *http.Request) {
 		}
 		p.Rounds = append(next.Rounds, model.PlanRound{Note: turn.Note, Questions: turn.Questions, At: now()})
 		p.Topics, p.Brief, p.Open, p.Verdict = turn.Topics, turn.Brief, turn.Open, turn.Verdict
-		if p.Step == model.PlanSteps[0] {
-			p.Step = model.PlanSteps[1]
+		if steps := model.KindOf(*p).Steps; p.Step == steps[0] {
+			p.Step = steps[1]
 		}
 		return nil
 	})
@@ -292,15 +405,79 @@ func answerRound(p model.Plan, answers []model.PlanAnswer, message string) (mode
 	return p, nil
 }
 
-// planCall runs one interview round: here, or on the caller's runner.
-func (sv *service) planCall(ctx context.Context, input string) (string, error) {
+// errOldRunner: the caller's runner is from before feature briefs.
+var errOldRunner = errors.New("your runner is from before feature briefs: update Dash on it to write one")
+
+// planCall runs one interview round of a plan of kind: here, or on the
+// caller's runner (POST /api/hub/claude/plan for a project's, as before
+// kinds; plan-<kind> for another kind's).
+func (sv *service) planCall(ctx context.Context, kind, input string) (string, error) {
 	if !sv.s.hub() {
 		if sv.s.Small == nil {
 			return "", errNoPlanner
 		}
-		return sv.s.Small.Plan(ctx, input)
+		return sv.s.Small.Plan(ctx, kind, input)
 	}
-	return sv.smallCall(ctx, "plan", input)
+	call := "plan"
+	if kind != model.PlanProject {
+		call += "-" + kind
+	}
+	out, err := sv.smallCall(ctx, call, input)
+	var ce *tunnel.CallError
+	if call != "plan" && errors.As(err, &ce) && ce.Status == http.StatusNotFound {
+		return "", errOldRunner
+	}
+	return out, err
+}
+
+// featureContext is what a feature plan's interviewer reads of its project
+// (agent.PlanContext): CLAUDE.md, the README and the files on its default
+// branch, here or, on a hub, read on one of the project's runners. What
+// can't be read is left out, and the round goes on without it.
+func (sv *service) featureContext(ctx context.Context, projectID string) *agent.PlanContext {
+	p, err := sv.data.GetProject(projectID)
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	pc := &agent.PlanContext{Project: p.Name}
+	read := func(name string) string {
+		var f fileContent
+		var err error
+		if sv.s.hub() {
+			err = sv.callRunner(ctx, p, http.MethodGet, "/file?path="+url.QueryEscape(name), nil, &f)
+		} else {
+			f, _, err = sv.s.branchFile(ctx, p, name)
+		}
+		if err != nil || f.Content == nil {
+			return ""
+		}
+		return *f.Content
+	}
+	if sv.s.hub() {
+		var out struct {
+			Files []string `json:"files"`
+		}
+		if err := sv.callRunner(ctx, p, http.MethodGet, "/files", nil, &out); err != nil {
+			slog.Debug("feature brief: the project's files", "project", p.ID, "err", err)
+			return pc
+		}
+		pc.Files = out.Files
+	} else if sv.s.Git != nil {
+		if pc.Files, err = sv.s.Git.Files(ctx, p.ID, p.Path, p.Base()); err != nil {
+			return pc
+		}
+	}
+	for _, f := range pc.Files {
+		switch base := strings.ToLower(f); {
+		case f == "CLAUDE.md":
+			pc.ClaudeMD = read(f)
+		case pc.Readme == "" && (base == "readme" || strings.HasPrefix(base, "readme.")):
+			pc.Readme = read(f)
+		}
+	}
+	return pc
 }
 
 // planLaunchView is what launching a plan commits and starts: BRIEF.md and
@@ -325,6 +502,10 @@ func (s *Server) planLaunch(w http.ResponseWriter, r *http.Request) {
 	p, err := sv.data.GetPlan(r.PathValue("id"))
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if p.Feature() {
+		writeErr(w, errFeatureLaunch)
 		return
 	}
 	if strings.TrimSpace(p.Brief) == "" {
@@ -376,7 +557,7 @@ func planName(p model.Plan) string {
 	if t := plainTitle(p.Idea); t != "" {
 		return t
 	}
-	return "the project"
+	return "the " + model.KindOf(p).Prompt.Noun
 }
 
 // briefSection is the body of the brief's "## title" section ("" if it
@@ -452,6 +633,9 @@ func (s *Server) planLaunched(w http.ResponseWriter, r *http.Request) {
 	p, err := sv.data.UpdatePlan(r.PathValue("id"), func(p *model.Plan) error {
 		if p.LaunchedAt != nil {
 			return errPlanLaunched
+		}
+		if p.Feature() {
+			return errFeatureLaunch
 		}
 		at := now()
 		p.ProjectID, p.GoalID, p.LaunchedAt, p.Step = req.ProjectID, req.GoalID, &at, model.PlanSteps[len(model.PlanSteps)-1]
@@ -537,4 +721,135 @@ func (s *Server) commitBrief(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// errFeatureLaunch: a feature plan launches with POST …/feature.
+var errFeatureLaunch = fmt.Errorf("%w: a feature brief goes onto its card: POST /api/plans/{id}/feature", errBadRequest)
+
+// launching holds the plans being launched: one launch at a time per plan
+// (a second would start the same work twice).
+var launching sync.Map
+
+// launchFeature handles POST /api/plans/{id}/feature: {"start": "task",
+// "goal" or "planned"}. The brief becomes the plan's card's description (a
+// new card in Ideas if the card is gone), and then the card's Start makes a
+// task or a goal from it in the plan's project (startCard: linked to the
+// card, which moves to In progress), or, for "planned", the card moves to
+// Planned. The plan leaves the drafts. It answers {"plan", "card"}.
+func (s *Server) launchFeature(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.planService(w, r)
+	if !ok {
+		return
+	}
+	if err := sv.writable(); err != nil {
+		writeErr(w, err)
+		return
+	}
+	var req struct {
+		Start string `json:"start"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if req.Start != model.LinkTask && req.Start != model.LinkGoal && req.Start != string(model.CardPlanned) {
+		writeErr(w, fmt.Errorf("%w: start a task or a goal, or save the card to Planned", errBadRequest))
+		return
+	}
+	id := r.PathValue("id")
+	if _, busy := launching.LoadOrStore(id, true); busy {
+		writeErr(w, fmt.Errorf("%w: this brief is being started already", errConflict))
+		return
+	}
+	defer launching.Delete(id)
+	p, err := sv.data.GetPlan(id)
+	switch {
+	case err != nil:
+	case !p.Feature():
+		err = fmt.Errorf("%w: this is a project's brief: launch it from Add project", errBadRequest)
+	case p.LaunchedAt != nil:
+		err = errPlanLaunched
+	case strings.TrimSpace(p.Brief) == "":
+		err = fmt.Errorf("%w: the plan has no brief yet", errBadRequest)
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	cardID, err := sv.briefOnCard(p)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	var work string
+	if req.Start == string(model.CardPlanned) {
+		err = sv.planCard(cardID)
+	} else {
+		work, err = sv.startCard(cardID, p.ProjectID, req.Start, 0, 0)
+	}
+	if err != nil && work == "" {
+		// The card has the brief: the plan stays a draft, to start it again.
+		_, _ = sv.data.UpdatePlan(id, func(x *model.Plan) error { x.CardID = cardID; return nil })
+		writeErr(w, err)
+		return
+	}
+	p, err = sv.data.UpdatePlan(id, func(x *model.Plan) error {
+		at := now()
+		x.CardID, x.LaunchedAt, x.Step = cardID, &at, model.KindOf(*x).Steps[len(model.KindOf(*x).Steps)-1]
+		switch req.Start {
+		case model.LinkTask:
+			x.TaskID = work
+		case model.LinkGoal:
+			x.GoalID = work
+		}
+		return nil
+	})
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	v, err := sv.cardView(r.Context(), cardID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"plan": p, "card": v})
+}
+
+// briefOnCard puts feature plan p's brief on its card as the description,
+// and returns the card's id: p's card, or a new one in Ideas when p has
+// none or it was deleted since. A card the plan made is named after the
+// brief too, and a card of no project gets the plan's.
+func (sv *service) briefOnCard(p model.Plan) (string, error) {
+	desc := clipBrief(strings.TrimSpace(p.Brief), model.MaxCardDescription)
+	title := featureTitle(p)
+	if p.CardID != "" {
+		c, err := sv.data.GetCard(p.CardID)
+		if err == nil {
+			req := cardRequest{Description: &desc}
+			if p.CardMade && title != "" {
+				req.Title = &title
+			}
+			if c.ProjectID == "" {
+				req.Project = &p.ProjectID
+			}
+			return c.ID, sv.updateCard(c.ID, req)
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return "", err
+		}
+	}
+	col := string(model.CardIdeas)
+	c, err := sv.createCard(cardRequest{Title: &title, Description: &desc, Project: &p.ProjectID, Column: &col})
+	return c.ID, err
+}
+
+// planCard moves a card in Ideas to Planned: its brief is ready, for
+// someone to start later. A card further on stays where it is.
+func (sv *service) planCard(id string) error {
+	c, err := sv.data.GetCard(id)
+	if err != nil || c.Column != model.CardIdeas {
+		return err
+	}
+	return sv.moveCard(id, string(model.CardPlanned), nil)
 }
