@@ -108,12 +108,15 @@ stored. It says, for example:
 | Status                    | When                                                           |
 |---------------------------|----------------------------------------------------------------|
 | Nothing started yet       | nothing is linked                                              |
-| Not started               | the linked tasks are drafts                                    |
-| In progress               | work is queued or running                                      |
+| Not started               | the linked tasks are drafts that never ran                     |
+| Waiting to start          | the linked work is queued and nothing else is running          |
+| In progress               | work is running, or some of it is done                         |
 | Waiting for review        | a developer has to review a task                               |
 | Waiting for a decision    | a goal waits for someone to accept its plan or answer it       |
+| Out of budget, needs its owner | a goal used up its budget                                 |
 | Failed, needs a developer | a linked task failed                                           |
-| All done                  | every task is merged and every goal is done                    |
+| Stopped                   | a goal was stopped, or a task that ran was moved back to drafts |
+| All done                  | every task is merged and every goal is finished                |
 | Shipped in 1.4.0          | all of it is in a release (the first release tag that has it)  |
 | Live in production since 4 Nov 2026 | all of it is deployed and live in an environment     |
 
@@ -132,7 +135,8 @@ The card shows only owner-facing words: titles and states. It never shows branch
 worktrees, diffs or runners.
 
 Linking work that has started moves the card to **In progress** if it was in **Ideas** or
-**Planned**. When everything linked is done, the card offers **Move to Done**. Dash never
+**Planned**. So does a linked draft task that is queued later. Dash never moves a card back:
+a task moved back to drafts leaves its card in **In progress**. When everything linked is done, the card offers **Move to Done**. Dash never
 moves a card to **Done** on its own.
 
 ## Start

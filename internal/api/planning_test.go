@@ -484,3 +484,90 @@ func TestPlanningCardFiles(t *testing.T) {
 		t.Errorf("remove again: %d", w.Code)
 	}
 }
+
+// A card's status names what its work is waiting on: queued work is
+// "Waiting to start" on its line and on the card alike; a stopped goal or a
+// task stopped back to a draft is "Stopped", never done; a goal out of
+// budget says so. A draft linked to a planned card moves the card to In
+// progress once it is queued.
+func TestPlanningCardStatusWords(t *testing.T) {
+	s, _, p := boardServer(t)
+	h := s.Routes()
+	a := loggedIn(t, h)
+	card := func(title string) cardView {
+		t.Helper()
+		w := do(t, a, "POST", "/api/planning/cards", `{"title":"`+title+`"}`)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create: %d %s", w.Code, w.Body)
+		}
+		c := decodeCard(t, w)
+		if w := do(t, a, "POST", "/api/planning/cards/"+c.ID+"/move", `{"column":"planned","position":0}`); w.Code != http.StatusOK {
+			t.Fatalf("move: %d %s", w.Code, w.Body)
+		}
+		return c
+	}
+	link := func(c cardView, kind, id string) cardView {
+		t.Helper()
+		w := do(t, a, "POST", "/api/planning/cards/"+c.ID+"/links", `{"kind":"`+kind+`","id":"`+id+`"}`)
+		if w.Code != http.StatusOK {
+			t.Fatalf("link: %d %s", w.Code, w.Body)
+		}
+		return decodeCard(t, w)
+	}
+	get := func(c cardView) cardView {
+		return decodeCard(t, do(t, a, "GET", "/api/planning/cards/"+c.ID, ""))
+	}
+
+	// A draft linked later, then queued: the card moves, and says the same
+	// as its line.
+	c := card("Dark mode")
+	td, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Dark mode", Prompt: "dark"})
+	if got := link(c, model.LinkTask, td.ID); got.Column != model.CardPlanned || got.Status.Text != "Not started" {
+		t.Fatalf("draft linked: %s %+v", got.Column, got.Status)
+	}
+	td, err := raw(s).SetStatus(td.ID, model.StatusQueued, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ObservePlanning(model.Event{Type: model.EvTodoUpdated, TodoID: td.ID, Data: td})
+	deadline := time.Now().Add(5 * time.Second)
+	for get(c).Column != model.CardInProgress && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	got := get(c)
+	if got.Column != model.CardInProgress || got.Status.Text != "Waiting to start" || got.Links[0].State != "Waiting to start" {
+		t.Errorf("queued: %s %+v %+v", got.Column, got.Status, got.Links)
+	}
+	// Ran, then stopped back to a draft.
+	if _, err := raw(s).UpdateTodo(td.ID, func(x *model.Todo) error { x.Status, x.Runs = model.StatusDraft, 1; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if got := get(c); got.Status.Text != "Stopped" || got.Links[0].State != "Stopped" {
+		t.Errorf("stopped task: %+v %+v", got.Status, got.Links)
+	}
+
+	// Goals: stopped by the user, out of budget, finished.
+	g, err := raw(s).CreateGoal(model.Goal{ProjectID: p.ID, Owner: testOwner(t, s).User, Title: "Faster search", Mode: model.GoalQueue, Status: model.GoalWorking})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c = card("Faster search")
+	link(c, model.LinkGoal, g.ID)
+	for _, step := range []struct {
+		set     func(*model.Goal)
+		text    string
+		suggest bool
+	}{
+		{func(x *model.Goal) { x.Status = model.GoalOutOfBudget }, "Out of budget, needs its owner", false},
+		{func(x *model.Goal) { x.Status, x.Note, x.Stopped = model.GoalDone, model.GoalStoppedNote, true }, "Stopped", false},
+		{func(x *model.Goal) { x.Status, x.Note, x.Stopped = model.GoalDone, "All shipped.", false }, "All done", true},
+	} {
+		if _, err := raw(s).UpdateGoal(g.ID, func(x *model.Goal) error { step.set(x); return nil }); err != nil {
+			t.Fatal(err)
+		}
+		got := get(c)
+		if got.Status.Text != step.text || got.Status.SuggestDone != step.suggest {
+			t.Errorf("want %q: %+v %+v", step.text, got.Status, got.Links)
+		}
+	}
+}

@@ -97,6 +97,9 @@ type linkView struct {
 	done    bool
 	failed  bool
 	started bool
+	queued  bool // a task waiting to start
+	stopped bool // a goal the user stopped, or a task stopped back to a draft
+	budget  bool // a goal out of budget
 }
 
 // cardView is a card as the API answers it.
@@ -185,6 +188,9 @@ func (sv *service) planningWork(ctx context.Context) *planningWork {
 func taskState(t model.Todo) (state, tone string) {
 	switch t.Status {
 	case model.StatusDraft:
+		if t.Runs > 0 {
+			return "Stopped", "idle" // it ran, and was stopped back to a draft
+		}
 		return "Not started", "idle"
 	case model.StatusQueued:
 		return "Waiting to start", "idle"
@@ -217,7 +223,12 @@ func goalState(g model.Goal) (state, tone string) {
 	case model.GoalPaused:
 		return "Paused", "idle"
 	case model.GoalDone:
+		if g.WasStopped() {
+			return "Stopped", "idle"
+		}
 		return "Done", "done"
+	case model.GoalOutOfBudget:
+		return "Out of budget, needs its owner", "waiting"
 	}
 	return "In progress", "working"
 }
@@ -236,6 +247,8 @@ func (w *planningWork) link(l model.CardLink) linkView {
 		v.State, v.Tone = taskState(t)
 		v.done, v.failed = t.Status == model.StatusMerged, t.Status == model.StatusFailed
 		v.started = t.Status != model.StatusDraft
+		v.queued = t.Status == model.StatusQueued
+		v.stopped = t.Status == model.StatusDraft && t.Runs > 0
 		if v.done {
 			v.Shipped = w.shipped([]model.Todo{t})
 			v.lives = w.liveTask(t)
@@ -251,10 +264,14 @@ func (w *planningWork) link(l model.CardLink) linkView {
 		for _, t := range tasks {
 			v.failed = v.failed || t.Status == model.StatusFailed
 		}
-		if v.failed && g.Status != model.GoalDone {
+		if g.Status == model.GoalDone {
+			v.failed = false // a done or stopped goal's failed task is not what the card waits on
+		} else if v.failed {
 			v.State, v.Tone = "Failed, needs a developer", "failed"
 		}
-		v.done, v.started = g.Status == model.GoalDone, true
+		v.stopped = g.WasStopped()
+		v.budget = g.Status == model.GoalOutOfBudget
+		v.done, v.started = g.Status == model.GoalDone && !v.stopped, true
 		if v.done {
 			var merged []model.Todo
 			for _, t := range tasks {
@@ -376,7 +393,7 @@ func status(c model.Card, links []linkView) cardStatus {
 		st.Text, st.Tone = "Nothing started yet", "none"
 		return st
 	}
-	var failed, waiting, review, started int
+	var failed, waiting, review, budget, working, queued, stopped int
 	shipped, allShipped := "", true
 	var lives [][]liveIn
 	for _, l := range links {
@@ -391,9 +408,15 @@ func status(c model.Card, links []linkView) cardStatus {
 			if l.State == "Waiting for review" {
 				review++
 			}
-		}
-		if l.started {
-			started++
+			if l.budget {
+				budget++
+			}
+		case l.queued:
+			queued++
+		case l.stopped:
+			stopped++
+		case l.started:
+			working++
 		}
 		if l.Shipped == "" {
 			allShipped = false
@@ -416,10 +439,18 @@ func status(c model.Card, links []linkView) cardStatus {
 		st.Text, st.Tone = "All done", "done"
 	case review > 0 && review == waiting:
 		st.Text, st.Tone = "Waiting for review", "waiting"
+	case budget > 0 && budget == waiting:
+		st.Text, st.Tone = "Out of budget, needs its owner", "waiting"
 	case waiting > 0:
 		st.Text, st.Tone = "Waiting for a decision", "waiting"
-	case started > 0:
+	case working > 0:
 		st.Text, st.Tone = "In progress", "working"
+	case queued > 0:
+		st.Text, st.Tone = "Waiting to start", "idle"
+	case st.Done > 0:
+		st.Text, st.Tone = "In progress", "working"
+	case stopped > 0:
+		st.Text, st.Tone = "Stopped", "idle"
 	default:
 		st.Text, st.Tone = "Not started", "idle"
 	}
@@ -1173,6 +1204,35 @@ func (sv *service) cardStarted(c model.Card) {
 	if c.Column == model.CardIdeas || c.Column == model.CardPlanned {
 		_, _ = sv.data.MoveCard(c.ID, model.CardInProgress, 1<<30)
 	}
+}
+
+// ObservePlanning is fed every store event: a linked task that is queued
+// (a draft started later, or work sent back) moves its cards still in
+// Ideas or Planned to In progress, as starting or linking started work
+// does. The store publishes holding its lock, so the moves are made from
+// another goroutine.
+func (s *Server) ObservePlanning(ev model.Event) {
+	if ev.Type != model.EvTodoUpdated {
+		return
+	}
+	t, ok := ev.Data.(model.Todo)
+	if !ok || t.Status != model.StatusQueued {
+		return
+	}
+	linked := s.Store.LinkedCards(model.LinkTask, t.ID)
+	if len(linked) == 0 {
+		return
+	}
+	go func() {
+		for org, cards := range linked {
+			sv := &service{s: s, c: Caller{Org: org}, data: s.Store.ForOrg(org)}
+			for _, id := range cards {
+				if c, err := sv.data.GetCard(id); err == nil {
+					sv.cardStarted(c)
+				}
+			}
+		}
+	}()
 }
 
 // linkableWork handles GET /api/planning/work[?project=<id>]: the org's

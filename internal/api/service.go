@@ -45,6 +45,9 @@ type Data interface {
 	UpdateDeploy(id string, fn func(*model.Deploy) error) (model.Deploy, error)
 	SetDeployLog(id, log string) error
 	CardsLinkedTo(todoIDs []string) ([]model.DeployShipped, error)
+	// LinkedCards serves Planning's observer (planning.go): the cards, by
+	// org, linked to a task or goal.
+	LinkedCards(kind, workID string) map[int64][]string
 	// ListTodos serves the merge trigger (deploytriggers.go): every org's
 	// tasks merged before it starts watching.
 	ListTodos(projectID string, statuses ...model.TodoStatus) []model.Todo

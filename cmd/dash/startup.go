@@ -1162,6 +1162,8 @@ func (a *app) startWorkers() {
 	// the environments that deploy on merge.
 	a.apiSrv.StartDeploys(ctx)
 	a.storeEvents.chain(a.apiSrv.ObserveDeploys)
+	// A planning card moves to In progress when its linked task is queued.
+	a.storeEvents.chain(a.apiSrv.ObservePlanning)
 }
 
 // configureChat picks the chat backend. The chat runs on runners only: the

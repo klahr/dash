@@ -117,6 +117,22 @@ func (s *Store) emitLinked(t model.EventType, todoID string, data any) {
 	}
 }
 
+// LinkedCards are the cards (by org) that link to a task or goal, from the
+// link index: it never waits for the store's lock.
+func (s *Store) LinkedCards(kind, workID string) map[int64][]string {
+	s.planMu.Lock()
+	refs := slices.Clone(s.planLinks[linkKey(kind, workID)])
+	s.planMu.Unlock()
+	var out map[int64][]string
+	for _, r := range refs {
+		if out == nil {
+			out = map[int64][]string{}
+		}
+		out[r.org] = append(out[r.org], r.card)
+	}
+	return out
+}
+
 // emitCard announces a change to one of the org's cards.
 func (o *OrgStore) emitCard(id string, deleted bool) {
 	if o.s.pub != nil {

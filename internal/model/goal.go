@@ -39,6 +39,15 @@ func (s GoalStatus) Active() bool {
 // user raises the budget and resumes it.
 func (s GoalStatus) Ended() bool { return s == GoalDone || s == GoalOutOfBudget }
 
+// WasStopped reports whether g is done because the user stopped it (goals
+// stopped before Stopped was kept are known by their note).
+func (g Goal) WasStopped() bool {
+	return g.Status == GoalDone && (g.Stopped || g.Note == GoalStoppedNote)
+}
+
+// GoalStoppedNote is the note of a goal the user stopped.
+const GoalStoppedNote = "Stopped by you."
+
 // IsBlocked reports whether g's coordinator should run but can't (Blocked):
 // it needs its owner to fix what stops it.
 func (g Goal) IsBlocked() bool { return g.Blocked != "" && g.Status.Active() }
@@ -88,6 +97,9 @@ type Goal struct {
 	// Note says why the goal waits, ended or can't go on (e.g. the
 	// coordinator's question, or that its budget is used up).
 	Note string `json:"note,omitempty"`
+	// Stopped is set on a done goal the user stopped, rather than one its
+	// coordinator finished.
+	Stopped bool `json:"stopped,omitempty"`
 	// Blocked says why the coordinator couldn't run on its last try (no
 	// runner of the owner's works on the project, the runner couldn't
 	// clone it, …): an active goal with it set needs its owner, whatever

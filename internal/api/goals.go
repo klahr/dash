@@ -411,7 +411,7 @@ func (sv *service) stopGoal(id string) (model.Goal, error) {
 			return fmt.Errorf("%w: the goal is done already", errBadRequest)
 		}
 		g.Status, g.PausedFrom, g.WaitingFor, g.Plan, g.Pending, g.Blocked = model.GoalDone, "", "", nil, nil, ""
-		g.Note = "Stopped by you."
+		g.Note, g.Stopped = model.GoalStoppedNote, true
 		g.AddLog(model.GoalLogEntry{Kind: model.GoalLogUser, Text: "You stopped the goal."})
 		return nil
 	})
