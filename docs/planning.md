@@ -202,9 +202,9 @@ when linked work moves on.
 ## From the chat and MCP
 
 The chats, `dash-mcp` and the claude.ai connector have tools for the plan (see
-[MCP](mcp.md#planning)):
+[MCP](mcp.md#planning)). They are for members: a planner can't use the MCP tools.
 
-- `list_cards`: the cards, with their column, priority, target, members, owner, dependencies and status
+- `list_cards`: the cards, with their column, priority, target, members, owner, tags, dependencies and status
 - `get_card`: one card, with its description, linked work and comments
 - `create_card`: add a card, and the cards it depends on
 - `update_card`: change a card, or move it to another column
@@ -221,7 +221,7 @@ Planning is under `/api/planning/`:
 | Call                                                  | What it does                                     |
 |-------------------------------------------------------|--------------------------------------------------|
 | `GET /api/planning/cards?project=<id>`                | the cards, with status and linked work           |
-| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `members` (user ids; `[]` is nobody), `owner` (a user id, who joins the members if they aren't one; `0` is nobody), `depends_on` (card ids; `[]` is none) |
+| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `members` (user ids; `[]` is nobody), `owner` (a user id, who joins the members if they aren't one; `0` is nobody), `depends_on` (card ids; `[]` is none), `tags` (up to 20; `[]` is none) |
 | `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments). A card has `deps` and `needed_by` (id, title, column, done), `waiting`: its dependencies not done yet, and `version`. Send `version` with `PATCH` to get `409` instead of overwriting a change someone made since; a move or a file doesn't change it |
 | `POST /api/planning/cards/{id}/move`                  | `column` and `position` (0 is the top)           |
 | `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
@@ -240,6 +240,6 @@ Planning is under `/api/planning/`:
 
 ## Not yet
 
-Custom columns, labels, estimates, sorting cards by priority, written progress summaries,
+Custom columns, estimates, sorting cards by priority, written progress summaries,
 approval before **Start**, and syncing with Jira or Linear aren't in this version. See
 [Task boards](boards.md) for how an outside tracker can own a project's board.

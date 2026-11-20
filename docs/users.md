@@ -140,8 +140,8 @@ A planner can:
   sign-in**, **Google account** and **Your data**) and **Sign out**
 
 A planner can't see or use projects, tasks, goals, chats, terminals, runners, previews,
-scans, issues, the MCP tools or the organization's members. Every such request answers
-`403`. Their live updates carry Planning's changes only. When a planner signs in, Dash opens
+scans, issues, the MCP tools or **Organization**. Every such request answers `403`. They do
+see the names and pictures of the org's members, to add them to cards. Their live updates carry Planning's changes only. When a planner signs in, Dash opens
 Planning, in the same sidebar as everyone else's, with **Planning** as its only section.
 
 To make someone a planner, open **Organization**, and either invite them with the role
