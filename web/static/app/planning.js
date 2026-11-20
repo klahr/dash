@@ -1358,6 +1358,7 @@ function sheet(title, kids, ok, icon = "check") {
 // then starts it: the card's title and description are what to do. A
 // planner's goal also needs its owner, a developer: its coordinator runs as
 // them and they accept its plan (the card's first developer is suggested).
+// A planner's task runs for a developer too (Runs for), on their runners.
 async function startSheet(c) {
   if (!pl.projects.length) await loadPlanning();
   if (!pl.projects.length) throw new Error("There are no projects to start work in yet. Planning starts work in shared projects only, not in a runner's own project. Ask a developer to add a shared one with + Add project, from GitHub or a URL.");
@@ -1375,11 +1376,19 @@ async function startSheet(c) {
       h("option", { value: "", selected: !suggested }, devs.length ? "Choose a developer" : "No developers in the organization"),
       ...devs.map((u) => h("option", { value: String(u.id), selected: u === suggested }, u.username))),
     h("small", { class: "hint" }, "The goal is theirs: its coordinator runs on their runner, and they accept its plan.")) : null;
+  // A planner has no runner: their task runs for a developer, on that
+  // developer's runners (the card's first developer by default).
+  const runFor = pl.planner ? h("label", { class: "field" }, h("span", {}, "Runs for"),
+    h("select", { name: "run_by", required: true },
+      h("option", { value: "", selected: !devs.length }, devs.length ? "Choose a developer" : "No developers in the organization"),
+      ...devs.map((u) => h("option", { value: String(u.id), selected: u === (suggested || devs[0]) }, u.username)))) : null;
   const kindChanged = (e) => {
     if (!owner) return;
     const goal = e.target.value === "goal";
     owner.hidden = !goal;
     owner.querySelector("select").required = goal;
+    runFor.hidden = goal;
+    runFor.querySelector("select").required = !goal;
   };
   const data = await sheet("Start this card", [
     h("p", { class: "hint" }, "Dash makes the work from the card's title and description, links it to the card and moves the card to In progress."),
@@ -1389,6 +1398,7 @@ async function startSheet(c) {
     h("label", { class: "field" }, h("span", {}, "Project"),
       h("select", { name: "project", required: true },
         ...pl.projects.map((p) => h("option", { value: p.id, selected: p.id === (c.project_id || pl.filter) }, p.name)))),
+    runFor,
     h("fieldset", { class: "field choice" },
       h("legend", {}, "Make"),
       h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "task", checked: true, onchange: kindChanged }),
@@ -1400,6 +1410,7 @@ async function startSheet(c) {
   if (!data) return;
   const body = { project: data.get("project"), kind: data.get("kind") };
   if (body.kind === "goal" && data.get("owner")) body.owner = Number(data.get("owner"));
+  if (body.kind !== "goal" && data.get("run_by")) body.run_by = Number(data.get("run_by"));
   const v = await call("POST", cardAPI(c.id, "/start"), body);
   toast(data.get("kind") === "goal" ? "Goal started and linked" : "Task queued and linked", { tone: "ok" });
   if (pl.open === c.id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }

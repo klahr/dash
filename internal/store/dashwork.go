@@ -77,6 +77,15 @@ func (s *Store) DashWorkFor(t model.Todo) int64 {
 	return 0
 }
 
+// DashWorkFor is Store.DashWorkFor for a task of one of the org's projects
+// (0 for another org's).
+func (o *OrgStore) DashWorkFor(t model.Todo) int64 {
+	if !o.ownsProject(t.ProjectID) {
+		return 0
+	}
+	return o.s.DashWorkFor(t)
+}
+
 // boardConnectedBy is who last moved project pid's board, when it is on an
 // external tracker now (0: unknown, or it is Dash's own board).
 func (s *Store) boardConnectedBy(pid string) int64 {

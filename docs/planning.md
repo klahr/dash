@@ -113,6 +113,8 @@ stored. It says, for example:
 | Nothing started yet       | nothing is linked                                              |
 | Not started               | the linked tasks are drafts that never ran                     |
 | Waiting to start          | the linked work is queued and nothing else is running          |
+| Waiting for a runner: ask a developer to take it | queued work that no runner may run for whoever it runs for |
+| Waiting for a runner to come online | queued work whose runners are all offline            |
 | In progress               | work is running, or some of it is done                         |
 | Waiting for review        | a developer has to review a task                               |
 | Waiting for a decision    | a goal waits for someone to accept its plan or answer it       |
@@ -152,8 +154,8 @@ moves a card to **Done** on its own.
 1. Choose the project.
 2. Choose **A task** (queued for Claude now) or **A goal** (a coordinator plans it into
    tasks; see [Goals](goals.md)).
-3. As a planner starting a goal, choose its **Owner**: a developer. The card's first developer
-   is suggested.
+3. As a planner, choose a developer (a member who isn't a planner): who a task **Runs for**,
+   or a goal's **Owner**. The card's first developer is suggested.
 4. Click **Start**.
 
 On a hub, the project list holds the org's shared projects only. A
@@ -166,8 +168,18 @@ yet, **Start…** says so.
 The card's title and description become the task's prompt or the goal's description. A task
 also gets the card's files, for Claude to read. On a hub it doesn't: files can't be sent to
 runners yet. Dash links the new work to the card and moves the card to
-**In progress**. Planners and members
-can both press **Start**.
+**In progress**.
+
+Planners and members can both press **Start**. Work a member starts is theirs and runs on
+their runners. A planner can't own a runner, so a task a planner starts is made in the name of
+the developer it **Runs for**, and runs on that developer's runners (or a shared one). A goal
+a planner starts belongs to its **Owner** the same way. Without a choice for a task (the
+`start_card` tool), Dash picks the card's first developer, else whoever added the project,
+else the organization's owner. A goal always needs its **Owner** chosen.
+
+If no runner can take the work, the card says so, for example **Waiting for a runner: ask a
+developer to take it**. Ask the developer to connect a runner for the project, or to turn on
+**Take other members' tasks** for a runner in **Runners**.
 
 The **Start this card** sheet warns, but still lets you start, when the card already has work
 in progress (a second **Start** makes the same work again) or waits for cards not in **Done**

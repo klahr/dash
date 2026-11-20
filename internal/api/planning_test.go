@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/store"
 )
 
 func decodeCard(t *testing.T, w *httptest.ResponseRecorder) cardView {
@@ -25,6 +27,95 @@ func decodeCard(t *testing.T, w *httptest.ResponseRecorder) cardView {
 		t.Fatalf("%d %s: %v", w.Code, w.Body, err)
 	}
 	return v
+}
+
+// A planner can't own a runner, so the work their Start makes is a
+// developer's (whom they pick, else the card's first developer, else
+// whoever Dash's own work goes to), and runs on that developer's runners.
+// A member's Start stays theirs. Work no runner may take says so on the card.
+func TestPlannerStartRunsForADeveloper(t *testing.T) {
+	s, _, p := boardServer(t)
+	h := s.Routes()
+	a := loggedIn(t, h)
+	ph, pat := plannerOf(t, s, h)
+	joinAs(t, s, h, "dev", store.RoleMember)
+	owner := ownerSession(t, s)
+	ms, err := raw(s).Accounts().Members(owner.Org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(ms, func(m store.Member) bool { return m.Username == "dev" })
+	if i < 0 {
+		t.Fatalf("no dev in %+v", ms)
+	}
+	dev := ms[i]
+
+	start := func(as http.Handler, c cardView, body string) (*httptest.ResponseRecorder, model.Todo) {
+		t.Helper()
+		w := do(t, as, "POST", "/api/planning/cards/"+c.ID+"/start", body)
+		if w.Code != http.StatusOK {
+			return w, model.Todo{}
+		}
+		var v struct {
+			Started struct{ ID string } `json:"started"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &v)
+		td, err := raw(s).GetTodo(v.Started.ID)
+		if err != nil {
+			t.Fatalf("the task: %v", err)
+		}
+		return w, td
+	}
+	card := func(body string) cardView {
+		t.Helper()
+		return decodeCard(t, do(t, ph, "POST", "/api/planning/cards", body))
+	}
+	proj := `"project":"` + p.ID + `"`
+
+	// Picked by the planner.
+	w, td := start(ph, card(`{"title":"One"}`), `{`+proj+`,"run_by":`+strconv.FormatInt(dev.ID, 10)+`}`)
+	if w.Code != http.StatusOK || td.CreatedBy != dev.ID || !slices.Equal(td.WorkFor(), []int64{dev.ID}) {
+		t.Fatalf("picked: %d %s; task %+v", w.Code, w.Body, td)
+	}
+	// Not a planner, nor someone outside the org.
+	for _, bad := range []int64{pat.ID, 9999} {
+		if w, _ := start(ph, card(`{"title":"Bad"}`), `{`+proj+`,"run_by":`+strconv.FormatInt(bad, 10)+`}`); w.Code != http.StatusBadRequest {
+			t.Errorf("run_by %d: %d %s", bad, w.Code, w.Body)
+		}
+	}
+	// The card's first developer (pat is a member of it too, but a planner).
+	c := card(`{"title":"Two","members":[` + strconv.FormatInt(pat.ID, 10) + `,` + strconv.FormatInt(dev.ID, 10) + `]}`)
+	if _, td := start(ph, c, `{`+proj+`}`); td.CreatedBy != dev.ID {
+		t.Errorf("the card's developer: task %+v", td)
+	}
+	// Else whoever Dash's own work goes to: here the org's owner.
+	if _, td := start(ph, card(`{"title":"Three"}`), `{`+proj+`}`); td.CreatedBy != owner.User.ID || slices.Contains(td.WorkFor(), pat.ID) {
+		t.Errorf("no developer on the card: task %+v", td)
+	}
+	// A member's own Start is theirs; they don't pick someone else.
+	if _, td := start(a, card(`{"title":"Four"}`), `{`+proj+`}`); td.CreatedBy != owner.User.ID {
+		t.Errorf("a member's start: task %+v", td)
+	}
+	if w, _ := start(a, card(`{"title":"Five"}`), `{`+proj+`,"run_by":`+strconv.FormatInt(dev.ID, 10)+`}`); w.Code != http.StatusBadRequest {
+		t.Errorf("a member picked who runs it: %d %s", w.Code, w.Body)
+	}
+
+	// No runner may take it: the card says what to do, not which runner.
+	c = card(`{"title":"Six"}`)
+	_, td = start(ph, c, `{`+proj+`}`)
+	for _, step := range []struct{ waiting, text string }{
+		{"waiting: no runner of dev's has the labels any; laptop is u's runner and only takes u's tasks", "Waiting for a runner: ask a developer to take it"},
+		{"no runner online: laptop is offline", "Waiting for a runner to come online"},
+		{"waiting for a runner: laptop is busy (2 of 2 tasks)", "Waiting to start"},
+	} {
+		if _, err := raw(s).UpdateTodo(td.ID, func(x *model.Todo) error { x.Waiting = step.waiting; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		got := decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+c.ID, ""))
+		if got.Status.Text != step.text || strings.Contains(got.Links[0].State, "laptop") {
+			t.Errorf("waiting %q: card %+v, link %+v", step.waiting, got.Status, got.Links[0])
+		}
+	}
 }
 
 // A deleted task or goal is neither done nor counted: a card whose only

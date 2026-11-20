@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/release"
@@ -104,6 +105,7 @@ type linkView struct {
 	done    bool
 	failed  bool
 	started bool
+	stuck   bool // queued, but no runner may take it now (noRunner)
 	queued  bool // a task waiting to start
 	stopped bool // a goal the user stopped, or a task stopped back to a draft
 	budget  bool // a goal out of budget
@@ -215,6 +217,22 @@ func taskState(t model.Todo) (state, tone string) {
 	return string(t.Status), "idle"
 }
 
+// noRunner is what a card says of queued work no runner may take now, from
+// its waiting reason (model.Todo.Waiting; "" when one just has to wait its
+// turn: busy runners, the weekly pace). An owner sees no runners, so it says
+// what to do, not which runner.
+func noRunner(waiting string) string {
+	switch {
+	case strings.HasPrefix(waiting, "waiting: no runner "), strings.HasPrefix(waiting, "no runner:"):
+		// Nobody's runner may run it for whoever it is for, or none serves
+		// the project.
+		return "Waiting for a runner: ask a developer to take it"
+	case strings.HasPrefix(waiting, dispatch.NoRunnerOnline):
+		return "Waiting for a runner to come online"
+	}
+	return ""
+}
+
 // goalState is a goal's state in an owner's words.
 func goalState(g model.Goal) (state, tone string) {
 	if g.IsBlocked() {
@@ -255,6 +273,9 @@ func (w *planningWork) link(l model.CardLink) linkView {
 		}
 		v.Title, v.Project, v.ProjectID = t.Title, project(t.ProjectID), t.ProjectID
 		v.State, v.Tone = taskState(t)
+		if why := noRunner(t.Waiting); why != "" && t.Status == model.StatusQueued && !t.Paused {
+			v.State, v.Tone, v.stuck = why, "waiting", true
+		}
 		v.done, v.failed = t.Status == model.StatusMerged, t.Status == model.StatusFailed
 		v.started = t.Status != model.StatusDraft
 		v.queued = t.Status == model.StatusQueued
@@ -271,13 +292,23 @@ func (w *planningWork) link(l model.CardLink) linkView {
 		v.Title, v.Project, v.ProjectID = g.Title, project(g.ProjectID), g.ProjectID
 		v.State, v.Tone = goalState(g)
 		tasks := w.goalWork[g.ID]
+		why, running := "", false
 		for _, t := range tasks {
 			v.failed = v.failed || t.Status == model.StatusFailed
+			running = running || t.Status == model.StatusInProgress || t.Status == model.StatusMerging
+			if s := noRunner(t.Waiting); s != "" && t.Status == model.StatusQueued && !t.Paused && why == "" {
+				why = s
+			}
 		}
 		if g.Status == model.GoalDone {
 			v.failed = false // a done or stopped goal's failed task is not what the card waits on
-		} else if v.failed {
+		}
+		switch {
+		case v.failed:
 			v.State, v.Tone = "Failed, needs a developer", "failed"
+		case why != "" && !running && g.Status == model.GoalWorking:
+			// Its tasks are queued, but no runner may take them.
+			v.State, v.Tone, v.stuck = why, "waiting", true
 		}
 		v.stopped = g.WasStopped()
 		v.budget = g.Status == model.GoalOutOfBudget
@@ -403,6 +434,7 @@ func status(c model.Card, links []linkView) cardStatus {
 	}
 	var st cardStatus
 	var failed, waiting, review, budget, working, queued, stopped int
+	stuck := ""
 	shipped, allShipped := "", true
 	var lives [][]liveIn
 	for _, l := range links {
@@ -417,6 +449,10 @@ func status(c model.Card, links []linkView) cardStatus {
 			st.Done++
 		case l.failed:
 			failed++
+		case l.stuck:
+			if stuck == "" {
+				stuck = l.State
+			}
 		case l.Tone == "waiting":
 			waiting++
 			if l.State == "Waiting for review" {
@@ -454,6 +490,8 @@ func status(c model.Card, links []linkView) cardStatus {
 		st.Text, st.Tone = "Shipped in "+shipped, "shipped"
 	case allDone:
 		st.Text, st.Tone = "All done", "done"
+	case stuck != "":
+		st.Text, st.Tone = stuck, "waiting"
 	case review > 0 && review == waiting:
 		st.Text, st.Tone = "Waiting for review", "waiting"
 	case budget > 0 && budget == waiting:
@@ -1067,7 +1105,8 @@ func (s *Server) planningPeople(w http.ResponseWriter, r *http.Request) {
 		ID       int64  `json:"id"`
 		Username string `json:"username"`
 		Avatar   int64  `json:"avatar,omitempty"`
-		// Planner: they can't own a goal (Start's owner picker).
+		// Planner: they can't own a goal (Start's owner picker), nor have a
+		// planner's task run for them (Start's Runs for).
 		Planner bool `json:"planner,omitempty"`
 	}
 	ms, err := s.Store.Accounts().Members(sv.c.Org)
@@ -1086,10 +1125,11 @@ func (s *Server) planningPeople(w http.ResponseWriter, r *http.Request) {
 }
 
 // startCard handles POST /api/planning/cards/{cid}/start: {project, kind,
-// owner}. It makes a task (queued; the card's title and description are its
-// prompt) or a goal (kind "goal") in the project, links it to the card,
-// and moves the card to In progress if it was still in Ideas or Planned.
-// A planner starting a goal names its owner, a developer (see goalOwner).
+// owner, run_by}. It makes a task (queued; the card's title and description
+// are its prompt) or a goal (kind "goal") in the project, links it to the
+// card, and moves the card to In progress if it was still in Ideas or
+// Planned. A planner starting a goal names its owner, a developer (see
+// goalOwner); a planner's task runs for a developer (see startsFor).
 func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -1099,12 +1139,15 @@ func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
 		Project string `json:"project"`
 		Kind    string `json:"kind"`
 		Owner   int64  `json:"owner"`
+		// RunBy is the developer a planner has a task run for (0: Dash
+		// picks one; see startsFor).
+		RunBy int64 `json:"run_by"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	id, err := sv.startCard(r.PathValue("cid"), req.Project, req.Kind, req.Owner)
+	id, err := sv.startCard(r.PathValue("cid"), req.Project, req.Kind, req.Owner, req.RunBy)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -1131,8 +1174,9 @@ func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
 
 // startCard is what Start does (the REST API's and the start_card tool's):
 // it returns the new task's or goal's id. owner is the goal's owner (0: the
-// caller); see goalOwner.
-func (sv *service) startCard(cardID, project, kind string, owner int64) (string, error) {
+// caller); see goalOwner. runBy is the developer a planner has a task run
+// for (0: Dash picks one); see startsFor.
+func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (string, error) {
 	c, err := sv.data.GetCard(cardID)
 	if err != nil {
 		return "", err
@@ -1151,11 +1195,15 @@ func (sv *service) startCard(cardID, project, kind string, owner int64) (string,
 	switch kind {
 	case "", model.LinkTask:
 		kind = model.LinkTask
+		run, err := sv.startsFor(c, p, runBy) // whose the task is
+		if err != nil {
+			return "", err
+		}
 		prompt := c.Title
 		if c.Description != "" {
 			prompt += "\n\n" + c.Description
 		}
-		t, err := sv.addTodo(model.Todo{ProjectID: p.ID, Title: c.Title, Prompt: prompt, Attachments: sv.cardAttachments(c)}, true)
+		t, err := run.addTodo(model.Todo{ProjectID: p.ID, Title: c.Title, Prompt: prompt, Attachments: sv.cardAttachments(c)}, true)
 		if err != nil {
 			return "", err
 		}
@@ -1187,6 +1235,55 @@ func (sv *service) startCard(cardID, project, kind string, owner int64) (string,
 	}
 	sv.cardStarted(c)
 	return id, nil
+}
+
+// startsFor is the service a card's Start makes its task as. A member's
+// own Start is theirs. A planner can't own a runner, and a run is for its
+// task's creator (model.Todo.WorkFor), so work made in a planner's name
+// would wait for a shared runner for good. A planner's Start is made in a
+// developer's name instead (a member who isn't a planner), so one of their
+// runners takes it: runBy when given, else the first of the card's members
+// who is a developer, else the one Dash's own work of p goes to
+// (store.OrgStore.DashWorkFor).
+func (sv *service) startsFor(c model.Card, p model.Project, runBy int64) (*service, error) {
+	if !sv.c.Planner {
+		if runBy != 0 && runBy != sv.c.User {
+			return nil, fmt.Errorf("%w: work you start runs for you; only a planner picks who runs it", errBadRequest)
+		}
+		return sv, nil
+	}
+	acc := sv.s.Store.Accounts()
+	developer := func(uid int64) bool {
+		if uid <= 0 {
+			return false
+		}
+		m, err := acc.Membership(uid, sv.c.Org)
+		return err == nil && !m.Role.Planner()
+	}
+	dev := int64(0)
+	switch {
+	case runBy != 0:
+		if !developer(runBy) {
+			return nil, fmt.Errorf("%w: pick a developer of the organization to run it (not a planner)", errBadRequest)
+		}
+		dev = runBy
+	default:
+		for _, uid := range c.Members {
+			if developer(uid) {
+				dev = uid
+				break
+			}
+		}
+		if dev == 0 {
+			dev = sv.data.DashWorkFor(model.Todo{ProjectID: p.ID})
+		}
+	}
+	if dev == 0 {
+		return nil, fmt.Errorf("%w: there is no developer to run it: ask one to join the organization", errBadRequest)
+	}
+	c2 := sv.c
+	c2.User, c2.Planner, c2.PlatformAdmin = dev, false, false
+	return sv.s.as(c2), nil
 }
 
 // errGoalOwner: a planner's goal needs a developer to own it.
@@ -1537,7 +1634,7 @@ func (b board) StartCard(id, project, kind string) (mcptools.CardStarted, error)
 	if kind == "" {
 		kind = model.LinkTask
 	}
-	work, err := b.sv.startCard(id, project, kind, 0)
+	work, err := b.sv.startCard(id, project, kind, 0, 0)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) && work == "" {
 			return mcptools.CardStarted{}, fmt.Errorf("no card %q or project %q (see list_cards)", id, project)
