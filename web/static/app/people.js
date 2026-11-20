@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { state } from "./state.js";
 import * as store from "./store.js";
+import { ask } from "./dialogs.js";
 
 // ------------------------------------------------------------------ the org's people
 // The org's members, by user id: their username and picture's version, from
@@ -37,6 +38,35 @@ export function creator(t) {
     loadPeople().catch(() => {});
   }
   return u || null;
+}
+
+// startsRunAs reports whether saving changes to task t (the fields
+// PATCH /api/todos/{id} takes), or queuing it, starts its run for the
+// signed-in member while it is another member's: the hub then makes them
+// its run_by (store.startsRun), so the run is for both of them and only a
+// shared runner takes it, not the creator's own.
+function startsRunAs(t, changes, queuing) {
+  const me = myID();
+  if (!t || !me || !multiMember() || !(t.created_by > 0) || t.created_by === me || t.run_by === me) return false;
+  if (queuing) return true;
+  if (t.status !== "queued" || t.paused) return false; // a draft's run starts when it is queued
+  const had = (t.attachments || []).map((a) => a.id);
+  return ("title" in changes && changes.title !== t.title) ||
+    ("prompt" in changes && changes.prompt !== t.prompt) ||
+    ("builds_on" in changes && (changes.builds_on || "") !== (t.builds_on || "")) ||
+    ("attachments" in changes && (changes.attachments.length !== had.length || changes.attachments.some((id, i) => id !== had[i])));
+}
+
+// confirmRunAs asks before such a change (startsRunAs) of another member's
+// task. Resolves true to go on: also when there is nothing to ask.
+export async function confirmRunAs(t, changes = {}, queuing = false) {
+  if (!startsRunAs(t, changes, queuing)) return true;
+  const name = creator(t)?.username || "its creator";
+  return !!await ask({
+    title: `Run ${name}'s task as yours too?`,
+    body: `Then the task is ${name}'s and yours, so only a shared runner (one that takes other members' tasks) runs it, not ${name}'s own runner.`,
+    ok: queuing ? "Queue" : "Save",
+  });
 }
 
 // ---- the Board's Mine filter: only the tasks the signed-in user created.

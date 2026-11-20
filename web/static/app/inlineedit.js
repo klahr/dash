@@ -125,7 +125,7 @@ async function savePrompt() {
   const ids = attach.ids();
   if (!sameIds(ids, (t.attachments || []).map((a) => a.id))) changes.attachments = ids;
   if (Object.keys(changes).length) {
-    await busy($("#d-prompt-save"), () => updateTodo(t, changes), { label: "Saving…" });
+    if (!await busy($("#d-prompt-save"), () => updateTodo(t, changes), { label: "Saving…" })) return; // cancelled: keep editing
     toast("Instructions saved", { tone: "ok" });
   }
   if (promptFor !== t.id) return;

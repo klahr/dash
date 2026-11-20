@@ -347,7 +347,7 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 	}
 	if len(cands) == 0 {
 		if len(why) == 0 && len(notFor) > 0 {
-			return nil, "waiting: no runner " + d.whose(users) + " has the labels " + strings.Join(p.RunnerLabels(), ", ") + "; " + strings.Join(notFor, "; "), ""
+			return nil, d.noRunnerFor(p, users, notFor), ""
 		}
 		if len(why) == 0 {
 			return nil, "no runner: no runner has the labels this project runs on (" + strings.Join(p.RunnerLabels(), ", ") + "); give one those labels, or change them in the project's settings", ""
@@ -413,18 +413,33 @@ func tooFull(r tunnel.Runner) string {
 	return "runner " + r.Name + " is low on disk space"
 }
 
-// whose names whose runners work for users (model.Todo.WorkFor) may take:
-// "of alice's", or for work that is no one's (Dash's own) "that takes other
-// members' tasks".
-func (d *Dispatcher) whose(users []int64) string {
+// noRunnerFor says why no runner of p's takes work for users
+// (model.Todo.WorkFor), none of them being one that may: "no runner of
+// alice's has the labels …", for work that is no one's (Dash's own) "no
+// runner that takes other members' tasks has the labels …", and for a run
+// for two members (one started another's task) that it needs a runner that
+// takes both's tasks: a shared one, as one member's own runner only takes
+// their tasks. notFor are the runners' reasons (tunnel.Runner.WorksFor).
+func (d *Dispatcher) noRunnerFor(p model.Project, users []int64, notFor []string) string {
+	labels := strings.Join(p.RunnerLabels(), ", ")
 	var names []string
 	for _, u := range users {
 		if u <= 0 {
-			return "that takes other members' tasks"
+			names = nil
+			break
 		}
 		names = append(names, d.username(u))
 	}
-	return "of " + strings.Join(names, "'s and ") + "'s"
+	var head string
+	switch len(names) {
+	case 0:
+		head = "no runner that takes other members' tasks has the labels " + labels
+	case 1:
+		head = "no runner of " + names[0] + "'s has the labels " + labels
+	default:
+		head = "needs a runner with the labels " + labels + " that takes both " + strings.Join(names, "'s and ") + "'s tasks (a shared runner)"
+	}
+	return "waiting: " + head + "; " + strings.Join(notFor, "; ")
 }
 
 // username is user uid's username, for messages ("user <id>" when unknown).

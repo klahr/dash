@@ -125,7 +125,7 @@ func (d *Dispatcher) scanRunner(p model.Project, users []int64) (r *tunnel.Runne
 	}
 	if len(cands) == 0 {
 		if len(reasons) == 0 && len(notFor) > 0 {
-			return nil, "waiting: no runner " + d.whose(users) + " has the labels " + strings.Join(p.RunnerLabels(), ", ") + "; " + strings.Join(notFor, "; "), linked
+			return nil, d.noRunnerFor(p, users, notFor), linked
 		}
 		return nil, waitReason(append(reasons, notFor...)), linked
 	}

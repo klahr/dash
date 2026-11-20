@@ -15,6 +15,7 @@ import { describePerm } from "./review.js";
 import { loadTodoChat, renderChatBadge, renderChatDots, renderChatPane, viewingChat } from "./chatpane.js";
 import { timeline } from "./timeline.js";
 import { fmtTokens } from "./runstats.js";
+import { confirmRunAs } from "./people.js";
 
 // ------------------------------------------------------------------ chat
 // usageLine shows what an answer took: tokens in and out, time spent
@@ -933,6 +934,7 @@ export const todoChat = makeChat({
     return h("div", { class: "msg-actions" },
       t && EDITABLE.includes(t.status) ? ib({ class: "link", onclick: attempt(async () => {
         if (!await ask({ title: "Replace the instructions?", body: "This answer becomes the task's instructions for Claude.", ok: "Replace" })) return;
+        if (!await confirmRunAs(t, { prompt: answer })) return;
         await api("PATCH", `/api/todos/${t.id}`, { prompt: answer });
         toast("Instructions updated");
       }) }, "draft", "Use as instructions…") : null,

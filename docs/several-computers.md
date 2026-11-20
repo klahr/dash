@@ -513,6 +513,9 @@ the org sees it and adds tasks to it, and each member's tasks run on their own r
   retrying, continuing or resuming it, or changing what it gives Claude (its title, instructions,
   attachments, file edits or **Build on**). If that is someone else than
   the task's creator, the run needs a runner that does both members' work: a shared runner.
+  Before you save such a change to another member's queued task, or queue their draft, Dash asks
+  you to confirm. The task then waits: "needs a runner with the labels Linux that takes both
+  alice's and bob's tasks (a shared runner)".
 - A task Dash makes itself (a failing build's fix, a card from the project's tracker) is a
   member's, so their runners take it. The hub gives it, when it first looks for a runner for it,
   to the first of these who is still a member of the org (and not only a planner):

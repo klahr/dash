@@ -431,3 +431,22 @@ func eventually(t *testing.T, what string, ok func() bool) {
 		}
 	}
 }
+
+// Alice edited bob's queued task, so its run is for both of them: bob's own
+// runner doesn't take it, and the wait says it needs a shared runner, not
+// that no runner has the labels.
+func TestTwoMembersRunWaitsForASharedRunner(t *testing.T) {
+	t.Parallel()
+	fx := newFixture(t)
+	fx.fleet.set(bobsRunner(fx.orgA, maxAuth, false))
+	p := fx.project(t, fx.orgA, "bob-laptop")
+	td := fx.todo(t, p, func(x *model.Todo) { x.CreatedBy, x.RunBy = bob, alice })
+
+	_, _, err := fx.d.Dispatch(context.Background(), p, td)
+	why := waitReasonOf(t, err)
+	if !strings.Contains(why, "needs a runner with the labels "+strings.Join(p.RunnerLabels(), ", ")+" that takes both ") ||
+		!strings.Contains(why, "'s and admin's tasks (a shared runner)") ||
+		strings.Contains(why, "no runner of") {
+		t.Errorf("wait reason: %q", why)
+	}
+}

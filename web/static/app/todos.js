@@ -10,6 +10,7 @@ import { renderBoard } from "./branches.js";
 import { showRunnerNeeded } from "./runners.js";
 import { levelPriority, priorityLevel } from "./dnd.js";
 import { openGoalSheet } from "./goals.js";
+import { confirmRunAs } from "./people.js";
 
 // ------------------------------------------------------------------ new / edit todo
 // A task's title, instructions and options can be edited while it is a draft,
@@ -18,11 +19,14 @@ export const editable = (t) => !!t && (t.status === "draft" || t.status === "que
 
 // updateTodo saves changes to a task: only the fields given are changed. The
 // board shows the result at once instead of waiting for the server's event.
-export async function updateTodo(t, changes) {
+// A change that makes another member's queued task yours too is asked first
+// (confirmRunAs; asked: the caller did): it resolves to null when cancelled.
+export async function updateTodo(t, changes, { asked = false } = {}) {
   if ("title" in changes || "prompt" in changes) {
     const after = { title: t.title, prompt: t.prompt, ...changes };
     if (!after.title?.trim() && !after.prompt?.trim()) throw new Error("Add a title or instructions before saving.");
   }
+  if (!asked && !await confirmRunAs(t, changes)) return null;
   const saved = await api("PATCH", `/api/todos/${t.id}`, changes);
   if (saved?.id && state.todos.has(saved.id)) {
     state.todos.set(saved.id, saved);
@@ -212,7 +216,12 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   await todoAttach.settled();
   const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: levelPriority(f.priority.value, editing?.priority), model: f.model.value, attachments: todoAttach.ids(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
   if (editing) {
-    await updateTodo(editing, body);
+    if (!await confirmRunAs(editing, body, action === "queue" && editing.status !== "queued")) {
+      draft.close();
+      toast("Not saved; your draft is kept");
+      return;
+    }
+    await updateTodo(editing, body, { asked: true });
     if (action === "queue" && editing.status !== "queued") await api("POST", `/api/todos/${editing.id}/enqueue`);
     toast(action === "queue" ? "Saved and queued" : "Saved");
   } else {
