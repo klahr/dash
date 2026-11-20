@@ -52,6 +52,16 @@ var plannerRoutes = map[string]bool{
 	"GET /api/account/export":              true,
 	"DELETE /api/account":                  true,
 
+	// Their notifications: card news (mentions, added to a card, its
+	// work), pushed to their browsers. No summary or personal webhooks:
+	// those are about tasks, which planners don't see.
+	"GET /api/me/notifications":     true,
+	"PUT /api/me/notifications":     true,
+	"GET /api/push":                 true,
+	"PUT /api/push/subscription":    true,
+	"DELETE /api/push/subscription": true,
+	"POST /api/push/test":           true,
+
 	// Planning, and its live updates (the stream sends a planner Planning's
 	// events only; see eventsWS).
 	"GET /ws/events":                                   true,

@@ -91,6 +91,11 @@ type NotifySettings struct {
 	// TasksMine or TasksAll. Tasks no person is behind (made by Dash, or
 	// by an account that is gone or left the org) reach everyone.
 	Tasks string `json:"tasks"`
+	// Cards pushes news of Planning cards that concern the user
+	// (NotifyCard): they were mentioned or added to a card, or a card's
+	// work they follow is ready for review, failed or merged. On unless
+	// turned off, also for settings saved before it existed.
+	Cards bool `json:"cards"`
 }
 
 // Whose task events reach a user (NotifySettings.Tasks).
@@ -116,6 +121,12 @@ func (s NotifySettings) WantsTask(user, creator int64) bool {
 	return creator <= 0 || s.Tasks == TasksAll || creator == user
 }
 
+// WantsTaskOf is WantsTask for a task the people owners answer for (none:
+// nobody does, and it reaches everyone).
+func (s NotifySettings) WantsTaskOf(user int64, owners []int64) bool {
+	return len(owners) == 0 || s.Tasks == TasksAll || slices.Contains(owners, user)
+}
+
 // PushChoices are the events a user may have pushed to their browsers.
 var PushChoices = []NotifyEvent{NotifyReview, NotifyFailed, NotifyPermission, NotifyGoal, NotifyBuild, NotifyDeploy, NotifyDisk, NotifyIssue}
 
@@ -132,6 +143,7 @@ func DefaultNotifySettings() NotifySettings {
 		Include: SummaryInclude{Issues: true, MinSeverity: SevMedium, Review: true, Failed: true, Merged: true, Goals: true, Builds: true},
 		Push:    slices.Clone(DefaultPush),
 		Tasks:   TasksMine,
+		Cards:   true,
 	}
 }
 

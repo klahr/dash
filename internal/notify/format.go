@@ -33,6 +33,8 @@ type Notification struct {
 	Issue *IssueRef `json:"issue,omitempty"`
 	// Deploy is the deploy a deploy.failed event is about.
 	Deploy *DeployRef `json:"deploy,omitempty"`
+	// Card is the Planning card a card.activity event is about.
+	Card *CardRef `json:"card,omitempty"`
 	// Summary is a summary event's content.
 	Summary *Summary `json:"summary,omitempty"`
 	// Message is a one-line human summary (the error of a failed task, …).
@@ -42,6 +44,20 @@ type Notification struct {
 	// model.DeletedUser). Task events reach them, and the users who chose
 	// to hear of every task (model.NotifySettings.Tasks); it isn't sent.
 	creator int64
+	// byPlanner: creator is a planner, who can't open tasks. The task's
+	// news goes to owners instead, the people on the Planning cards that
+	// link to it who can (none: to everyone, as a task nobody is behind).
+	byPlanner bool
+	owners    []int64
+	// head, if set, is the heading (a card.activity's: what happened).
+	head string
+}
+
+// CardRef is a Planning card.
+type CardRef struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	URL   string `json:"url,omitempty"` // the card in Dash
 }
 
 type ProjectRef struct {
@@ -116,6 +132,7 @@ var looks = map[model.NotifyEvent]struct {
 	model.NotifyDisk:       {"Disk nearly full", ":floppy_disk:", "floppy_disk", true},
 	model.NotifyIssue:      {"New issue", ":beetle:", "beetle", false},
 	model.NotifyDeploy:     {"Deploy failed", ":boom:", "boom", true},
+	model.NotifyCard:       {"Planning", ":memo:", "memo", false},
 	model.NotifySummary:    {"Summary", ":newspaper:", "newspaper", false},
 	model.NotifyTest:       {"Test notification", ":wave:", "wave", false},
 }
@@ -126,6 +143,9 @@ const ClosedNoChanges = "No changes: nothing was merged"
 
 // Head is the event's short heading, e.g. "Ready for review".
 func (n Notification) Head() string {
+	if n.head != "" {
+		return n.head
+	}
 	h := looks[n.Type].head
 	if n.Type == model.NotifyMerged && n.Message == ClosedNoChanges {
 		h = "Closed"
@@ -166,6 +186,9 @@ func (n Notification) URL() string {
 	if n.Deploy != nil && n.Deploy.URL != "" {
 		return n.Deploy.URL
 	}
+	if n.Card != nil && n.Card.URL != "" {
+		return n.Card.URL
+	}
 	if n.Summary != nil && n.Summary.URL != "" {
 		return n.Summary.URL
 	}
@@ -178,6 +201,9 @@ func (n Notification) URL() string {
 // subject is what the notification is about: the task's title, else the
 // project's name.
 func (n Notification) subject() string {
+	if n.Card != nil && n.Card.Title != "" {
+		return n.Card.Title
+	}
 	if n.Task != nil && n.Task.Title != "" {
 		return n.Task.Title
 	}

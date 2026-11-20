@@ -620,7 +620,11 @@ func (sv *service) createCard(req cardRequest) (model.Card, error) {
 		}
 		c.ProjectID = p.ID
 	}
-	return sv.data.CreateCard(c)
+	c, err := sv.data.CreateCard(c)
+	if err == nil {
+		sv.membersAdded(c, nil)
+	}
+	return c, err
 }
 
 func (s *Server) getCard(w http.ResponseWriter, r *http.Request) {
@@ -664,7 +668,14 @@ func (sv *service) updateCard(id string, req cardRequest) error {
 	if err := sv.writable(); err != nil {
 		return err
 	}
-	_, err := sv.data.UpdateCard(id, req.apply)
+	var before []int64
+	c, err := sv.data.UpdateCard(id, func(c *model.Card) error {
+		before = slices.Clone(c.Members)
+		return req.apply(c)
+	})
+	if err == nil {
+		sv.membersAdded(c, before)
+	}
 	return err
 }
 
@@ -780,7 +791,11 @@ func (sv *service) addCardComment(cardID, text string) (model.CardComment, error
 	if err := sv.writable(); err != nil {
 		return model.CardComment{}, err
 	}
-	return sv.data.AddCardComment(cardID, text)
+	m, err := sv.data.AddCardComment(cardID, text)
+	if err == nil {
+		sv.mentionedIn(cardID, m)
+	}
+	return m, err
 }
 
 // deleteCardComment handles DELETE …/comments/{mid}: its author, or an

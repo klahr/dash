@@ -60,10 +60,56 @@ type pushPrefs interface {
 	IsOrgMember(user, org int64) (bool, error)
 }
 
+// roleStore is a Store (or PushStore) that knows members' roles: a
+// planner is pushed card news and deploys only (they see nothing else).
+type roleStore interface {
+	OrgRole(user, org int64) (string, error)
+}
+
+// rolePlanner is store.RolePlanner.
+const rolePlanner = "planner"
+
+// roles looks members' roles up, once each, for one notification.
+type roles struct {
+	n     *Notifier
+	org   int64
+	known map[int64]string
+}
+
+func (n *Notifier) roles(org int64) *roles { return &roles{n: n, org: org, known: map[int64]string{}} }
+
+// of is user's role in the org ("" if they aren't in it, or if no store
+// knows roles: then everyone counts as a member).
+func (r *roles) of(user int64) string {
+	if role, ok := r.known[user]; ok {
+		return role
+	}
+	role := "member"
+	rs, ok := r.n.Store.(roleStore)
+	if !ok {
+		rs, ok = r.n.Push.(roleStore)
+	}
+	if ok {
+		var err error
+		if role, err = rs.OrgRole(user, r.org); err != nil {
+			slog.Error("notifications: member's role", "user", user, "org", r.org, "err", err)
+			role = ""
+		}
+	}
+	r.known[user] = role
+	return role
+}
+
+func (r *roles) planner(user int64) bool { return r.of(user) == rolePlanner }
+
+// plannerMay reports whether a planner may be pushed an event of type ev:
+// card news only, as Planning is all they open.
+func plannerMay(ev model.NotifyEvent) bool { return ev == model.NotifyCard }
+
 // wantsPush reports whether user wants note pushed in org: its event, and
-// for a task event, its task (creator is who answers for it, 0: nobody,
-// see pushCreator). want caches the settings for one notification.
-func (n *Notifier) wantsPush(want map[int64]model.NotifySettings, user, org int64, note Notification, creator int64) bool {
+// for a task event, its task (owners are who answer for it, none: nobody,
+// see taskOwners). want caches the settings for one notification.
+func (n *Notifier) wantsPush(want map[int64]model.NotifySettings, user, org int64, note Notification, owners []int64) bool {
 	set, ok := want[user]
 	if !ok {
 		set = model.DefaultNotifySettings()
@@ -76,10 +122,31 @@ func (n *Notifier) wantsPush(want map[int64]model.NotifySettings, user, org int6
 		}
 		want[user] = set
 	}
+	if note.Type == model.NotifyCard {
+		return set.Cards
+	}
 	if !slices.Contains(set.Push, note.Type) {
 		return false
 	}
-	return !model.TaskEvent(note.Type) || set.WantsTask(user, creator)
+	return !model.TaskEvent(note.Type) || set.WantsTaskOf(user, owners)
+}
+
+// taskOwners are who answer for note's task in org: the people its
+// planner creator handed it to (see Notification.byPlanner), else its
+// creator; none when no person does (made by Dash, by an account since
+// deleted, or by someone no longer in org), so that it reaches everyone
+// who wants it.
+func (n *Notifier) taskOwners(note Notification, org int64) []int64 {
+	if !model.TaskEvent(note.Type) {
+		return nil
+	}
+	if note.byPlanner {
+		return note.owners
+	}
+	if c := n.pushCreator(note, org); c > 0 {
+		return []int64{c}
+	}
+	return nil
 }
 
 // pushCreator is who answers for note's task in org: its creator, or 0
@@ -287,7 +354,7 @@ type PushPayload struct {
 func pushPayload(n Notification, actions []PushAction) PushPayload {
 	p := PushPayload{Type: n.Type, Title: n.Head() + ": " + oneLine(n.subject(), 120), URL: "/", Actions: actions}
 	var body []string
-	if (n.Task != nil || n.Goal != nil || n.Issue != nil) && n.Project.Name != "" {
+	if (n.Task != nil || n.Goal != nil || n.Issue != nil || n.Card != nil) && n.Project.Name != "" {
 		body = append(body, n.Project.Name)
 	}
 	if n.Message != "" {
@@ -302,6 +369,9 @@ func pushPayload(n Notification, actions []PushAction) PushPayload {
 		p.URL = applink.Project(pid)
 	}
 	switch {
+	case n.Type == model.NotifyCard && n.Card != nil:
+		p.URL = applink.Card(n.Card.ID) // a planner's link goes to their Planning page
+		p.Tag = "dash-" + n.ID          // each its own: a mention isn't replaced by the next
 	case n.Task != nil && n.Task.ID != "" && n.Type != model.NotifyTest:
 		p.URL = itemURL(pid, n.Task.ID, applink.Task)
 		p.Tag = "dash-" + n.Task.ID
@@ -425,9 +495,15 @@ func (n *Notifier) push(ctx context.Context, note Notification) {
 }
 
 // pushOrg pushes note to the browsers of org's members who want it: a
-// task event to its task's creator, and to those who chose every task.
+// task event to who answers for its task, and to those who chose every
+// task. Planners get only what they can open (plannerMay).
 func (n *Notifier) pushOrg(ctx context.Context, note Notification, org int64) {
-	if !n.PushEnabled() || !slices.Contains(PushEvents, note.Type) || org == 0 {
+	n.pushTo(ctx, note, org, nil)
+}
+
+// pushTo is pushOrg, to the users in only (nil: all of org's members).
+func (n *Notifier) pushTo(ctx context.Context, note Notification, org int64, only map[int64]bool) {
+	if !n.PushEnabled() || (!slices.Contains(PushEvents, note.Type) && note.Type != model.NotifyCard) || org == 0 {
 		return
 	}
 	subs, err := n.Push.PushSubscriptionsForOrg(org)
@@ -456,9 +532,16 @@ func (n *Notifier) pushOrg(ctx context.Context, note Notification, org int64) {
 	}
 	urgent := looks[note.Type].high
 	want := map[int64]model.NotifySettings{}
-	creator := n.pushCreator(note, org)
+	owners := n.taskOwners(note, org)
+	rs := n.roles(org)
 	for _, s := range subs {
-		if !n.wantsPush(want, s.UserID, org, note, creator) {
+		if only != nil && !only[s.UserID] {
+			continue
+		}
+		if !plannerMay(note.Type) && rs.planner(s.UserID) {
+			continue
+		}
+		if !n.wantsPush(want, s.UserID, org, note, owners) {
 			continue
 		}
 		n.wg.Add(1)

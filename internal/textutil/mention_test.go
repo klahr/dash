@@ -34,3 +34,29 @@ func TestNoMentions(t *testing.T) {
 		}
 	}
 }
+
+func TestMentioned(t *testing.T) {
+	for _, c := range []struct {
+		text, name string
+		want       bool
+	}{
+		{"@pia can you look?", "pia", true},
+		{"Thanks @Pia.", "pia", true},
+		{"(@pia)", "pia", true},
+		{"@pia's turn", "pia", true},
+		{"ask @dev, then @pia", "dev", true},
+		{"@pia2 not her", "pia", false},
+		{"@pia_x not her", "pia", false},
+		{"mail pia@example.com", "example.com", false},
+		{"mail x@pia", "pia", false},
+		{"https://example.com/@pia", "pia", false},
+		{"@ana.berg here", "ana.berg", true},
+		{"pia", "pia", false},
+		{"@pia", "", false},
+		{"@x @pia", "pia", true},
+	} {
+		if got := Mentioned(c.text, c.name); got != c.want {
+			t.Errorf("Mentioned(%q, %q) = %v, want %v", c.text, c.name, got, c.want)
+		}
+	}
+}

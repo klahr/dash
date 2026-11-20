@@ -119,3 +119,22 @@ func TestPlannerUsesPlanningOnly(t *testing.T) {
 		t.Errorf("projects: %d %s", w.Code, w.Body)
 	}
 }
+
+// A planner has notification settings: card news, pushed. No summary,
+// which tells of tasks they don't see.
+func TestPlannerNotifySettings(t *testing.T) {
+	s, _, _ := boardServer(t)
+	h := s.Routes()
+	ph, _ := plannerOf(t, s, h)
+	w := do(t, ph, "GET", "/api/me/notifications", "")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"planner":true`) || !strings.Contains(w.Body.String(), `"cards":true`) {
+		t.Fatalf("get: %d %.300s", w.Code, w.Body)
+	}
+	w = do(t, ph, "PUT", "/api/me/notifications", `{"cards":false,"summary":"daily","email":true}`)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"cards":false`) || !strings.Contains(w.Body.String(), `"summary":"off"`) {
+		t.Fatalf("put: %d %.300s", w.Code, w.Body)
+	}
+	if w := do(t, ph, "POST", "/api/me/notifications/test-summary", ""); w.Code != http.StatusForbidden {
+		t.Errorf("test summary: %d", w.Code)
+	}
+}

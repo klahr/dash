@@ -37,11 +37,22 @@ func (s *Server) emailNote(email string) string {
 	return ""
 }
 
-// notifyView is the settings page's data.
+// notifyView is the settings page's data. A planner's is what they may
+// choose: card news (all that is pushed to them).
 func (s *Server) notifyView(sv *service, set model.NotifySettings, st model.NotifyState) (map[string]any, error) {
 	u, err := s.Store.Accounts().User(sv.c.User)
 	if err != nil {
 		return nil, err
+	}
+	if sv.c.Planner {
+		return map[string]any{
+			"settings":     set,
+			"state":        model.NotifyState{},
+			"planner":      true,
+			"push_choices": []model.NotifyEvent{},
+			"push_enabled": s.Notify.PushEnabled(),
+			"enabled":      false,
+		}, nil
 	}
 	hooks, err := sv.data.ListPersonalWebhooks()
 	if err != nil {
@@ -102,6 +113,9 @@ func (s *Server) putNotifySettings(w http.ResponseWriter, r *http.Request) {
 	if err := decode(r, &set); err != nil {
 		writeErr(w, err)
 		return
+	}
+	if sv.c.Planner {
+		set.Summary = model.SummaryOff // a summary tells of tasks, which planners don't see
 	}
 	if err := set.Normalize(); err != nil {
 		writeErr(w, errors.Join(errBadRequest, err))

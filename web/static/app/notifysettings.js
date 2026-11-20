@@ -25,6 +25,8 @@ const PUSH_LABELS = {
   "runner.disk": "A runner's disk is nearly full",
   "issue.new": "A scan or Claude finds a new issue",
 };
+// Card news (card.activity) is its own setting, not one of the push events.
+const CARDS_LABEL = "Planning: you're mentioned or added to a card";
 const INCLUDE = ["issues", "review", "failed", "merged", "goals", "builds"];
 const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } };
 const hookName = (w) => w.name || (() => { try { return new URL(w.url).host; } catch { return w.url; } })();
@@ -64,8 +66,9 @@ function renderNotify() {
   for (const k of INCLUDE) form[k].checked = !!s.include[k];
   form.min_severity.value = s.include.min_severity || "medium";
   const push = new Set(s.push);
-  fill($("#notify-push"), view.push_choices.map((e) => h("label", { class: "toggle" },
-    h("input", { type: "checkbox", name: "push", value: e, checked: push.has(e) }), h("span", {}, PUSH_LABELS[e] || WEBHOOK_EVENTS[e] || e))));
+  fill($("#notify-push"), [...view.push_choices.map((e) => h("label", { class: "toggle" },
+    h("input", { type: "checkbox", name: "push", value: e, checked: push.has(e) }), h("span", {}, PUSH_LABELS[e] || WEBHOOK_EVENTS[e] || e))),
+  h("label", { class: "toggle" }, h("input", { type: "checkbox", name: "cards", checked: s.cards !== false }), h("span", {}, CARDS_LABEL))]);
   state.pushEvents = push; // the page's own notifications follow it too (notifications.js)
   state.pushTasks = form.tasks.value;
   syncNotify();
@@ -121,6 +124,7 @@ function collect() {
     webhooks: picks("dest"),
     include,
     push: picks("push"),
+    cards: form.cards ? form.cards.checked : true,
     tasks: form.tasks.value || "mine",
   };
 }

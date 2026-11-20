@@ -13,7 +13,8 @@ import * as store from "./app/store.js";
 import { state } from "./app/state.js";
 import { desktop, wsURL } from "./app/viewport.js";
 import { cardError, cardId, closeCard, loadPlanning, mountPlanning, onPlanningEvent, openCard } from "./app/planning.js";
-import { openAccount } from "./app/accountsheet.js";
+import { accountSection, openAccount } from "./app/accountsheet.js";
+import { pushSubscribe, pushSupported, pushTest, pushUnsubscribe } from "./app/pushsub.js";
 import { showOwnAvatar } from "./app/avatar.js";
 import { accountHooks } from "./app/myaccount.js";
 
@@ -50,6 +51,69 @@ function start() {
   loadPlanning().catch(fail);
   connect();
   followCards();
+  notifications();
+}
+
+// notifications: a planner's only ones are card news (they were mentioned
+// or added to a card, or its work is ready for review, failed or merged),
+// pushed to the browsers they turned push on in (Account → Notifications).
+// The switch is this browser's, as in the app (the same preference); the
+// rest is kept by the hub. Clicking a pushed card opens it here.
+function notifications() {
+  const NOTIFY = "dash.notify";
+  const form = $("#notify-form");
+  const sync = () => {
+    form.browser.checked = store.flag(NOTIFY);
+    $("#push-hint").hidden = !(store.flag(NOTIFY) && state.pushOn);
+  };
+  const subscribe = async () => {
+    const ok = await pushSubscribe().catch((e) => { console.warn("web push", e); return false; });
+    sync();
+    return ok;
+  };
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.addEventListener("message", (e) => {
+      if (e.data?.type !== "dash.open") return;
+      const m = new URL(e.data.url, location.origin).pathname.match(/^\/planning\/cards\/([^/]+)$/);
+      if (m) attempt(() => openCard(decodeURIComponent(m[1])))();
+    });
+  }
+  if (store.flag(NOTIFY)) subscribe();
+  accountSection("notifications", async () => {
+    const v = await api("GET", "/api/me/notifications");
+    form.cards.checked = v.settings.cards !== false;
+    const off = !v.push_enabled ? "This Dash doesn't push notifications." : !pushSupported() ? "This browser can't get pushes (on an iPhone or iPad, add Dash to the home screen first)." : "";
+    $("#push-off").textContent = off;
+    $("#push-off").hidden = !off;
+    sync();
+  });
+  form.addEventListener("submit", (e) => e.preventDefault());
+  form.browser.addEventListener("change", attempt(async () => {
+    try {
+      if (!form.browser.checked) {
+        store.setFlag(NOTIFY, false);
+        await pushUnsubscribe().catch(() => {});
+        toast("Notifications off");
+        return;
+      }
+      if (!("Notification" in window)) throw new Error("This browser doesn't support notifications.");
+      if (await Notification.requestPermission() !== "granted") throw new Error("Notifications are blocked for this site in your browser settings.");
+      store.setFlag(NOTIFY, true);
+      if (!(await subscribe())) {
+        store.setFlag(NOTIFY, false);
+        throw new Error("This browser or Dash can't push notifications.");
+      }
+      toast("Notifications on: you'll hear about your cards, even with Dash closed");
+    } finally { sync(); }
+  }));
+  form.cards.addEventListener("change", attempt(async () => {
+    await api("PUT", "/api/me/notifications", { cards: form.cards.checked });
+  }));
+  $("#push-test").addEventListener("click", attempt(async () => {
+    await pushTest();
+    toast("Test notification sent", { tone: "ok" });
+  }));
 }
 
 // followCards keeps ?card=<id> in the URL on the card open, so Back closes

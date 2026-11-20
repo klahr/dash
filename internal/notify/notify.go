@@ -253,9 +253,13 @@ func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 	if !ok {
 		return
 	}
+	news := n.taskPlanning(&note)
 	n.record(note, 0)
 	n.push(ctx, note)
 	n.toWebhooks(ctx, note, []string{note.Project.ID})
+	for _, cn := range news {
+		n.pushTo(ctx, cn.note, cn.org, cn.users)
+	}
 }
 
 // toWebhooks sends note to the webhooks of the projects pids, each URL once.
@@ -421,6 +425,20 @@ func (n *Notifier) record(note Notification, user int64) {
 		}
 		a.Kind = map[model.NotifyEvent]string{model.NotifyReview: model.SummaryReview, model.NotifyFailed: model.SummaryFailed, model.NotifyMerged: model.SummaryMerged}[note.Type]
 		a.Ref, a.Title, a.URL, a.Creator = note.Task.ID, note.Task.Title, note.Task.URL, max(note.creator, 0)
+		if note.byPlanner {
+			// A planner's task is its owners' (one item each; the summary
+			// shows it once), or everyone's if it has none.
+			a.Creator = 0
+			for _, o := range note.owners {
+				a.Creator = o
+				if err := rec.RecordActivity(a); err != nil {
+					slog.Error("notifications: record activity", "project", a.ProjectID, "kind", a.Kind, "err", err)
+				}
+			}
+			if len(note.owners) > 0 {
+				return
+			}
+		}
 	case model.NotifyGoal:
 		if note.Goal == nil || note.Goal.Status != model.GoalWaiting {
 			return

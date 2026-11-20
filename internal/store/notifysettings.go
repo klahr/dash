@@ -294,8 +294,8 @@ func (o *OrgStore) SaveNotifySettings(set model.NotifySettings, now time.Time) (
 }
 
 // SummaryRecipient returns user's email address and org's name, and
-// whether user is still a member of org (a summary only covers the
-// projects of orgs its user is in).
+// whether user is still a member of org who sees its tasks (a summary
+// only covers the projects of orgs its user is in, and not a planner's).
 func (s *Store) SummaryRecipient(user, org int64) (email, orgName string, member bool, err error) {
 	acc := s.Accounts()
 	m, err := acc.Membership(user, org)
@@ -312,5 +312,18 @@ func (s *Store) SummaryRecipient(user, org int64) (email, orgName string, member
 	if err != nil {
 		return "", "", false, err
 	}
-	return u.Email, m.Org.Name, true, nil
+	// A planner sees no tasks: no summary for them, and a task of theirs
+	// is nobody's in particular.
+	return u.Email, m.Org.Name, !m.Role.Planner(), nil
+}
+
+// OrgRole is user's role in org ("owner", "admin", "member" or
+// "planner"), or "" if they aren't a member.
+func (s *Store) OrgRole(user, org int64) (string, error) {
+	var role string
+	err := s.db.QueryRow("SELECT role FROM org_memberships WHERE user_id = ? AND org_id = ?", user, org).Scan(&role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return role, err
 }

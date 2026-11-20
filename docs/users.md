@@ -132,9 +132,11 @@ A planner can:
 - see each card's linked work through its status and titles
 - see deploys through the API, read only: what is live where, the deploys (without their
   logs) and the environments' settings history (see [Deploys](deploys.md#api))
+- get [card news](notifications.md#planning-cards) pushed to their browser: they were mentioned
+  or added to a card, or a card's work is ready for review, failed or merged
 - use their own account: the account menu at the bottom of the sidebar (in the menu on a phone)
-  switches orgs, and has **Account** (**Profile picture**, **Two-factor sign-in**, **Google
-  account** and **Your data**) and **Sign out**
+  switches orgs, and has **Account** (**Profile picture**, **Notifications**, **Two-factor
+  sign-in**, **Google account** and **Your data**) and **Sign out**
 
 A planner can't see or use projects, tasks, goals, chats, terminals, runners, previews,
 scans, issues, the MCP tools or the organization's members. Every such request answers

@@ -80,6 +80,7 @@
         <nav class="rail-nav" aria-label="Account sections">
           <div class="rail-group"><span class="rail-head">You</span>
             <button type="button" class="rail-item" data-rail="picture">Profile picture</button>
+            <button type="button" class="rail-item" data-rail="notifications">Notifications</button>
             <button type="button" class="rail-item" data-rail="twofactor">Two-factor sign-in</button>
             <button type="button" class="rail-item" data-rail="google">Google account</button>
             <button type="button" class="rail-item" data-rail="data">Your data</button>
@@ -94,6 +95,17 @@
               <button class="btn small" type="button" id="avatar-clear">Remove</button>
             </div>
             <p class="hint">Shown in the account menu and to the members of your organizations. Dash crops it to a square and makes it small before saving it.</p>
+          </section>
+          <!-- Card news pushed to this browser (planning-page.js): a planner's only notifications -->
+          <section class="rail-section" data-section="notifications">
+            <form id="notify-form" class="notify-form" novalidate>
+              <label class="toggle"><input type="checkbox" name="browser"><span>Push to this browser</span></label>
+              <p class="hint" id="push-hint" hidden><button type="button" class="link inline" id="push-test">Send a test</button></p>
+              <p class="hint err-text" id="push-off" hidden></p>
+              <div class="notify-push">
+                <label class="toggle"><input type="checkbox" name="cards"><span>You're mentioned or added to a card, or its work is ready for review, failed or merged</span></label>
+              </div>
+            </form>
           </section>
           <section class="rail-section" data-section="twofactor">
             <div class="twofactor-body" id="twofactor-body"></div>

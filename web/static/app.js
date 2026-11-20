@@ -49,6 +49,7 @@ import "./app/billing.js";
 import "./app/tokens.js";
 import "./app/wallview.js";
 import "./app/notifications.js";
+import "./app/pushsub.js";
 import "./app/review.js";
 import "./app/runstats.js";
 import { loadUsage, renderUsage } from "./app/usage.js";

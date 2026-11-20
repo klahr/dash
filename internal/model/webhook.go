@@ -25,6 +25,11 @@ const (
 	NotifyIssue      NotifyEvent = "issue.new"         // a scan or Claude reported a new issue
 	NotifyDeploy     NotifyEvent = "deploy.failed"     // a deploy failed (its scripts or its checks)
 	NotifyTest       NotifyEvent = "webhook.test"      // the settings' "Send test" button
+	// NotifyCard is news of a Planning card for the people it concerns:
+	// they were mentioned in a comment or added to its members, or the
+	// work linked to it is ready for review, failed or merged. It is
+	// pushed only (NotifySettings.Cards), never sent to webhooks.
+	NotifyCard NotifyEvent = "card.activity"
 	// NotifySummary is a user's daily or weekly summary. A webhook gets it
 	// when the user chose it as a summary destination, whatever its events.
 	NotifySummary NotifyEvent = "summary"

@@ -9,6 +9,7 @@ daily or weekly **summary** by email or webhook.
 **Account → Notifications** holds all of your own notifications, in one place:
 
 - [whose tasks](#whose-tasks) you hear about: **Tasks I created** or **All tasks**
+- [Planning cards](#planning-cards): when you're mentioned or added to a card
 - **Summary**: off, daily or weekly, when, of which projects, where it goes and what is in it
   ([summary](#summary))
 - **Push**: **Push to this browser**, and which events [push](#push-notifications) to your browsers
@@ -33,6 +34,10 @@ A task no person is behind reaches everyone who wants that event, whatever they 
 made (from an issue or an automation), one whose creator's account was deleted, and one whose
 creator left the organization.
 
+A [planner](users.md#planners) can't open tasks. A task a planner started with **Start** on a
+card goes to the card's members who aren't planners, as if they had created it. With none on
+the card, it reaches everyone, like a task Dash made. Planners never get task notifications.
+
 Events about the whole org aren't anyone's task, and still reach everyone who turned them on: a
 failing build on the default branch, a failed deploy, a runner's disk filling up, a checkout left
 behind origin.
@@ -41,6 +46,23 @@ each one has its own events.
 
 > **Changed in this version.** Task events used to push to every member who turned them on.
 > Now they go to the task's creator. If you want every task's news, choose **All tasks**.
+
+## Planning cards
+
+You hear about a [Planning](planning.md) card when:
+
+- someone mentions you in a comment on it: `@` and your username, such as `@pia`
+- someone adds you to its **Members**
+- you're a planner on the card, or the planner who started its task, and the task is ready for
+  review, failed or merged. Others on the card hear of the task itself (see
+  [Whose tasks](#whose-tasks)).
+
+You don't hear about what you did yourself. These are pushed to your browsers only: they aren't
+in the summary, and webhooks don't get them. Turn them off under **Account → Notifications →
+Push → Planning: you're mentioned or added to a card**. Tapping one opens the card.
+
+Planners have **Account → Notifications** too, with **Push to this browser** and this one
+choice. Card news is the only notification a planner gets: there is no summary for planners.
 
 ## Push notifications
 
@@ -60,9 +82,10 @@ also pushes these to the browser, so they arrive while Dash is closed. Choose wh
 - a [deploy](deploys.md#when-a-deploy-fails) fails
 - a runner's disk is nearly full ([Disk space on a runner](several-computers.md#disk-space-on-a-runner))
 - a scan or Claude finds a new issue (off until you tick it)
+- you're mentioned or added to a [Planning card](#planning-cards), or its work needs a planner
 
 Tapping a notification opens the task, the goal on the **Goals** page, the issue on the
-**Issues** page, or the deploy on the **Deploys** page. **Send a test**, under the switch, pushes one right away.
+**Issues** page, the deploy on the **Deploys** page, or the card on **Planning**. **Send a test**, under the switch, pushes one right away.
 On an iPhone or iPad, add Dash to the home screen first ([phone.md](phone.md)) and turn
 notifications on in the installed app: Safari tabs can't get pushes there.
 

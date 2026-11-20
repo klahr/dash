@@ -895,3 +895,23 @@ func (o *OrgStore) CardsLinkedTo(kind, workID string) ([]model.Card, error) {
 	}
 	return out, rows.Err()
 }
+
+// TaskCards are the Planning cards, of any org, that link to task todoID,
+// with their members (for the notifier: a card's people hear of its work).
+func (s *Store) TaskCards(todoID string) ([]model.Card, error) {
+	s.planMu.Lock()
+	refs := slices.Clone(s.planLinks[linkKey(model.LinkTask, todoID)])
+	s.planMu.Unlock()
+	var out []model.Card
+	for _, r := range refs {
+		c, err := getCard(s.db, r.org, r.card)
+		if errors.Is(err, ErrNotFound) {
+			continue // deleted meanwhile
+		}
+		if err != nil {
+			return out, err
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}

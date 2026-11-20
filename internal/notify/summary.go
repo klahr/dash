@@ -208,7 +208,8 @@ type SummaryStore interface {
 	ListProjects() []model.Project
 	GetWebhook(id string) (model.Webhook, error)
 	// SummaryRecipient is user's email address and org's name, and
-	// whether user is still a member of org.
+	// whether user is still a member of org who sees its tasks (not a
+	// planner).
 	SummaryRecipient(user, org int64) (email, orgName string, member bool, err error)
 }
 

@@ -39,7 +39,7 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   them, and click **×** on a member to take them off. Their pictures (or initials) show on the
   card on the board. Anyone in the org, planners too, can be a member and can add members. On
   the board, point at a card and press `Space` to put yourself on it; press it again to take
-  yourself off.
+  yourself off. Someone you add gets a [notification](notifications.md#planning-cards).
 - **Tags**: short labels, such as `backend` or `Q3`, any number up to 20. Type one in the box
   and press `Enter` (or a comma) to add it; the org's other tags are offered as you type.
   Click **×** on a tag to take it off. Tags show on the card on the board. Case doesn't
@@ -55,7 +55,9 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   **×** takes it off. A card can't depend on itself, or on a card that already depends on it.
   **Needed by** lists the cards that depend on this one. Click a card in either list to open it.
 - **Comments**: anyone in the org can comment; a comment's author or an admin can delete it.
-  A card with comments shows how many on the board, by a speech bubble.
+  A card with comments shows how many on the board, by a speech bubble. Write `@` and
+  someone's username, such as `@pia`, to mention them: they get a
+  [notification](notifications.md#planning-cards).
 - **Work**: the tasks and goals linked to it, each with its status
 
 **Copy link** in the card's head copies its address, `/planning/cards/<id>`. It opens the card
@@ -135,6 +137,11 @@ also gets the card's files, for Claude to read. On a hub it doesn't: files can't
 runners yet. Dash links the new work to the card and moves the card to
 **In progress**. Planners and members
 can both press **Start**.
+
+A task a planner starts is the card's: its news goes to the card's members who aren't planners,
+as if they had created it. Put the developer on the card before you press **Start**. The
+planners on the card, and the planner who pressed **Start**, hear of it as card news (see
+[Planning cards](notifications.md#planning-cards)).
 
 ## Link existing work
 

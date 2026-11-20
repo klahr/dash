@@ -127,3 +127,31 @@ func inWord(c byte) bool {
 	return c == '_' || c == '/' || c == '.' || c == '-' || c == '+' || c >= 0x80 ||
 		('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9')
 }
+
+// Mentioned reports whether s mentions name: "@name", in any case, not
+// after a word character (an email address, a URL) and not followed by
+// an ASCII letter, digit or "_" (a longer name). "@pia." and "@pia's"
+// mention pia.
+func Mentioned(s, name string) bool {
+	if name == "" {
+		return false
+	}
+	ls, at := strings.ToLower(s), "@"+strings.ToLower(name)
+	for i := 0; ; {
+		k := strings.Index(ls[i:], at)
+		if k < 0 {
+			return false
+		}
+		k += i
+		end := k + len(at)
+		if (k == 0 || !inWord(ls[k-1])) && (end == len(ls) || !nameByte(ls[end])) {
+			return true
+		}
+		i = k + 1
+	}
+}
+
+// nameByte reports a byte that would make a mention a longer name.
+func nameByte(c byte) bool {
+	return c == '_' || ('a' <= c && c <= 'z') || ('0' <= c && c <= '9')
+}
