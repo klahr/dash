@@ -249,22 +249,34 @@ func (s *Server) viaRunner(h http.HandlerFunc) http.HandlerFunc {
 		case "POST /api/projects/{pid}/tags":
 			// The runner trusts the hub (a Machine caller) to have checked
 			// who may tag: check it here, before forwarding.
+			// The hub deploys: the runner only tags, and isn't told where to.
+			var req tagRequest
+			if err := decode(r, &req); err != nil {
+				writeErr(w, err)
+				return
+			}
 			if err := sv.canRelease(); err != nil {
 				writeErr(w, err)
 				return
 			}
-			res, err := sv.forward(r, p, "", nil)
+			if err := sv.checkReleaseDeploy(p, req.Deploy); err != nil {
+				writeErr(w, err)
+				return
+			}
+			env := req.Deploy
+			req.Deploy = ""
+			body, _ := json.Marshal(req)
+			res, err := sv.forward(r, p, "", body)
 			if err != nil {
 				writeErr(w, err)
 				return
 			}
-			if res.ok() {
-				var rel mcptools.Release
-				if json.Unmarshal(res.body, &rel) == nil {
-					s.deployRelease(p, rel.Tag, rel.SHA, sv.c)
-				}
+			var rel mcptools.Release
+			if !res.ok() || json.Unmarshal(res.body, &rel) != nil {
+				res.write(w)
+				return
 			}
-			res.write(w)
+			writeJSON(w, res.code, sv.releaseDeploys(p, rel, env))
 		case "GET /api/projects/{pid}/release":
 			res, err := sv.forward(r, p, "", nil)
 			if err != nil {

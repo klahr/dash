@@ -129,6 +129,19 @@ func TestHubChecksWhoMayTagReleases(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("owner's POST /tags goes to a runner: %d %s", w.Code, w.Body)
 	}
+	// Tag and deploy: the hub checks the deploy too, before the runner tags.
+	p = withEnvs(t, s, p, model.Environment{Name: "frozen", DeployCommand: "true",
+		Freezes: []model.Freeze{{From: "2000-01-01 00:00", To: "2999-01-01 00:00", Note: "code freeze"}}})
+	for body, code := range map[string]int{`{"version":"9.9.9","deploy":"frozen"}`: http.StatusConflict, `{"version":"9.9.9","deploy":"nowhere"}`: http.StatusBadRequest} {
+		w := httptest.NewRecorder()
+		s.mux().ServeHTTP(w, asOwner(t, s, httptest.NewRequest("POST", "/api/projects/"+p.ID+"/tags", strings.NewReader(body))))
+		if w.Code != code {
+			t.Errorf("owner's %s: %d %s, want %d", body, w.Code, w.Body, code)
+		}
+	}
+	if w := send(m, "POST", "/api/projects/"+p.ID+"/tags", `{"version":"9.9.9","deploy":"frozen"}`); w.Code != http.StatusForbidden {
+		t.Errorf("member's tag and deploy: %d %s", w.Code, w.Body)
+	}
 
 	// The create_release tool, in a member's chat.
 	b := board{s.as(Caller{User: mid, Org: owner.Org})}

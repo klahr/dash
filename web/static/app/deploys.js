@@ -1,4 +1,4 @@
-import { $, $$, dateTimeText, fill, h, ib, plural } from "./dom.js";
+import { $, $$, dateTimeText, fill, h, ib, plural, setLabel } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, copy, fail, openSheet, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
@@ -10,6 +10,8 @@ import { detailBackground, openDetail } from "./detail.js";
 import { openSettings } from "./settings.js";
 import { changed, linkTo } from "./routes.js";
 import { openRelease } from "./releases.js";
+import { releaseFields, releaseWarnings } from "./releaseform.js";
+import { refreshGraph } from "./history.js";
 
 // ------------------------------------------------------------------ deploys
 // The Deploys page: one card per environment of the project (what is live
@@ -281,45 +283,166 @@ export async function deployCommit(c) {
   await deployTo(env, sha, { project: p, tag });
 }
 
-// pickTag is Deploy on an environment's card: a picker of the project's
-// release tags, newest first (the newest chosen), each with its commit and
-// how far it is from what the environment runs; the chosen one deploys.
-// With no release tag yet it offers Tag release… instead.
+// pickTag is Deploy on an environment's card: a picker of what to deploy
+// there. The environments are a chain (staging → production: where Promote
+// sends, policy.promote_from): on the chain's first one, a new release from
+// the tip of origin's branch comes first, when the tip is past the latest
+// release tag; on a later one, promoting what is live on the one before
+// does, and the new release is still there, lower down, as a direct
+// release. Then the release tags, newest first, each with how far it is
+// from what the environment runs. A new release is tagged, pushed and
+// deployed in one go (Tag 1.4.1 and deploy); where the environment deploys
+// each release tag on its own, pushing the tag is the deploy (Tag 1.4.1).
+// Only those who may tag (owners, admins) can make one; the others are
+// told so, and pick a tag or promote.
 async function pickTag(e) {
   const p = dp.project || state.project;
   const body = h("div", { class: "tag-pick" }, h("p", { class: "hint" }, "Fetching release tags…"));
   const ok = ib({ class: "btn primary", value: "ok", disabled: true }, "rocket", "Deploy");
-  const { form, closed } = openSheet({ title: `Deploy to ${e.name}`, body: [body], footer: ok });
-  let res;
+  const { dialog, form, closed } = openSheet({ title: `Deploy to ${e.name}`, body: [body], footer: ok });
+  let res, info = null;
   try {
-    res = await api("GET", `/api/projects/${p.id}/deploys/tags?environment=${encodeURIComponent(e.name)}`, null, prefix());
+    [res, info] = await Promise.all([
+      api("GET", `/api/projects/${p.id}/deploys/tags?environment=${encodeURIComponent(e.name)}`, null, prefix()),
+      api("GET", `/api/projects/${p.id}/release?sha=`, null, prefix()).catch(() => null),
+    ]);
   } catch (err) {
     fill(body, h("p", { class: "err-text" }, err.message));
     return;
   }
-  if (!res.tags?.length) {
+  const pol = e.policy || {};
+  const branch = p.default_branch || "main";
+  const later = !!pol.promote_from;
+  const offer = pol.promote;
+  // The tip is past the latest release tag, untagged (a runner on an older
+  // Dash doesn't say: then only a first release is offered).
+  const fresh = !!info && (Array.isArray(info.sha_tags)
+    ? !info.sha_tags.length && (!info.previous || info.since == null || info.since > 0)
+    : !info.previous);
+  if (!res.tags?.length && !fresh && !offer) {
     fill(body,
       h("p", {}, `${p.name} has no release tags yet${res.format ? ` (tag format ${res.format})` : ""}. Deploys ship release tags: tag one first.`),
       h("p", {}, ib({ type: "button", class: "btn small", onclick: () => {
-        form.closest("dialog").close();
-        const branch = p.default_branch || "main";
+        dialog.close();
         openRelease({ sha: "", short: branch, subject: `the tip of origin/${branch}` }).catch(fail);
       } }, "tag", "Tag release…")),
       h("p", { class: "hint" }, "To deploy a commit that isn't tagged, open it in History and choose Deploy to…."));
     return;
   }
+  const approval = pol.needs?.some((n) => n.startsWith("approval"));
+  const triggered = e.trigger === "release";
+  const others = dp.envs.filter((x) => x.name !== e.name && x.trigger === "release").map((x) => x.name);
+  const pickRadio = (value, { disabled = false } = {}) =>
+    h("input", { type: "radio", name: "tag", value, disabled: disabled || null });
+
+  // A new release from the tip of origin's branch.
+  let fields = null, release = null;
+  if (fresh) {
+    const since = !info.previous ? "no release tag yet" : info.since == null ? `new commits since ${info.previous}` : `${plural(info.since, "commit")} since ${info.previous}`;
+    const title = later ? `Direct release from origin/${branch}` : `New release from origin/${branch}`;
+    const sub = [later ? `hotfix: straight to ${e.name}, skipping ${pol.promote_from}` : "", since, short(info.sha)].filter(Boolean).join(" · ");
+    fields = info.can_tag ? releaseFields(info, { rows: 5, onChange: () => sync() }) : null;
+    const warnings = releaseWarnings(info, { cantTag: false });
+    release = h("div", { class: "tag-pick-release" },
+      h("label", { class: "radio tag-pick-row" }, pickRadio("@new", { disabled: !info.can_tag }),
+        h("span", {}, h("strong", {}, title), h("em", {}, sub))),
+      info.can_tag
+        ? h("div", { class: "tag-pick-details", hidden: true },
+          warnings.length ? h("ul", { class: "release-warnings" }, ...warnings) : null,
+          fields.version, fields.notes,
+          h("p", { class: "hint tag-pick-trigger" }),
+          others.length ? h("p", { class: "hint" }, `${others.join(", ")} also ${others.length === 1 ? "deploys" : "deploy"} each release tag.`) : null)
+        : h("p", { class: "hint tag-pick-cant" }, `${info.cant_tag || "You can't tag releases"}. Deploy a release tag${offer ? " or promote" : ""} instead.`));
+  }
+
+  // Promote what is live on the environment before this one.
+  const promote = offer ? h("label", { class: "radio tag-pick-row tag-pick-promote" },
+    pickRadio("@promote", { disabled: !!offer.blocked?.length }),
+    h("span", {}, h("strong", {}, `Promote ${offer.deploy.tag || short(offer.deploy.commit)} from ${offer.from}`),
+      h("em", {}, offer.blocked?.length ? `Unavailable: ${offer.blocked.join("; ")}.`
+        : [offer.deploy.tag ? short(offer.deploy.commit) : "", `live on ${offer.from} ${agoText(liveSince(offer.deploy))}`, "no build"].filter(Boolean).join(" · ")))) : null;
+
   const row = (t, i) => h("label", { class: "radio tag-pick-row" },
-    h("input", { type: "radio", name: "tag", value: t.tag, checked: i === 0 }),
+    pickRadio(t.tag),
     h("span", {}, t.tag, " ", h("code", { class: "hint" }, short(t.commit)),
       h("em", {}, [i === 0 ? "newest" : "", tagDistance(t, e.name, res.live)].filter(Boolean).join(" · "))));
+  const tags = res.tags?.length
+    ? h("fieldset", { class: "field choice tag-pick-list" }, h("legend", { class: later || fresh ? "" : "sr-only" }, "Release tags"), ...res.tags.map(row))
+    : null;
+  const note = h("p", { class: "hint", hidden: true });
   fill(body,
-    h("fieldset", { class: "field choice" }, h("legend", { class: "sr-only" }, "Release tag"), ...res.tags.map(row)),
-    e.policy?.needs?.some((n) => n.startsWith("approval")) ? h("p", { class: "hint" }, "It waits for an approval before it runs.") : null);
-  ok.disabled = false;
-  body.querySelector("input:checked")?.focus();
+    later ? [promote, tags, release] : [release, promote, tags],
+    approval ? h("p", { class: "hint" }, "It waits for an approval before it runs.") : null,
+    note);
+  // The first choice that can go: the top of the picker, else a tag.
+  const radios = $$('input[name="tag"]', body);
+  (radios.find((r) => !r.disabled) || {}).checked = true;
+
+  const picked = () => $('input[name="tag"]:checked', body)?.value || "";
+  function sync() {
+    const v = picked();
+    const details = $(".tag-pick-details", body);
+    if (details) details.hidden = v !== "@new";
+    note.hidden = true;
+    if (v === "@new" && fields) {
+      const r = fields.read();
+      setLabel(ok, "tag", r.tag ? (triggered ? `Tag ${r.tag}` : `Tag ${r.tag} and deploy`) : "Tag and deploy");
+      ok.disabled = !!r.error;
+      const t = $(".tag-pick-trigger", body);
+      t.hidden = !triggered;
+      t.textContent = triggered ? `${e.name} deploys each release tag on its own: pushing ${r.tag || "the tag"} deploys it there, once.` : "";
+    } else if (v === "@promote") {
+      setLabel(ok, "push", `Promote to ${e.name}`);
+      ok.disabled = false;
+      note.hidden = false;
+      note.textContent = `What is live on ${offer.from} is deployed as it is: ${offer.deploy.artifact ? `its artifact ${offer.deploy.artifact}` : "the same commit"}, and the build command doesn't run.`;
+    } else {
+      setLabel(ok, "rocket", "Deploy");
+      ok.disabled = !v;
+    }
+  }
+  body.addEventListener("change", (ev) => { if (ev.target.name === "tag") sync(); });
+  sync();
+  $('input[name="tag"]:checked', body)?.focus();
+
+  // A new release stays open while the tag is pushed; the rest close first.
+  form.addEventListener("submit", attempt(async (ev) => {
+    if (ev.submitter?.value !== "ok" || picked() !== "@new") return;
+    ev.preventDefault();
+    const r = fields.read();
+    if (r.error) return;
+    await busy(ok, async () => {
+      const out = await api("POST", `/api/projects/${p.id}/tags`, { sha: info.sha, version: r.tag, notes: r.notes, deploy: e.name }, prefix());
+      dialog.close("done");
+      released(e.name, out);
+    }, { label: `Pushing ${r.tag}…` });
+  }));
   if ((await closed) !== "ok") return;
-  const t = res.tags.find((x) => x.tag === new FormData(form).get("tag"));
+  const v = picked();
+  if (v === "@promote") {
+    const d = await api("POST", `/api/projects/${p.id}/deploys`, { environment: e.name, promote_from: offer.from }, prefix());
+    queued(d, `Promotion of ${offer.deploy.tag || short(offer.deploy.commit)} to ${e.name}`);
+    return;
+  }
+  const t = res.tags?.find((x) => x.tag === v);
   if (t) await deployTo(e.name, t.commit, { project: p, tag: t.tag });
+}
+
+// released tells how a release made from Deploy's picker went: tagged, and
+// deployed to env (by the request, or by env's own release trigger), or
+// tagged but not deployed, and why.
+function released(env, out) {
+  refreshGraph();
+  if (out.deploy) mergeDeploy(out.deploy);
+  loadEnvs().catch(() => {});
+  const open = out.deploy ? { label: "Open", run: () => openDeploy(out.deploy.id).catch(fail) } : null;
+  if (out.deploy_error) {
+    toast(out.deploy_error, { tone: "error", head: `Tagged ${out.tag}; not deployed to ${env}`, action: open });
+    return;
+  }
+  const waits = out.deploy?.status === "awaiting_approval";
+  toast(out.triggered ? `${env} deploys each release tag, so its trigger deploys ${out.tag}.` : "",
+    { tone: "ok", icon: "tag", head: `Tagged ${out.tag}; deploy to ${env} ${waits ? "awaits approval" : "queued"}`, action: open });
 }
 
 function queued(d, what) {

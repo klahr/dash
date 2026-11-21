@@ -886,7 +886,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .release-warnings:empty { display: none; }
 .release-warnings a { margin-left: 4px; }
 .radio input.release-custom { display: inline-block; width: 12em; max-width: 60%; height: auto; min-height: 32px; margin: -4px 0 0 10px; padding: 4px 8px; font: var(--fs-m) var(--mono); vertical-align: middle; }
-#release-choices code, .ci-release code { font-family: var(--mono); }
+.release-version code, .ci-release code { font-family: var(--mono); }
 .ci-release { margin: 8px 0 12px; }
 .ci-release-failed strong { color: var(--failed); }
 .ci-release-published strong { color: var(--merged); }
@@ -3421,6 +3421,14 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .tag-pick .radio span { overflow-wrap: anywhere; }
 .tag-pick .radio em { display: block; font-style: normal; font-weight: 400; color: var(--muted); }
 .tag-pick .radio:has(input:disabled) { opacity: .65; }
+/* With a new release or a promotion beside them, the tags take less room. */
+.tag-pick:has(.tag-pick-release, .tag-pick-promote) .tag-pick-list { max-height: min(32vh, 16em); }
+.tag-pick .release-version { max-height: none; overflow: visible; }
+.tag-pick-release, .tag-pick-promote { display: block; margin-top: 8px; }
+.tag-pick-release:has(> .radio input:checked) { padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-m); }
+.tag-pick-details { display: grid; gap: 4px; margin: 4px 0 0 26px; min-width: 0; }
+.tag-pick-cant { margin: 2px 0 0 26px; }
+@media (max-width: 600px) { .tag-pick-details, .tag-pick-cant { margin-left: 0; } }
 .env-awaiting li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .env-awaiting .env-subject { flex: 1 1 8em; }
 .env-actions { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -83,16 +83,21 @@ func (s *Server) deployMerge(t model.Todo) {
 }
 
 // deployRelease queues the deploys a release tag of p at sha, pushed for
-// c, triggers.
-func (s *Server) deployRelease(p model.Project, tag, sha string, c Caller) {
+// c, triggers, and returns them by environment (a blocked one recorded
+// failed, with why).
+func (s *Server) deployRelease(p model.Project, tag, sha string, c Caller) map[string]model.Deploy {
+	out := map[string]model.Deploy{}
 	if p.LinkedFromHub() || tag == "" || sha == "" {
-		return
+		return out
 	}
 	for _, e := range p.Environments {
 		if e.DeploysOnRelease() {
-			s.triggerDeploy(p, e, model.DeployByRelease, sha, tag, c)
+			if d, ok := s.triggerDeploy(p, e, model.DeployByRelease, sha, tag, c); ok {
+				out[e.Name] = d
+			}
 		}
 	}
+	return out
 }
 
 // triggerDeploy queues a deploy of commit to e of p, started by trigger
@@ -100,8 +105,9 @@ func (s *Server) deployRelease(p model.Project, tag, sha string, c Caller) {
 // A merge's deploy still waiting to start (queued, or awaiting an
 // approval) is moved on to the newer commit instead of queueing another.
 // One that a freeze or a requirement blocks is recorded failed, with the
-// reason, so the Deploys page shows that it didn't go.
-func (s *Server) triggerDeploy(p model.Project, e model.Environment, trigger, commit, ref string, c Caller) {
+// reason, so the Deploys page shows that it didn't go. It returns the
+// deploy it queued, moved on or recorded, if any.
+func (s *Server) triggerDeploy(p model.Project, e model.Environment, trigger, commit, ref string, c Caller) (model.Deploy, bool) {
 	c.Org = p.OrgID
 	c.Agent = false
 	if trigger == model.DeployByMerge {
@@ -109,7 +115,7 @@ func (s *Server) triggerDeploy(p model.Project, e model.Environment, trigger, co
 			if d.Trigger != model.DeployByMerge || d.Status != model.DeployQueued && d.Status != model.DeployAwaiting || d.Approval != nil {
 				continue
 			}
-			if _, err := s.Store.UpdateDeploy(d.ID, func(x *model.Deploy) error {
+			if moved, err := s.Store.UpdateDeploy(d.ID, func(x *model.Deploy) error {
 				if x.Status != model.DeployQueued && x.Status != model.DeployAwaiting {
 					return errUnchanged // it started meanwhile
 				}
@@ -117,19 +123,19 @@ func (s *Server) triggerDeploy(p model.Project, e model.Environment, trigger, co
 				return nil
 			}); err == nil {
 				slog.Info("deploy: merge trigger moved on", "project", p.Name, "environment", e.Name, "id", d.ID, "commit", commit)
-				return
+				return moved, true
 			}
 		}
 	}
 	d, err := s.as(c).requestDeploy(p, deployAsk{Environment: e.Name, Commit: commit, Trigger: trigger, TriggerRef: ref})
 	if err == nil {
 		slog.Info("deploy: triggered", "project", p.Name, "environment", e.Name, "trigger", trigger, "ref", ref, "id", d.ID)
-		return
+		return d, true
 	}
 	why, blocked := strings.CutPrefix(err.Error(), errConflict.Error()+": blocked: ")
 	if !blocked {
 		slog.Warn("deploy: trigger", "project", p.Name, "environment", e.Name, "trigger", trigger, "ref", ref, "err", err)
-		return
+		return model.Deploy{}, false
 	}
 	// Recorded as the queue records a deploy blocked at its turn: failed,
 	// with the reason (and so notified like one). Made awaiting, which the
@@ -137,12 +143,15 @@ func (s *Server) triggerDeploy(p model.Project, e model.Environment, trigger, co
 	d, err = s.Store.CreateDeploy(model.Deploy{ProjectID: p.ID, Environment: e.Name, Ref: commit, Trigger: trigger, TriggerRef: ref,
 		By: c.User, ByName: s.username(c.User), Status: model.DeployAwaiting})
 	if err != nil {
-		return
+		return model.Deploy{}, false
 	}
-	_, _ = s.Store.UpdateDeploy(d.ID, func(x *model.Deploy) error {
+	if failed, err := s.Store.UpdateDeploy(d.ID, func(x *model.Deploy) error {
 		x.Error = "blocked: " + why
 		x.SetStatus(model.DeployFailed, time.Now())
 		return nil
-	})
+	}); err == nil {
+		d = failed
+	}
 	slog.Info("deploy: triggered, blocked", "project", p.Name, "environment", e.Name, "trigger", trigger, "ref", ref, "why", why)
+	return d, true
 }

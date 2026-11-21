@@ -129,6 +129,24 @@ func TestBrowserDeploys(t *testing.T) {
 	shot("deploy-rollback-pane-wide")
 	b.until("close the pane", `document.querySelector("#deploy-detail").hidden`, chromedp.Click(chromedp.ID("dd-close")))
 
+	// A commit after the newest tag: the picker offers a new release from
+	// origin/main first, tags it and deploys it in one go.
+	third := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "commit-tree", "main^{tree}", "-p", "main", "-m", "third"))
+	run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "update-ref", "refs/heads/main", third)
+	b.until("open staging's Deploy", `document.querySelector('dialog.sheet[open] .tag-pick input[name=tag][value="@new"]')`,
+		chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-deploy`)))
+	b.waitJS("a new release, first and chosen", `document.querySelector('dialog.sheet[open] .tag-pick input[name=tag]:checked')?.value === "@new" && document.querySelector("dialog.sheet[open] .tag-pick-release").textContent.includes("1 commit since 1.1.0")`)
+	b.waitJS("one button: tag and deploy", `document.querySelector("dialog.sheet[open] footer button[value=ok]").textContent === "Tag 1.1.1 and deploy"`)
+	b.waitJS("the existing tags below it", `document.querySelectorAll("dialog.sheet[open] .tag-pick-list input[name=tag]").length === 2`)
+	shot("deploy-new-release-wide")
+	b.until("tag and deploy", `!document.querySelector("dialog.sheet[open] .tag-pick")`,
+		chromedp.Click(chromedp.CSS(`dialog.sheet[open] footer button[value=ok]`)))
+	b.waitJS("staging deploys the new tag", stagingDeploys+` === 4`)
+	if got := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "rev-parse", "1.1.1^{commit}")); got != third {
+		t.Fatalf("origin's 1.1.1 is %s, want %s", got, third)
+	}
+	b.waitJS("staging live at the new tag", stagingLiveAt("1.1.1", third)+` && `+stagingIdle)
+
 	// On a phone: the pane covers the page, with Back.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the cards one above the other", `(() => { const c = document.querySelectorAll("#env-cards .env-card"); return c.length === 2 && c[1].getBoundingClientRect().top >= c[0].getBoundingClientRect().bottom; })()`)
@@ -138,6 +156,14 @@ func TestBrowserDeploys(t *testing.T) {
 	b.waitJS("full screen with Back", `document.querySelector("#deploy-detail").getBoundingClientRect().width >= 389 && document.querySelector("#dd-close").getAttribute("aria-label") === "Back"`)
 	shot("deploy-pane-narrow")
 	b.until("go back", `document.querySelector("#deploy-detail").hidden`, chromedp.Click(chromedp.ID("dd-close")))
+	// The picker's new release fits the phone.
+	fourth := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "commit-tree", "main^{tree}", "-p", "main", "-m", "fourth"))
+	run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "update-ref", "refs/heads/main", fourth)
+	b.until("open staging's Deploy on the phone", `document.querySelector('dialog.sheet[open] .tag-pick input[name=tag][value="@new"]:checked')`,
+		chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-deploy`)))
+	b.waitJS("it fits the phone", `(() => { const d = document.querySelector("dialog.sheet[open]"); return d.getBoundingClientRect().right <= innerWidth + 1 && d.querySelector("form").scrollWidth <= d.clientWidth + 1; })()`)
+	shot("deploy-new-release-narrow")
+	b.until("Esc closes the picker", `!document.querySelector("dialog.sheet[open] .tag-pick")`, chromedp.KeyEvent(kb.Escape))
 
 	// Project settings → Deploy lists the environments.
 	b.do("a desktop's screen", chromedp.EmulateViewport(1600, 1000))

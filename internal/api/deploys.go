@@ -215,6 +215,7 @@ func (s *Server) listEnvironments(w http.ResponseWriter, r *http.Request) {
 		out = append(out, st)
 	}
 	s.countAhead(r.Context(), sv, p, out)
+	offerPromotions(out)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -323,10 +324,12 @@ func (s *Server) createDeploy(w http.ResponseWriter, r *http.Request) {
 
 // deployAsk is a deploy someone (or something) asks for: of Commit ("" for
 // the tip of the default branch) to Environment, or of what is live on
-// PromoteFrom; Trigger and TriggerRef say what asked.
+// PromoteFrom; Trigger and TriggerRef say what asked. Tag is the release
+// tag Commit is known to have (one Dash just pushed), if any.
 type deployAsk struct {
 	Environment, Commit, PromoteFrom string
 	Trigger, TriggerRef              string
+	Tag                              string
 }
 
 // requestDeploy checks and queues the deploy a asks of p for sv's caller:
@@ -375,6 +378,9 @@ func (sv *service) requestDeploy(p model.Project, a deployAsk) (model.Deploy, er
 			return model.Deploy{}, err
 		}
 		d.Tag = tag
+		if d.Tag == "" && !d.Promote {
+			d.Tag = a.Tag
+		}
 	} else {
 		d.Tag = a.TriggerRef
 	}

@@ -204,6 +204,10 @@ build isn't green or tasks are still running. Confirming creates an annotated ta
 The project's environments that deploy on each release tag then deploy the tagged commit (see
 [Triggers](deploys.md#triggers)). The graph also marks the commit each environment runs.
 
+To tag the tip of the default branch and deploy it in one step, use **Deploys → Deploy…** instead
+(see [Tag a new release from the picker](deploys.md#tag-a-new-release-from-the-picker)). Use
+**Tag release…** in History to tag an older commit.
+
 When the project is on GitHub, Dash then follows the workflow runs the tag started: the
 project's row in the sidebar shows the pulsing ring ("Building v1.2.3"), the **Builds** action says
 **Release v1.2.3 failed** for a failed release, and the **Builds** sheet shows it building, published (with a link

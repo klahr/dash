@@ -37,14 +37,48 @@ Open **Deploys** in the sidebar (`gd`). Each environment has a card:
 - a deploy that is running or queued;
 - on a hub, the runners its deploys may run on, and a warning when none of them can.
 
-Press **Deploy…** on a card to pick a release tag. The picker lists the project's release tags,
-newest first, with the newest chosen. Each shows its commit and how far it is from what the
-environment runs now, such as "4 commits ahead of production", "2 commits behind production" or
-"live on production now". Press **Deploy** to deploy it.
+Press **Deploy…** on a card to pick what to deploy. The picker lists the project's release tags,
+newest first. Each shows its commit and how far it is from what the environment runs now, such as
+"4 commits ahead of production", "2 commits behind production" or "live on production now". Press
+**Deploy** to deploy it.
 
-With no release tag yet, the picker says so and offers **Tag release…**, which tags the tip of the
-default branch as origin has it (see [Tag a release](github.md#tag-a-release)). Release tags are
-the tags in the project's tag format.
+### Tag a new release from the picker
+
+When `origin/main` (the default branch) has commits after the newest release tag, the picker also
+offers **New release from origin/main**, such as "3 commits since 1.4.0". Choose it to:
+
+1. Pick **Patch**, **Minor**, **Major**, or **Other** and type a version. Other is checked against
+   the tag format, and a tag that exists already is refused.
+2. Edit the notes. They start from the tasks merged since the last release, as in **Tag
+   release…**. The same warnings show: a failed or running build, tasks still running.
+3. Press **Tag 1.4.1 and deploy**. Dash tags the commit, pushes the tag, and deploys that commit.
+   The environment's build command builds it.
+
+If the environment is set to **Deploys on its own → On each release tag**, the button says **Tag
+1.4.1**: pushing the tag deploys it, and Dash doesn't queue a second deploy. The picker also names
+the other environments that deploy each release tag ("staging also deploys each release tag").
+
+When the tip of the default branch is tagged already, there is no new release to make, and the
+picker only lists the tags.
+
+### Promote first
+
+The environments form a chain, in the order **Promote** follows (such as `staging` → `production`).
+
+- On the **first** environment of the chain, **New release** is at the top of the picker.
+- On a **later** one, **Promote 1.4.0 from staging** is at the top when the environment before it
+  runs something newer. **Direct release from origin/main** is still there, lower down, for a
+  hotfix that skips the chain.
+
+So the usual path is: tag once on `staging`, then promote to `production`.
+
+Only the org's owners and admins can tag a release. Others who may deploy still see the tags and
+**Promote**, with a note on why they can't make a release. Dash checks this on the server too.
+
+With no release tag yet and nothing to tag, the picker offers **Tag release…**, which tags the tip
+of the default branch as origin has it (see [Tag a release](github.md#tag-a-release)). Release tags
+are the tags in the project's tag format. **Tag release…** in **History** still tags any older
+commit.
 
 **Deploy again** in a deploy's pane deploys that deploy's commit again. When **Deploy…** is greyed
 out, the card says why: your role, or a freeze. A requirement the tag doesn't meet refuses the
@@ -115,8 +149,8 @@ Each lets that role and the roles above it. Dash checks them on the hub, whateve
 - **On each merge to the default branch**: each task Dash merges, here or as a pull request merged
   on GitHub, deploys its merged commit. While one such deploy still waits to start (queued, or
   awaiting approval), the next merge moves it on to the newer commit instead of queueing another.
-- **On each release tag**: each release tagged with **Tag release…** or `create_release` (see
-  [Tag a release](github.md#tag-a-release)) deploys the tagged commit.
+- **On each release tag**: each release tagged with **Tag release…**, **Deploy… → New release**
+  or `create_release` (see [Tag a release](github.md#tag-a-release)) deploys the tagged commit.
 
 A triggered deploy goes through the same queue, requirements, approvals and freezes as one you
 start. One that a freeze or a requirement blocks is recorded as **Failed**, with the reason, so the
@@ -325,7 +359,9 @@ The hub never sees the values. A runner only tells it which environments it has 
 
 - `GET /api/projects/{id}/environments`: each environment with what is live, what runs, how far
   it is ahead of the others, (on a hub) its runners, and in `policy` what you may do there, what
-  blocks a deploy, the deploys awaiting approval and where **Promote** goes.
+  blocks a deploy, the deploys awaiting approval and where **Promote** goes. `policy.promote_from`
+  is the environment before it in the chain, and `policy.promote` (`{"from", "deploy",
+  "blocked"}`) what is live there when it is ahead of what is live here.
 - `GET /api/projects/{id}/deploys?environment=`: the deploys, newest first, without logs. A
   deploy's `trigger` is what started it: `user`, `agent` (Claude), `merge`, `release`,
   `auto_rollback`; `trigger_ref` the task, tag or rolled-back deploy behind it.
@@ -342,6 +378,12 @@ The hub never sees the values. A runner only tells it which environments it has 
   that needs an approval has the status `awaiting_approval`. A blocked one, or an untagged commit
   for an environment that only deploys release tags, gets `409` with the reason. A deploy's `tag`
   is the release tag on its commit, if any.
+- `POST /api/projects/{id}/tags` with `{"bump": "patch", "deploy": "staging"}`: tag the tip of the
+  default branch (or `"sha"`; `"version"` instead of `"bump"`), push the tag, then deploy it to
+  `staging`. You need to be an owner or admin, and allowed to deploy there; a freeze refuses it.
+  Both are checked before the tag is made. The answer has the release, the `deploy`, and
+  `triggered: true` when the environment's own release trigger made that deploy. If the tag was
+  pushed but the deploy was refused (a requirement it doesn't meet), `deploy_error` says why.
 - `POST /api/deploys/{id}/approve`, and `POST /api/deploys/{id}/reject` with `{"note": ""}`:
   decide on a deploy awaiting approval.
 - `GET /api/projects/{id}/environments/history`: the settings history, newest first.

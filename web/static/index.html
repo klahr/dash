@@ -1170,13 +1170,8 @@
       <p class="hint" id="release-loading">Fetching tags from origin…</p>
       <div id="release-body" hidden>
         <ul class="release-warnings" id="release-warnings"></ul>
-        <fieldset class="field choice">
-          <legend>Version <em id="release-latest"></em></legend>
-          <div id="release-choices"></div>
-          <label class="radio"><input type="radio" name="version" value="custom"><span>Other <input name="custom" class="release-custom" spellcheck="false" autocomplete="off" aria-label="Other version"></span></label>
-          <p class="hint" id="release-custom-hint"></p>
-        </fieldset>
-        <label class="field"><span>Release notes <em>the tag's message; from the tasks merged since the last release</em></span><textarea name="notes" rows="7" spellcheck="true"></textarea></label>
+        <!-- Version and notes: app/releaseform.js, shared with Deploy's picker -->
+        <div id="release-fields"></div>
         <p class="hint">Pushing the tag starts the repository's release workflow.</p>
       </div>
       <footer class="sheet-actions">

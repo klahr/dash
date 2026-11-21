@@ -333,6 +333,22 @@ type envPolicy struct {
 	PromoteBlocked []string `json:"promote_blocked,omitempty"`
 	// Awaiting are the deploys waiting for an approval.
 	Awaiting []model.Deploy `json:"awaiting,omitempty"`
+	// PromoteFrom is the environment before this one in the chain (the
+	// one whose Promote sends here; "" for the first). Deploy's picker
+	// offers a new release first on the chain's first environment, and
+	// promoting from the one before on the others.
+	PromoteFrom string `json:"promote_from,omitempty"`
+	// Promote is what is live on PromoteFrom, when it is newer than what
+	// is live here: the picker's "Promote <tag> from <env>".
+	Promote *promoteOffer `json:"promote,omitempty"`
+}
+
+// promoteOffer is a promotion Deploy's picker offers: Deploy, live on From,
+// and why it would be refused now, if it would.
+type promoteOffer struct {
+	From    string       `json:"from"`
+	Deploy  model.Deploy `json:"deploy"`
+	Blocked []string     `json:"blocked,omitempty"`
 }
 
 // policyFor fills in what e's policy means for c, at now; deploys are e's
@@ -359,6 +375,7 @@ func (s *Server) policyFor(c Caller, p model.Project, i int, deploys []model.Dep
 		}
 	}
 	out.PromoteTo = promoteTarget(p.Environments, i)
+	out.PromoteFrom = promoteSource(p.Environments, i)
 	if live != nil && out.PromoteTo != "" {
 		to, _ := p.Environment(out.PromoteTo)
 		if err := s.mayDeploy(c, to); err != nil {
@@ -367,6 +384,35 @@ func (s *Server) policyFor(c Caller, p model.Project, i int, deploys []model.Dep
 		out.PromoteBlocked = append(out.PromoteBlocked, s.deployBlocks(p, to, live.Commit, now)...)
 	}
 	return out
+}
+
+// promoteSource is the environment whose Promote sends what is live there
+// to envs[i] ("" none: envs[i] is first in its chain).
+func promoteSource(envs []model.Environment, i int) string {
+	for j := range envs {
+		if j != i && promoteTarget(envs, j) == envs[i].Name {
+			return envs[j].Name
+		}
+	}
+	return ""
+}
+
+// offerPromotions sets each environment's Promote: what is live on the
+// one before it in the chain, when that is ahead of what is live on it
+// (or nothing is). It needs countAhead's counts: when git couldn't count,
+// nothing is offered.
+func offerPromotions(envs []envStatus) {
+	for i := range envs {
+		from := envs[i].Policy.PromoteFrom
+		j := slices.IndexFunc(envs, func(e envStatus) bool { return e.Name == from })
+		if from == "" || j < 0 || envs[j].Live == nil || envs[j].Live.Commit == "" {
+			continue
+		}
+		if envs[i].Live != nil && envs[j].Ahead[envs[i].Name] <= 0 {
+			continue
+		}
+		envs[i].Policy.Promote = &promoteOffer{From: from, Deploy: *envs[j].Live, Blocked: envs[j].Policy.PromoteBlocked}
+	}
 }
 
 // promoteTarget is where Promote sends what is live on envs[i]: the first

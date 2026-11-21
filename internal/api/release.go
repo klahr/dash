@@ -97,9 +97,15 @@ type releaseInfo struct {
 	Suggestions release.Suggestions `json:"suggestions"`
 	Tags        []string            `json:"tags"`     // existing tags in the format, highest version first
 	Previous    string              `json:"previous"` // the tag the notes start after ("" for the first release)
-	Notes       string              `json:"notes"`
-	Pushed      bool                `json:"pushed"` // origin has the commit
-	CI          struct {
+	// Since counts the commits sha has that Previous hasn't (nil: there is
+	// no Previous, or git couldn't count); ShaTags are the release tags
+	// already on sha, highest version first. Deploy's picker offers a new
+	// release only when sha is ahead of the latest one and not tagged.
+	Since   *int     `json:"since,omitempty"`
+	ShaTags []string `json:"sha_tags"`
+	Notes   string   `json:"notes"`
+	Pushed  bool     `json:"pushed"` // origin has the commit
+	CI      struct {
 		State string       `json:"state"`
 		Runs  []gitops.Run `json:"runs"`
 	} `json:"ci"`
@@ -124,10 +130,7 @@ func (sv *service) prepareRelease(ctx context.Context, p model.Project, sha stri
 	}
 	g := sv.s.Git
 	fctx, cancel := context.WithTimeout(ctx, tagTimeout)
-	if err := sv.s.withRemote(fctx, p.ID, func() error {
-		_, err := g.FetchTags(fctx, p.ID, p.Path)
-		return err
-	}); err != nil {
+	if err := sv.s.withRemote(fctx, p.ID, func() error { return sv.s.fetchForRelease(fctx, p, sha) }); err != nil {
 		info.FetchError = briefGit(err)
 	}
 	cancel()
@@ -145,6 +148,19 @@ func (sv *service) prepareRelease(ctx context.Context, p model.Project, sha stri
 		info.Tags = append(info.Tags, t.Name)
 	}
 	info.Previous = info.Suggestions.Latest
+	info.ShaTags = []string{}
+	if refs, err := g.TagCommits(ctx, p.ID, p.Path); err == nil {
+		if at := releaseTagsAt(f, refs, info.SHA); len(at) > 0 {
+			info.ShaTags = at
+		}
+		for _, r := range refs {
+			if r.Name == info.Previous && gitops.IsSHA(r.Commit) {
+				if n, _, err := g.CommitsApart(ctx, p.ID, p.Path, r.Commit, info.SHA); err == nil {
+					info.Since = &n
+				}
+			}
+		}
+	}
 	info.Notes = sv.releaseNotes(ctx, p, info.Previous, info.SHA)
 	info.Pushed = g.OnRemote(ctx, p.ID, p.Path, info.SHA)
 	info.CI.State, info.CI.Runs = ci.Unknown, []gitops.Run{}
@@ -165,6 +181,17 @@ func (sv *service) prepareRelease(ctx context.Context, p model.Project, sha stri
 		info.CanTag = true
 	}
 	return info, nil
+}
+
+// fetchForRelease fetches origin's tags before tagging sha, and origin's
+// default branch too when sha is "" (its tip): the release is of the tip
+// as origin has it now, not as of the last fetch.
+func (s *Server) fetchForRelease(ctx context.Context, p model.Project, sha string) error {
+	if strings.TrimSpace(sha) == "" {
+		return s.Git.FetchBranch(ctx, p.ID, p.Path, p.DefaultBranch, false)
+	}
+	_, err := s.Git.FetchTags(ctx, p.ID, p.Path)
+	return err
 }
 
 // workflowHint warns when the repository's tag-triggered workflows (on the
@@ -277,7 +304,7 @@ func (sv *service) createRelease(ctx context.Context, p model.Project, req mcpto
 	tag := func() error {
 		fctx, cancel := context.WithTimeout(ctx, tagTimeout)
 		defer cancel()
-		if _, err := g.FetchTags(fctx, p.ID, p.Path); err != nil {
+		if err := sv.s.fetchForRelease(fctx, p, req.SHA); err != nil {
 			return fmt.Errorf("can't fetch origin's tags: %w", err)
 		}
 		sha, err := sv.s.releaseCommit(ctx, p, req.SHA)
@@ -411,15 +438,108 @@ func (s *Server) getRelease(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, info)
 }
 
-// createTag handles POST /api/projects/{pid}/tags: tag a commit as a release
-// and push the tag.
-func (s *Server) createTag(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		SHA     string `json:"sha"`
-		Version string `json:"version"` // "1.4.0" or a tag in the format
-		Bump    string `json:"bump"`    // patch | minor | major, instead of version
-		Notes   string `json:"notes"`
+// tagRequest is POST /api/projects/{pid}/tags's body.
+type tagRequest struct {
+	SHA     string `json:"sha"`
+	Version string `json:"version"` // "1.4.0" or a tag in the format
+	Bump    string `json:"bump"`    // patch | minor | major, instead of version
+	Notes   string `json:"notes"`
+	// Deploy names an environment to deploy the tagged commit to (Deploy's
+	// picker: "Tag 1.4.1 and deploy"). One that deploys each release tag
+	// on its own is left to that: it gets no second deploy.
+	Deploy string `json:"deploy,omitempty"`
+}
+
+// taggedRelease answers POST /api/projects/{pid}/tags: the release, and
+// with Deploy the deploy of it to that environment, if one was queued.
+type taggedRelease struct {
+	mcptools.Release
+	Deploy *model.Deploy `json:"deploy,omitempty"`
+	// Triggered: the environment's own "on each release tag" trigger
+	// queued Deploy, not this request.
+	Triggered bool `json:"triggered,omitempty"`
+	// DeployError says why no deploy was queued, when the tag was pushed
+	// but the deploy was refused (a requirement it doesn't meet, say).
+	DeployError string `json:"deploy_error,omitempty"`
+}
+
+// checkReleaseDeploy refuses, before anything is tagged, a release to
+// environment env that sv's caller may not deploy to (who may tag is
+// canRelease's): their role, or a freeze. The deploy's other checks
+// (requirements, release tags only) need the tagged commit, and run after.
+func (sv *service) checkReleaseDeploy(p model.Project, env string) error {
+	if env == "" {
+		return nil
 	}
+	e, ok := p.Environment(env)
+	if !ok {
+		return fmt.Errorf("%w: the project has no environment %q (Project settings → Deploy)", errBadRequest, env)
+	}
+	if err := sv.canRelease(); err != nil {
+		return err
+	}
+	if err := sv.s.mayDeploy(sv.c, e); err != nil {
+		return err
+	}
+	if why := e.FreezeReason(time.Now()); why != "" {
+		return blockedErr([]string{why})
+	}
+	return nil
+}
+
+// releaseDeploys queues what release rel of p deploys: the environments
+// that deploy each release tag do, on their own, and env ("" none), when
+// it isn't one of them, gets a deploy of the tagged commit for sv's caller.
+// The release tag deploys once wherever it goes.
+func (sv *service) releaseDeploys(p model.Project, rel mcptools.Release, env string) taggedRelease {
+	out := taggedRelease{Release: rel}
+	started := sv.s.deployRelease(p, rel.Tag, rel.SHA, sv.c)
+	if env == "" {
+		return out
+	}
+	e, ok := p.Environment(env)
+	switch {
+	case !ok:
+		out.DeployError = fmt.Sprintf("the project has no environment %q", env)
+	case e.DeploysOnRelease():
+		out.Triggered = true
+		if d, ok := started[e.Name]; ok {
+			out.Deploy = &d
+			if d.Status == model.DeployFailed {
+				out.DeployError = d.Error
+			}
+		} else {
+			out.DeployError = fmt.Sprintf("%s deploys each release tag, but its deploy of %s couldn't be queued", e.Name, rel.Tag)
+		}
+	default:
+		d, err := sv.requestDeploy(p, deployAsk{Environment: e.Name, Commit: rel.SHA, Trigger: model.DeployByUser, Tag: rel.Tag})
+		if err != nil {
+			out.DeployError = plainErr(err)
+		} else {
+			out.Deploy = &d
+		}
+	}
+	if out.DeployError != "" {
+		slog.Warn("release: deploy", "project", p.Name, "tag", rel.Tag, "environment", env, "err", out.DeployError)
+	}
+	return out
+}
+
+// plainErr is err's message without the kind it wraps (errForbidden, …).
+func plainErr(err error) string {
+	msg := err.Error()
+	for _, k := range []error{errForbidden, errConflict, errBadRequest} {
+		if errors.Is(err, k) {
+			msg = strings.TrimPrefix(msg, k.Error()+": ")
+		}
+	}
+	return msg
+}
+
+// createTag handles POST /api/projects/{pid}/tags: tag a commit as a release
+// and push the tag, then deploy it where it goes (releaseDeploys).
+func (s *Server) createTag(w http.ResponseWriter, r *http.Request) {
+	var req tagRequest
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
@@ -428,13 +548,19 @@ func (s *Server) createTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if p.LinkedFromHub() {
+		req.Deploy = "" // the hub deploys its projects, and asked for this one itself
+	}
+	if err := sv.checkReleaseDeploy(p, req.Deploy); err != nil {
+		writeErr(w, err)
+		return
+	}
 	out, err := sv.createRelease(r.Context(), p, mcptools.NewRelease{SHA: req.SHA, Version: req.Version, Bump: req.Bump, Notes: req.Notes})
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.deployRelease(p, out.Tag, out.SHA, sv.c)
-	writeJSON(w, http.StatusCreated, out)
+	writeJSON(w, http.StatusCreated, sv.releaseDeploys(p, out, req.Deploy))
 }
 
 // tagFormatInfo handles GET /api/projects/{pid}/tag-format?format=: whether a
