@@ -3,7 +3,7 @@ import { $, clockTime, entering, h, ib, plural, timeLocale } from "./dom.js";
 import { attempt, copy } from "./dialogs.js";
 import { state } from "./state.js";
 import { duration } from "./activity.js";
-import { toolCall, toolResult, toolSettled } from "./chat.js";
+import { toolCall, toolResult, toolSettled } from "./chatparts.js";
 import { goalHue, goalName } from "./goals.js";
 import { linkedTask, taskLink, title } from "./branches.js";
 

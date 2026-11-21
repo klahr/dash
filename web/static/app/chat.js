@@ -8,10 +8,9 @@ import { attachBox, attachThumb } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { showView } from "./nav.js";
 import { projectKey } from "./events.js";
-import { duration } from "./activity.js";
+import { chatPermCard, duration, permDecided, toolCall, toolResult, toolSettled } from "./chatparts.js";
 import { closeDetail } from "./detail.js";
 import { canRework, reworkLabel, reworkTodo, takeReviewNext } from "./drawmode.js";
-import { describePerm } from "./review.js";
 import { loadTodoChat, renderChatBadge, renderChatDots, renderChatPane, viewingChat } from "./chatpane.js";
 import { timeline } from "./timeline.js";
 import { fmtTokens } from "./runstats.js";
@@ -581,8 +580,7 @@ function chatStreamHandler(c) {
         break;
       case "permission_decided": {
         if (c.waiting.delete(d.id)) c.onState();
-        const st = c.log.querySelector(`.perm[data-id="${d.id}"] .perm-actions`);
-        st?.replaceChildren(h("span", { class: "perm-status" }, { allow: "Approved", deny: "Denied", timeout: "Not answered in time: denied" }[d.text] || d.text));
+        permDecided(c.log, d);
         break;
       }
       case "usage":
@@ -714,38 +712,6 @@ function shellRunner(c) {
   return c.shell = { block, run, delta, ended, stop };
 }
 
-// A collapsible tool call: its input, and its output once filled in. Until
-// then it shows a spinner (a check or cross once done, in the same space so the
-// text doesn't move), and how long it has run once that's a while.
-export function toolCall(tool, input, since = Date.now()) {
-  const out = h("pre", { class: "tool-out", hidden: true });
-  const head = tool === "Bash" && input?.command
-    ? [h("b", {}, "$"), ` ${toolSummary(tool, input)}`]
-    : [h("b", {}, tool), ` ${toolSummary(tool, input)}`];
-  const time = h("span", { class: "tool-time", "data-since": String(since), "data-quiet": "" });
-  const el = h("details", { class: "tool running" }, h("summary", {}, h("span", { class: "act-spin", "aria-hidden": "true" }), h("span", { class: "tool-head" }, ...head), time),
-    h("pre", { class: "tool-in" }, toolDetail(tool, input)), out);
-  return { el, out, time, since };
-}
-export function toolResult(t, d) {
-  t.out.hidden = false;
-  t.out.textContent = d.text || "(no output)";
-  t.el.classList.toggle("error", !!d.is_error);
-  toolSettled(t, d.at ? Date.parse(d.at) : Date.now());
-}
-// A tool call is done: its spinner turns into a mark in the same space, and a long one keeps how long it took.
-export function toolSettled(t, end = null) {
-  if (t.done) return;
-  t.done = true;
-  t.el.classList.remove("running");
-  // No result means it stopped with the turn: neither passed nor failed.
-  const mark = t.out.hidden ? ["cut", "■"] : t.el.classList.contains("error") ? ["bad", "✗"] : ["ok", "✓"];
-  t.el.querySelector(".act-spin")?.replaceWith(h("span", { class: `tool-mark ${mark[0]}`, "aria-hidden": "true" }, mark[1]));
-  delete t.time.dataset.since;
-  const ms = end - t.since;
-  t.time.textContent = end && ms >= 3000 ? duration(ms) : "";
-}
-
 // ------------------------------------------------------------------ task cards
 // A task Claude made in a project chat (create_todo) shows as a card under
 // the tool call, and under the answer when the chat is loaded again. While
@@ -853,37 +819,6 @@ export function chatTaskEvent(ev) {
 
 // An action note in the chat: "You queued *Fix login*."
 const actionNote = (m) => h("div", { class: "chat-note", role: "note" }, h("span", { class: "md", innerHTML: renderMarkdown(m.content || "") }));
-
-// Tool calls in the chat: a one-line summary, and the full input when expanded.
-function toolSummary(tool, i = {}) {
-  const s = i.command ?? i.file_path ?? i.pattern ?? i.path ?? "";
-  return String(s).split("\n")[0];
-}
-function toolDetail(tool, i = {}) {
-  const lines = (s, p) => String(s ?? "").split("\n").map((l) => p + l).join("\n");
-  switch (tool) {
-    case "Bash": return i.command;
-    case "Edit": return `${i.file_path}\n${lines(i.old_string, "- ")}\n${lines(i.new_string, "+ ")}`;
-    case "Write": return `${i.file_path}\n${i.content}`;
-    default: return JSON.stringify(i, null, 2);
-  }
-}
-
-// An approval request from the chat, answered over its own socket.
-function chatPermCard(p, decide) {
-  const d = describePerm(p);
-  const answer = (decision) => (e) => {
-    e.currentTarget.parentElement.querySelectorAll("button").forEach((b) => { b.disabled = true; });
-    decide(decision);
-  };
-  return h("div", { class: "perm", role: "group", "aria-label": `Permission request: ${d.title}`, "data-id": p.id },
-    h("p", { class: "perm-q" }, `Claude wants to ${d.title}`),
-    d.note ? h("p", { class: "hint", style: "margin:0" }, d.note) : null,
-    h("code", { class: "perm-cmd" }, toolDetail(p.tool, p.input || {})),
-    h("div", { class: "perm-actions" },
-      ib({ class: "btn allow", onclick: answer("allow") }, "check", "Approve"),
-      ib({ class: "btn danger", onclick: answer("deny") }, "x", "Deny")));
-}
 
 // The row under a chat answer (general, project and goal chats).
 export const chatActions = (answer) => h("div", { class: "msg-actions" },

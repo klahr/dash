@@ -11,6 +11,7 @@ import { api } from "./api.js";
 import { ask, attempt, copy, fail, railOf, toast } from "./dialogs.js";
 import { wsURL } from "./viewport.js";
 import { renderMarkdown } from "../editor.js";
+import { chatPermCard, permDecided, toolCall, toolResult, toolSettled } from "./chatparts.js";
 
 const call = (method, path, body) => api(method, path, body, "");
 // onPage: this is planning.html. The app (app.js) imports this module too,
@@ -227,7 +228,7 @@ function send(q) {
   const reply = h("div", { class: "reply" });
   const el = entering(h("div", { class: "msg assistant pending" }, thinking, reply));
   log().append(el);
-  ch.cur = { el, thinking, reply, text: "", q };
+  ch.cur = { el, thinking, reply, text: "", q, tools: new Map() };
   busyButton();
   toEnd();
   sendWS({ type: "send", messages: ch.history });
@@ -245,27 +246,23 @@ function delta(d) {
       cur.text += d.text;
       cur.reply.innerHTML = renderMarkdown(cur.text);
       break;
-    case "tool_use":
-      cur.reply.before(h("details", { class: "tool", "data-id": d.id }, h("summary", {}, h("b", {}, toolName(d.tool)))));
+    case "tool_use": {
+      const t = toolCall(d.tool, d.input);
+      cur.tools.set(d.id, t);
+      cur.reply.before(entering(t.el));
       break;
+    }
     case "tool_result": {
-      const t = cur.el.querySelector(`.tool[data-id="${CSS.escape(d.id || "")}"]`);
-      t?.classList.toggle("error", !!d.is_error);
-      if (t && d.text) t.append(h("pre", { class: "tool-out" }, d.text));
+      const t = cur.tools.get(d.id);
+      if (t) toolResult(t, d);
       break;
     }
     case "permission":
-      cur.reply.before(h("div", { class: "perm", role: "group", "aria-label": `Permission request: ${toolName(d.tool)}`, "data-id": d.id },
-        h("p", { class: "perm-q" }, `Claude wants to use ${toolName(d.tool)}`),
-        h("div", { class: "perm-actions" },
-          ib({ type: "button", class: "btn small primary", onclick: () => decide(d.id, "allow") }, "check", "Allow"),
-          ib({ type: "button", class: "btn small", onclick: () => decide(d.id, "deny") }, "x", "Deny"))));
+      cur.reply.before(entering(chatPermCard(d, (decision) => decide(d.id, decision))));
       break;
-    case "permission_decided": {
-      const st = cur.el.querySelector(`.perm[data-id="${CSS.escape(d.id || "")}"] .perm-actions`);
-      st?.replaceChildren(h("span", { class: "perm-status" }, { allow: "Approved", deny: "Denied", timeout: "Not answered in time: denied" }[d.text] || d.text));
+    case "permission_decided":
+      permDecided(cur.el, d);
       break;
-    }
     case "done":
       if (cur.text) ch.history.push({ role: "assistant", content: cur.text });
       settle("");
@@ -277,9 +274,6 @@ function delta(d) {
   toEnd();
 }
 
-// toolName is a tool's name without the Dash tools' prefix.
-const toolName = (t = "") => t.replace(/^mcp__dash_board__/, "").replaceAll("_", " ");
-
 function decide(id, decision) {
   sendWS({ type: "permission", id, decision });
 }
@@ -290,6 +284,7 @@ function settle(why) {
   const cur = ch.cur;
   ch.cur = null;
   cur.el.classList.remove("pending");
+  for (const t of cur.tools.values()) toolSettled(t);
   if (why) {
     if (!cur.text) {
       if (ch.history.at(-1)?.role === "user") ch.history.pop();
@@ -309,6 +304,7 @@ function stop() {
   const cur = ch.cur;
   ch.cur = null;
   cur.el.classList.remove("pending");
+  for (const t of cur.tools.values()) toolSettled(t);
   if (cur.text) ch.history.push({ role: "assistant", content: cur.text });
   else { ch.history.pop(); cur.el.remove(); }
   busyButton();

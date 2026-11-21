@@ -2,6 +2,10 @@ import { h } from "./dom.js";
 import { state } from "./state.js";
 import { renderBoard, updateLiveLine } from "./branches.js";
 import { renderChecks } from "./review.js";
+import { duration } from "./chatparts.js";
+
+// duration lives in chatparts.js, which planning.html can load too.
+export { duration };
 
 // ------------------------------------------------------------------ live activity
 // What a task is busy with right now, from its worker's events: a phase Dash
@@ -45,19 +49,3 @@ export function activityNodes(a) {
   ];
 }
 
-// "8s", "1m 05s", "1h 02m"
-export function duration(ms) {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
-  return `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
-}
-// Elapsed-time labels on whatever is still running tick once a second.
-setInterval(() => {
-  if (document.hidden) return;
-  const now = Date.now();
-  for (const el of document.querySelectorAll("[data-since]")) {
-    const ms = now - Number(el.dataset.since);
-    el.textContent = el.dataset.quiet != null && ms < 3000 ? "" : duration(ms);
-  }
-}, 1000);

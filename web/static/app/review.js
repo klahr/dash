@@ -4,7 +4,7 @@ import { ask, attempt, toast } from "./dialogs.js";
 import { saveComments, state } from "./state.js";
 import { baseBranch } from "./events.js";
 import { renderBoard, title } from "./branches.js";
-import { duration } from "./activity.js";
+import { describePerm, duration } from "./chatparts.js";
 import { openDetail, renderActions } from "./detail.js";
 import { renderPane } from "./drawmode.js";
 
@@ -89,17 +89,6 @@ export function renderChecks(t) {
 }
 
 // ------------------------------------------------------------------ permission requests
-export function describePerm(p) {
-  const i = p.input || {};
-  switch (p.tool) {
-    case "Bash": return { title: "run a command", detail: i.command, note: i.description };
-    case "Write": case "Edit": case "MultiEdit": case "NotebookEdit": return { title: `edit ${i.file_path || i.notebook_path || "a file"}`, detail: i.file_path };
-    case "WebFetch": return { title: "fetch a web page", detail: i.url };
-    case "WebSearch": return { title: "search the web", detail: i.query };
-    default: return { title: `use ${p.tool}`, detail: JSON.stringify(i, null, 2) };
-  }
-}
-
 function permCard(p, withTodo) {
   const d = describePerm(p);
   const t = state.todos.get(p.todo_id);

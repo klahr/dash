@@ -13,7 +13,8 @@ import { connectLog, connectTerm, loadPreviews, previewEvent, previewOf, pv } fr
 import { loadRunners, refreshRunnerLinks, renderRunners } from "./runners.js";
 import { syncSettingsRunners } from "./settings.js";
 import { notify, notifyGoal } from "./notifications.js";
-import { describePerm, renderPerms } from "./review.js";
+import { renderPerms } from "./review.js";
+import { describePerm } from "./chatparts.js";
 import { loadUsage, renderUsage } from "./usage.js";
 import { releaseNews, renderCI } from "./actions.js";
 import { loadCheckouts, renderCheckouts, renderRemote } from "./origin.js";
