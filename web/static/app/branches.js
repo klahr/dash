@@ -182,6 +182,7 @@ export function renderBoard() {
   if (drag.active) return; // don't rebuild under the user's finger; we re-render on drop
   const before = flipFirst();
   renderBoardNow();
+  syncRunClocks();
   flipPlay(before);
   hoverCard.sync();
 }
@@ -533,6 +534,37 @@ export function ago(iso) {
 // "just now", "2m ago"
 export const agoText = (iso) => { const a = ago(iso); return a === "now" ? "just now" : `${a} ago`; };
 
+// "6:12", "1:02:09": how long since iso, as a ticking clock.
+export function clockText(iso) {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso)) / 1000));
+  const mm = Math.floor(s / 60) % 60, ss = String(s % 60).padStart(2, "0");
+  return s < 3600 ? `${Math.floor(s / 60)}:${ss}` : `${Math.floor(s / 3600)}:${String(mm).padStart(2, "0")}:${ss}`;
+}
+
+// runClock is a running task's stopwatch on its card. One timer ticks every
+// clock on the board (syncRunClocks), and stops when none is shown.
+function runClock(iso) {
+  return h("span", { class: "run-clock", title: runTitle(iso), "data-started": iso },
+    ico("stopwatch"), h("span", { class: "run-clock-t" }, clockText(iso)));
+}
+const runTitle = (iso) => { const a = ago(iso); return `Running for ${a === "now" ? "under a minute" : a}, since ${dateTimeText(iso)}`; };
+let runTimer = 0;
+function tickRunClocks() {
+  const els = $$(".run-clock[data-started]");
+  if (!els.length) { clearInterval(runTimer); runTimer = 0; return; }
+  if (document.hidden) return;
+  for (const el of els) {
+    if (!el.offsetParent) continue; // on a hidden lane or view
+    el.lastChild.textContent = clockText(el.dataset.started);
+    el.title = runTitle(el.dataset.started);
+  }
+}
+function syncRunClocks() {
+  const any = !!$(".run-clock[data-started]");
+  if (any && !runTimer) runTimer = setInterval(tickRunClocks, 1000);
+  else if (!any && runTimer) { clearInterval(runTimer); runTimer = 0; }
+}
+
 // doneAt is when a merged or failed task finished: finished_at, or updated_at
 // for one that has none (a task synced in from elsewhere).
 export const doneAt = (t) => (t.status === "merged" || t.status === "failed") ? (t.finished_at || t.updated_at || "") : "";
@@ -783,10 +815,10 @@ export function todoRow(t, li = -1, ri = -1) {
           h("span", { class: "plus" }, `+${t.diff_add || 0}`), " ", h("span", { class: "minus" }, `−${t.diff_del || 0}`))
         : null,
       ["review", "merging", "merged", "failed"].includes(t.status) ? tokenTag(t) : null,
-      t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
+      t.status === "in_progress" && t.started_at ? runClock(t.started_at) : null,
       previewTag(t),
-      t.status === "merged" && doneAt(t) ? h("span", { class: "done-ago", title: `${closedNoChanges(t) ? "Closed" : "Merged"} ${dateTimeText(doneAt(t))}` }, ago(doneAt(t))) : null,
-      t.status === "review" && t.finished_at ? h("span", { title: waitsOnGitHub(t) ? "Waiting on GitHub since" : "Waiting for review" }, ago(t.finished_at)) : null,
+      t.status === "merged" && doneAt(t) ? h("span", { class: "done-ago", title: `${closedNoChanges(t) ? "Closed" : "Merged"} ${dateTimeText(doneAt(t))}` }, agoText(doneAt(t))) : null,
+      t.status === "review" && t.finished_at ? h("span", { class: "card-ago", title: waitsOnGitHub(t) ? "Waiting on GitHub since" : "Waiting for review" }, agoText(t.finished_at)) : null,
       t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
       t.run_on ? runOnTag(t.run_on) : null,
       hasPriority(t) ? h("span", { class: `prio-tag prio-${priorityLevel(t.priority)}`, title: `${PRIORITY_LEVELS[priorityLevel(t.priority)]} priority: runs before tasks without one` }, PRIORITY_LEVELS[priorityLevel(t.priority)]) : null,

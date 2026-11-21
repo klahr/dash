@@ -396,6 +396,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   .todo:has(.ask-claude-chip) > .todo-side { grid-column: 2 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0; min-width: 0; }
   .todo:has(.ask-claude-chip) > .todo-side .card-actions { margin-top: 0; }
 }
+/* A running task's stopwatch: it ticks, so it keeps its width (tabular digits) and its line. */
+.run-clock { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
+.run-clock .ico { width: 12px; height: 12px; flex: none; }
+.done-ago, .card-ago { white-space: nowrap; }
 .paused-tag { color: var(--muted); }
 .needs-runner-tag { color: var(--running); white-space: nowrap; }
 /* A failed task waits in Review: say so plainly, as a badge. */
