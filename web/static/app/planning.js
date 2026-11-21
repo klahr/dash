@@ -382,11 +382,16 @@ export function pickBoard(id) {
 
 // boardsSheet adds, renames, reorders and deletes the org's boards. Deleting
 // one moves its cards to the default board, after a confirm.
+// noSubmit keeps Enter in a field of the Boards sheet from submitting the
+// sheet's form, which closes it: Enter's keypress can come on its own,
+// unstopped by the keydown's preventDefault.
+const noSubmit = (e) => { if (e.key === "Enter") e.preventDefault(); };
+
 async function boardsSheet() {
   if (!pl.boards.length) await loadPlanning();
   const list = h("ol", { class: "pl-board-list", "aria-label": "Boards" });
   const name = h("input", { class: "pl-board-new", maxlength: 60, autocomplete: "off", placeholder: "A product or a team", "aria-label": "New board's name",
-    onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } } });
+    onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }, onkeypress: noSubmit });
   // act runs a change, then shows the boards as they are now, with the focus
   // back on what had it (focus: [board id, control]).
   const act = async (fn, focus) => {
@@ -407,7 +412,7 @@ async function boardsSheet() {
     const def = defaultBoard();
     fill(list, ...pl.boards.map((b, i) => h("li", { class: "pl-board-row", "data-board": b.id },
       h("input", { class: "pl-board-name-edit", value: b.name, maxlength: 60, autocomplete: "off", "aria-label": `Name of the board ${b.name}`, "data-act": "name",
-        onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } },
+        onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }, onkeypress: noSubmit,
         onchange: (e) => { const v = e.target.value.trim(); if (v && v !== b.name) act(() => call("PATCH", boardAPI(b.id), { name: v }), null); else e.target.value = b.name; } }),
       h("span", { class: "pl-board-meta" },
         b.default ? h("span", { class: "pl-chip pl-board-default", title: "Cards given no board go here, and a deleted board's cards move here" }, "Default") : null,
