@@ -214,7 +214,19 @@ project's row in the sidebar shows the pulsing ring ("Building v1.2.3"), the **B
 to the GitHub release) or failed, with **Ask Claude to fix it** for a failure.
 
 Only the organization's owners and admins, who may push, can tag releases. For a project on
-another computer, the tag is made and pushed there, in its own clone.
+another computer, the tag is made and pushed there, in its own clone. On a hub, a runner makes
+and pushes the tag, and the hub follows its build.
+
+Dash also follows release tags pushed outside it (from a terminal, on GitHub, or by an agent's
+`git push`). With each build check it looks at the latest runs that pushes started. A run for a
+tag in the project's [tag format](#tag-format) is a release build. The newest such tag shows in
+**Builds** like one Dash pushed.
+
+Dash saves each release tag's build state: building, published, failed, or no workflow started,
+with its runs. After a restart it shows the latest release again and goes on following a build
+that is still running. To read the saved builds, newest first, use
+`GET /api/projects/{id}/ci/releases` (`?limit=`, default 50). For one tag, use
+`GET /api/projects/{id}/ci/releases?tag=1.2.3`.
 
 ### Tag format
 

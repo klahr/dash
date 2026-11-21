@@ -350,7 +350,7 @@ type MergePR struct {
 // GitHub* constants.
 type GitHubCall struct {
 	Op         string `json:"op"`
-	Ref        string `json:"ref,omitempty"` // a branch or tag (runs), a commit (commit_runs) or a tag (release_url)
+	Ref        string `json:"ref,omitempty"` // a branch or tag (runs), a commit (commit_runs) or a tag (release_url); none for push_runs
 	Limit      int    `json:"limit,omitempty"`
 	RunID      int64  `json:"run_id,omitempty"`
 	FailedOnly bool   `json:"failed_only,omitempty"`
@@ -359,6 +359,7 @@ type GitHubCall struct {
 const (
 	GitHubRuns       = "runs"
 	GitHubCommitRuns = "commit_runs"
+	GitHubPushRuns   = "push_runs" // runs pushes started, on any branch or tag
 	GitHubReleaseURL = "release_url"
 	GitHubRerun      = "rerun"
 	GitHubFailedLog  = "failed_log"

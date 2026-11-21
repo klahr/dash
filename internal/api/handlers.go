@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1521,6 +1522,35 @@ func (s *Server) refreshCI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st) // a gh failure is reported in st.Error
+}
+
+// releaseBuilds handles GET /api/projects/{pid}/ci/releases: the builds of
+// the project's latest release tags, the most recently pushed first (?limit=,
+// default 50), or of one tag (?tag=; 404 when Dash knows nothing of it).
+func (s *Server) releaseBuilds(w http.ResponseWriter, r *http.Request) {
+	_, p, ok := s.project(w, r)
+	if !ok {
+		return
+	}
+	if tag := r.URL.Query().Get("tag"); tag != "" {
+		b, err := s.CI.ReleaseBuild(p.ID, tag)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, b)
+		return
+	}
+	limit := 50
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 {
+		limit = min(n, store.KeepReleaseBuilds)
+	}
+	bs, err := s.CI.ReleaseBuilds(p.ID, limit)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, bs)
 }
 
 // retryCI re-runs the default branch's newest build on GitHub Actions.

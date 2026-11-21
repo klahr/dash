@@ -8,6 +8,7 @@ import (
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/release"
 )
 
 // Release states: what became of the workflow runs a pushed release tag
@@ -21,15 +22,10 @@ const (
 	ReleaseNoBuild = "no_build"
 )
 
-// Release is the last release tag Dash pushed for a project and its build.
-type Release struct {
-	Tag    string       `json:"tag"`
-	SHA    string       `json:"sha"`
-	State  string       `json:"state"`
-	Runs   []gitops.Run `json:"runs"`
-	URL    string       `json:"url,omitempty"` // the GitHub release (or tag) page
-	Pushed time.Time    `json:"pushed"`
-}
+// Release is a release tag and its build. Each is saved in the store
+// (Store.PutReleaseBuild), so following it survives a restart; the
+// project's status carries the newest one.
+type Release = model.ReleaseBuild
 
 // CommitState is the build state of one commit from runs (any order): failing
 // if a workflow's newest run failed, running if one hasn't finished, passing
@@ -66,8 +62,9 @@ func (w *Watcher) CommitRuns(ctx context.Context, p model.Project, sha string) (
 	return CommitState(runs, sha), runs
 }
 
-// releaseEvery and releaseFor pace following a release build; noBuildAfter is
-// how long a pushed tag may go without a workflow run before Dash says none
+// releaseEvery and releaseFor pace following a release build closely (the
+// regular poll follows it after that, until it ends); noBuildAfter is how
+// long a pushed tag may go without a workflow run before Dash says none
 // started.
 var (
 	releaseEvery = 15 * time.Second
@@ -77,17 +74,35 @@ var (
 
 // WatchRelease follows the workflow runs that pushing tag (on sha) started:
 // the project's status carries it as Release, building until they pass
-// (published) or fail.
+// (published) or fail. Whoever pushed the tag (this Dash, or a runner for
+// a hub) calls it; tags pushed elsewhere are found by Refresh.
 func (w *Watcher) WatchRelease(projectID, tag, sha string) {
+	rel := Release{ProjectID: projectID, Tag: tag, SHA: sha, State: ReleaseBuilding, Runs: []gitops.Run{}, Pushed: time.Now()}
+	if w.Store != nil {
+		if prev, err := w.Store.ReleaseBuild(projectID, tag); err == nil && prev.SHA == sha && !prev.Pushed.IsZero() {
+			rel.Pushed = prev.Pushed // asked twice (the hub and its runner): one release
+		}
+	}
+	w.follow(rel)
+}
+
+// follow makes rel the release the project's status shows, saves it, and
+// while it builds checks it every releaseEvery for releaseFor.
+func (w *Watcher) follow(rel Release) {
 	w.mu.Lock()
 	if w.releases == nil {
 		w.releases = map[string]Release{}
 	}
-	w.releases[projectID] = Release{Tag: tag, SHA: sha, State: ReleaseBuilding, Runs: []gitops.Run{}, Pushed: time.Now()}
+	w.releases[rel.ProjectID] = rel
 	w.mu.Unlock()
-	st := w.Status(projectID)
-	st.ProjectID = projectID
-	w.set(st) // shows "building" now
+	w.save(rel)
+	st := w.Status(rel.ProjectID)
+	st.ProjectID = rel.ProjectID
+	w.set(st) // shows it now
+	if rel.State != ReleaseBuilding {
+		return
+	}
+	projectID, tag := rel.ProjectID, rel.Tag
 	// Read the pacing here, not in the goroutine, which outlives this call.
 	every, deadline := releaseEvery, time.Now().Add(releaseFor)
 	go func() {
@@ -104,6 +119,35 @@ func (w *Watcher) WatchRelease(projectID, tag, sha string) {
 	}()
 }
 
+// save stores rel's build, stamped now.
+func (w *Watcher) save(rel Release) {
+	if w.Store == nil {
+		return
+	}
+	rel.Updated = time.Now()
+	if err := w.Store.PutReleaseBuild(rel); err != nil {
+		slog.Debug("save release build", "project", rel.ProjectID, "tag", rel.Tag, "err", err)
+	}
+}
+
+// Resume shows each project's newest saved release again, and follows
+// those still building, as after a restart.
+func (w *Watcher) Resume() {
+	if w.Store == nil {
+		return
+	}
+	for _, p := range w.Store.ListProjects() {
+		bs, err := w.Store.ReleaseBuilds(p.ID, 1)
+		if err != nil || len(bs) == 0 {
+			continue
+		}
+		if cur, ok := w.followed(p.ID); ok && !cur.Pushed.Before(bs[0].Pushed) {
+			continue
+		}
+		w.follow(bs[0])
+	}
+}
+
 var errGone = errors.New("project is gone")
 
 func (w *Watcher) followed(projectID string) (Release, bool) {
@@ -111,6 +155,35 @@ func (w *Watcher) followed(projectID string) (Release, bool) {
 	defer w.mu.Unlock()
 	r, ok := w.releases[projectID]
 	return r, ok
+}
+
+// releaseState is what rel's runs (the tag's newest per workflow) say of it.
+func releaseState(rel Release, runs []gitops.Run) string {
+	switch state, _ := summarize(runs); {
+	case len(runs) == 0 && time.Since(rel.Pushed) > noBuildAfter:
+		return ReleaseNoBuild
+	case len(runs) == 0, state == Running:
+		return ReleaseBuilding
+	case state == Failing:
+		return ReleaseFailed
+	default:
+		return ReleasePublished
+	}
+}
+
+// tagRuns keeps the trusted runs of tag on sha, the newest of each workflow.
+func tagRuns(runs []gitops.Run, sha string) []gitops.Run {
+	var mine []gitops.Run
+	for _, r := range trusted(runs) {
+		if r.SHA == sha {
+			mine = append(mine, r)
+		}
+	}
+	out := latestPerWorkflow(mine, "")
+	if out == nil {
+		out = []gitops.Run{}
+	}
+	return out
 }
 
 // refreshRelease checks the build of the release being followed, if any.
@@ -125,25 +198,13 @@ func (w *Watcher) refreshRelease(ctx context.Context, p model.Project) *Release 
 			slog.Debug("release runs", "project", p.Name, "tag", rel.Tag, "err", err)
 			return &rel
 		}
-		var mine []gitops.Run
-		for _, r := range trusted(runs) {
-			if r.SHA == rel.SHA {
-				mine = append(mine, r)
-			}
+		mine := tagRuns(runs, rel.SHA)
+		if len(mine) == 0 && len(rel.Runs) > 0 {
+			return &rel // GitHub listed its runs before: a glitch, not "no build"
 		}
-		rel.Runs = latestPerWorkflow(mine, "")
-		if rel.Runs == nil {
-			rel.Runs = []gitops.Run{}
-		}
-		switch state, _ := summarize(rel.Runs); {
-		case len(rel.Runs) == 0 && time.Since(rel.Pushed) > noBuildAfter:
-			rel.State = ReleaseNoBuild
-		case len(rel.Runs) == 0, state == Running:
-		case state == Failing:
-			rel.State = ReleaseFailed
-		default:
-			rel.State = ReleasePublished
-		}
+		prev := rel
+		rel.Runs = mine
+		rel.State = releaseState(rel, rel.Runs)
 		if rel.State == ReleasePublished || rel.State == ReleaseNoBuild {
 			if url, err := w.Git.ReleaseURL(ctx, p.ID, p.Path, rel.Tag); err == nil && url != "" {
 				rel.URL = url
@@ -152,12 +213,126 @@ func (w *Watcher) refreshRelease(ctx context.Context, p model.Project) *Release 
 			}
 		}
 		w.mu.Lock()
-		if cur, ok := w.releases[p.ID]; ok && cur.Tag == rel.Tag {
+		cur, ok := w.releases[p.ID]
+		if ok && cur.Tag == rel.Tag {
 			w.releases[p.ID] = rel
 		}
 		w.mu.Unlock()
+		if ok && cur.Tag == rel.Tag && !sameRelease(&prev, &rel) {
+			w.save(rel)
+		}
 	}
 	return &rel
+}
+
+// pushRunsLimit is how many of the newest push runs Refresh reads to find
+// release tags pushed from anywhere.
+const pushRunsLimit = 30
+
+// findReleases looks through the newest runs pushes started for runs of
+// release tags (tags in the project's format): those of a tag Dash hasn't
+// seen are a release pushed elsewhere (a terminal, GitHub, an agent), and
+// are saved; the newest becomes the release the status shows. Tags already
+// saved get their state from the runs too, unless they are followed
+// (refreshRelease checks that one).
+func (w *Watcher) findReleases(ctx context.Context, p model.Project) {
+	f, err := release.ParseFormat(p.TagFormat)
+	if err != nil {
+		return
+	}
+	runs, err := w.Git.PushRuns(ctx, p.ID, p.Path, pushRunsLimit)
+	if err != nil {
+		slog.Debug("push runs", "project", p.Name, "err", err)
+		return
+	}
+	type found struct {
+		sha   string
+		first time.Time
+		runs  []gitops.Run
+	}
+	byTag := map[string]*found{}
+	var order []string // newest first, as gh lists them
+	for _, r := range trusted(runs) {
+		if r.Branch == "" || r.Branch == p.DefaultBranch {
+			continue
+		}
+		if _, ok := f.Parse(r.Branch); !ok {
+			continue
+		}
+		t := byTag[r.Branch]
+		if t == nil {
+			t = &found{sha: r.SHA}
+			byTag[r.Branch] = t
+			order = append(order, r.Branch)
+		}
+		if r.SHA != t.sha {
+			continue // the tag moved: its newest commit's runs decide
+		}
+		t.runs = append(t.runs, r)
+		if t.first.IsZero() || r.CreatedAt.Before(t.first) {
+			t.first = r.CreatedAt
+		}
+	}
+	cur, following := w.followed(p.ID)
+	var newest *Release
+	for _, tag := range order {
+		t := byTag[tag]
+		if following && cur.Tag == tag {
+			continue
+		}
+		rel, err := w.Store.ReleaseBuild(p.ID, tag)
+		known := err == nil && rel.SHA == t.sha
+		if !known {
+			rel = Release{ProjectID: p.ID, Tag: tag, SHA: t.sha, Pushed: t.first, Found: true}
+		}
+		if known && rel.State != ReleaseBuilding {
+			continue // it ended: nothing new to learn
+		}
+		prev := rel
+		rel.Runs = latestPerWorkflow(t.runs, "")
+		rel.State = releaseState(rel, rel.Runs)
+		if rel.State != ReleaseBuilding {
+			rel.URL = gitops.ReleasePage(p.RemoteURL, tag)
+		}
+		if !known || !sameRelease(&prev, &rel) {
+			w.save(rel)
+		}
+		if !known && (newest == nil || rel.Pushed.After(newest.Pushed)) {
+			r := rel
+			newest = &r
+		}
+	}
+	if newest != nil && (!following || newest.Pushed.After(cur.Pushed)) {
+		slog.Info("found a release tag's build", "project", p.Name, "tag", newest.Tag, "state", newest.State)
+		w.follow(*newest)
+	}
+}
+
+// ReleaseBuilds are the saved builds of a project's latest release tags
+// (at most limit), the most recently pushed first; the one followed now is
+// as last checked.
+func (w *Watcher) ReleaseBuilds(projectID string, limit int) ([]Release, error) {
+	bs, err := w.Store.ReleaseBuilds(projectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	if cur, ok := w.followed(projectID); ok {
+		for i := range bs {
+			if bs[i].Tag == cur.Tag {
+				bs[i] = cur
+			}
+		}
+	}
+	return bs, nil
+}
+
+// ReleaseBuild is the saved build of one of a project's release tags
+// (store.ErrNotFound if Dash knows nothing of it).
+func (w *Watcher) ReleaseBuild(projectID, tag string) (Release, error) {
+	if cur, ok := w.followed(projectID); ok && cur.Tag == tag {
+		return cur, nil
+	}
+	return w.Store.ReleaseBuild(projectID, tag)
 }
 
 // sameRelease reports whether two statuses show the same release news.

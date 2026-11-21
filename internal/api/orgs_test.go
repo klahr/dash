@@ -286,6 +286,7 @@ func (o *twoOrgs) recordEndpoints() []endpoint {
 		{"POST", "/api/projects/" + pid + "/ci/refresh", ""},
 		{"POST", "/api/projects/" + pid + "/ci/investigate", ""},
 		{"POST", "/api/projects/" + pid + "/ci/retry", ""},
+		{"GET", "/api/projects/" + pid + "/ci/releases", ""},
 		{"GET", "/api/projects/" + pid + "/processes", ""},
 		{"POST", "/api/projects/" + pid + "/processes", `{"kind":"task","command":"true"}`},
 

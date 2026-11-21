@@ -1109,6 +1109,8 @@ func (s *Server) hubGitHub(w http.ResponseWriter, r *http.Request) {
 		out.Runs, err = s.Git.Runs(ctx, p.ID, p.Path, req.Ref, limit)
 	case dispatch.GitHubCommitRuns:
 		out.Runs, err = s.Git.RunsForCommit(ctx, p.ID, p.Path, req.Ref, limit)
+	case dispatch.GitHubPushRuns:
+		out.Runs, err = s.Git.PushRuns(ctx, p.ID, p.Path, limit)
 	case dispatch.GitHubReleaseURL:
 		out.URL, err = s.Git.ReleaseURL(ctx, p.ID, p.Path, req.Ref)
 	case dispatch.GitHubRerun:

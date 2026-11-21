@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/klahr/dash/internal/model"
 )
 
 var prURLRe = regexp.MustCompile(`https://\S+/pull/(\d+)`)
@@ -610,33 +612,17 @@ func jsonPart(s string) string {
 }
 
 // Run is a GitHub Actions workflow run.
-type Run struct {
-	ID         int64     `json:"id"`
-	Workflow   string    `json:"workflow"`
-	Title      string    `json:"title"`
-	Status     string    `json:"status"`     // queued | in_progress | completed | …
-	Conclusion string    `json:"conclusion"` // success | failure | cancelled | skipped | …
-	SHA        string    `json:"sha"`
-	Branch     string    `json:"branch,omitempty"` // the branch or tag it ran for
-	URL        string    `json:"url"`
-	Event      string    `json:"event"`
-	CreatedAt  time.Time `json:"created_at"`
-}
-
-func (r Run) Done() bool { return r.Status == "completed" }
-
-// Failed reports a finished run that didn't pass (cancelled runs don't count).
-func (r Run) Failed() bool {
-	switch r.Conclusion {
-	case "failure", "timed_out", "startup_failure":
-		return true
-	}
-	return false
-}
+type Run = model.CIRun
 
 // Runs lists the newest workflow runs on branch (or of a tag), newest first.
 func (g *Git) Runs(ctx context.Context, projectID, dir, branch string, limit int) ([]Run, error) {
 	return g.runList(ctx, projectID, dir, []string{"--branch", branch}, limit)
+}
+
+// PushRuns lists the newest workflow runs that pushes started, on any
+// branch or tag, newest first: how runs of tags pushed from anywhere are found.
+func (g *Git) PushRuns(ctx context.Context, projectID, dir string, limit int) ([]Run, error) {
+	return g.runList(ctx, projectID, dir, []string{"--event", "push"}, limit)
 }
 
 // RerunRun starts a finished workflow run again: only its failed jobs when

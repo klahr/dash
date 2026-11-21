@@ -359,11 +359,18 @@ func (sv *service) createRelease(ctx context.Context, p model.Project, req mcpto
 		return mcptools.Release{}, err
 	}
 	slog.Info("tagged a release", "project", p.Name, "tag", out.Tag, "sha", out.SHA)
-	if sv.s.CI != nil && strings.Contains(p.RemoteURL, "github.com") {
-		sv.s.CI.WatchRelease(p.ID, out.Tag, out.SHA)
-		out.Build = ci.ReleaseBuilding
-	}
+	sv.s.watchRelease(p, &out)
 	return out, nil
+}
+
+// watchRelease has the CI watcher follow the build of rel, a release tag of
+// p just pushed (here, or on a runner for the hub), and says so in rel.Build.
+func (s *Server) watchRelease(p model.Project, rel *mcptools.Release) {
+	if s.CI == nil || rel.Tag == "" || !strings.Contains(p.RemoteURL, "github.com") {
+		return
+	}
+	s.CI.WatchRelease(p.ID, rel.Tag, rel.SHA)
+	rel.Build = ci.ReleaseBuilding
 }
 
 // tagFetchEvery limits how often showing the History view fetches origin's tags.
@@ -631,6 +638,9 @@ func (sv *service) releaseOnRunner(ctx context.Context, p model.Project, r mcpto
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	body := map[string]string{"sha": r.SHA, "version": r.Version, "bump": r.Bump, "notes": r.Notes}
-	err = sv.s.fleet().Call(cctx, run.ID, http.MethodPost, "/api/projects/"+url.PathEscape(rpid)+"/tags", body, &out)
-	return out, err
+	if err = sv.s.fleet().Call(cctx, run.ID, http.MethodPost, "/api/projects/"+url.PathEscape(rpid)+"/tags", body, &out); err != nil {
+		return out, err
+	}
+	sv.s.watchRelease(p, &out) // the runner follows it for itself; the hub's UI reads the hub's watcher
+	return out, nil
 }

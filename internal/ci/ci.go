@@ -1,6 +1,7 @@
 // Package ci follows GitHub Actions on each project's default branch: it
 // keeps a build status for the dashboards and, when a build fails, queues a
-// todo asking Claude to investigate and fix it.
+// todo asking Claude to investigate and fix it. It also follows the builds
+// of release tags (release.go), however they were pushed.
 package ci
 
 import (
@@ -49,6 +50,8 @@ type Status struct {
 // gh on a runner linked to the project.
 type GitHub interface {
 	Runs(ctx context.Context, projectID, dir, ref string, limit int) ([]gitops.Run, error)
+	// PushRuns lists the newest runs pushes started, on any branch or tag.
+	PushRuns(ctx context.Context, projectID, dir string, limit int) ([]gitops.Run, error)
 	RunsForCommit(ctx context.Context, projectID, dir, sha string, limit int) ([]gitops.Run, error)
 	ReleaseURL(ctx context.Context, projectID, dir, tag string) (string, error)
 	RerunRun(ctx context.Context, projectID, dir string, runID int64, failedOnly bool) error
@@ -68,7 +71,7 @@ type Watcher struct {
 	mu       sync.Mutex
 	status   map[string]Status
 	busy     map[string]bool
-	releases map[string]Release // project ID → the release being followed
+	releases map[string]Release // project ID → the release being followed (saved in Store too)
 }
 
 func (w *Watcher) Run(ctx context.Context) {
@@ -77,6 +80,7 @@ func (w *Watcher) Run(ctx context.Context) {
 	}
 	tick := time.NewTicker(w.Every)
 	defer tick.Stop()
+	w.Resume()
 	for {
 		for _, p := range w.Store.ListProjects() {
 			if w.watched(p) {
@@ -125,6 +129,7 @@ func (w *Watcher) Refresh(ctx context.Context, projectID string) (Status, error)
 		w.set(st)
 		return st, nil
 	}
+	w.findReleases(ctx, p)
 	st := Status{ProjectID: p.ID, Branch: p.DefaultBranch, Checked: time.Now(), Release: w.refreshRelease(ctx, p)}
 	runs, err := w.branchRuns(ctx, p)
 	if err != nil {

@@ -276,6 +276,7 @@ func (s *Server) viaRunner(h http.HandlerFunc) http.HandlerFunc {
 				res.write(w)
 				return
 			}
+			s.watchRelease(p, &rel) // the runner tagged it: the hub follows its build
 			writeJSON(w, res.code, sv.releaseDeploys(p, rel, env))
 		case "GET /api/projects/{pid}/release":
 			res, err := sv.forward(r, p, "", nil)
@@ -796,6 +797,11 @@ func (g RunnerGitHub) Runs(ctx context.Context, projectID, _, ref string, limit 
 
 func (g RunnerGitHub) RunsForCommit(ctx context.Context, projectID, _, sha string, limit int) ([]gitops.Run, error) {
 	out, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubCommitRuns, Ref: sha, Limit: limit})
+	return safeRuns(out.Runs), err
+}
+
+func (g RunnerGitHub) PushRuns(ctx context.Context, projectID, _ string, limit int) ([]gitops.Run, error) {
+	out, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubPushRuns, Limit: limit})
 	return safeRuns(out.Runs), err
 }
 

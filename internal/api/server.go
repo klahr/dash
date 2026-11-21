@@ -427,6 +427,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/projects/{pid}/ci/refresh", s.refreshCI)
 	mux.HandleFunc("POST /api/projects/{pid}/ci/investigate", s.investigateCI)
 	mux.HandleFunc("POST /api/projects/{pid}/ci/retry", s.retryCI)
+	mux.HandleFunc("GET /api/projects/{pid}/ci/releases", s.releaseBuilds)
 
 	// Outgoing notification webhooks (generic JSON, Slack, ntfy)
 	mux.HandleFunc("GET /api/projects/{pid}/webhooks", s.listWebhooks)
