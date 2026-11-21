@@ -11,7 +11,6 @@ import { closeDeploy, dp, loadDeploys, openDeploy } from "./deploys.js";
 import { closeCommit, selectCommit } from "./history.js";
 import { showIssue } from "./issues.js";
 import { cardError, cardId, closeCard, openCard, planningFilters, setPlanningFilters } from "./planning.js";
-import { currentBoard, showBoard } from "./boards.js";
 import { openSettings } from "./settings.js";
 import { ACCOUNT_MOVED, openAccount } from "./accountsheet.js";
 import { openOrg } from "./account.js";
@@ -51,7 +50,7 @@ document.addEventListener("dash:route", (e) => {
 
 // current is the route of what the page shows now.
 function current() {
-  const r = { view: state.view, task: null, goal: null, sha: null, issue: null, deploy: null, card: null, board: null, plProject: "", plTags: [], plTarget: "", plMine: false, sheet: null, section: null };
+  const r = { view: state.view, task: null, goal: null, sha: null, issue: null, deploy: null, card: null, plProject: "", plTags: [], plTarget: "", plMine: false, sheet: null, section: null };
   if (state.view === "planning") {
     r.card = cardId();
     const f = planningFilters();
@@ -64,7 +63,6 @@ function current() {
     else if (state.view === "goals" && gp.open) r.goal = gp.open;
     else if (state.view === "history" && cp.sha) r.sha = cp.sha;
     else if (state.view === "deploys" && dp.open) r.deploy = dp.open;
-    r.board = currentBoard() || null;
   }
   // The sheet on top, if several are open (Runners can open over Settings).
   for (const k of [...SHEETS].reverse()) {
@@ -179,7 +177,6 @@ async function apply(r, { startup = false, settle = !startup } = {}) {
     let view = r.view;
     if (r.task && !startup && state.view !== "planning") view = state.view;
     if (view && view !== state.view) showView(view, { now: true });
-    if (view === "board" && !r.task) showBoard(r.board || "");
     if (view === "planning") setPlanningFilters(r.plProject || "", r.plTags || [], r.plTarget || "", !!r.plMine);
 
     if (r.task) {

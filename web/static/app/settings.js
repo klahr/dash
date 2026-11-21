@@ -12,7 +12,6 @@ import { loadClaudeFiles } from "./claudefiles.js";
 import { changed } from "./routes.js";
 import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
-import { renderBoardSettings } from "./boards.js";
 import { agentRunners, missingLabels, parseLabels, projectAgent, servesProject } from "../groups.js";
 import { FEATURES, NOTES, SETUP, agentTitle, loadAgents } from "./agents.js";
 import { docsLabels, labelPicker, matchList, setLabels } from "./labelpicker.js";
@@ -57,7 +56,6 @@ export function openSettings() {
   renderApprove();
   $("#webhook-secret").hidden = true;
   loadWebhooks().catch(fail);
-  renderBoardSettings();
   loadBoard().catch(fail);
   loadClaudeFiles().catch(fail);
   loadRepoInfo();

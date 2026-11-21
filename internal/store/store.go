@@ -537,9 +537,6 @@ func (s *Store) createTodo(t model.Todo, status model.TodoStatus) (model.Todo, e
 	if err := s.checkDepsLocked(t); err != nil {
 		return t, err
 	}
-	if err := s.checkBoardLocked(t); err != nil {
-		return t, err
-	}
 	s.data.Todos[t.ID] = &t
 	if err := s.writeLocked(func(tx *sql.Tx) error { return putTodo(tx, &t) }); err != nil {
 		return t, err
@@ -625,12 +622,6 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 		cp.BuildsOn = strings.TrimSpace(cp.BuildsOn)
 		cp.ID, cp.ProjectID = t.ID, t.ProjectID
 		if err := s.checkDepsLocked(cp); err != nil {
-			return *t, err
-		}
-	}
-	if cp.Board != t.Board {
-		cp.ProjectID = t.ProjectID
-		if err := s.checkBoardLocked(cp); err != nil {
 			return *t, err
 		}
 	}

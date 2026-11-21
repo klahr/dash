@@ -10,7 +10,6 @@ import { attempt, busy, fail, railOf, reduceMotion, toast } from "./dialogs.js";
 import { projectFirst, state } from "./state.js";
 import { showView } from "./nav.js";
 import { baseBranch, eventFor, latest, multi, projectKey, projectStatus, refreshLive } from "./events.js";
-import { restoreBoard } from "./boards.js";
 import { loadTodos, pushDone, renderPushMain } from "./board.js";
 import { renderBoard } from "./branches.js";
 import { ghMark, ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
@@ -85,7 +84,6 @@ export async function selectProject(p, { follow = true } = {}) {
   state.todos = new Map();
   state.goals = new Map();
   state.goalFilter = null;
-  restoreBoard(p);
   state.unpushed = 0;
   state.unpushedTodos = null;
   state.lane = null;

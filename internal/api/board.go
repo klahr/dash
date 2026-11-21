@@ -438,7 +438,7 @@ func (b board) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, err
 	}
 	return b.sv.addTodo(model.Todo{
 		ProjectID: projectID, Title: t.Title, Prompt: t.Prompt, Priority: t.Priority,
-		DependsOn: t.DependsOn, BuildsOn: t.BuildsOn, Model: t.Model, RunOn: t.RunOn, Board: t.Board,
+		DependsOn: t.DependsOn, BuildsOn: t.BuildsOn, Model: t.Model, RunOn: t.RunOn,
 	}, t.Enqueue)
 }
 

@@ -19,7 +19,6 @@
 //   /planning/cards/{id}           a Planning card, open
 //
 // Query parameters, on any of them:
-//   board=<id>                     a board other than the project's Main one (board, tasks)
 //   project=<id>, tag=<tag> (any number), target=<target>, mine=1
 //                                  Planning's filters (/planning only)
 //   sheet=settings|account|org|runners, section=<key>
@@ -63,13 +62,13 @@ export function findProject(list, ref) {
 
 // parse turns a URL (a Location or URL) into a route:
 //   { project: {id, machine} | null, view, task, goal, sha, issue, deploy, card,
-//     board, plProject, plTags, plTarget, plMine, sheet, section, named }
+//     plProject, plTags, plTarget, plMine, sheet, section, named }
 // named is false for a plain / (no place in it: the saved one applies). A
 // path that isn't the app's parses as / with named false.
 export function parse(loc) {
   const q = new URLSearchParams(loc.search);
   const r = { project: null, view: null, task: null, goal: null, sha: null, issue: null, deploy: null, card: null,
-    board: q.get("board"), plProject: null, plTags: [], plTarget: "", plMine: false, sheet: null, section: null, named: false };
+    plProject: null, plTags: [], plTarget: "", plMine: false, sheet: null, section: null, named: false };
   const sheet = q.get("sheet");
   if (SHEETS.includes(sheet)) { r.sheet = sheet; r.section = q.get("section"); }
   const parts = loc.pathname.split("/").slice(1).map(dec);
@@ -104,7 +103,6 @@ export function parse(loc) {
     r.goal = !r.task && q.get("goal") || null;
     r.issue = !r.task && !r.goal && q.get("issue") || null;
     r.view = r.goal ? "goals" : r.issue ? "issues" : "board";
-    r.board = null;
   }
   return r;
 }
@@ -128,7 +126,6 @@ export function href(r, p) {
     else if (r.issue) path = `${base}/issues/${enc(r.issue)}`;
     else if (r.deploy) path = `${base}/deploys/${enc(r.deploy)}`;
     else path = `${base}/${r.view || "board"}`;
-    if (r.board && (r.task || (r.view || "board") === "board")) q.set("board", r.board);
   }
   if (r.sheet) {
     q.set("sheet", r.sheet);

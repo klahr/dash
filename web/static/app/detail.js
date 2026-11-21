@@ -20,7 +20,6 @@ import { shellBlocked, startProc } from "./terminal.js";
 import { closeCommit } from "./history.js";
 import { PRIORITY_LEVELS, clearPriority, priorityLevel } from "./dnd.js";
 import { linkToCard } from "./planning.js";
-import { boardName, boardsOf, hasBoards, moveToBoard, onBoard, showBoard } from "./boards.js";
 import { agentCan, cantSay } from "./agents.js";
 import { creator } from "./people.js";
 import { avatar } from "./avatar.js";
@@ -44,9 +43,6 @@ export async function openDetail(id, { pane = "timeline" } = {}) {
   setDetailModal(true);
   if (state.detail !== id) hidePreview();
   state.detail = id;
-  // A task on another of the project's boards: show that board, with it.
-  const opened = state.todos.get(id);
-  if (opened && !onBoard(opened)) showBoard(opened.board);
   // On a desktop the task's running preview opens beside it.
   if (desktop.matches && previewOf(id)) pv.todo = id;
   state.pane = pane;
@@ -333,10 +329,6 @@ $("#d-more").addEventListener("click", attempt(async (e) => {
   if (previewOf(t.id)) worktree.push(["stop", "Stop the live preview", () => stopPreview(t.id)]);
   if (t.pr) worktree.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
 
-  if (settled && hasBoards()) {
-    const others = boardsOf().filter((b) => b.id !== (t.board || ""));
-    organise.push(["right", "Move to another board…", () => popMenu(btn, [others.map((b) => ["right", b.name, () => moveToBoard(t, b.id)])], { heading: `Move from ${boardName(t.board)} to` })]);
-  }
   if (settled) organise.push(["copy", "Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
   // Planning is the hub's: its cards link to the tasks it has.
   if (!state.project?.prefix) organise.push(["plan", "Link to a planning card…", () => linkToCard("task", t.id)]);

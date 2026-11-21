@@ -48,34 +48,10 @@ A task's `no_changes` is true when its latest run changed no files. A closed tas
 `merged`, `no_changes` true and no `merged_commit`. `POST /api/todos/{id}/approve` on such a
 task in Review closes it too.
 
-## Several boards
+## One board per project
 
-A project can split its tasks over several boards, for example one per part of the product.
-Every project has its **Main** board. Add more in **Project settings → Board → Boards**, or
-with **+** beside the board names above the lanes.
-
-- With more than one board, the names show above the lanes, each with how many of its tasks
-  aren't merged yet. Click one to show its tasks. Arrow keys move along them. Each browser
-  remembers the board it last showed for each project.
-- A new task goes on the board shown. To move a task, open it and pick
-  **⋯ → Move to another board…**.
-- Opening a task on another board shows that board.
-- Rename, reorder and delete boards in **Project settings → Board → Boards**. Deleting a board
-  moves its tasks to **Main**.
-- The review count and notifications count the tasks of every board.
-
-Boards only group tasks: the queue, dependencies, priorities and the board backend below are
-the project's, shared by all of its boards.
-
-The API:
-
-    POST   /api/projects/{id}/boards           {name}: add a board; answers the project and the new board
-    PATCH  /api/projects/{id}/boards/{board}   {name, position}: rename it, or move it (0: first after Main)
-    DELETE /api/projects/{id}/boards/{board}   delete it; its tasks move to Main
-
-A project's boards are in its `boards` (`id`, `name`), and a task's board in its `board` (empty:
-**Main**). `POST /api/projects/{id}/todos` and `PATCH /api/todos/{id}` take `board`, by id or
-name.
+A project has one task board. Earlier versions of Dash let a project have several. Updating
+Dash moves the tasks of the extra boards onto the project's board and removes the extra boards.
 
 ## Per project
 

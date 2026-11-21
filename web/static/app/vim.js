@@ -8,7 +8,6 @@ import { cleanup, isHub, loadProjects, openNewProject, openProjects, selectProje
 import { pushDone } from "./board.js";
 import { closable, closeTodo, hasPriority, laneItems, renderBoard, title, toggleMine } from "./branches.js";
 import { multiMember } from "./people.js";
-import { boardField } from "./boards.js";
 import { openTodoForm } from "./todos.js";
 import { editTodo } from "./inlineedit.js";
 import { closeDetail } from "./detail.js";
@@ -200,7 +199,7 @@ export async function runCommand(line) {
       need(); openTodoForm(); if (arg) $("#todo-form").prompt.value = arg; return;
     case "todo": case "task":
       if (!arg) throw new Error("Usage: :task <instructions>");
-      await api("POST", `/api/projects/${need().id}/todos`, { prompt: arg, enqueue: true, ...boardField() });
+      await api("POST", `/api/projects/${need().id}/todos`, { prompt: arg, enqueue: true });
       return toast("Added to queue");
     case "cleanup": case "clean": need(); return cleanup();
     case "ci": case "builds": return openCI();

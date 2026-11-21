@@ -277,9 +277,6 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/projects/{pid}", s.getProject)
 	mux.HandleFunc("PATCH /api/projects/{pid}", s.updateProject)
 	mux.HandleFunc("DELETE /api/projects/{pid}", s.deleteProject)
-	mux.HandleFunc("POST /api/projects/{pid}/boards", s.addBoard)
-	mux.HandleFunc("PATCH /api/projects/{pid}/boards/{bid}", s.updateBoard)
-	mux.HandleFunc("DELETE /api/projects/{pid}/boards/{bid}", s.deleteBoard)
 	mux.HandleFunc("POST /api/projects/{pid}/pause", s.pauseProject)
 	mux.HandleFunc("POST /api/projects/{pid}/resume", s.resumeProject)
 	mux.HandleFunc("POST /api/projects/{pid}/push", s.viaRunner(s.pushProject))
@@ -702,7 +699,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusForbidden
 	case errors.Is(err, errConflict):
 		code = http.StatusConflict
-	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue), errors.Is(err, store.ErrBadMember), errors.Is(err, store.ErrTooManyFiles), errors.Is(err, store.ErrBadBoard),
+	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue), errors.Is(err, store.ErrBadMember), errors.Is(err, store.ErrTooManyFiles),
 		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview), errors.Is(err, preview.ErrNotTerminal):
 		code = http.StatusBadRequest
 	}

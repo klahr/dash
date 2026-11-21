@@ -214,9 +214,6 @@ func (sv *service) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
 	if t.RunOn, err = sv.runOn(t, t.RunOn); err != nil {
 		return t, err
 	}
-	if t.Board, err = sv.boardRef(t.ProjectID, t.Board); err != nil {
-		return t, err
-	}
 	if err := sv.sendable(t.ProjectID, len(t.Attachments) > 0 || len(t.Edits) > 0); err != nil {
 		return t, err
 	}
@@ -254,23 +251,6 @@ func (sv *service) runOn(t model.Todo, id string) (string, error) {
 		if ok, why := r.WorksFor(t.WorkFor()); !ok {
 			return "", fmt.Errorf("%w: %s; pick one of the task's owner's runners, or a shared one", errBadRequest, why)
 		}
-	}
-	return id, nil
-}
-
-// boardRef is the id of project pid's board ref names, by id or by name
-// ("" and "Main" are its main board).
-func (sv *service) boardRef(pid, ref string) (string, error) {
-	if strings.TrimSpace(ref) == "" {
-		return "", nil
-	}
-	p, err := sv.data.GetProject(pid)
-	if err != nil {
-		return "", err
-	}
-	id, ok := p.FindBoard(ref)
-	if !ok {
-		return "", fmt.Errorf("%w: no board %q in project %s", store.ErrBadBoard, ref, p.Name)
 	}
 	return id, nil
 }
@@ -468,17 +448,6 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 		}
 		u.Model = &m
 	}
-	if u.Board != nil {
-		cur, err := sv.data.GetTodo(id)
-		if err != nil {
-			return cur, err
-		}
-		b, err := sv.boardRef(cur.ProjectID, *u.Board)
-		if err != nil {
-			return cur, err
-		}
-		u.Board = &b
-	}
 	if u.RunOn != nil {
 		cur, err := sv.data.GetTodo(id)
 		if err != nil {
@@ -514,7 +483,6 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 		}
 		set(&t.DependsOn, u.DependsOn) // validated by the store
 		set(&t.Model, u.Model)         // used from its next run
-		set(&t.Board, u.Board)         // validated by the store
 		return nil
 	})
 	if err != nil {

@@ -4,7 +4,6 @@ import { attempt, toast } from "./dialogs.js";
 import { buildOnPicker, depPicker, runOnPicker, draft, draftKey, promptEditor, setModelField, split, todoAttach } from "./todoform.js";
 import { projectFirst, state } from "./state.js";
 import { projectKey } from "./events.js";
-import { boardField } from "./boards.js";
 import { grouped, projectWhere } from "./projects.js";
 import { renderBoard } from "./branches.js";
 import { showRunnerNeeded } from "./runners.js";
@@ -130,7 +129,7 @@ async function submitQuick(enqueue) {
   const ids = [];
   try {
     for (const prompt of texts) {
-      const t = await api("POST", `/api/projects/${p.id}/todos`, { title: "", prompt, enqueue, ...boardField() }, p.prefix || "");
+      const t = await api("POST", `/api/projects/${p.id}/todos`, { title: "", prompt, enqueue }, p.prefix || "");
       if (t?.id) ids.push(t.id);
       done++;
     }
@@ -253,7 +252,7 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
     // Attachments are uploaded to the current project's computer.
     if (body.attachments.length && p.prefix !== here()) throw new Error(`Attachments can't be sent to ${p.name} on ${p.machine}; remove them or pick a project on this computer.`);
     const other = projectKey(p) !== projectKey(state.project);
-    const t = await api("POST", `/api/projects/${p.id}/todos`, { ...body, enqueue: action === "queue", ...(other ? {} : boardField()) }, p.prefix || "");
+    const t = await api("POST", `/api/projects/${p.id}/todos`, { ...body, enqueue: action === "queue" }, p.prefix || "");
     toast(`${action === "queue" ? "Added to queue" : "Saved as draft"}${other ? ` in ${p.name}` : ""}`);
     if (!other) showNewTasks(action === "queue" ? "queued" : "draft", t?.id ? [t.id] : []);
   }
