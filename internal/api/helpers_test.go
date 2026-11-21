@@ -20,6 +20,7 @@ import (
 // in parallel (see boardServer), so neither changes per test.
 func TestMain(m *testing.M) {
 	passhash.UseCheapParamsInTests()
+	store.UseMigratedTemplateInTests()
 	gitops.AllowLocalRemotes = true
 	os.Exit(testgit.Run(m))
 }

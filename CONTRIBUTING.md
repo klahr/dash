@@ -71,6 +71,11 @@ A package whose tests run git calls `testgit.Run` from its `TestMain`
 inherited `GIT_DIR`-style variables, and can't find the checkout the tests run in. Give every git
 a test starts a folder of its own (`cmd.Dir`, or `-C`), never the package's.
 
+A package whose tests open stores calls `store.UseMigratedTemplateInTests()` from its `TestMain`:
+every new database is then copied from one migrated once per test binary, instead of running
+all the migrations again (slow under `-race`). An existing database is still migrated for real.
+Tests of a migration build the older schema themselves, so they aren't affected.
+
 Tests live next to the code they test (`foo.go` and `foo_test.go`) and use the standard
 `testing` package. They must not depend on your own setup: no network, no real Claude, no
 GitHub. Tests that run git create throwaway repositories in `t.TempDir()`; see

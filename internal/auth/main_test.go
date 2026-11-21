@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/klahr/dash/internal/passhash"
+	"github.com/klahr/dash/internal/store"
 )
 
 // TestMain hashes passwords with the cheapest Argon2id setting: at the
@@ -12,5 +13,6 @@ import (
 // package's own tests keep the production setting.
 func TestMain(m *testing.M) {
 	passhash.UseCheapParamsInTests()
+	store.UseMigratedTemplateInTests()
 	os.Exit(m.Run())
 }

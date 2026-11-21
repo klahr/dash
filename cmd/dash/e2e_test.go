@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/testbin"
 	"github.com/klahr/dash/internal/testgit"
 )
@@ -19,6 +20,7 @@ import (
 // free ports. `go test -short` skips them.
 
 func TestMain(m *testing.M) {
+	store.UseMigratedTemplateInTests() // in-process stores; the built dash migrates for real
 	code := testgit.Run(m)
 	if bins.dir != "" {
 		_ = os.RemoveAll(bins.dir)

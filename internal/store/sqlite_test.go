@@ -379,8 +379,9 @@ func TestScanRunPruneIsPersisted(t *testing.T) {
 func TestMigrateFromEmpty(t *testing.T) {
 	t.Parallel()
 
+	// Every migration from scratch, not the tests' migrated template.
 	path := filepath.Join(t.TempDir(), "sub", "dash.db")
-	s, err := Open(path, nil)
+	s, err := openPath(path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

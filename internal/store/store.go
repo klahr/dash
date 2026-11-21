@@ -124,6 +124,15 @@ func NewID() string {
 // progress when Dash stopped are put back in the queue; their worktrees are
 // reused.
 func Open(path string, pub Publisher) (*Store, error) {
+	if err := copyTemplate(path); err != nil { // tests only (UseMigratedTemplateInTests)
+		return nil, err
+	}
+	return openPath(path, pub)
+}
+
+// openPath is Open without the tests' migrated template: a new database is
+// migrated from scratch.
+func openPath(path string, pub Publisher) (*Store, error) {
 	db, err := openDB(path)
 	if err != nil {
 		return nil, err
