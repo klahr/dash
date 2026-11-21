@@ -36,7 +36,8 @@ export function toast(msg, opts = {}) {
   t.addEventListener("focusout", release);
   const box = $("#toasts");
   box.append(t);
-  while (box.children.length > 4) box.firstChild.remove();
+  // Voice commands' listening bar (voice.js) lives here too, and stays.
+  for (let ts = box.querySelectorAll(":scope > .toast:not(.voice-bar)"), i = 0; i < ts.length - 4; i++) ts[i].remove();
   run();
   raiseToasts();
 }
@@ -49,7 +50,7 @@ const toastBox = $("#toasts");
 const toastHome = document.createComment("toasts");
 toastBox.before(toastHome);
 const modals = []; // open modal dialogs, oldest first
-function raiseToasts() {
+export function raiseToasts() {
   if (!toastBox.showPopover) return;
   for (let i = modals.length - 1; i >= 0; i--) if (!modals[i].isConnected || !modals[i].matches(":modal")) modals.splice(i, 1);
   const host = modals.at(-1);

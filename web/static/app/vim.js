@@ -137,6 +137,7 @@ export async function todoKey(t, k) {
 }
 
 // y / A / X answer the permission request in view: the open todo's, else the oldest.
+// It returns false when none waits and true when it answered one.
 export async function permKey(k) {
   const p = state.perms.find((x) => x.todo_id === state.detail) || (!state.detail && state.perms[0]);
   if (!p) return false;
@@ -144,6 +145,7 @@ export async function permKey(k) {
   if (isQuestion(p) && decision !== "deny") return toast("Answer Claude's question in its card");
   await api("POST", `/api/permissions/${p.id}`, { decision });
   toast(decision === "deny" ? "Denied" : decision === "always" ? `${p.tool} always allowed in this project` : "Allowed");
+  return true; // answered
 }
 
 export async function runCommand(line) {

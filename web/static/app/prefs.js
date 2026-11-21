@@ -11,6 +11,7 @@ import { renderUsage } from "./usage.js";
 import { copyBlock } from "./install.js";
 import { accountSection, openAccount } from "./accountsheet.js";
 import { dictationOn, dictationSupported, setDictation } from "./dictation.js";
+import { setVoice, voiceOn } from "./voice.js";
 
 // ------------------------------------------------------------------ preferences (this browser only)
 export function syncPrefs() {
@@ -23,6 +24,8 @@ export function syncPrefs() {
   f.chatSuggest.checked = chatSuggestOn();
   f.dictation.checked = dictationOn();
   f.dictation.disabled = !dictationSupported;
+  f.voice.checked = voiceOn();
+  f.voice.disabled = !dictationSupported;
   $("#dictation-missing").hidden = dictationSupported;
 }
 // The preferences are the Account sheet's first sections (Editors, Time, Chat, Dictation), and
@@ -44,6 +47,7 @@ pref("chatSuggest", (el) => {
   document.dispatchEvent(new Event("dash:chatsuggest"));
 });
 pref("dictation", (el) => setDictation(el.checked));
+pref("voice", (el) => setVoice(el.checked));
 $("#push-test").addEventListener("click", attempt(testPush));
 // Asking for permission needs this change event's user gesture.
 $("#prefs-form").notify.addEventListener("change", attempt(async (e) => {

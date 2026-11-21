@@ -29,10 +29,70 @@ Dash uses your browser's language.
 
 Typing, leaving the field or closing the form also stops dictation, and keeps the words shown.
 
+## Voice commands
+
+Say a command and Dash runs it, as its buttons and keys do. Voice commands are off until you
+turn them on, and are a setting of this browser.
+
+### Turn them on
+
+1. Open **Account → Dictation**.
+2. Turn on **Voice commands**.
+
+A mic shows in the top bar. Chrome, Edge and Safari have voice commands; Firefox doesn't.
+
+### Start and stop
+
+- Click the mic in the top bar, or press `Ctrl-Shift-,` (`⌘-Shift-,` on a Mac). Allow the
+  microphone the first time.
+- A **Listening for commands** bar shows what Dash heard.
+- Say "stop listening", press `Esc`, or click **Stop** to end. Hiding the page or an error ends
+  it too.
+
+Click the mic or use the shortcut while the cursor is in a chat, so "send" knows what to send.
+
+### The commands
+
+| Say                                   | Does                                                         |
+|---------------------------------------|--------------------------------------------------------------|
+| "send"                                | sends the chat or comment you are in; in **New task**, saves a draft (`Enter`) |
+| "queue this task", "run this task"    | queues the task form, or the open draft, or the draft under the board's cursor (`s`) |
+| "approve", "allow"                    | allows the permission request in view (`y`)                  |
+| "deny"                                | denies it (`X`)                                              |
+| "next card", "previous card"          | the next or previous task: the board's cursor (`j` `k`), or in an open task, the task beside it in its column |
+| "open board", "open chat"             | the **Board** (`gb`) / the project's chat (`c`)              |
+| "open issues", "open history" …       | that section: board, issues, scans, shell, history, goals, deploys, files, planning |
+| "stop listening"                      | ends voice commands                                          |
+
+Dash matches loosely: case, punctuation, "the", "this" and "please" don't matter. Speech that
+isn't a command does nothing. "approve" answers a permission request; it doesn't approve or merge
+a task in Review.
+
+"send", "queue", "approve" and "deny" show what Dash heard and what it did in a message.
+
+There are no voice commands that delete, merge, deploy or roll back.
+
+### While dictating
+
+With voice commands on, say "send" on its own, after a pause, to send a chat message or comment
+you are dictating. The words before it stay in the field; "send" isn't typed. Say "stop
+listening" on its own to stop dictating.
+
+Said in the same breath as other words ("… and then send"), "send" is typed like any other
+word. In the task instructions "send" is always typed, since a task can be saved or queued.
+
+### Full hands-free control
+
+Your operating system can control every button by voice, in every app:
+
+- **macOS:** Voice Control, in **System Settings → Accessibility → Voice Control**.
+- **Windows:** Voice Access, in **Settings → Accessibility → Speech**.
+
 ## Privacy
 
-The browser does the speech recognition, not Dash. Chrome sends the audio to Google to
-transcribe it. Safari may transcribe it on the device. Dash only gets the text you send.
+The browser does the speech recognition for dictation and voice commands, not Dash. Chrome
+sends the audio to Google to transcribe it. Safari may transcribe it on the device. Dash only
+gets the text you send.
 
 ## Your system's dictation
 

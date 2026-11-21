@@ -15,6 +15,10 @@ import * as store from "./store.js";
 // space between them and the text around them, and the field gets an input
 // event. Click again, Esc or Ctrl/⌘-Shift-. stops; typing, leaving the field,
 // closing its dialog or hiding the page stops too and keeps what is shown.
+//
+// Voice commands (voice.js) share the microphone: starting one stops the other.
+// With them on, a command said on its own while dictating ("send", "stop
+// listening") runs instead of being typed; see speech.fieldCommand.
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const dictationSupported = !!Recognition;
@@ -25,6 +29,11 @@ export const dictationOn = () => dictationSupported && store.flag(KEY);
 const showButtons = () => document.documentElement.classList.toggle("dictation-on", dictationOn());
 showButtons();
 addEventListener("storage", (e) => { if (e.key === KEY) { showButtons(); if (!dictationOn()) end(true); } });
+
+// voice.js fills these in. fieldCommand(result, ctl) gets each final result
+// heard in a field and returns a function to run in place of typing it, or
+// null; stopCommands ends command mode before dictation starts.
+export const speech = { fieldCommand: null, stopCommands: null };
 
 export function setDictation(on) {
   store.setFlag(KEY, on);
@@ -85,13 +94,15 @@ let session = null;
 // dictation attaches a mic button to field (a textarea, or { ed } for an
 // mdEditor) and returns it. place(button) puts it in the page (default: right
 // after the field); text adds a label beside the icon; cls is the button's class.
-export function dictation(field, { place, text = false, cls = "icon-btn" } = {}) {
+// send, where the field has one way to send what is in it (a chat, a comment),
+// sends it and returns whether there was something to send: voice commands' "send".
+export function dictation(field, { place, text = false, cls = "icon-btn", send = null } = {}) {
   const target = field.ed ? editorTarget(field.ed) : textareaTarget(field);
   const btn = h("button", {
     type: "button", class: `${cls} dictate-btn`, "aria-pressed": "false",
     "aria-label": "Dictate", title: "Dictate (Ctrl-Shift-.)",
   }, ico("mic"), text ? "Dictate" : null);
-  const ctl = { target, btn };
+  const ctl = { target, btn, send };
   // The field keeps the focus (and a phone its keyboard) when the button is pressed.
   for (const ev of ["pointerdown", "mousedown"]) btn.addEventListener(ev, (e) => e.preventDefault());
   btn.addEventListener("click", () => toggle(ctl));
@@ -126,16 +137,23 @@ function keydown(ctl, e) {
   }
 }
 
+// fieldControl is the dictation control of the field el is in, or null:
+// { target, btn, send }.
+export function fieldControl(el) {
+  for (; el; el = el.parentElement) {
+    const ctl = fields.get(el);
+    if (ctl) return ctl;
+  }
+  return null;
+}
+
 // Ctrl/⌘-Shift-. toggles dictation in the focused field that has a button.
 document.addEventListener("keydown", (e) => {
   if (!isShortcut(e) || !dictationOn()) return;
-  for (let el = document.activeElement; el; el = el.parentElement) {
-    const ctl = fields.get(el);
-    if (!ctl) continue;
-    e.preventDefault();
-    toggle(ctl);
-    return;
-  }
+  const ctl = fieldControl(document.activeElement);
+  if (!ctl) return;
+  e.preventDefault();
+  toggle(ctl);
 }, true);
 
 function toggle(ctl) {
@@ -147,6 +165,7 @@ function start(ctl) {
   end(true);
   const { target, btn } = ctl;
   if (!dictationOn() || target.readOnly()) return;
+  speech.stopCommands?.();
   if (!target.owner.contains(document.activeElement)) target.focus();
   const rec = new Recognition();
   rec.lang = navigator.language || "en-US";
@@ -164,6 +183,14 @@ function start(ctl) {
     let fin = "", mid = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
+      const cmd = r.isFinal && speech.fieldCommand?.(r, ctl);
+      if (cmd) {
+        // The words before it go in; the command's own words don't.
+        if (fin.trim()) write(s, fin, true);
+        end(false);
+        cmd();
+        return;
+      }
       if (r.isFinal) fin += ` ${r[0].transcript}`; else mid += ` ${r[0].transcript}`;
     }
     if (fin.trim()) write(s, fin, true);
@@ -218,6 +245,9 @@ function write(s, text, final) {
     s.interimText = text;
   }
 }
+
+// stopDictation ends dictation in any field, keeping what it shows.
+export const stopDictation = () => end(true);
 
 // stop asks for the last words, which arrive as a final result before onend.
 function stop() {

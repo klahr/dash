@@ -704,11 +704,18 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .chat-mode-note { font-weight: 400; }
 .composer.rework-mode textarea { border-color: var(--running); }
 .composer.rework-mode .icon-btn.primary { background: var(--running); }
-/* Dictation's mic button (app/dictation.js): shown while the preference is on; red and breathing while it listens. */
-:root:not(.dictation-on) .dictate-btn { display: none; }
-.dictate-btn.listening { color: var(--failed); border-color: var(--failed); animation: dictate-breathe 1.6s ease-in-out infinite; }
+/* Dictation's mic button (app/dictation.js) and the top bar's voice commands mic (app/voice.js):
+   shown while their preference is on; red and breathing while they listen. */
+:root:not(.dictation-on) .dictate-btn, :root:not(.voice-on) .voice-btn { display: none; }
+:is(.dictate-btn, .voice-btn).listening { color: var(--failed); border-color: var(--failed); animation: dictate-breathe 1.6s ease-in-out infinite; }
 @keyframes dictate-breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--failed) 45%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
-@media (prefers-reduced-motion: reduce) { .dictate-btn.listening { animation: none; } }
+@media (prefers-reduced-motion: reduce) { :is(.dictate-btn, .voice-btn).listening, .voice-bar .toast-icon { animation: none; } }
+/* Voice commands' listening bar: the last of the toasts, until command mode ends. */
+.toast.voice-bar { --c: var(--failed); order: 1; flex-wrap: wrap; padding-bottom: 10px; }
+.voice-bar .toast-icon { animation: dictate-breathe 1.6s ease-in-out infinite; }
+.voice-bar .toast-body { min-width: 12em; }
+.voice-bar .voice-status { color: var(--muted); font-size: var(--fs-m); }
+.voice-bar a.toast-action { text-decoration: none; }
 /* Task timeline: who said what. The agent (the worker) is amber like a running
    task; the side chat keeps the plain chat look. */
 .msg-from { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; color: var(--muted); margin-bottom: 4px; white-space: normal; }

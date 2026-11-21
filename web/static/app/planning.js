@@ -1441,7 +1441,7 @@ function renderCard() {
       box.value = "";
       await loadCard(c.id);
     }) }, box, h("div", { class: "pl-comment-actions" },
-      dictation(box, { place: () => {}, cls: "icon-btn small" }),
+      dictation(box, { place: () => {}, cls: "icon-btn small", send: () => !!box.value.trim() && (box.form.requestSubmit(), true) }),
       ib({ type: "submit", class: "btn small" }, "comment", "Comment"))));
 
   // Its creator, its owner or an admin deletes a card (the server checks too).

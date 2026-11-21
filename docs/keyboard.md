@@ -131,6 +131,7 @@ A question from Claude has no key for an answer: answer it in its card. `X` decl
 | `Ctrl-Enter`            | new task sheet and task form: queue                   |
 | `Ctrl-Shift-Enter` `Ctrl-s` | task form: save a draft                           |
 | `Ctrl-Shift-.`          | dictate into the field you are in ([Dictation](dictation.md)) |
+| `Ctrl-Shift-,`          | start or stop [voice commands](dictation.md#voice-commands) |
 | `Esc`                   | close or cancel                                       |
 
 On a Mac, `Ctrl` here is `Cmd`.

@@ -44,6 +44,8 @@
         <span class="pv-dot" aria-hidden="true"></span><span id="previews-label">Previews</span>
       </button>
       <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only live-label" id="live-label">Offline</span></span>
+      <!-- Voice commands (app/voice.js): shown while the preference is on. -->
+      <button class="icon-btn voice-btn" id="voice-open" type="button" aria-label="Voice commands" title="Voice commands (Ctrl-Shift-,)" aria-pressed="false" data-icon="mic"></button>
       <button class="icon-btn" id="palette-open" type="button" aria-label="Search everything" title="Search everything (Ctrl-k)" aria-haspopup="dialog" data-icon="palette"></button>
       <button class="icon-btn" id="pc-open" type="button" aria-label="Chat" title="Chat (gc)" aria-pressed="false" aria-controls="chat-pane" data-icon="comment"><span class="badge chat-badge" hidden></span></button>
       <details class="foot-menu top-menu" id="project-menu" hidden>
@@ -1414,6 +1416,10 @@
             <label class="toggle"><input type="checkbox" name="dictation" form="prefs-form"><span>Dictation <em>a mic button on the task instructions, chats and comments</em></span></label>
             <p class="hint">The browser turns your speech into text. Chrome sends the audio to Google to transcribe it; Safari may do it on the device.
               <kbd><span data-mod>Ctrl</span>-Shift-.</kbd> starts or stops it in the field you are in.</p>
+            <label class="toggle"><input type="checkbox" name="voice" form="prefs-form"><span>Voice commands <em>say “send”, “queue this task”, “approve”, “next card”…</em></span></label>
+            <p class="hint">Start them with the mic in the top bar, or <kbd><span data-mod>Ctrl</span>-Shift-,</kbd>. <kbd>Esc</kbd> or “stop listening” ends them.
+              Like dictation, the browser does the speech recognition: Chrome sends the audio to Google; Safari may do it on the device.
+              <a data-docs="dictation.md#voice-commands" target="_blank" rel="noopener">The commands</a></p>
             <p class="hint warn" id="dictation-missing" hidden>This browser has no speech recognition (Firefox). Use your system's dictation instead: <a data-docs="dictation.md" target="_blank" rel="noopener">How</a>.</p>
           </section>
           <!-- The user's profile picture (app/avatar.js): shown in the account menu and members lists -->
@@ -2020,6 +2026,7 @@
                 <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Enter</kbd></th><td>New task sheet and task form: queue</td></tr>
                 <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Shift-Enter</kbd> <kbd><span data-mod>Ctrl</span>-s</kbd></th><td>Task form: save a draft</td></tr>
                 <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Shift-.</kbd></th><td>Dictate into the field you are in, when Dictation is on</td></tr>
+                <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Shift-,</kbd></th><td>Start or stop voice commands, when Voice commands is on</td></tr>
                 <tr><th scope="row"><kbd>Esc</kbd></th><td>Close or cancel</td></tr>
               </tbody>
             </table>

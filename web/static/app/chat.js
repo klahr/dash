@@ -77,7 +77,8 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   const input = c.input = form.q;
   const composing = c.composing = () => !!input.value.trim() || att.items().length > 0;
   const sendBtn = chatSendButton(c, form, mode, composing);
-  dictation(input, { place: (b) => sendBtn.before(b) });
+  // "send" (voice.js) is Enter: it sends, or queues while a reply streams.
+  dictation(input, { place: (b) => sendBtn.before(b), send: () => composing() && (form.requestSubmit(), true) });
   // A turn that ends sends what's queued (done) or, when it was stopped or
   // failed, puts it back in the composer to send again or not.
   const finish = c.finish = (drain = false) => {
