@@ -1772,7 +1772,7 @@ func TestBrowserShellHeader(t *testing.T) {
 	b.waitJS("the terminal below it", `!document.querySelector("#term-wrap").hidden && !!document.querySelector("#term .xterm")`)
 
 	// A second runner of the user's: the runner is a menu of both.
-	dir := t.TempDir()
+	dir := procsTempDir(t)
 	var code struct{ Code string }
 	h.api.must("POST", "/api/runners/codes", map[string]any{}, http.StatusOK, &code)
 	desk := startDash(t, h.dash, h.runnerEnv, "runner", "-data", filepath.Join(dir, "data"), "-projects", filepath.Join(dir, "projects"),

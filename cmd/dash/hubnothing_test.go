@@ -85,7 +85,7 @@ func registerRunner(t *testing.T, api *client, dash, fake, dir, name string, env
 // views say no runner is online; projects on the hub's own disk are refused.
 func TestHubRunsNothingItself(t *testing.T) {
 	endToEnd(t)
-	dir := t.TempDir()
+	dir := procsTempDir(t)
 	o := newOrigin(t, dir)
 	dash, fake := buildDash(t)
 
