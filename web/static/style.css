@@ -1952,7 +1952,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 /* A divider before what isn't the project's (Planning, the organization's): a line and a small label. */
 .nav-sep { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; padding: 0 10px; color: var(--faint); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .nav-sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-.nav > .nav-sep { display: none; } /* the bottom nav has no Planning (the menu drawer does) */
+.nav > .nav-sep { display: none; } /* the bottom nav has no room for a divider before Planning */
 .menu-view .badge { position: static; margin-left: auto; }
 /* Usage and the account sit at the bottom: pushed down when there is room, kept in
    view (sticky) when the projects make the sidebar or drawer scroll. The scroller has
@@ -2187,9 +2187,14 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   /* With the keyboard up, the action bar only takes room from the body. */
   .detail:has(.composer textarea:focus) .actionbar { display: none; }
 
-  /* Bottom nav: Board · Chat · Issues · Shell · Files. Scans and History are in the
-     menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
-  .nav > button:is([data-view="scans"], [data-view="history"], [data-view="goals"], [data-view="deploys"], [data-view="planning"], [data-view="checklist"]), #pc-open { display: none; }
+  /* Bottom nav: Board · Chat · Planning · Goals · Issues, put in that order here (the DOM
+     order is the desktop sidebar's). Scans, Shell, History, Deploys, Files and Checklist are
+     in the menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
+  .nav > button:is([data-view="scans"], [data-view="run"], [data-view="history"], [data-view="deploys"], [data-view="files"], [data-view="checklist"]), #pc-open { display: none; }
+  .nav > .nav-chat { order: 1; }
+  .nav > button[data-view="planning"] { order: 2; }
+  .nav > button[data-view="goals"] { order: 3; }
+  .nav > button[data-view="issues"] { order: 4; }
   /* Open issues nobody has dealt with yet: a dot on the Issues icon (the count is in its title). */
   .nav #issue-badge {
     top: 10px; left: calc(50% + 8px); min-width: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%;

@@ -76,7 +76,8 @@ export function renderNavActive() {
 }
 desktop.addEventListener("change", () => renderNavActive());
 // The nav's sections, and the menu drawer's copies of those that don't fit the
-// bottom nav on mobile (Scans, History). Picking one leaves the mobile chat page.
+// bottom nav on mobile (Scans, Shell, History, Deploys, Files, Checklist). Picking
+// one leaves the mobile chat page.
 $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => b.addEventListener("click", () => {
   if (!desktop.matches && pane.open) toggleChatPane(false);
   if (b.closest(".menu-views")) setMenu(false);

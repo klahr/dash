@@ -82,12 +82,27 @@ func TestBrowserNavigation(t *testing.T) {
 	b.waitJS("Push isn't in the top bar", `!document.querySelector(".topbar #push-main")`)
 	b.waitJS("the live dot says so", `document.querySelector("#live-label").offsetWidth > 0 && document.querySelector("#live-label").textContent === "Live"`)
 
-	// A phone: the bottom nav has no divider; the menu drawer has Planning below it.
+	// A phone: the bottom nav is Board · Chat · Planning · Goals · Issues, left to right, with
+	// no divider; Shell and Files are in the menu drawer, Goals and Planning aren't.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.do("reload", chromedp.Reload())
 	b.waitJS("the board", `document.querySelector("#project-name")?.textContent === "app"`)
 	b.waitJS("no divider in the bottom nav", `getComputedStyle(document.querySelector(".nav > .nav-sep")).display === "none"`)
+	b.waitJS("the bottom nav's tabs in order", `[...document.querySelectorAll(".nav > button")].filter((e) => e.offsetWidth > 0)
+		.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
+		.map((e) => e.querySelector("span").textContent).join() === "Board,Chat,Planning,Goals,Issues"`)
+	b.run("an open issue", `document.querySelector("#issue-badge").hidden = false; true`)
+	b.waitJS("its dot on the Issues icon", `(() => {
+		const d = document.querySelector("#issue-badge").getBoundingClientRect(), i = document.querySelector(".nav > button[data-view=issues] svg").getBoundingClientRect();
+		return d.width > 0 && d.left > i.left && d.left < i.right && d.top < i.bottom && d.bottom > i.top;
+	})()`)
+	b.run("no open issue", `document.querySelector("#issue-badge").hidden = true; true`)
+	b.until("open Goals", `document.querySelector('.nav > button[data-view=goals][aria-current=page].active') && document.querySelector("#view-goals.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=goals]`)))
 	b.until("open the menu", `document.querySelector(".app").classList.contains("menu-open")`, chromedp.Click(chromedp.ID("menu-open")))
-	b.waitJS("Planning below the drawer's divider", `document.querySelector(".menu-views .nav-sep + [data-view=planning]")?.offsetHeight > 0`)
+	b.waitJS("Shell and Files in the drawer, Goals and Planning not", `[...document.querySelectorAll(".menu-views .menu-view")].filter((e) => e.offsetHeight > 0)
+		.map((e) => e.dataset.view).join() === "scans,run,history,deploys,files,checklist"`)
+	b.until("open the Shell from the drawer", `document.querySelector("#view-run.active") && document.querySelector('.menu-view[data-view=run][aria-current=page]') && !document.querySelector(".app").classList.contains("menu-open")`,
+		chromedp.Click(chromedp.CSS(`.menu-view[data-view=run]`)))
 	b.do("a wide screen", chromedp.EmulateReset())
 }

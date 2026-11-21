@@ -6,7 +6,7 @@ plain words. Planning is kept in Dash's database, not in a repository or `TODO.m
 belongs to the org.
 
 Open it from the sidebar: **Planning**, below the **Organization** divider, apart from the
-project's sections (or `gp`). On a phone it is in the menu. A
+project's sections (or `gp`). On a phone it is a tab in the bottom bar. A
 [planner](users.md#planners) lands on it when they sign in. Their sidebar has **Planning**,
 **Chat** and their account.
 

@@ -44,7 +44,7 @@ again.
 
 ## The Goals page
 
-**Goals** is in the sidebar, next to **History** and **Checklist** (in the menu on a phone;
+**Goals** is in the sidebar, next to **History** and **Checklist** (a tab in the bottom bar on a phone;
 `go` on the keyboard). Each goal shows how many of its tasks are merged ("4 of 7 merged") and
 its status. Goals waiting for you, and goals that can't run, come first.
 
