@@ -40,6 +40,7 @@ import "./app/diffedit.js";
 import "./app/accountsheet.js";
 import "./app/install.js";
 import "./app/dictation.js";
+import "./app/speech.js";
 import "./app/voice.js";
 import "./app/prefs.js";
 import "./app/labelpicker.js";

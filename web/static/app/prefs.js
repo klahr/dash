@@ -11,6 +11,7 @@ import { renderUsage } from "./usage.js";
 import { copyBlock } from "./install.js";
 import { accountSection, openAccount } from "./accountsheet.js";
 import { dictationOn, dictationSupported, setDictation } from "./dictation.js";
+import * as speech from "./speech.js";
 import { setVoice, voiceOn } from "./voice.js";
 
 // ------------------------------------------------------------------ preferences (this browser only)
@@ -27,11 +28,35 @@ export function syncPrefs() {
   f.voice.checked = voiceOn();
   f.voice.disabled = !dictationSupported;
   $("#dictation-missing").hidden = dictationSupported;
+  syncSpeech();
 }
-// The preferences are the Account sheet's first sections (Editors, Time, Chat, Dictation), and
+// Spoken replies: the switches for what is read wait for the main one.
+function syncSpeech() {
+  const f = $("#prefs-form"), on = speech.speechOn();
+  f.speech.checked = on;
+  f.speech.disabled = !speech.speechSupported;
+  $("#speech-missing").hidden = speech.speechSupported;
+  for (const [name, kind] of [["speechReplies", "replies"], ["speechApprovals", "approvals"], ["speechStatus", "status"]]) {
+    f[name].checked = speech.speechKind(kind);
+    f[name].disabled = !on;
+  }
+  f.speechLong.value = speech.speechLong();
+  f.speechRate.value = String(speech.speechRate());
+  if (!f.speechRate.value) f.speechRate.value = "1";
+  // The voices, when the browser lists several; online ones say so.
+  const voices = speech.speechVoices();
+  $("#speech-voice-field").hidden = voices.length < 2;
+  f.speechVoice.replaceChildren(h("option", { value: "" }, "Automatic (your browser's language)"),
+    ...voices.map((v) => h("option", { value: v.voiceURI }, `${v.name} (${v.lang})${v.localService ? "" : " · online"}`)));
+  f.speechVoice.value = speech.speechVoice();
+  if (f.speechVoice.value !== speech.speechVoice()) f.speechVoice.value = "";
+  for (const el of [f.speechLong, f.speechRate, f.speechVoice]) el.disabled = !on;
+}
+document.addEventListener("dash:voices", () => { if ($("#account-sheet").open) syncSpeech(); });
+// The preferences are the Account sheet's first sections (Editors, Time, Chat, Dictation, Spoken replies), and
 // this browser's push switch in Notifications.
 export function openPrefs() { return openAccount("editors"); }
-for (const key of ["editors", "notifications", "clock", "chat", "dictation"]) accountSection(key, syncPrefs);
+for (const key of ["editors", "notifications", "clock", "chat", "dictation", "speech"]) accountSection(key, syncPrefs);
 // Each saves as it changes, with "Saved" in the sheet's header.
 const pref = (name, fn) => $("#prefs-form")[name].addEventListener("change", (e) => saveField(e.target, async () => fn(e.target)));
 pref("vim", (el) => { if (el.checked !== vimOn()) toggleVim(); });
@@ -47,6 +72,13 @@ pref("chatSuggest", (el) => {
   document.dispatchEvent(new Event("dash:chatsuggest"));
 });
 pref("dictation", (el) => setDictation(el.checked));
+pref("speech", (el) => { speech.setSpeech(el.checked); syncSpeech(); speech.speechSample(); });
+pref("speechReplies", (el) => speech.setSpeechKind("replies", el.checked));
+pref("speechApprovals", (el) => speech.setSpeechKind("approvals", el.checked));
+pref("speechStatus", (el) => speech.setSpeechKind("status", el.checked));
+pref("speechLong", (el) => speech.setSpeechLong(el.value));
+pref("speechRate", (el) => { speech.setSpeechRate(el.value); speech.speechSample(); });
+pref("speechVoice", (el) => { speech.setSpeechVoice(el.value); speech.speechSample(); });
 pref("voice", (el) => setVoice(el.checked));
 $("#push-test").addEventListener("click", attempt(testPush));
 // Asking for permission needs this change event's user gesture.

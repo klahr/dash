@@ -716,6 +716,9 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .voice-bar .toast-body { min-width: 12em; }
 .voice-bar .voice-status { color: var(--muted); font-size: var(--fs-m); }
 .voice-bar a.toast-action { text-decoration: none; }
+/* Spoken replies' speaker button under an answer (app/speech.js): shown while the preference is on; accented while it reads. */
+:root:not(.speech-on) .speak-btn { display: none; }
+.speak-btn[aria-pressed="true"] { color: var(--accent2); }
 /* Task timeline: who said what. The agent (the worker) is amber like a running
    task; the side chat keeps the plain chat look. */
 .msg-from { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; color: var(--muted); margin-bottom: 4px; white-space: normal; }

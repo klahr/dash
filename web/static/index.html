@@ -1380,6 +1380,7 @@
             <button type="button" class="rail-item" data-rail="clock">Time</button>
             <button type="button" class="rail-item" data-rail="chat">Chat</button>
             <button type="button" class="rail-item" data-rail="dictation">Dictation</button>
+            <button type="button" class="rail-item" data-rail="speech">Spoken replies</button>
           </div>
           <div class="rail-group"><span class="rail-head">You</span>
             <button type="button" class="rail-item" data-rail="picture">Profile picture</button>
@@ -1421,6 +1422,35 @@
               Like dictation, the browser does the speech recognition: Chrome sends the audio to Google; Safari may do it on the device.
               <a data-docs="dictation.md#voice-commands" target="_blank" rel="noopener">The commands</a></p>
             <p class="hint warn" id="dictation-missing" hidden>This browser has no speech recognition (Firefox). Use your system's dictation instead: <a data-docs="dictation.md" target="_blank" rel="noopener">How</a>.</p>
+          </section>
+          <!-- Spoken replies (app/speech.js): read aloud with the browser's speechSynthesis. -->
+          <section class="rail-section" data-section="speech">
+            <label class="toggle"><input type="checkbox" name="speech" form="prefs-form"><span>Spoken replies <em>read Claude's replies, approval requests and task news aloud</em></span></label>
+            <h3 class="section-head">Read aloud</h3>
+            <label class="toggle"><input type="checkbox" name="speechReplies" form="prefs-form"><span>Replies <em>in Message Claude, Ask about this project and the task chat</em></span></label>
+            <label class="toggle"><input type="checkbox" name="speechApprovals" form="prefs-form"><span>Approval requests <em>what Claude wants to run, in short</em></span></label>
+            <label class="toggle"><input type="checkbox" name="speechStatus" form="prefs-form"><span>Task status <em>ready for review, failed or finished, for the tasks you hear about in Notifications</em></span></label>
+            <label class="field"><span>Long replies</span>
+              <select name="speechLong" form="prefs-form">
+                <option value="">Read the start, then say there's more</option>
+                <option value="all">Read all of it</option>
+              </select>
+            </label>
+            <label class="field" id="speech-voice-field"><span>Voice</span>
+              <select name="speechVoice" form="prefs-form"><option value="">Automatic (your browser's language)</option></select>
+            </label>
+            <label class="field"><span>Speed</span>
+              <select name="speechRate" form="prefs-form">
+                <option value="0.8">Slower</option>
+                <option value="1">Normal</option>
+                <option value="1.25">Faster</option>
+                <option value="1.5">Fast</option>
+                <option value="2">Very fast</option>
+              </select>
+            </label>
+            <p class="hint">Code blocks, diffs and long paths are named, not read. A speaker button under each reply reads it, or stops. <kbd>Esc</kbd> or sending a message stops it too. Dash doesn't speak while dictation or voice commands listen.
+              Some browsers use an online voice service and send it the text: voices marked <em>online</em> do.</p>
+            <p class="hint warn" id="speech-missing" hidden>This browser can't read aloud. Use your system's screen reader instead (VoiceOver, Narrator): <a data-docs="dictation.md" target="_blank" rel="noopener">How</a>.</p>
           </section>
           <!-- The user's profile picture (app/avatar.js): shown in the account menu and members lists -->
           <section class="rail-section" data-section="picture">
@@ -2027,6 +2057,7 @@
                 <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Shift-Enter</kbd> <kbd><span data-mod>Ctrl</span>-s</kbd></th><td>Task form: save a draft</td></tr>
                 <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Shift-.</kbd></th><td>Dictate into the field you are in, when Dictation is on</td></tr>
                 <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Shift-,</kbd></th><td>Start or stop voice commands, when Voice commands is on</td></tr>
+                <tr><th scope="row"><kbd>Esc</kbd></th><td>Stop reading aloud, while Dash speaks (Spoken replies)</td></tr>
                 <tr><th scope="row"><kbd>Esc</kbd></th><td>Close or cancel</td></tr>
               </tbody>
             </table>

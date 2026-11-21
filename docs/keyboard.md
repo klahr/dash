@@ -23,6 +23,7 @@ page you are on.
 | `gc`           | open or close the chat pane                            |
 | `[`            | collapse or expand the sidebar (desktop)               |
 | `Esc` `q`      | close what is open                                     |
+| `Esc`          | stop reading aloud, while Dash speaks (Spoken replies) |
 | `5j`           | a count before a key repeats it                        |
 
 ## Sections

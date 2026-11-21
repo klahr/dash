@@ -32,8 +32,9 @@ addEventListener("storage", (e) => { if (e.key === KEY) { showButtons(); if (!di
 
 // voice.js fills these in. fieldCommand(result, ctl) gets each final result
 // heard in a field and returns a function to run in place of typing it, or
-// null; stopCommands ends command mode before dictation starts.
-export const speech = { fieldCommand: null, stopCommands: null };
+// null; stopCommands ends command mode before dictation starts;
+// commandsListening says whether command mode listens.
+export const speech = { fieldCommand: null, stopCommands: null, commandsListening: null };
 
 export function setDictation(on) {
   store.setFlag(KEY, on);
@@ -90,6 +91,9 @@ const MESSAGES = {
 
 const fields = new WeakMap(); // a field's element or its button → its control, for the shortcut
 let session = null;
+// listening says whether dictation or voice commands listen now: spoken
+// replies (speech.js) wait.
+export const listening = () => !!session || !!speech.commandsListening?.();
 
 // dictation attaches a mic button to field (a textarea, or { ed } for an
 // mdEditor) and returns it. place(button) puts it in the page (default: right
@@ -210,6 +214,8 @@ function start(ctl) {
     toast(`Dictation didn't start: ${err.message}`, true);
     return;
   }
+  // Spoken replies stop, so Dash doesn't hear itself (speech.js).
+  document.dispatchEvent(new Event("dash:listening"));
   btn.classList.add("listening");
   btn.setAttribute("aria-pressed", "true");
   btn.setAttribute("aria-label", "Stop dictating");

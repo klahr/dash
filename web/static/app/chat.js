@@ -16,6 +16,7 @@ import { timeline } from "./timeline.js";
 import { fmtTokens } from "./runstats.js";
 import { confirmRunAs } from "./people.js";
 import { dictation } from "./dictation.js";
+import { speakApproval, speakButton, speakReply, stopSpeaking } from "./speech.js";
 
 // ------------------------------------------------------------------ chat
 // usageLine shows what an answer took: tokens in and out, time spent
@@ -98,7 +99,13 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   const from = c.from = (who) => labels ? h("div", { class: "msg-from" }, labels[who]) : null;
   // The tasks the answer made show as cards under it (see taskCard).
   const cards = (list) => (tasks ? (list || []).map((t) => taskCard(t, tasks)) : []);
-  const assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), ...cards(m.tasks), usageLine(m.usage), actions(m.content));
+  // The row under an answer ends with its speaker button (speech.js: shown while Spoken replies is on).
+  const actionRow = (content) => {
+    const row = actions(content);
+    row?.append(speakButton(content));
+    return row;
+  };
+  const assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), ...cards(m.tasks), usageLine(m.usage), actionRow(m.content));
   const prefixOf = () => target().prefix || "";
   const user = (m) => m.action ? actionNote(m) : m.shell ? sh.block(m, labels && from("user")).el : h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
     m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
@@ -147,7 +154,12 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     const u = stopped ? h("div", { class: "msg-usage" }, "Stopped") : entering(usageLine(cur.usage));
     if (u) cur.el.append(u);
     const kept = !!cur.content || cur.tasks.length > 0;
-    if (cur.content) cur.el.append(entering(actions(cur.content)));
+    if (cur.content) {
+      const row = actionRow(cur.content);
+      cur.el.append(entering(row));
+      // A finished answer is read aloud, with Spoken replies on.
+      if (!stopped && !failed) speakReply(cur.content, row?.querySelector(".speak-btn"));
+    }
     if (kept) {
       c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage && !stopped ? { usage: cur.usage } : {}), ...(cur.tasks.length ? { tasks: cur.tasks } : {}) });
     } else {
@@ -245,6 +257,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   c.modeChanged = () => { c.busyButton(); suggestion.show(); shellMode(); };
   form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
+    stopSpeaking(); // a new message stops what is read aloud
     const m = mode();
     if (m?.send) {
       await att.settled();
@@ -581,6 +594,7 @@ function chatStreamHandler(c) {
       }
       case "permission":
         cur.reply.before(entering(chatPermCard(d, (decision) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision })))));
+        speakApproval(d);
         c.waiting.add(d.id);
         c.onState();
         break;

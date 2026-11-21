@@ -75,6 +75,9 @@ and applies to this browser only. When it's off, no call is made.
 Turn on **Account → Dictation** for a mic button on the message box. See
 [Dictation](dictation.md).
 
+To hear Claude's replies read aloud, turn on **Account → Spoken replies**. See
+[Spoken replies](dictation.md#spoken-replies).
+
 ## Shell commands with `!`
 
 In a project chat or a task chat, a message starting with `!` isn't sent to Claude: the rest of

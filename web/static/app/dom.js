@@ -104,6 +104,7 @@ const ICONS = {
   terminal: "m5 8 4 4-4 4M12 17h7",
   code: "m8 8-4 4 4 4M16 8l4 4-4 4",
   comment: "M5 5h14v10H10l-5 4z",
+  speaker: "M4 9h4l5-4v14l-5-4H4zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12",
   mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3",
   search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM16 16l4.5 4.5",
   palette: "M4 5h16v14H4zM8 10l2 2-2 2M13 14h3",

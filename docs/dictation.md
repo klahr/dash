@@ -1,6 +1,9 @@
 # Dictation
 
-Speak instead of typing in Dash's prompt fields. A mic button sits on:
+Speak instead of typing in Dash's prompt fields. To have Dash read Claude's replies aloud, see
+[Spoken replies](#spoken-replies).
+
+A mic button sits on:
 
 - **Instructions for Claude** in the new task form
 - the instructions you edit in an open task
@@ -93,6 +96,57 @@ Your operating system can control every button by voice, in every app:
 The browser does the speech recognition for dictation and voice commands, not Dash. Chrome
 sends the audio to Google to transcribe it. Safari may transcribe it on the device. Dash only
 gets the text you send.
+
+## Spoken replies
+
+Dash can read aloud, so you can follow a chat or a task without looking at the screen.
+
+### Turn it on
+
+1. Open **Account → Spoken replies**.
+2. Turn on **Spoken replies**. Dash says a short line in the voice it will use.
+3. Under **Read aloud**, choose what to hear:
+   - **Replies**: Claude's answers in **Message Claude**, **Ask about this project** and the task
+     chat, when an answer is done.
+   - **Approval requests**: what Claude wants to run, in short.
+   - **Task status**: a task is ready for review, failed or finished. These are the tasks you hear
+     about in **Account → Notifications**.
+4. Pick a **Voice** and a **Speed** if you like. **Voice** shows when the browser has several.
+
+It is off until you turn it on. It is a setting of this browser. Chrome, Edge, Safari and Firefox
+have it. Where a browser doesn't, the setting is greyed out.
+
+### What is read
+
+Dash reads plain prose. It doesn't read code: a code block, a diff or a table is named, as in
+"A code block, 12 lines". A long path is read as its file name. Markdown is left out.
+
+A long reply is read up to its first part, then Dash says there's more. To hear all of every
+reply, set **Long replies** to **Read all of it**.
+
+Each reply has a **Read aloud** button under it. Click it to hear the whole reply.
+
+### Stop it
+
+- Press `Esc`.
+- Click **Read aloud** again.
+- Send a message.
+
+Dash doesn't speak while dictation or voice commands listen, so it doesn't hear itself.
+
+### Privacy
+
+The browser does the speaking, not Dash. Some voices are an online service, and the browser sends
+it the text: Chrome's Google voices and Edge's online voices, for example. **Voice** marks these
+*online*. Pick another voice to keep the text on your computer.
+
+### Your system's screen reader
+
+A screen reader reads the whole page, in every browser:
+
+- **macOS and iPhone:** VoiceOver. Press `⌘-F5`, or turn it on in **Settings → Accessibility**.
+- **Windows:** Narrator. Press `Win+Ctrl+Enter`.
+- **Android:** TalkBack, in **Settings → Accessibility**.
 
 ## Your system's dictation
 

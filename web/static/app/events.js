@@ -15,6 +15,7 @@ import { syncSettingsRunners } from "./settings.js";
 import { notify, notifyGoal } from "./notifications.js";
 import { renderPerms } from "./review.js";
 import { describePerm, isQuestion, permHead } from "./chatparts.js";
+import { speakApproval, speakStatus } from "./speech.js";
 
 // permNote is the title of a desktop notification about request p.
 const permNote = (p) => isQuestion(p) ? permHead(p) : `Claude wants to ${describePerm(p).title}`;
@@ -208,10 +209,10 @@ function onEvent(ev, m = { name: "" }) {
           renderDetail(); // the open task's "waiting for" line
         }
         if (prev && prev.status !== ev.data.status) {
-          if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data, "", !here(), "task.review"); }
-          if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error, !here(), "task.failed"); }
-          if (ev.data.status === "merged" && closedNoChanges(ev.data)) { toast(title(ev.data), { tone: "ok", head: "Closed · no changes", icon: "check" }); notify("Closed", ev.data); }
-          else if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); }
+          if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data, "", !here(), "task.review"); speakStatus("Ready for review", ev.data); }
+          if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error, !here(), "task.failed"); speakStatus("Task failed", ev.data); }
+          if (ev.data.status === "merged" && closedNoChanges(ev.data)) { toast(title(ev.data), { tone: "ok", head: "Closed · no changes", icon: "check" }); notify("Closed", ev.data); speakStatus("Task finished with no changes", ev.data); }
+          else if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); speakStatus("Task finished and merged", ev.data); }
         }
         if (prev && prev.revert?.commit !== ev.data.revert?.commit) loadUnpushed().catch(fail);
         if (prev && !prev.revert && ev.data.revert) {
@@ -277,6 +278,7 @@ function onEvent(ev, m = { name: "" }) {
         const t = state.todos.get(ev.data.todo_id);
         toast(t ? `${permLine(ev.data)} · ${title(t)}` : permLine(ev.data), { tone: "approval", head: permHead(ev.data), action: t ? { label: isQuestion(ev.data) ? "Answer" : "Review", run: () => openDetail(t.id) } : null });
         if (t) notify(permNote(ev.data), t, describePerm(ev.data).detail, !here(), "permission.needed");
+        speakApproval(ev.data);
       }
       renderPerms();
       break;
@@ -357,14 +359,15 @@ function elsewhere(ev, m) {
     seen.set(key, ev.data.status);
     if (!prev || prev === ev.data.status) return;
     const go = p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.todo_id); } } : null;
-    if (ev.data.status === "review") { toast(`${title(ev.data)} · ${where}`, { tone: "review", head: "Ready for review", action: go }); notify("Ready for review", ev.data, where, false, "task.review"); }
-    if (ev.data.status === "failed") notify("Failed", ev.data, `${where}: ${ev.data.error || ""}`, false, "task.failed");
+    if (ev.data.status === "review") { toast(`${title(ev.data)} · ${where}`, { tone: "review", head: "Ready for review", action: go }); notify("Ready for review", ev.data, where, false, "task.review"); speakStatus("Ready for review", ev.data, where); }
+    if (ev.data.status === "failed") { notify("Failed", ev.data, `${where}: ${ev.data.error || ""}`, false, "task.failed"); speakStatus("Task failed", ev.data, where); }
   }
   if (ev.type === "scan.run" && ev.data.trigger !== "manual") scanFinished(ev.data, p, where);
   if (ev.type === "goal.updated") goalElsewhere(ev.data, p, m, where);
   if (ev.type === "permission.updated" && !ev.data.decision) {
     toast(`${permLine(ev.data)} · ${where}`, { tone: "approval", head: permHead(ev.data), action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
     notify(permNote(ev.data), { title: where, prompt: "" }, describePerm(ev.data).detail, false, "permission.needed");
+    speakApproval(ev.data, where);
   }
 }
 

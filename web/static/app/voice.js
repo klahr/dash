@@ -228,6 +228,8 @@ function startCommands() {
     e.stopPropagation();
     stopCommands();
   }, { capture: true, signal });
+  // Spoken replies stop, so Dash doesn't hear itself (speech.js).
+  document.dispatchEvent(new Event("dash:listening"));
   status("Say a command, or “stop listening”.");
   $("#toasts").append(bar);
   raiseToasts();
@@ -250,6 +252,7 @@ export function stopCommands() {
   btn.title = "Voice commands (Ctrl-Shift-,)";
 }
 speech.stopCommands = stopCommands;
+speech.commandsListening = () => !!session;
 
 // The top bar's mic keeps the focus where it was, so "send" finds the field.
 for (const ev of ["pointerdown", "mousedown"]) btn.addEventListener(ev, (e) => e.preventDefault());
