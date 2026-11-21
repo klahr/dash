@@ -4,6 +4,7 @@ import { attempt, busy, toast } from "./dialogs.js";
 import { projectFirst, state } from "./state.js";
 import { ago, agoText, title } from "./branches.js";
 import { openDetail } from "./detail.js";
+import { buildEtaText, buildProgress } from "../buildeta.js";
 
 // ------------------------------------------------------------------ GitHub Actions
 const CI_LABEL = { passing: "Build passing", failing: "Build failing", running: "Build running", none: "No builds yet", unknown: "Builds unavailable" };
@@ -24,12 +25,51 @@ const RELEASE_LABEL = { building: "building", published: "published", failed: "f
 // A release counts as news in the top bar while it builds, and for a day if it failed.
 const releaseShown = (rel) => rel && (rel.state === "building" || (rel.state === "failed" && Date.now() - new Date(rel.pushed) < 864e5));
 
+// ciHistory is every run the sheet knows, newest first: what a running
+// build's progress is measured against.
+const ciHistory = () => [...(state.ci?.runs || []), ...(state.ci?.release?.runs || [])]
+  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
 function runRow(r) {
   const [cls, label] = runState(r);
-  return h("li", {}, h("a", { class: `run run-${cls}`, href: r.url, target: "_blank", rel: "noopener" },
+  const bar = cls === "running" ? h("span", { class: "run-progress", "data-run": r.id, hidden: true }, h("span", { class: "run-progress-fill" })) : null;
+  const li = h("li", {}, h("a", { class: `run run-${cls}`, href: r.url, target: "_blank", rel: "noopener" },
     h("span", { class: "run-dot", "aria-hidden": "true" }),
-    h("span", { class: "run-main" }, h("strong", {}, r.workflow), h("span", { class: "run-title" }, r.title)),
-    h("span", { class: "run-side" }, label, h("span", { class: "run-sha" }, `${r.sha.slice(0, 7)} · ${ago(r.created_at)}`))));
+    h("span", { class: "run-main" }, h("strong", {}, r.workflow), h("span", { class: "run-title" }, r.title), bar),
+    h("span", { class: "run-side" }, h("span", { class: "run-label" }, label), h("span", { class: "run-sha" }, `${r.sha.slice(0, 7)} · ${ago(r.created_at)}`))));
+  if (bar) renderProgress(bar, r);
+  return li;
+}
+
+// A running build shows a bar of how far it has got, from the median time
+// its workflow's earlier successful runs took, and says how long it has left.
+function renderProgress(bar, r, list = ciHistory()) {
+  const p = buildProgress(r, list, Date.now());
+  bar.hidden = !p;
+  const label = bar.closest(".run")?.querySelector(".run-label");
+  if (!p) return;
+  bar.classList.toggle("over", p.over);
+  bar.firstChild.style.width = `${Math.round(p.frac * 100)}%`;
+  bar.setAttribute("role", "progressbar");
+  bar.setAttribute("aria-valuemin", "0");
+  bar.setAttribute("aria-valuemax", "100");
+  bar.setAttribute("aria-valuenow", String(Math.round(p.frac * 100)));
+  bar.setAttribute("aria-label", `${r.workflow}: ${buildEtaText(p)}`);
+  bar.title = `${r.workflow} usually takes ${Math.max(1, Math.round(p.typical / 60000))}m (median of the last ${p.n} successful run${p.n === 1 ? "" : "s"})`;
+  if (label) label.textContent = p.over ? "Running · longer than usual" : `Running · ${buildEtaText(p)}`;
+}
+
+// While the sheet is open, the bars move on every few seconds.
+let progressTimer = 0;
+function tickProgress() {
+  clearTimeout(progressTimer);
+  if (!$("#ci-sheet").open) return;
+  const list = ciHistory(), byId = new Map(list.map((r) => [String(r.id), r]));
+  for (const bar of $("#ci-sheet").querySelectorAll(".run-progress[data-run]")) {
+    const r = byId.get(bar.dataset.run);
+    if (r) renderProgress(bar, r, list);
+  }
+  progressTimer = setTimeout(tickProgress, 5000);
 }
 
 // releaseNews toasts how a release build ended.
@@ -97,6 +137,7 @@ export async function openCI() {
   if (!state.ci) await loadCI();
   renderCI();
   $("#ci-sheet").showModal();
+  tickProgress();
 }
 $("#pm-builds").addEventListener("click", attempt(openCI));
 $("#ci-refresh").addEventListener("click", attempt(async () => {

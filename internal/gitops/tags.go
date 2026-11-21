@@ -272,7 +272,7 @@ func (g *Git) RunsForCommit(ctx context.Context, projectID, dir, sha string, lim
 func (g *Git) runList(ctx context.Context, projectID, dir string, filter []string, limit int) ([]Run, error) {
 	args := append([]string{"run", "list"}, filter...)
 	args = append(args, "--limit", strconv.Itoa(limit),
-		"--json", "databaseId,workflowName,displayTitle,status,conclusion,headSha,headBranch,url,event,createdAt")
+		"--json", "databaseId,workflowName,displayTitle,status,conclusion,headSha,headBranch,url,event,createdAt,startedAt,updatedAt")
 	out, err := g.ghQuiet(ctx, projectID, dir, args...)
 	if err != nil {
 		return nil, err
@@ -288,6 +288,8 @@ func (g *Git) runList(ctx context.Context, projectID, dir string, filter []strin
 		URL        string    `json:"url"`
 		Event      string    `json:"event"`
 		CreatedAt  time.Time `json:"createdAt"`
+		StartedAt  time.Time `json:"startedAt"`
+		UpdatedAt  time.Time `json:"updatedAt"`
 	}
 	if err := json.Unmarshal([]byte(jsonPart(out)), &raw); err != nil {
 		return nil, fmt.Errorf("gh run list: %w", err)

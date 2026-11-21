@@ -14,6 +14,10 @@ type CIRun struct {
 	URL        string    `json:"url"`
 	Event      string    `json:"event"`
 	CreatedAt  time.Time `json:"created_at"`
+	// StartedAt is when its latest attempt started, UpdatedAt when it last
+	// changed (when it finished, once it's done): how long builds take.
+	StartedAt time.Time `json:"started_at,omitzero"`
+	UpdatedAt time.Time `json:"updated_at,omitzero"`
 }
 
 func (r CIRun) Done() bool { return r.Status == "completed" }

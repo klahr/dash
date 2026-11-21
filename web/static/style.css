@@ -2740,6 +2740,12 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .run-title { font-size: var(--fs-s); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-side { display: grid; justify-items: end; font-size: var(--fs-s); font-weight: 600; color: var(--c); white-space: nowrap; }
 .run-sha { font: var(--fs-xs) var(--mono); color: var(--faint); }
+/* A running build's progress, from its workflow's earlier successful runs (app/actions.js). */
+.run-progress { display: block; height: 4px; margin-top: 6px; border-radius: 2px; background: color-mix(in srgb, var(--running) 16%, transparent); overflow: hidden; }
+.run-progress[hidden] { display: none; }
+.run-progress-fill { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--running); transition: width 1s linear; }
+.run-progress.over .run-progress-fill { animation: pulse-dot 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .run-progress-fill { transition: none; } .run-progress.over .run-progress-fill { animation: none; } }
 
 /* ---- computers ---- */
 .machine-dot { background: var(--faint); }

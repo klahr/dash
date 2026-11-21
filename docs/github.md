@@ -181,6 +181,11 @@ When the project is on GitHub, Dash follows the GitHub Actions runs on the defau
 **Build running**, in yellow with a spinner, **Build failing**) and opens the builds sheet: the latest runs,
 **Re-run build**, and after a failure **Retry failed jobs** and **Ask Claude to fix it**.
 
+A running build in the sheet has a progress bar and says how long it has left ("about 3m left").
+The estimate is the median time of the workflow's last 10 successful runs that the sheet lists.
+With no successful run to go by, there is no bar. A build that takes longer than that says
+**longer than usual**.
+
 When a build fails, Dash queues a task asking Claude to fix it ("Fix failing build: …"), unless
 **Project settings → Approval & push → Fix failed builds automatically** is off. The task shows as
 made by Dash. On a hub it runs on the runners of a member: who turned that setting on, else who
