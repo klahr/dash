@@ -59,7 +59,6 @@
           <!-- Platform admins: the queue every project of this Dash shares (app/usage.js) -->
           <button id="pm-queue" type="button" data-icon="pause" hidden title="No new task starts in any project of this Dash; running tasks finish">Pause queue (all projects)</button>
           <hr class="menu-sep">
-          <button id="pm-cleanup" type="button" data-icon="broom" title="Remove what finished tasks left behind: worktrees, branches, logs and uploads. Tasks and their work stay.">Clean up leftovers</button>
           <button id="pm-delete" type="button" data-icon="trash" class="danger">Delete project…</button>
         </div>
       </details>
@@ -1261,6 +1260,10 @@
           </section>
           <section class="rail-section" data-section="repository">
             <div id="settings-repo" class="repo-info" aria-live="polite"></div>
+            <!-- Disk space: the same cleanup as the palette's "Clean up leftovers" and :cleanup (app/projects.js) -->
+            <h3 class="section-head">Disk space</h3>
+            <p class="hint">Frees disk space by removing worktrees of old failed tasks, orphaned worktrees and <code>dash/</code> branches, logs of deleted tasks and unused uploads. Tasks and their merged work stay.</p>
+            <div><button class="btn small" type="button" id="settings-cleanup" data-icon="broom" title="Remove what finished tasks left behind: worktrees, branches, logs and uploads. Tasks and their work stay.">Clean up leftovers</button></div>
           </section>
           <section class="rail-section" data-section="claude">
             <label class="field" id="settings-agent-field"><span>Agent <em>the agent CLI that runs this project's tasks</em></span><select name="agent" id="settings-agent"></select></label>

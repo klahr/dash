@@ -727,7 +727,7 @@ connection, to the clone of one of the project's runners that is online:
   runner, and only when its chat runs commands (`-chat-tools shell`; never with `-chat api`);
 - GitHub Actions: the hub's **CI** view, the automatic investigation of a failing build, and
   **Retry** read and re-run the builds with `gh` on a runner;
-- **Clean up leftovers** cleans the runner's clone.
+- **Clean up leftovers** (**Project settings → Repository**, the palette or `:cleanup`) cleans the runner's clone.
 
 When none of the project's runners is online these fail at once with "No runner is online for this
 project. Start one with `dash runner`." (the dashboard also says so above the board); nothing falls

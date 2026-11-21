@@ -1008,7 +1008,8 @@ $("#side-new-project").addEventListener("click", () => openNewProject());
 $("#pm-settings").addEventListener("click", openSettings);
 $("#push-main").addEventListener("click", attempt(pushDone));
 $("#pm-pause").addEventListener("click", attempt(toggleProjectPause));
-$("#pm-cleanup").addEventListener("click", attempt(cleanup));
+// Project settings → Repository: the sheet is open for state.project, which cleanup cleans.
+$("#settings-cleanup").addEventListener("click", attempt((e) => busy(e.currentTarget, cleanup, { label: "Cleaning up…" })));
 $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
 // The account menu shows who is logged in, the org they work in and the
 // others they can switch to.

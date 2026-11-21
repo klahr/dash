@@ -67,12 +67,18 @@ func TestBrowserNavigation(t *testing.T) {
 	b.waitJS("X, not n", `[...document.querySelectorAll("#keys-sheet .rail-section.current kbd")].map((k) => k.textContent).join() === "y,A,X"`)
 	b.until("close it", `!document.querySelector("#keys-sheet").open`, chromedp.KeyEvent(kb.Escape))
 
-	// The project menu: groups, Clean up with its own icon; it says what it removed.
+	// The project menu: groups, no Clean up any more (it moved to Project settings → Repository).
 	b.until("open the project menu", `document.querySelector("#project-menu").open`, chromedp.Click(chromedp.CSS(`#project-menu > summary`)))
-	b.waitJS("grouped, without Builds", `document.querySelectorAll("#project-menu .menu-sep").length === 2 && !document.querySelector("#project-menu #pm-builds")`)
-	b.waitJS("Clean up's icon isn't Delete's", `document.querySelector("#pm-cleanup svg").innerHTML !== document.querySelector("#pm-delete svg").innerHTML`)
-	b.until("clean up", `document.querySelector("#toasts")?.textContent.match(/(Cleaned up|Nothing to clean up in) app/)`, chromedp.Click(chromedp.ID("pm-cleanup")))
+	b.waitJS("grouped, without Builds or Clean up", `document.querySelectorAll("#project-menu .menu-sep").length === 2 && !document.querySelector("#project-menu #pm-builds, #project-menu #pm-cleanup")`)
+	// Project settings → Repository: Clean up with its own icon; it says what it removed.
+	b.until("open the settings", `document.querySelector("#settings-sheet").open`, chromedp.Click(chromedp.ID("pm-settings")))
+	b.until("show its repository", `document.querySelector('#settings-sheet .rail-section[data-section="repository"]').classList.contains("current")`,
+		chromedp.Click(chromedp.CSS(`#settings-sheet .rail-item[data-rail="repository"]`)))
+	b.waitJS("Clean up's icon is the broom, not a submit", `document.querySelector("#settings-cleanup svg") && document.querySelector("#settings-cleanup").type === "button"`)
+	b.until("clean up", `document.querySelector("#toasts")?.textContent.match(/(Cleaned up|Nothing to clean up in) app/)`, chromedp.Click(chromedp.ID("settings-cleanup")))
 	b.waitJS("what it removed", `/Removed |No leftover worktrees/.test(document.querySelector("#toasts").textContent)`)
+	b.waitJS("enabled again, the sheet still open", `!document.querySelector("#settings-cleanup").disabled && document.querySelector("#settings-sheet").open`)
+	b.until("close the settings", `!document.querySelector("#settings-sheet").open`, chromedp.KeyEvent(kb.Escape))
 	b.waitJS("Push isn't in the top bar", `!document.querySelector(".topbar #push-main")`)
 	b.waitJS("the live dot says so", `document.querySelector("#live-label").offsetWidth > 0 && document.querySelector("#live-label").textContent === "Live"`)
 

@@ -65,7 +65,7 @@ can't:
 
 - chat with Claude (general, project or task chat), or run `!` commands in a chat
 - open a terminal on a runner
-- **Split…** a task or **Clean up leftovers**
+- **Split…** a task or **Clean up leftovers** (**Project settings → Repository**)
 - get a title from Claude for a task without one (the task is named after its first line instead)
 
 See [Claude runs on each user's own runner](several-computers.md#claude-runs-on-each-users-own-runner).

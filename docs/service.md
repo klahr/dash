@@ -109,3 +109,6 @@ Each task's log, and each scan run's log, is capped: a log file past 32 MB is cu
 earlier output was trimmed (`-log-max-mb`; 0 = no cap). The daily cleanup (`-cleanup-days`,
 14 by default) removes the logs of deleted tasks, the worktrees of tasks that failed that many
 days ago, and orphaned worktrees, branches and uploads.
+
+To clean up now, open **Project settings → Repository** and click **Clean up leftovers**. The
+command palette has it too, and so does `:cleanup`. Tasks and their merged work stay.
