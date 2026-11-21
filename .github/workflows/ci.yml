@@ -14,15 +14,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  go:
-    name: Go
+  # Formatting, tidiness, vet, staticcheck, govulncheck, the build and the
+  # JavaScript syntax check. No tests, so no Chrome.
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Caching is done below, one cache per job: with setup-go's own cache
+      # every job would share one key and the first to finish would win.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-lint-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-lint-
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
 
       - name: Check formatting
         run: |
@@ -54,25 +71,78 @@ jobs:
       - name: Build
         run: go build ./...
 
-      # Includes the browser tests (cmd/dash/browser_test.go) in the
-      # runner's Google Chrome; required here, so they can't skip.
-      - name: Test
-        env:
-          DASH_TEST_BROWSER: require
-        run: go test -race ./...
+      - name: Check JavaScript syntax
+        run: for f in web/static/*.js web/static/app/*.js; do node --check "$f"; done
 
-  web:
-    name: Web
+  # The tests are CPU-bound, so they are split across runners rather than
+  # run with more t.Parallel(): the two slowest packages get a job each, and
+  # "other" runs every remaining package.
+  test:
+    name: Test (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: internal/api
+            pkg: ./internal/api
+          # Includes the browser tests (cmd/dash/browser_test.go) in the
+          # runner's preinstalled Google Chrome.
+          - name: cmd/dash
+            pkg: ./cmd/dash
+          - name: other
+            pkg: other
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          node-version: 24
+          go-version-file: go.mod
+          cache: false
 
-      - name: Check JavaScript syntax
-        run: for f in web/static/*.js; do node --check "$f"; done
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-test-${{ strategy.job-index }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-test-${{ strategy.job-index }}-
+
+      # "other" is every package from go list minus the ones with a job of
+      # their own, so a new package is never left out. Keep the go list
+      # below in step with the matrix's pkg values.
+      - name: Test
+        env:
+          # The browser tests are required here, so they can't skip.
+          DASH_TEST_BROWSER: require
+          PKG: ${{ matrix.pkg }}
+        run: |
+          if [ "$PKG" != other ]; then
+            go test -race "$PKG"
+            exit
+          fi
+          own=$(go list ./internal/api ./cmd/dash)
+          pkgs=$(go list ./... | grep -vxF "$own")
+          echo "Testing:"; echo "$pkgs"
+          go test -race $pkgs
+
+  # One check for branch protection that passes only when lint and every
+  # test job passed. Named Go, as the single job before the split was, so
+  # the required "Go" check keeps working. always(): a job skipped because
+  # what it needs failed counts as passed for a required check.
+  go:
+    name: Go
+    needs: [lint, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lint and all tests passed
+        env:
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+        run: |
+          echo "lint: $LINT, test: $TEST"
+          [ "$LINT" = success ] && [ "$TEST" = success ]
 
   goreleaser:
     name: GoReleaser config

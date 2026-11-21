@@ -48,7 +48,7 @@ go mod tidy && git diff --exit-code go.mod go.sum
 go vet ./...
 go build ./...
 go test -race ./...
-for f in web/static/*.js; do node --check "$f"; done
+for f in web/static/*.js web/static/app/*.js; do node --check "$f"; done
 node --test web/*_test.mjs                  # also run by go test, when node is installed
 ```
 
@@ -135,7 +135,14 @@ git push origin main:cla-signatures
 
 The repository owner and bot accounts (`*[bot]`) are exempt.
 
-`main` is protected: a pull request can't be merged until the CI jobs (`Go`, `Web`,
+CI runs the checks in parallel jobs: **Lint** (gofmt, tidy, vet, staticcheck, govulncheck, the
+build and `node --check`) and three test jobs, **Test (internal/api)**, **Test (cmd/dash)** with
+the browser tests, and **Test (other)** for every other package. The **Go** job passes only when
+all four did, so branch protection requires that one check rather than each job. When you give
+another package a test job of its own, add it to the matrix and to the `go list` that the
+**Test (other)** job leaves out.
+
+`main` is protected: a pull request can't be merged until the CI checks (`Go`,
 `GoReleaser config`, `Docker image`) and the `CLA` check pass, and `main` can't be force-pushed
 or deleted. Admins aren't held to it, so the owner can still push to `main` directly. To set
 it up again (on a fork, say):
@@ -147,7 +154,6 @@ gh api -X PUT repos/OWNER/REPO/branches/main/protection --input - <<'EOF'
     "strict": false,
     "checks": [
       {"context": "Go", "app_id": 15368},
-      {"context": "Web", "app_id": 15368},
       {"context": "GoReleaser config", "app_id": 15368},
       {"context": "Docker image", "app_id": 15368},
       {"context": "CLA", "app_id": 15368}
