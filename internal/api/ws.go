@@ -753,8 +753,11 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 					done = append(done, note)
 				}
 			}
-			if d.Kind == "done" && reply.Len() > 0 {
-				// Save before telling the client, so a reload right after sees it.
+			// Save before telling the client, so a reload right after sees it,
+			// and so the cards of the tasks it made can note what's done with
+			// them (see chatActionNote). A reply that failed after making a
+			// task is kept too: the draft exists.
+			if !saved && ((d.Kind == "done" && (reply.Len() > 0 || len(tasks) > 0)) || (d.Kind == "error" && len(tasks) > 0)) {
 				turn = answered()
 				if err := ct.save(turn); err != nil {
 					slog.Error("save chat", "err", err)
@@ -768,7 +771,7 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 			// Stopped by the user: keep what it said so far, as the client
 			// does, or (with nothing said) take the question back out.
 			switch {
-			case reply.Len() > 0:
+			case reply.Len() > 0 || len(tasks) > 0:
 				saveIfNewest(answered())
 			case ct.general && len(history) > 0:
 				saveIfNewest(history[:len(history)-1])
@@ -777,6 +780,14 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 		}
 		if err != nil && ctx.Err() == nil {
 			slog.Warn("chat", "err", err)
+			if !saved && len(tasks) > 0 {
+				turn = answered()
+				if err := ct.save(turn); err != nil {
+					slog.Error("save chat", "err", err)
+				}
+				saved = true
+				ended()
+			}
 			send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 		}
 		if suggestNext != nil && saved && err == nil && ctx.Err() == nil {

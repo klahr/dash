@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -14,14 +16,17 @@ import (
 )
 
 // draftChat makes the tasks in made (create_todo, as the chat's tool would)
-// and keeps the conversation it was given.
+// and keeps the conversation it was given. Then, by end: "" says "Made it."
+// and is done; "silent" is done without a word; "fail" says "Made it." and
+// fails; "wait" says "Made it." and waits for the turn to be stopped.
 type draftChat struct {
 	made []model.ChatTask
+	end  string
 	mu   sync.Mutex
 	got  []agent.ChatMessage
 }
 
-func (c *draftChat) Stream(_ context.Context, _ string, h []agent.ChatMessage, emit func(agent.ChatDelta)) error {
+func (c *draftChat) Stream(ctx context.Context, _ string, h []agent.ChatMessage, emit func(agent.ChatDelta)) error {
 	c.mu.Lock()
 	c.got = h
 	c.mu.Unlock()
@@ -30,7 +35,16 @@ func (c *draftChat) Stream(_ context.Context, _ string, h []agent.ChatMessage, e
 		emit(agent.ChatDelta{Kind: "tool_use", ID: id, Tool: "mcp__dash_board__create_todo"})
 		emit(agent.ChatDelta{Kind: "tool_result", ID: id, Text: `{"id":"` + t.ID + `"}`, Task: &t})
 	}
-	emit(agent.ChatDelta{Kind: "text", Text: "Made it."})
+	if c.end != "silent" {
+		emit(agent.ChatDelta{Kind: "text", Text: "Made it."})
+	}
+	switch c.end {
+	case "fail":
+		return errors.New("boom")
+	case "wait":
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	emit(agent.ChatDelta{Kind: "done"})
 	return nil
 }
@@ -137,5 +151,61 @@ func TestProjectChatActionNotes(t *testing.T) {
 	}
 	if _, err := st.GetTodo(old.ID); err != store.ErrNotFound {
 		t.Errorf("discarded task: %v", err)
+	}
+}
+
+// The answer is saved with the tasks it made before the client hears the
+// turn ended, also when it failed or said nothing, so a card's Queue or
+// Discard right away can add its note. A stopped answer is saved too, a
+// moment after the client let go of it.
+func TestProjectChatTasksSavedBeforeTurnEnds(t *testing.T) {
+	for _, tc := range []struct{ end, last, content string }{
+		{"", "done", "Made it."},
+		{"silent", "done", ""},
+		{"fail", "error", "Made it."},
+		{"wait", "", "Made it."},
+	} {
+		t.Run("end="+tc.end, func(t *testing.T) {
+			s, _, p := boardServer(t)
+			st := raw(s)
+			td, _ := st.CreateTodo(model.Todo{ProjectID: p.ID, Title: "Fix login", Prompt: "x"})
+			s.Chat = &draftChat{made: []model.ChatTask{{ID: td.ID, Title: "Fix login"}}, end: tc.end}
+			h := asOwnerHandler(t, s)
+			path := "/api/projects/" + p.ID + "/chat"
+			owner := testOwner(t, s)
+
+			conn := chatSocket(t, s)
+			if err := conn.WriteJSON(map[string]any{"type": "send", "project": p.ID, "base": 0, "messages": []agent.ChatMessage{cmdMsg("make a task")}}); err != nil {
+				t.Fatal(err)
+			}
+			if tc.last == "" {
+				// The task is made, then the user stops the turn.
+				var d agent.ChatDelta
+				for d.Kind != "text" {
+					if err := conn.ReadJSON(&d); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := conn.WriteJSON(map[string]any{"type": "cancel"}); err != nil {
+					t.Fatal(err)
+				}
+				waitFor(t, "the stopped answer to be saved", func() bool { return len(st.ProjectChat(p.ID, owner.User)) == 2 })
+			} else if k := kindsOf(readTurn(t, conn, 0)); !slices.Contains(k, tc.last) {
+				t.Fatalf("turn: %v", k)
+			}
+			msgs := st.ProjectChat(p.ID, owner.User)
+			if len(msgs) != 2 || msgs[1].Role != "assistant" || msgs[1].Content != tc.content || len(msgs[1].Tasks) != 1 || msgs[1].Tasks[0].ID != td.ID {
+				t.Fatalf("saved when the turn ended: %+v", msgs)
+			}
+			if w := send(h, "POST", "/api/todos/"+td.ID+"/enqueue", ""); w.Code != http.StatusOK {
+				t.Fatalf("enqueue: %d %s", w.Code, w.Body)
+			}
+			if w := send(h, "POST", path+"/actions", `{"todo":"`+td.ID+`","kind":"queued"}`); w.Code != http.StatusOK {
+				t.Fatalf("note: %d %s", w.Code, w.Body)
+			}
+			if got := chatContents(st.ProjectChat(p.ID, owner.User)); got != "make a task | "+tc.content+" | You queued *Fix login*." {
+				t.Errorf("chat: %q", got)
+			}
+		})
 	}
 }

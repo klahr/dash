@@ -122,8 +122,8 @@ runner's org: a project's chat only in its project, which that runner must work 
 under the hub's ids. If the hub can't be reached, the tool call fails; it never writes to the
 runner's own database instead.
 
-In a project's chat, a draft Claude makes with `create_todo` shows as a card under its answer,
-with three buttons that act right away, without asking Claude:
+In a project's chat, a draft Claude makes with `create_todo` shows as a card under its answer
+once the answer ends (also when it fails or you stop it), with three buttons that act right away, without asking Claude:
 
 - **Queue** queues it, like **Queue** in the task's detail.
 - **Open** opens the task.

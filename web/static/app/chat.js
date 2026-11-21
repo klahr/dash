@@ -129,22 +129,28 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   c.runShell = sh.run;
   c.socket = chatSocket(c, { cwd, saved, resume, onRunner, onStream: chatStreamHandler(c) });
 
-  // settleTurn ends the reply cur: done, failed or stopped. What it said
-  // stays in the history; a reply with nothing in it takes its question back
-  // out. A reply that's done with something in it sends what's queued.
+  // settleTurn ends the reply cur: done, failed or stopped. What it said,
+  // and the tasks it made, stay in the history; a reply with neither takes
+  // its question back out. A reply that's done with something in it sends
+  // what's queued. The tasks' cards go under the answer, where assistant()
+  // puts them when the chat is loaded again: the server has saved the answer
+  // with them by now (by the time a stopped one's card is used, at least),
+  // so their Queue and Discard can note what they did.
   c.settleTurn = (cur, { stopped = false, failed = false } = {}) => {
     cur.el.classList.remove("pending");
     if (stopped) for (const st of cur.el.querySelectorAll(".perm-actions")) st.replaceChildren(h("span", { class: "perm-status" }, "Stopped: denied"));
     for (const t of cur.tools.values()) toolSettled(t);
+    for (const card of cards(cur.tasks)) cur.el.append(entering(card));
     const u = stopped ? h("div", { class: "msg-usage" }, "Stopped") : entering(usageLine(cur.usage));
     if (u) cur.el.append(u);
-    if (cur.content) {
-      cur.el.append(entering(actions(cur.content)));
+    const kept = !!cur.content || cur.tasks.length > 0;
+    if (cur.content) cur.el.append(entering(actions(cur.content)));
+    if (kept) {
       c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage && !stopped ? { usage: cur.usage } : {}), ...(cur.tasks.length ? { tasks: cur.tasks } : {}) });
     } else {
       c.history.pop(); // keep history alternating
     }
-    finish(!stopped && !failed && !!cur.content);
+    finish(!stopped && !failed && kept);
   };
 
   // reset shows another (or a cleared) conversation. A reply still streaming
@@ -566,11 +572,9 @@ function chatStreamHandler(c) {
       case "tool_result": {
         const t = cur.tools.get(d.id);
         if (t) toolResult(t, d);
-        // A task create_todo made: its card, under the call.
-        if (t && d.task?.id && !d.is_error && c.tasks) {
-          cur.tasks.push(d.task);
-          t.el.after(entering(taskCard(d.task, c.tasks)));
-        }
+        // A task create_todo made: its card shows under the answer once the
+        // turn ends (settleTurn), when the server has saved it with the task.
+        if (t && d.task?.id && !d.is_error && c.tasks) cur.tasks.push(d.task);
         break;
       }
       case "permission":
@@ -714,7 +718,7 @@ function shellRunner(c) {
 
 // ------------------------------------------------------------------ task cards
 // A task Claude made in a project chat (create_todo) shows as a card under
-// the tool call, and under the answer when the chat is loaded again. While
+// the answer, once the turn has ended (and the answer is saved). While
 // it's a draft, Queue, Open and Discard act on it right away, with the
 // task's own routes; Queue and Discard then add a note to the chat ("You
 // queued *…*.") that Claude sees next turn. Once it isn't a draft (queued or
@@ -735,6 +739,21 @@ async function taskStatus(id, ops) {
     return (await api("GET", `/api/todos/${id}`, null, ops.prefix())).status;
   } catch (e) {
     return e.status === 404 ? "deleted" : null;
+  }
+}
+
+// noteTask adds the chat's note that task id was queued or discarded (kind).
+// A stopped answer is saved, with its tasks, a moment after the chat let go
+// of it: until then the server knows no such task in the chat (404), so the
+// note is tried again for a few seconds.
+async function noteTask(ops, id, kind) {
+  for (let i = 0; ; i++) {
+    try {
+      return await ops.note(id, kind);
+    } catch (x) {
+      if (x.status !== 404 || i >= 8) throw x;
+      await new Promise((r) => setTimeout(r, 500));
+    }
   }
 }
 
@@ -767,7 +786,7 @@ function taskCard(task, ops) {
     renderTaskCard(card, kind === "queued" ? "queued" : "deleted");
     if (refocus) (actions.querySelector("button") || el).focus();
     try {
-      await ops.note(task.id, kind);
+      await noteTask(ops, task.id, kind);
     } catch (x) {
       err.hidden = false;
       err.textContent = `${kind === "queued" ? "Queued" : "Discarded"}, but the chat couldn't note it: ${x.message || x}`;
