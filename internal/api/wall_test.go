@@ -108,7 +108,7 @@ func TestWallAggregates(t *testing.T) {
 	setTodo(t, s, web, func(x *model.Todo) {
 		x.Title, x.Status, x.FinishedAt, x.Error, x.Resumable = "broke", model.StatusFailed, at(-2*time.Hour), "merge conflict in a.go\nmore", true
 	})
-	if _, _, err := raw(s).UpsertIssue(model.Issue{ProjectID: web.ID, Title: "XSS in form", Type: model.IssueVuln, Severity: model.SevHigh, Details: "d"}); err != nil {
+	if _, err := raw(s).ReportFinding(model.Issue{ProjectID: web.ID, Title: "XSS in form", Type: model.IssueVuln, Severity: model.SevHigh, Details: "d"}); err != nil {
 		t.Fatal(err)
 	}
 	// Another org's work never shows.

@@ -31,7 +31,6 @@ page you are on.
 | Key        | Opens                          |
 |------------|--------------------------------|
 | `gb`       | **Board**                      |
-| `gi`       | **Issues**                     |
 | `gn`       | **Scans**                      |
 | `gs`       | **Shell**                      |
 | `gh`       | **History**                    |

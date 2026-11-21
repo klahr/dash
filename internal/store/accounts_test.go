@@ -56,7 +56,7 @@ func TestMigrateToAccounts(t *testing.T) {
 	for _, q := range []string{
 		`INSERT INTO projects (id, data) VALUES ('p1', '{"id":"p1","name":"app"}')`,
 		`INSERT INTO todos (id, project_id, data) VALUES ('t1', 'p1', '{"id":"t1","project_id":"p1","status":"draft"}')`,
-		`INSERT INTO issues (id, project_id, data) VALUES ('i1', 'p1', '{"id":"i1","project_id":"p1","status":"open"}')`,
+		`INSERT INTO issues (id, project_id, data) VALUES ('i1', 'p1', '{"id":"i1","project_id":"p1","title":"x","status":"dismissed"}')`, // a dismissed fingerprint now
 		`INSERT INTO scan_runs (id, project_id, scan, data) VALUES ('r1', 'p1', 'sec', '{"id":"r1","project_id":"p1","scan":"sec"}')`,
 		`INSERT INTO scan_settings (project_id, scan, data) VALUES ('p1', 'sec', '{"project_id":"p1","scan":"sec"}')`,
 		`INSERT INTO scan_templates (project_id, name, data) VALUES ('p1', 'deps', '{"project_id":"p1","name":"deps"}')`,

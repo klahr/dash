@@ -82,7 +82,6 @@ func TestRunTokenOnlyReachesItsOrg(t *testing.T) {
 		{"queue_todo", `{"todo":"` + theirs.ID + `"}`},
 		{"update_todo", `{"todo":"` + theirs.ID + `","title":"mine now"}`},
 		{"delete_todo", `{"todo":"` + theirs.ID + `"}`},
-		{"list_issues", `{"project":"` + other.ID + `"}`},
 		{"report_issue", `{"project":"` + other.ID + `","title":"x","type":"bug","severity":"low","details":"y"}`},
 	} {
 		if text, isErr := call(c.tool, c.args); !isErr {

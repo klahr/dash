@@ -31,8 +31,7 @@ import { renderPane } from "./drawmode.js";
 import { attach, attached, termWS } from "./terminal.js";
 import { loadProcs } from "./try.js";
 import { refreshGraph } from "./history.js";
-import { iss, onIssueEvent, renderIssues } from "./issues.js";
-import { loadScans, onScanRun, scanFinished, scans } from "./scans.js";
+import { loadDismissed, loadScans, onScanRun, scanFinished, scans } from "./scans.js";
 import { checkForUpdate } from "./updates.js";
 import { onPlanningEvent } from "./planning.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
@@ -198,7 +197,6 @@ function onEvent(ev, m = { name: "" }) {
         }
         renderBoard();
         if (ev.data.goal_id && prev?.status !== ev.data.status) goalTaskChanged(ev.data);
-        if (state.view === "issues" && (prev?.status !== ev.data.status || prev?.paused !== ev.data.paused) && iss.list.some((i) => i.todo_ids?.includes(ev.todo_id))) renderIssues();
         if (state.detail === ev.todo_id) {
           renderDetail();
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
@@ -233,9 +231,8 @@ function onEvent(ev, m = { name: "" }) {
       if (mine) onDeployEvent(ev);
       if (mine && ev.data?.status === "live") { refreshGraph(); forgetLive(ev.project_id); } // History's markers, tasks' "Live in"
       break;
-    case "issue.updated":
-    case "issue.deleted":
-      if (mine) onIssueEvent(ev);
+    case "dismissed.updated":
+      if (mine && scans.loaded) loadDismissed().catch(() => {});
       break;
     case "scan.run":
       if (mine) onScanRun(ev);

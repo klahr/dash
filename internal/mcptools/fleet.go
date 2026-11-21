@@ -36,8 +36,7 @@ type Computer interface {
 	Act(id, verb, feedback string) error
 	UpdateTodo(id string, u TodoUpdate) (model.Todo, error)
 	DeleteTodo(id string) error
-	Issues(projectID string) ([]model.Issue, error)
-	ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error)
+	ReportIssue(projectID string, is model.Issue) (Reported, error)
 	// Text is a task's "diff" or "log".
 	Text(id, kind string) (string, error)
 	CreateRelease(projectID string, r NewRelease) (Release, error)
@@ -461,18 +460,10 @@ func (f Fleet) DeleteTodo(id string) error {
 	return c.DeleteTodo(id)
 }
 
-func (f Fleet) Issues(projectID string) ([]model.Issue, error) {
+func (f Fleet) ReportIssue(projectID string, is model.Issue) (Reported, error) {
 	p, c, err := f.projectOn(projectID)
 	if err != nil {
-		return nil, err
-	}
-	return c.Issues(p.ID)
-}
-
-func (f Fleet) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
-	p, c, err := f.projectOn(projectID)
-	if err != nil {
-		return model.Issue{}, "", err
+		return Reported{}, err
 	}
 	return c.ReportIssue(p.ID, is)
 }
@@ -527,7 +518,7 @@ func (c RESTComputer) CreateTodo(projectID string, t NewTodo) (model.Todo, error
 	var out model.Todo
 	return out, c.API.Call("POST", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/todos", map[string]any{
 		"title": t.Title, "prompt": t.Prompt, "priority": t.Priority, "enqueue": t.Enqueue,
-		"depends_on": t.DependsOn, "builds_on": t.BuildsOn, "model": t.Model, "run_on": t.RunOn,
+		"depends_on": t.DependsOn, "builds_on": t.BuildsOn, "model": t.Model, "run_on": t.RunOn, "tags": t.Tags,
 	}, &out)
 }
 
@@ -588,6 +579,13 @@ func (c RESTComputer) UpdateTodo(id string, u TodoUpdate) (model.Todo, error) {
 	if u.RunOn != nil {
 		changes["run_on"] = *u.RunOn
 	}
+	if u.Tags != nil {
+		tags := *u.Tags
+		if tags == nil {
+			tags = []string{} // [] clears them; null would leave them
+		}
+		changes["tags"] = tags
+	}
 	var out model.Todo
 	return out, c.API.Call("PATCH", c.Prefix+"/api/todos/"+url.PathEscape(id), changes, &out)
 }
@@ -596,21 +594,15 @@ func (c RESTComputer) DeleteTodo(id string) error {
 	return c.API.Call("DELETE", c.Prefix+"/api/todos/"+url.PathEscape(id), nil, nil)
 }
 
-func (c RESTComputer) Issues(projectID string) ([]model.Issue, error) {
-	var is []model.Issue
-	return is, c.API.Call("GET", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/issues", nil, &is)
-}
-
-func (c RESTComputer) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
-	var out struct {
-		Issue  model.Issue        `json:"issue"`
-		Result model.UpsertResult `json:"result"`
-	}
+// ReportIssue posts the issue to the computer's POST
+// /api/projects/{pid}/issues, which adds a draft or bumps the task that has it.
+func (c RESTComputer) ReportIssue(projectID string, is model.Issue) (Reported, error) {
+	var out Reported
 	err := c.API.Call("POST", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/issues", map[string]any{
 		"title": is.Title, "type": is.Type, "severity": is.Severity, "file": is.File, "line": is.Line,
 		"details": is.Details, "fix": is.Fix, "source": is.Source,
 	}, &out)
-	return out.Issue, out.Result, err
+	return out, err
 }
 
 func (c RESTComputer) CreateRelease(projectID string, r NewRelease) (Release, error) {

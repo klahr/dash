@@ -552,8 +552,8 @@ func TestSummaryFormats(t *testing.T) {
 	}
 }
 
-// A new issue from a scan or report_issue notifies once per fingerprint;
-// existing webhooks don't get it until they tick it.
+// A new issue from a scan or report_issue notifies once per fingerprint,
+// when its draft is added; existing webhooks don't get it until they tick it.
 func TestIssueNewOncePerFingerprint(t *testing.T) {
 	e := summaryEnv(t)
 	wants := newReceiver(t)
@@ -561,18 +561,19 @@ func TestIssueNewOncePerFingerprint(t *testing.T) {
 	e.hook(t, wants, model.WebhookJSON, model.NotifyIssue)
 	e.hook(t, old, model.WebhookJSON, model.DefaultNotifyEvents...)
 	in := model.Issue{ProjectID: e.shop.ID, Title: "Hard-coded key", Type: model.IssueVuln, Severity: model.SevHigh, File: "a.go", Source: "scan:security"}
-	first, r, err := e.st.UpsertIssue(in)
-	if err != nil || r != model.UpsertNew {
-		t.Fatal(r, err)
+	o, err := e.st.ReportFinding(in)
+	if err != nil || o.Result != model.UpsertNew {
+		t.Fatal(o.Result, err)
 	}
+	first := o.Todo
 	in.Details, in.Line = "seen again, with details", 12
-	if _, r, _ := e.st.UpsertIssue(in); r != model.UpsertUpdated {
-		t.Fatal(r)
+	if o, _ := e.st.ReportFinding(in); o.Result != model.UpsertUpdated {
+		t.Fatal(o.Result)
 	}
-	if _, _, err := e.st.UpsertIssueBatch(e.shop.ID, "agent:t1", []model.Issue{in, {Title: "Another", File: "b.go"}}); err != nil {
+	if _, _, err := e.st.ReportFindings(e.shop.ID, "agent:t1", []model.Issue{in, {Title: "Another", File: "b.go"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := e.st.UpsertIssue(model.Issue{ProjectID: e.shop.ID, Title: "Added by hand"}); err != nil {
+	if _, err := e.st.ReportFinding(model.Issue{ProjectID: e.shop.ID, Title: "Added by hand"}); err != nil {
 		t.Fatal(err)
 	}
 	settle(e.n)
@@ -589,8 +590,8 @@ func TestIssueNewOncePerFingerprint(t *testing.T) {
 		issues = append(issues, p.Issue)
 	}
 	sort.Slice(issues, func(i, j int) bool { return issues[i]["title"].(string) > issues[j]["title"].(string) }) // deliveries race
-	if len(issues) != 2 || issues[0]["id"] != first.ID || issues[0]["title"] != "Hard-coded key" || issues[0]["severity"] != "high" ||
-		issues[0]["url"] != "https://dash.example.com/p/"+e.shop.ID+"/issues/"+first.ID || issues[1]["title"] != "Another" {
+	if len(issues) != 2 || issues[0]["id"] != first.ID || issues[0]["title"] != "Fix: Hard-coded key" || issues[0]["severity"] != "high" ||
+		issues[0]["url"] != "https://dash.example.com/p/"+e.shop.ID+"/tasks/"+first.ID || issues[1]["title"] != "Fix: Another" {
 		t.Fatalf("issue.new events %v", issues)
 	}
 	if len(old.bodies) != 0 {

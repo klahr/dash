@@ -7,15 +7,16 @@
 // The scheme (the server serves the app at each path: internal/applink):
 //
 //   /                              no place named: the last view and project (localStorage)
-//   /p/{project}/{view}            a project's view: board, issues, scans, run, try,
+//   /p/{project}/{view}            a project's view: board, scans, run, try,
 //                                  history, goals, deploys, files (/p/{project} is its board;
 //                                  run and try are the Shell page at main and at a commit;
-//                                  checklist, a view Dash no longer has, opens the board)
+//                                  checklist and issues, views Dash no longer has, open the board)
 //   /p/{project}/tasks/{id}        a task, open (over the board, after a reload)
 //   /p/{project}/goals/{id}        a goal, open on Goals
 //   /p/{project}/history/{sha}     a commit, open on History
 //   /p/{project}/deploys/{id}      a deploy, open on Deploys
-//   /p/{project}/issues/{id}       an issue, expanded on Issues
+//   /p/{project}/issues/{id}       the draft task an issue became (from before issues
+//                                  were drafts), open over the board
 //   /planning                      Planning (the org's, not one project's)
 //   /planning/cards/{id}           a Planning card, open
 //
@@ -34,12 +35,12 @@
 //
 // Older links, /?project=<id>&task=<id> (also goal=, issue=), still open.
 
-export const VIEWS = ["board", "issues", "scans", "run", "try", "history", "goals", "deploys", "files", "planning"];
+export const VIEWS = ["board", "scans", "run", "try", "history", "goals", "deploys", "files", "planning"];
 export const SHEETS = ["settings", "account", "org", "runners"];
 const ITEMS = { tasks: "task", goals: "goal", history: "sha", issues: "issue", deploys: "deploy" };
-const ITEM_VIEW = { task: "board", goal: "goals", sha: "history", issue: "issues", deploy: "deploys" };
+const ITEM_VIEW = { task: "board", goal: "goals", sha: "history", issue: "board", deploy: "deploys" };
 // OLD_VIEWS are views Dash no longer has, and the view their links open.
-const OLD_VIEWS = { checklist: "board" };
+const OLD_VIEWS = { checklist: "board", issues: "board" };
 
 const dec = (s) => { try { return decodeURIComponent(s); } catch { return null; } };
 const enc = encodeURIComponent;
@@ -108,7 +109,7 @@ export function parse(loc) {
     r.task = q.get("task");
     r.goal = !r.task && q.get("goal") || null;
     r.issue = !r.task && !r.goal && q.get("issue") || null;
-    r.view = r.goal ? "goals" : r.issue ? "issues" : "board";
+    r.view = r.goal ? "goals" : "board";
   }
   return r;
 }

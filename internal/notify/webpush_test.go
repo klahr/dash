@@ -339,8 +339,9 @@ func TestPushPerUserChoice(t *testing.T) {
 
 	status(fs, n, model.StatusReview, "")
 	status(fs, n, model.StatusFailed, "boom")
-	n.Observe(model.Event{Type: model.EvIssueUpdated, ProjectID: "p1",
-		Data: model.Issue{ID: "i1", ProjectID: "p1", Title: "Leak", Severity: model.SevHigh, Source: "scan:security"}})
+	n.Observe(model.Event{Type: model.EvTodoUpdated, ProjectID: "p1", TodoID: "i1", // a scan's new draft
+		Data: model.Todo{ID: "i1", ProjectID: "p1", Title: "Fix: Leak", Status: model.StatusDraft,
+			Finding: &model.Finding{Issues: []model.Issue{{Title: "Leak", Severity: model.SevHigh, Source: "scan:security"}}}}})
 	settle(n)
 	mu.Lock()
 	defer mu.Unlock()

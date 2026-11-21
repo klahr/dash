@@ -1,19 +1,20 @@
 // Package applink is the web app's addresses: the paths that open a view of
-// a project, a task, a goal, a commit, an issue or a Planning card. The
+// a project, a task, a goal, a commit, a deploy or a Planning card. The
 // server serves the app's page at each of them (internal/api/static.go), the
 // sign-in comes back to them (internal/auth), and links Dash sends out
 // (notifications) are built here. web/static/app/router.js reads and writes
 // the same paths in the browser; keep the two in step.
 //
 //	/p/{project}                     the project's board
-//	/p/{project}/{view}              board, issues, scans, run, try, history, goals, deploys, files
+//	/p/{project}/{view}              board, scans, run, try, history, goals, deploys, files
 //	                                 (run and try: the Shell page at main and at a commit)
 //	/p/{project}/checklist           the board (an old view's address, kept for bookmarks)
+//	/p/{project}/issues              the board (issues are draft tasks there now)
 //	/p/{project}/tasks/{id}          a task, open over the board
 //	/p/{project}/goals/{id}          a goal, open on Goals
 //	/p/{project}/history/{sha}       a commit, open on History
 //	/p/{project}/deploys/{id}        a deploy, open on Deploys
-//	/p/{project}/issues/{id}         an issue, expanded on Issues
+//	/p/{project}/issues/{id}         the draft task an issue became, over the board
 //	/planning                        Planning (the org's)
 //	/planning/cards/{id}             a Planning card, open
 //
@@ -28,13 +29,13 @@ import (
 
 // Views are the project views a path may name.
 var Views = map[string]bool{
-	"board": true, "issues": true, "scans": true, "run": true, "try": true,
+	"board": true, "scans": true, "run": true, "try": true,
 	"history": true, "goals": true, "deploys": true, "files": true,
 }
 
 // oldViews are views Dash no longer has. Their paths still serve the app's
 // page, which opens the project's board there, so old links still work.
-var oldViews = map[string]bool{"checklist": true}
+var oldViews = map[string]bool{"checklist": true, "issues": true}
 
 // items are the kinds of thing /p/{project}/{kind}/{id} opens.
 var items = map[string]bool{"tasks": true, "goals": true, "history": true, "issues": true, "deploys": true}
@@ -47,9 +48,6 @@ func Task(pid, id string) string { return Project(pid) + "/tasks/" + url.PathEsc
 
 // Goal is the path that opens goal id of project pid.
 func Goal(pid, id string) string { return Project(pid) + "/goals/" + url.PathEscape(id) }
-
-// Issue is the path that opens issue id of project pid.
-func Issue(pid, id string) string { return Project(pid) + "/issues/" + url.PathEscape(id) }
 
 // Deploy is the path that opens deploy id of project pid.
 func Deploy(pid, id string) string { return Project(pid) + "/deploys/" + url.PathEscape(id) }

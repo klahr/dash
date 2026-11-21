@@ -24,6 +24,7 @@ import { agentCan, cantSay } from "./agents.js";
 import { creator } from "./people.js";
 import { avatar } from "./avatar.js";
 import { changed, linkTo } from "./routes.js";
+import { dismissNote, renderDetailTags, renderFinding } from "./tags.js";
 
 // ------------------------------------------------------------------ detail
 // The panel is modal (a scrim on desktop, full screen on phones): the rest of the
@@ -176,6 +177,8 @@ export function renderDetail() {
       ? h("a", { class: "revert-tag", href: t.revert.pr_url, target: "_blank", rel: "noopener" }, "Revert pull request")
       : h("span", { class: "revert-tag", title: t.revert.commit }, "Reverted")) : null,
   ].filter(Boolean));
+  renderDetailTags(t);
+  renderFinding(t);
   const gallery = $("#d-attach");
   gallery.hidden = !t.attachments?.length;
   gallery.replaceChildren(...(t.attachments || []).map((a) => attachThumb(a)));
@@ -338,7 +341,7 @@ $("#d-more").addEventListener("click", attempt(async (e) => {
   if (settled) {
     danger.push(["trash", "Delete task…", async () => {
       const pr = t.pr?.state === "OPEN" ? ` Its pull request #${t.pr.number} is closed on GitHub: the task is rejected.` : "";
-      if (await ask({ title: "Delete this task?", body: `Its worktree and branch are removed too.${pr} This can't be undone.`, ok: "Delete", danger: true })) {
+      if (await ask({ title: "Delete this task?", body: `Its worktree and branch are removed too.${pr}${dismissNote(t)} This can't be undone.`, ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
         closeDetail();
         toast("Task deleted");

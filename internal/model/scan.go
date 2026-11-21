@@ -132,10 +132,11 @@ type ScanRun struct {
 	Findings int          `json:"findings"`
 	Invalid  int          `json:"invalid,omitempty"`
 	Counts   UpsertCounts `json:"counts"`
-	// NewIssues and ReopenedIssues are the ids of the issues this run added
-	// or brought back, for "show me what's new".
-	NewIssues      []string `json:"new_issues,omitempty"`
-	ReopenedIssues []string `json:"reopened_issues,omitempty"`
+	// NewTasks and ReopenedTasks are the ids of the draft tasks this run
+	// added: for new issues, and for issues a merged task had fixed that
+	// came back. For "show me what's new".
+	NewTasks      []string `json:"new_tasks,omitempty"`
+	ReopenedTasks []string `json:"reopened_tasks,omitempty"`
 	// Critical and High count new and reopened issues of that severity;
 	// Urgent is their sum (runs from before the split only have Urgent).
 	Critical int `json:"critical,omitempty"`

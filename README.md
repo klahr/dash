@@ -85,7 +85,7 @@ Using Dash:
 - [Merge queue](docs/merge-queue.md)
 - [Deploys](docs/deploys.md)
 - [Live previews](docs/previews.md) and [Draw](docs/draw.md)
-- [Scans](docs/scans.md)
+- [Scans](docs/scans.md): their findings, and problems Claude reports, become tagged drafts on the Board
 - [Task boards](docs/boards.md)
 - [Notifications](docs/notifications.md)
 - [Claude status](docs/claude-status.md)

@@ -9,7 +9,6 @@ import { ensureShell, fitTerm } from "./terminal.js";
 import { enterTry, leaveTry } from "./try.js";
 import { closeCommit, loadGraph } from "./history.js";
 import { loadFiles } from "./files.js";
-import { loadIssues } from "./issues.js";
 import { loadScans } from "./scans.js";
 import { closeGoal, loadGoals } from "./goals.js";
 import { closeDeploy, loadDeploys } from "./deploys.js";
@@ -51,7 +50,6 @@ function applyView(name) {
   if (name === "planning") planningShown();
   else closeCard();
   if (name === "files" && state.project) loadFiles().catch(fail); // at startup the project (and the files code below) isn't ready yet
-  if (name === "issues" && state.project) loadIssues().catch(fail);
   if (name === "scans" && state.project) loadScans().catch(fail);
   if (name === "try") requestAnimationFrame(() => enterTry().catch(fail));
   else leaveTry();

@@ -23,7 +23,7 @@ every account can create orgs and has a personal workspace of its own.
 Everything you work with belongs to the org you're working in, and only its members see
 it:
 
-- **Projects**, and with them their tasks, issues, scans and scan runs, task chats,
+- **Projects**, and with them their tasks, scans, scan runs and dismissed findings, task chats,
   attachments, live previews, running commands and terminals, and Claude's
   permission prompts. Another org's project, or anything in it, answers "not found".
 - **Live updates**: the dashboard only receives events of its org's projects.
@@ -57,7 +57,7 @@ was allowed (see [tokens](#tokens)), and calls Dash directly rather than through
 
 On first start Dash creates an account from `DASH_USERNAME` and `DASH_PASSWORD`, makes it a
 platform admin and the owner of an org named **Default**, and puts everything already in
-Dash (projects, tasks, issues, scans, chats) in that org. Rename it under
+Dash (projects, tasks, scans, chats) in that org. Rename it under
 **Organization → Members → Name** (owners and admins); its address stays. The general chat
 from before becomes that account's own. An install that had a single
 account keeps working with the same `.env`, and nobody is signed out by the upgrade.
@@ -222,7 +222,7 @@ A planner's runner runs only their chat and feature briefs. It never gets the or
 tasks, goals, scans, tests, deploys, previews or clones of projects, and it can't be shared.
 
 A planner can't see or use projects, tasks, goals, project and task chats, terminals, other
-people's runners, previews, scans, issues, the MCP tools, **Write a project brief** or
+people's runners, previews, scans, the MCP tools, **Write a project brief** or
 **Organization**. Every such request answers `403`. They do see the names and pictures of the
 org's members, to add them to cards. Their live updates carry Planning's changes only. When a
 planner signs in, Dash opens Planning, in the same sidebar as everyone else's, with

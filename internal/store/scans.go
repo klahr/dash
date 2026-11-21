@@ -169,8 +169,8 @@ func (s *Store) SetScanSetting(projectID, scan string, fn func(*model.ScanSettin
 }
 
 func cloneRun(r model.ScanRun) model.ScanRun {
-	r.NewIssues = slices.Clone(r.NewIssues)
-	r.ReopenedIssues = slices.Clone(r.ReopenedIssues)
+	r.NewTasks = slices.Clone(r.NewTasks)
+	r.ReopenedTasks = slices.Clone(r.ReopenedTasks)
 	if r.FinishedAt != nil {
 		t := *r.FinishedAt
 		r.FinishedAt = &t
@@ -255,7 +255,7 @@ func (s *Store) SaveScanTemplate(t model.ScanTemplate, create bool) (model.ScanT
 	return cloneTemplate(t), nil
 }
 
-// DeleteScanTemplate forgets a Dash scan. Its runs and the issues it filed
+// DeleteScanTemplate forgets a Dash scan. Its runs and the drafts it filed
 // (source "scan:<name>") are kept; so are its settings when keepSettings is
 // set, e.g. because a repository scan of the same name uses them.
 func (s *Store) DeleteScanTemplate(projectID, name string, keepSettings bool) error {

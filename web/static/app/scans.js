@@ -8,19 +8,21 @@ import { selectProject } from "./projects.js";
 import { agoText } from "./branches.js";
 import { showRunnerNeeded } from "./runners.js";
 import { notifyOn } from "./notifications.js";
-import { iss, pickable, renderIssues, triageable } from "./issues.js";
+import { openDetail } from "./detail.js";
+import { pickDrafts, worstSeverity } from "./tags.js";
 
 // ------------------------------------------------------------------ scans
 // Preconfigured, read-only reviews of the project (security, code review,
 // dependency audit, dead code, duplication and complexity, or the team's own templates in .dash/scans/) that run on
-// demand or on a schedule and file what they find in Issues.
+// demand or on a schedule and add what they find to the Board as draft
+// tasks (a finding a task already has bumps that task instead).
 export const SCAN_KINDS = {
   security: "Security", code_review: "Code review", dependencies: "Dependencies", tests: "Tests", docs: "Docs",
   performance: "Performance", dead_code: "Dead code", flaky_tests: "Flaky tests", accessibility: "Accessibility",
   breaking_changes: "Breaking changes", maintainability: "Duplication & complexity", custom: "Custom",
 };
 const SCAN_SCOPES = { repo: "Whole repository", since_last_scan: "Changes since the last scan", since_main: "Branch vs. main", path: "One path" };
-export const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map(), open: new Set() };
+export const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map(), open: new Set(), dismissed: [] };
 
 export async function loadScans() {
   const p = state.project;
@@ -30,10 +32,48 @@ export async function loadScans() {
   Object.assign(scans, { list: r.scans, problems: r.problems, builtin: r.builtin, dir: r.dir, loaded: true });
   for (const name of scans.history.keys()) loadScanHistory(name).catch(() => {});
   renderScans();
+  loadDismissed().catch(() => {});
+}
+
+// loadDismissed reads the project's dismissed issues: drafts with issues
+// that were deleted. Reports of them add no draft until undone.
+export async function loadDismissed() {
+  const p = state.project;
+  if (!p) return;
+  const list = await api("GET", `/api/projects/${p.id}/dismissed`);
+  if (projectKey(state.project) !== projectKey(p)) return;
+  scans.dismissed = list || [];
+  renderDismissed();
+}
+
+const sourceLabel = (src) => !src || src === "manual" ? "by hand" : src === "agent:chat" ? "the chat" : src.startsWith("agent:") ? `task ${src.slice(6)}` : src;
+
+// renderDismissed lists the dismissed issues, each with Undo.
+function renderDismissed() {
+  const el = $("#scan-dismissed");
+  const list = state.project ? scans.dismissed || [] : [];
+  el.hidden = !list.length;
+  if (!list.length) { el.replaceChildren(); return; }
+  const undo = (d) => attempt(async () => {
+    await api("DELETE", `/api/projects/${state.project.id}/dismissed/${encodeURIComponent(d.fingerprint)}`);
+    scans.dismissed = scans.dismissed.filter((x) => x.fingerprint !== d.fingerprint);
+    renderDismissed();
+    toast(`The next report of “${d.title}” adds a draft again`, { tone: "ok" });
+  });
+  el.replaceChildren(
+    h("h3", {}, "Dismissed", h("span", { class: "n" }, String(list.length))),
+    h("p", { class: "scan-hint" }, "Issues whose drafts were deleted. Scans and Claude don't add them again until you undo."),
+    h("ul", { class: "dismissed-list" }, ...list.map((d) => h("li", {},
+      d.severity ? h("span", { class: `tag-chip sev sev-${d.severity}` }, d.severity) : null,
+      h("div", { class: "dismissed-main" },
+        h("span", { class: "dismissed-title" }, d.title),
+        h("span", { class: "dismissed-sub" }, [d.file ? h("code", {}, d.file) : null, sourceLabel(d.source), d.at ? agoText(d.at) : null,
+          d.todo_title ? `deleted with “${d.todo_title}”` : null, d.reason || null].filter(Boolean).flatMap((x, i) => i ? [" · ", x] : [x]))),
+      h("button", { type: "button", class: "btn small", onclick: undo(d), title: "Let reports of it add a draft again" }, "Undo")))));
 }
 
 export function resetScans() {
-  Object.assign(scans, { list: [], problems: [], builtin: false, loaded: false });
+  Object.assign(scans, { list: [], problems: [], builtin: false, loaded: false, dismissed: [] });
   scans.history.clear();
   scans.open.clear();
   renderScans();
@@ -74,11 +114,11 @@ export function onScanRun(ev) {
 // high issues.
 export function scanFinished(run, p, where = "") {
   if (run.status === "running" || !run.finished_at) return;
-  const go = p ? { label: "Show", run: async () => { if (projectKey(state.project) !== projectKey(p)) await selectProject(p); showRunIssues(run, "new"); } } : null;
+  const go = p ? { label: "Show", run: async () => { if (projectKey(state.project) !== projectKey(p)) await selectProject(p); showRunTasks(run); } } : null;
   const head = `${scanLabel(run.scan)}${where ? ` · ${where}` : ""}`;
   if (run.trigger !== "manual") {
     if (run.status !== "succeeded" || !run.urgent) return;
-    const msg = `${plural(run.urgent, "new critical or high issue")} · ${scanSummary(run)}`;
+    const msg = `${plural(run.urgent, "new critical or high draft")} · ${scanSummary(run)}`;
     toast(msg, { tone: "error", icon: "bug", head, action: go, ms: 12000 });
     if (notifyOn() && "Notification" in window && Notification.permission === "granted" && !(document.visibilityState === "visible" && document.hasFocus())) {
       const n = new Notification(head, { body: msg, tag: `dash-scan-${run.id}` });
@@ -87,7 +127,7 @@ export function scanFinished(run, p, where = "") {
     return;
   }
   if (run.status === "failed") toast(run.error, { tone: "error", head: `${head} failed` });
-  else if (run.status === "succeeded" || run.status === "skipped") toast(scanSummary(run), { tone: "ok", head, action: run.status === "succeeded" && run.new_issues?.length ? go : null });
+  else if (run.status === "succeeded" || run.status === "skipped") toast(scanSummary(run), { tone: "ok", head, action: run.status === "succeeded" && runTasks(run).length ? go : null });
 }
 
 const scanLabel = (name) => scans.list.find((s) => s.name === name)?.title || name;
@@ -100,32 +140,28 @@ function scanSummary(r) {
     case "canceled": return "Canceled";
     case "interrupted": return r.note || "Dash stopped during the scan";
   }
-  const c = r.counts || {};
-  const known = (c.known || 0) + (c.updated || 0);
-  const parts = [`${c.new || 0} new`];
-  if (known) parts.push(`${known} already known`);
-  if (c.reopened) parts.push(`${c.reopened} reopened`);
-  if (c.dismissed) parts.push(`${c.dismissed} dismissed`);
-  return r.findings ? parts.join(", ") : "No issues found";
+  const c = counts(r);
+  return r.findings ? `${c.added} added, ${c.there} already there, ${c.dismissed} dismissed` : "No issues found";
 }
 
-// showRunIssues opens Issues filtered to what a run added ("new"), brought
-// back ("reopened") or both ("all"). With select, the ones still open (no
-// task yet) are checked, ready for a bulk action.
-function showRunIssues(run, which, select = false) {
-  const ids = which === "reopened" ? run.reopened_issues || []
-    : which === "all" ? [...(run.new_issues || []), ...(run.reopened_issues || [])]
-    : run.new_issues || [];
-  const what = { reopened: "Reopened", all: "Found" }[which] || "New";
-  iss.filter.run = { id: run.id, ids: new Set(ids), label: `${what} · ${scanLabel(run.scan)}, ${agoText(run.started_at)}` };
-  iss.filter.status = select ? "active" : "all";
-  $("#issue-f-status").value = iss.filter.status;
-  if (select) {
-    iss.checked.clear();
-    for (const i of iss.list) if (iss.filter.run.ids.has(i.id) && pickable(i)) iss.checked.add(i.id);
-  }
-  showView("issues");
-  renderIssues();
+// counts sums up a run's findings: added (new drafts, including issues a
+// merged task had fixed that came back), already there (a task had them:
+// bumped) and dismissed (left out).
+function counts(r) {
+  const c = r.counts || {};
+  return { added: (c.new || 0) + (c.reopened || 0), there: (c.known || 0) + (c.updated || 0), dismissed: c.dismissed || 0, reopened: c.reopened || 0 };
+}
+
+// runTasks are the drafts a run added: for new issues and for ones that came back.
+const runTasks = (r) => [...(r.new_tasks || []), ...(r.reopened_tasks || [])];
+
+// showRunTasks shows what a run added: the one draft, or the Board with
+// its drafts that are still drafts picked (and shown, From scans or not).
+function showRunTasks(run) {
+  const ids = runTasks(run).filter((id) => state.todos.has(id));
+  showView("board");
+  if (ids.length === 1) openDetail(ids[0]);
+  else if (ids.length) pickDrafts(ids);
 }
 
 
@@ -179,7 +215,7 @@ export function renderScans() {
     h("p", {}, "Besides Dash's built-ins, scans can live in ", h("code", {}, `${scans.dir}/`),
       " in the repository, shared with your team, or be created here with Create custom scan. With the same name, a repository scan replaces the built-in and one written here replaces either."));
   more.open = !!intro.querySelector("details[open]"); // stays open across re-renders
-  intro.replaceChildren(h("p", {}, "Scans read the code and add what they find to Issues. Run them now or on a schedule."), more);
+  intro.replaceChildren(h("p", {}, "Scans read the code and add what they find to the Board as draft tasks, tagged with the scan's name. Run them now or on a schedule."), more);
   $("#scan-create").hidden = !p || !scans.loaded;
   showRunnerNeeded($("#scan-runner-note"), scans.loaded ? p : null);
   const probs = $("#scan-problems");
@@ -187,6 +223,7 @@ export function renderScans() {
   probs.replaceChildren(...scans.problems.map((x) => h("li", {}, h("code", {}, x.file), `: ${x.error}`)));
   $("#scan-list").replaceChildren(...(p ? scans.list.map(scanCard) : []));
   $("#scan-empty").hidden = !!p;
+  renderDismissed();
 }
 
 // scanSource says where a scan comes from, for its card.
@@ -224,10 +261,10 @@ function scanLine(s) {
     return h("div", { class: "scan-line" }, text(r.status === "canceled" ? `${label} ${ago}` : `${label} ${ago} · ${scanSummary(r)}`));
   }
   if (!r.findings) return h("div", { class: "scan-line" }, text(`Last run ${ago} · No issues found`));
-  const { nw, badge } = runResult(r);
-  const found = r.new_issues?.length || r.counts?.new || 0;
-  return h("div", { class: "scan-line" }, text(`Last run ${ago} ·${nw.open ? "" : ` ${found ? `${found} new, none open` : "No new issues"}`}`),
-    nw.open ? h("button", { type: "button", class: "link scan-count new", title: "Show them in Issues", onclick: () => showRunIssues(r, "new") }, plural(nw.open, "new issue")) : null,
+  const { st, badge } = runResult(r);
+  const added = counts(r).added;
+  return h("div", { class: "scan-line" }, text(`Last run ${ago} ·${st.open ? "" : ` ${added ? `${added} added, none still drafts` : "Nothing new"}`}`),
+    st.open ? h("button", { type: "button", class: "link scan-count new", title: "Show them on the Board", onclick: () => showRunTasks(r) }, plural(st.open, "new draft")) : null,
     badge);
 }
 
@@ -333,7 +370,7 @@ function scanActions(s) {
   const del = attempt(async () => {
     if (!await ask({
       title: `Delete ${s.title}?`, danger: true, ok: "Delete scan",
-      body: `The scan is removed from Dash. Its earlier runs and the issues it found (source scan:${s.name}) stay. If a built-in or repository scan is also called “${s.name}”, it is used again, with its schedule off.`,
+      body: `The scan is removed from Dash. Its earlier runs and the drafts it added (tagged scan:${s.name}) stay. If a built-in or repository scan is also called “${s.name}”, it is used again, with its schedule off.`,
     })) return;
     await api("DELETE", url);
     scans.history.delete(s.name);
@@ -459,33 +496,32 @@ function scanApprovals(s, patch) {
       h("button", { type: "button", class: "btn small", onclick: attempt(() => patch({ approve_schedule: sch.requested })) }, changed ? "Approve new schedule" : "Approve and turn on")) : null);
 }
 
-// runIssueStatus sorts the issues a run added or reopened by what became of
-// them since: still open, fixed (resolved), taken up in a task, dismissed or
-// deleted. Without the project's issues loaded, everything counts as open.
-function runIssueStatus(r, which) {
-  const ids = (which === "reopened" ? r.reopened_issues : r.new_issues) || [];
-  const out = { open: 0, task: 0, fixed: 0, dismissed: 0, gone: 0, critical: 0, high: 0 };
-  for (const id of ids) {
-    if (!iss.loaded) { out.open++; continue; }
-    const i = iss.list.find((x) => x.id === id);
-    if (!i) { out.gone++; continue; }
-    const k = { open: "open", task_created: "task", resolved: "fixed", dismissed: "dismissed" }[i.status] || "open";
+// runStatus sorts the drafts a run added by what became of them since:
+// still drafts (open), in the queue, running or in review (task), merged
+// (fixed), or gone (deleted, which dismissed their issues, or merged into
+// another draft). Critical and high ones still drafts are counted.
+function runStatus(r) {
+  const out = { open: 0, task: 0, fixed: 0, gone: 0, critical: 0, high: 0 };
+  for (const id of runTasks(r)) {
+    const t = state.todos.get(id);
+    if (!t) { out.gone++; continue; }
+    const k = t.status === "draft" ? "open" : t.status === "merged" ? "fixed" : "task";
     out[k]++;
-    if (triageable(i) && (i.severity === "critical" || i.severity === "high")) out[i.severity]++;
+    const sev = worstSeverity(t);
+    if (k === "open" && (sev === "critical" || sev === "high")) out[sev]++;
   }
   // Runs from before the ids were kept: trust the counts.
-  if (!ids.length) out.open = which === "reopened" ? r.counts?.reopened || 0 : r.counts?.new || 0;
+  if (!runTasks(r).length) out.open = counts(r).added;
   return out;
 }
 
-// runResult reads what became of a run's new and reopened issues, with the
-// critical and high ones still open (as a badge, or null) and how many
-// "Select all" would check.
+// runResult reads what became of a run's drafts, with the critical and high
+// ones still drafts as a badge (or null).
 function runResult(r) {
-  const nw = runIssueStatus(r, "new"), ro = runIssueStatus(r, "reopened");
-  const tracked = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length);
-  const sev = tracked ? { critical: nw.critical + ro.critical, high: nw.high + ro.high } : { critical: r.critical || 0, high: r.high || 0 };
-  return { nw, ro, badge: severityBadge(sev, tracked ? 0 : r.urgent || 0), selectable: tracked ? nw.open + ro.open : 0 };
+  const st = runStatus(r);
+  const tracked = runTasks(r).length > 0;
+  const sev = tracked ? { critical: st.critical, high: st.high } : { critical: r.critical || 0, high: r.high || 0 };
+  return { st, badge: severityBadge(sev, tracked ? 0 : r.urgent || 0), pickable: tracked ? st.open : 0 };
 }
 
 // severityBadge names a run's new or reopened critical and high issues by
@@ -495,7 +531,7 @@ function severityBadge({ critical, high }, urgent) {
   const parts = [critical ? `${critical} critical` : null, high ? `${high} high` : null].filter(Boolean);
   const text = parts.length ? parts.join(" · ") : urgent ? `${urgent} critical or high` : null;
   if (!text) return null;
-  const title = parts.length ? `New or reopened ${critical && high ? "critical and high" : critical ? "critical" : "high"} issues from this run that are still open` : "New or reopened critical or high issues from this run that are still open";
+  const title = parts.length ? `Drafts this run added for ${critical && high ? "critical and high" : critical ? "critical" : "high"} issues that are still drafts` : "Drafts this run added for critical or high issues that are still drafts";
   return h("span", { class: "sev sev-high scan-urgent", title }, text);
 }
 
@@ -510,11 +546,9 @@ const RUN_TRIGGER = {
 // scanReport is a run's full report. For the run the card's status line
 // already sums up (lead), what that line says is left out.
 function scanReport(r, compact = false, lead = false) {
-  const c = r.counts || {};
-  const known = (c.known || 0) + (c.updated || 0);
+  const c = counts(r);
   const icon = { running: null, succeeded: "check", failed: "x", skipped: "redo", canceled: "stop", interrupted: "reload" }[r.status];
   const label = { running: "Running", succeeded: "Done", failed: "Failed", skipped: "Skipped", canceled: "Canceled", interrupted: "Interrupted" }[r.status] || r.status;
-  const link = (n, text, which) => n ? h("button", { type: "button", class: `scan-count link${which === "new" ? " new" : ""}`, title: "Show them in Issues", onclick: () => showRunIssues(r, which) }, `${n} ${text}`) : null;
   const bits = [
     agoText(r.started_at),
     RUN_TRIGGER[r.trigger] || "by hand",
@@ -525,24 +559,20 @@ function scanReport(r, compact = false, lead = false) {
   ].filter(Boolean);
   let body;
   if (r.status === "succeeded" && r.findings) {
-    // The counts are what the run found; what has been done about its new
-    // and reopened issues since is read from the issues as they are now.
-    const { nw, ro, badge, selectable } = runResult(r);
-    const since = (k, text, title) => {
-      const n = nw[k] + ro[k];
-      return n ? h("button", { type: "button", class: "scan-count link muted", title, onclick: () => showRunIssues(r, nw[k] ? "new" : "reopened") }, `${n} ${text}`) : null;
-    };
+    // The counts are what the run found; what became of its drafts since is
+    // read from the Board as it is now.
+    const { st, badge, pickable } = runResult(r);
+    const since = (n, text, title) => n ? h("span", { class: "scan-count muted", title }, `${n} ${text}`) : null;
     body = h("p", { class: "scan-counts" },
-      lead ? null : link(nw.open, "new", "new") || h("span", { class: "scan-count" }, "0 new"),
-      known ? h("span", { class: "scan-count" }, `${known} already known`) : null,
-      link(ro.open, "reopened", "reopened"),
-      c.dismissed ? h("span", { class: "scan-count muted", title: "Found again, but you dismissed them; they stay dismissed" }, `${c.dismissed} dismissed`) : null,
-      since("task", "in a task", "New or reopened issues from this run that a task is working on"),
-      since("fixed", "fixed", "New or reopened issues from this run that have been fixed since"),
-      since("dismissed", "dismissed since", "New or reopened issues from this run that were dismissed since"),
-      nw.gone + ro.gone ? h("span", { class: "scan-count muted", title: "New or reopened issues from this run that were deleted since" }, `${nw.gone + ro.gone} deleted`) : null,
+      lead ? null : st.open ? h("button", { type: "button", class: "scan-count link new", title: "Show them on the Board", onclick: () => showRunTasks(r) }, `${c.added} added`) : h("span", { class: "scan-count" }, `${c.added} added`),
+      c.reopened ? h("span", { class: "scan-count", title: "Issues a merged task had fixed that came back: new drafts" }, `${c.reopened} came back`) : null,
+      c.there ? h("span", { class: "scan-count", title: "A task already had them: it counts the report (×N)" }, `${c.there} already there`) : null,
+      c.dismissed ? h("span", { class: "scan-count muted", title: "Found again, but dismissed before: no draft" }, `${c.dismissed} dismissed`) : null,
+      since(st.task, "in a task", "Drafts from this run that were queued since: running, in review or failed"),
+      since(st.fixed, "fixed", "Drafts from this run that were merged since"),
+      since(st.gone, "deleted", "Drafts from this run deleted since (which dismissed their issues) or merged into another draft"),
       lead ? null : badge,
-      selectable ? ib({ type: "button", class: "btn small scan-select", title: "Open the new and reopened issues from this run that are still open, all selected, to create tasks for them or dismiss them", onclick: () => showRunIssues(r, "all", true) }, "checks", `Select all ${selectable}`) : null);
+      pickable > 1 ? ib({ type: "button", class: "btn small scan-select", title: "Select this run's drafts on the Board, to merge them or look through them", onclick: () => showRunTasks(r) }, "checks", `Select ${pickable} on the Board`) : null);
     if (lead && !body.children.length) body = null;
   } else if (!lead || r.status === "failed") {
     body = h("p", { class: `scan-msg${r.status === "failed" ? " error" : ""}` }, r.status === "running" ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, scanSummary(r));
@@ -559,4 +589,3 @@ function scanReport(r, compact = false, lead = false) {
     r.resumed_from ? h("p", { class: "scan-note" }, `Restarts run ${r.resumed_from}, which Dash's restart interrupted`) : null);
 }
 
-$("#issue-f-run").addEventListener("click", () => { iss.filter.run = null; iss.filter.status = "active"; $("#issue-f-status").value = "active"; renderIssues(); });

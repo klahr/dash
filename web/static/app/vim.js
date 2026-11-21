@@ -28,15 +28,16 @@ import { openShell } from "./terminal.js";
 import { openTry } from "./try.js";
 import { clearPriority, nextPriority } from "./dnd.js";
 import { isQuestion } from "./chatparts.js";
+import { dismissNote } from "./tags.js";
 
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
 // In the nav's order: the project's sections, then Planning (the organization's).
-export const VIEWS = ["board", "issues", "scans", "run", "history", "goals", "files", "planning"];
+export const VIEWS = ["board", "scans", "run", "history", "goals", "files", "planning"];
 export const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gn|gc|gs|gh|go|gf|gp|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gn|gc|gs|gh|go|gf|gp|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 export const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 export const openDialog = () => document.querySelector("dialog[open]");
 
@@ -123,7 +124,7 @@ export async function todoKey(t, k) {
     case "t": return previewTodo(t);
     case "!": return openShell({ todo_id: t.id }, t.runner);
     case "dd":
-      if (await ask({ title: `Delete "${title(t)}"?`, body: "Its worktree and branch are removed too. This can't be undone.", ok: "Delete", danger: true })) {
+      if (await ask({ title: `Delete "${title(t)}"?`, body: `Its worktree and branch are removed too.${dismissNote(t)} This can't be undone.`, ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
         if (state.detail === t.id) closeDetail();
         toast("Task deleted");

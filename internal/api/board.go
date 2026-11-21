@@ -438,7 +438,7 @@ func (b board) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, err
 	}
 	return b.sv.addTodo(model.Todo{
 		ProjectID: projectID, Title: t.Title, Prompt: t.Prompt, Priority: t.Priority,
-		DependsOn: t.DependsOn, BuildsOn: t.BuildsOn, Model: t.Model, RunOn: t.RunOn,
+		DependsOn: t.DependsOn, BuildsOn: t.BuildsOn, Model: t.Model, RunOn: t.RunOn, Tags: t.Tags,
 	}, t.Enqueue)
 }
 
@@ -496,19 +496,12 @@ func (b board) DeleteTodo(id string) error {
 	return b.sv.removeTodo(context.Background(), id)
 }
 
-func (b board) Issues(projectID string) ([]model.Issue, error) {
-	if _, err := b.sv.data.GetProject(projectID); err != nil {
-		return nil, fmt.Errorf("no project %q (see list_projects)", projectID)
-	}
-	return b.sv.data.ListIssues(projectID), nil
-}
-
-func (b board) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
+func (b board) ReportIssue(projectID string, is model.Issue) (mcptools.Reported, error) {
 	if err := b.sv.writable(); err != nil {
-		return model.Issue{}, "", err
+		return mcptools.Reported{}, err
 	}
 	is.ProjectID = projectID
-	return b.sv.data.UpsertIssue(is)
+	return b.sv.reportIssue(is)
 }
 
 // ReadTry is the end of the project's Try terminal, read from the runner

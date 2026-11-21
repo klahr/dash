@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -134,13 +135,15 @@ func TestImportStateJSON(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if id == "t1" { // the issue made for it is in its Finding now
+				if got.Finding == nil || got.Finding.Index("fp1") != 0 || !slices.Contains(got.Finding.LegacyIDs, "i1") ||
+					!slices.Equal(got.Tags, []string{"security", "high", "scan:sec"}) {
+					t.Errorf("t1's issue: %+v, tags %q", got.Finding, got.Tags)
+				}
+				got.Finding, got.Tags = nil, nil
+			}
 			sameJSON(t, "todo "+id, got, td)
 		}
-		got, err := s.GetIssue("i1")
-		if err != nil {
-			t.Fatal(err)
-		}
-		sameJSON(t, "issue", got, want.Issues["i1"])
 		r1, _ := s.GetScanRun("r1")
 		sameJSON(t, "scan run r1", r1, want.ScanRuns["r1"])
 		if r2, _ := s.GetScanRun("r2"); r2.Status != model.ScanInterrupted || r2.FinishedAt == nil {
@@ -241,24 +244,21 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	if err := s.AppendProjectChat(p.ID, 1, chat...); err != nil {
 		t.Fatal(err)
 	}
-	is, _, err := s.UpsertIssue(model.Issue{ProjectID: p.ID, Title: "Leak", Type: model.IssueBug, File: "a.go"})
+	leak, err := s.ReportFinding(model.Issue{ProjectID: p.ID, Title: "Leak", Type: model.IssueBug, File: "a.go"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.LinkIssues([]string{is.ID}, a.ID); err != nil {
+	if _, _, err := s.ReportFindings(p.ID, "scan:x", []model.Issue{{Title: "Other", Type: model.IssueBug}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.UpsertIssueBatch(p.ID, "scan:x", []model.Issue{{Title: "Other", Type: model.IssueBug}}); err != nil {
-		t.Fatal(err)
-	}
-	dropped, _, _ := s.UpsertIssue(model.Issue{ProjectID: p.ID, Title: "Drop me", Type: model.IssueBug})
-	if _, err := s.DeleteIssue(dropped.ID); err != nil {
+	dropped, _ := s.ReportFinding(model.Issue{ProjectID: p.ID, Title: "Drop me", Type: model.IssueBug})
+	if _, err := s.DeleteTodo(dropped.Todo.ID); err != nil {
 		t.Fatal(err)
 	}
 	run, _ := s.CreateScanRun(model.ScanRun{ProjectID: p.ID, Scan: "x", Status: model.ScanRunning})
 	run, err = s.UpdateScanRun(run.ID, true, func(r *model.ScanRun) {
 		now := time.Now()
-		r.Status, r.FinishedAt, r.Findings, r.NewIssues = model.ScanSucceeded, &now, 1, []string{is.ID}
+		r.Status, r.FinishedAt, r.Findings, r.NewTasks = model.ScanSucceeded, &now, 1, []string{leak.Todo.ID}
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -283,7 +283,8 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	gt, _ := s.CreateTodo(model.Todo{ProjectID: gone.ID, Title: "g"})
 	_ = s.SetTodoChat(gt.ID, chat)
 	_ = s.AppendProjectChat(gone.ID, 1, chat...)
-	_, _, _ = s.UpsertIssue(model.Issue{ProjectID: gone.ID, Title: "g", Type: model.IssueBug})
+	gd, _ := s.ReportFinding(model.Issue{ProjectID: gone.ID, Title: "g", Type: model.IssueBug})
+	_, _ = s.DeleteTodo(gd.Todo.ID)
 	_, _ = s.CreateScanRun(model.ScanRun{ProjectID: gone.ID, Scan: "x", Status: model.ScanSucceeded})
 	_, _ = s.SetScanSetting(gone.ID, "x", func(st *model.ScanSetting) {})
 	_, _ = s.SaveScanTemplate(model.ScanTemplate{ProjectID: gone.ID, Name: "x", Prompt: "p"}, true)
@@ -294,18 +295,18 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	before := struct {
 		Projects                                  []model.Project
 		Todos                                     []model.Todo
-		Issues                                    []model.Issue
+		Dismissed                                 []model.DismissedFinding
 		Runs                                      []model.ScanRun
 		Chat, TodoChat, ProjectChat, GoneTodoChat []model.ChatMessage
-	}{s.ListProjects(), s.ListTodos(""), s.ListIssues(""), s.ListScanRuns(p.ID, ""), s.Chat(1, 1), s.TodoChat(a.ID), s.ProjectChat(p.ID, 1), s.TodoChat(gt.ID)}
-	if len(before.Projects) != 1 || len(before.Todos) != 2 || len(before.Issues) != 2 || len(before.Runs) != 1 {
+	}{s.ListProjects(), s.ListTodos(""), s.ListDismissed(""), s.ListScanRuns(p.ID, ""), s.Chat(1, 1), s.TodoChat(a.ID), s.ProjectChat(p.ID, 1), s.TodoChat(gt.ID)}
+	if len(before.Projects) != 1 || len(before.Todos) != 4 || len(before.Dismissed) != 1 || len(before.Runs) != 1 {
 		t.Fatalf("unexpected state before reopen: %+v", before)
 	}
 
 	s = reopen(t, s, path)
 	sameJSON(t, "projects", s.ListProjects(), before.Projects)
 	sameJSON(t, "todos", s.ListTodos(""), before.Todos)
-	sameJSON(t, "issues", s.ListIssues(""), before.Issues)
+	sameJSON(t, "dismissed", s.ListDismissed(""), before.Dismissed)
 	sameJSON(t, "scan runs", s.ListScanRuns(p.ID, ""), before.Runs)
 	sameJSON(t, "chat", s.Chat(1, 1), chat)
 	sameJSON(t, "todo chat", s.TodoChat(a.ID), chat)
@@ -323,7 +324,7 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	sameJSON(t, "scan run", gotRun, run)
 
 	// Nothing of the deleted project is left in the database.
-	for _, table := range []string{"todos", "issues", "scan_runs", "scan_settings", "scan_templates"} {
+	for _, table := range []string{"todos", "dismissed_findings", "scan_runs", "scan_settings", "scan_templates"} {
 		var n int
 		if err := s.db.QueryRow("SELECT count(*) FROM "+table+" WHERE project_id = ?", gone.ID).Scan(&n); err != nil || n != 0 {
 			t.Errorf("%s: %d rows of the deleted project (%v)", table, n, err)
@@ -346,8 +347,8 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	if got, _ := s.GetTodo(b.ID); len(got.DependsOn) != 0 {
 		t.Fatalf("dependency on deleted todo came back: %v", got.DependsOn)
 	}
-	if got, _ := s.GetIssue(is.ID); got.Status != model.IssueOpen || len(got.TodoIDs) != 0 {
-		t.Fatalf("issue still linked to the deleted todo: %+v", got)
+	if n := len(s.ListDismissed("")); n != 1 {
+		t.Fatalf("deleting a task without issues changed the dismissed ones: %d", n)
 	}
 	if len(s.TodoChat(a.ID)) != 0 {
 		t.Fatal("deleted todo's chat came back")

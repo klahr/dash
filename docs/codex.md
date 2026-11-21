@@ -79,7 +79,7 @@ These don't work with Codex:
 Titles, summaries and splits use Claude Code when it is signed in, else Codex.
 
 These work as with Claude Code: resuming a task's session after notes or a restart, a follow-up
-task that continues another's session, and Dash's task tools (`run_tests`, issues, active work).
+task that continues another's session, and Dash's task tools (`run_tests`, `report_issue`, active work).
 
 ## Work for other members
 

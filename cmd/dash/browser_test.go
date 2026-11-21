@@ -1324,38 +1324,6 @@ func TestBrowserCustomScan(t *testing.T) {
 	})()`)
 }
 
-// Issues' bulk bar: checked issues become tasks from the Create tasks ▾
-// menu, which picks how (one per issue, grouped, one for all) and ends in
-// Save draft or Queue, as the task form does.
-func TestBrowserIssueTasks(t *testing.T) {
-	chrome := needChrome(t)
-	h := startRunnerHub(t)
-	pid := h.project.ID
-	for _, title := range []string{"Leaky handler", "Leaky export"} {
-		h.api.must("POST", "/api/projects/"+pid+"/issues", map[string]any{"title": title, "type": "bug"}, http.StatusCreated, nil)
-	}
-	b := newBrowser(t, chrome)
-	b.signIn(h)
-
-	b.until("open Issues", `document.querySelector("#view-issues.active")`, chromedp.Click(chromedp.CSS(`.nav > button[data-view=issues]`)))
-	b.waitJS("the issues", `document.querySelectorAll("#issue-list .issue-check").length === 2`)
-	b.until("check them all", `!document.querySelector("#issue-bulk").hidden && document.querySelector("#issue-count").textContent === "2 selected"`,
-		chromedp.Click(chromedp.ID("issue-all")))
-	b.until("open Create tasks", `!document.querySelector("#issue-create-menu").hidden`, chromedp.Click(chromedp.ID("issue-create-btn")))
-	b.waitJS("the choices", `[...document.querySelectorAll("#issue-create-menu .issue-how")].map((e) => e.textContent.trim()).join() === "One per issue,Grouped by Claude,One for all" &&
-		[...document.querySelectorAll("#issue-create-menu .issue-create-actions .btn")].map((e) => e.textContent.trim()).join() === "Save draft,Queue"`)
-	b.until("pick One for all", `document.querySelector("#issue-create-menu input[value=one]").checked`,
-		chromedp.Click(chromedp.CSS(`#issue-create-menu input[value=one]`)))
-	b.until("queue it", `document.querySelector("#issue-bulk").hidden`, chromedp.Click(chromedp.ID("issue-queue")))
-
-	var todos []todo
-	waitFor(t, nil, "one queued task for both issues", func() bool {
-		todos = nil
-		h.api.must("GET", "/api/projects/"+pid+"/todos", nil, http.StatusOK, &todos)
-		return len(todos) == 1 && todos[0].Status != "draft"
-	})
-}
-
 // On a desktop a task is edited in its detail pane: the title in place,
 // the instructions in the Markdown editor with Ctrl+Enter / Esc, priority,
 // model and dependencies from the controls under the title. Esc never closes

@@ -25,6 +25,7 @@ import { chatPage } from "./nav.js";
 import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
 import { creator, mineOn, multiMember, myID, people, setMine } from "./people.js";
 import { isQuestion } from "./chatparts.js";
+import { boardFilter, onBoard, pickBox, picked, renderMergeBar, renderTagFilter, tagRow } from "./tags.js";
 
 // ------------------------------------------------------------------ branches
 // The open switcher's GET /branches answer, for the project it was opened on.
@@ -160,8 +161,9 @@ export const byPriority = (a, b) => (hasPriority(b) - hasPriority(a)) || (a.prio
 const isOld = (t) => t.status === "merged" && Date.now() - new Date(t.finished_at || t.updated_at) > DAY;
 
 // laneItems is the board's tasks by lane, as shown: only the goal filtered
-// to, if any, and only the user's own with Mine on (all: every task, as the
-// review count and priorities need).
+// to, if any, only the user's own with Mine on, and only those the tag
+// filter and From scans let through (all: every task, as the review count
+// and priorities need).
 export function laneItems(all = false) {
   const out = Object.fromEntries(LANES.map((l) => [l.key, []]));
   const mine = mineOn() && myID();
@@ -169,6 +171,7 @@ export function laneItems(all = false) {
     if (!state.showOld && isOld(t)) continue;
     if (!all && state.goalFilter && t.goal_id !== state.goalFilter) continue;
     if (!all && mine && t.created_by !== mine) continue;
+    if (!all && !onBoard(t)) continue;
     const lane = LANES.find((l) => l.statuses.includes(t.status));
     if (lane) out[lane.key].push(t);
   }
@@ -225,6 +228,7 @@ function renderBoardNow() {
     $("#lane-chips").replaceChildren();
     $("#new-todo").hidden = true;
     $("#board-filters").hidden = true;
+    $("#merge-bar").hidden = true;
     // Until the projects and runners are in, don't flash a welcome, a board
     // or "create your first project" that one of the others then replaces.
     empty.hidden = !state.projectsLoaded || state.runners === undefined;
@@ -247,7 +251,9 @@ function renderBoardNow() {
   renderRunnerBanner();
   renderGoalFilter();
   renderMineFilter();
-  $("#board-filters").hidden = $("#goal-filter").hidden && $("#mine-filter").hidden;
+  const tagged = renderTagFilter();
+  $("#board-filters").hidden = $("#goal-filter").hidden && $("#mine-filter").hidden && !tagged;
+  renderMergeBar();
 
   // A task just added may already have moved on (a queued task picked up at
   // once is Running): follow it rather than show its old lane empty.
@@ -292,7 +298,7 @@ function renderBoardNow() {
       l.key === "done" ? oldToggle() : null,
       l.key === "done" ? clearDoneBtn() : null))));
   // What needs you counts every task, whatever the board is filtered to.
-  const every = state.goalFilter || mineOn() ? laneItems(true) : items;
+  const every = state.goalFilter || mineOn() || boardFilter.tag || !boardFilter.showScans ? laneItems(true) : items;
   updateNeedsYou(every);
 
   $(".lane-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -785,15 +791,17 @@ export function todoRow(t, li = -1, ri = -1) {
   // controls, so each is focusable and announced on its own. A press anywhere
   // else on the card opens the task too.
   return h("div", {
-    class: `todo s-${t.status}${isPushed(t) ? " pushed" : ""}${t.reviewing ? " reviewing" : ""}${state.detail === t.id ? " selected" : ""}${atCursor ? " cursor" : ""}`,
+    class: `todo s-${t.status}${isPushed(t) ? " pushed" : ""}${t.reviewing ? " reviewing" : ""}${state.detail === t.id ? " selected" : ""}${atCursor ? " cursor" : ""}${picked.has(t.id) ? " picked" : ""}`,
     "data-id": t.id,
-    onclick: (e) => { if (!e.target.closest("a, button:not(.todo-open)")) openDetail(t.id); },
+    onclick: (e) => { if (!e.target.closest("a, button:not(.todo-open), label")) openDetail(t.id); },
   },
     h("span", { class: "node", "aria-hidden": "true" }),
+    pickBox(t),
     h("span", { class: "todo-main" },
       h("button", { type: "button", class: "todo-open" }, h("span", { class: "todo-title" }, title(t))),
       h("span", { class: subClass }, sub),
       linkRow(t),
+      tagRow(t),
       goalChip(t)),
     h("span", { class: "todo-side" },
       checkTag,

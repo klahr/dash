@@ -55,9 +55,9 @@ type TodoEngine struct {
 	Merges  *MergeQueue
 	Perms   *perm.Broker // optional: route Claude's permission prompts to the UI
 	BaseURL string       // Dash's own URL, for the permission MCP server
-	// Board and BoardURL give every run the issue tools (report_issue,
-	// list_issues) of Dash's MCP server, so Claude can log problems it
-	// notices outside its task instead of fixing them on the wrong branch.
+	// Board and BoardURL give every run the issue tool (report_issue) of
+	// Dash's MCP server, so Claude can log problems it notices outside its
+	// task, as draft tasks, instead of fixing them on the wrong branch.
 	Board    *mcptools.Tokens
 	BoardURL string
 	// Owner is who a todo's runs act as: its user and org. The per-run
@@ -1045,10 +1045,10 @@ func (r *todoRun) handOff() {
 	}
 }
 
-// issuesHint tells a task's Claude about the issue tools.
+// issuesHint tells a task's Claude about the issue tool.
 const issuesHint = "If you notice a bug, vulnerability or other problem in this project that is unrelated to your task, " +
 	"don't fix it here and don't ignore it: report it with the " + mcptools.ServerName + " report_issue tool " +
-	"(title, type, severity, file and line, details, suggested fix) so the user can triage it, then carry on with your task."
+	"(title, type, severity, file and line, details, suggested fix): it becomes a draft task on the Board for the user, then carry on with your task."
 
 // activeWorkHint tells a task's Claude about active_work, so tasks running
 // side by side in a project don't change the same files unawares.

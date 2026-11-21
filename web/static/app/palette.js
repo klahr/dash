@@ -71,7 +71,6 @@ function paletteCommands() {
     goalsOn(p) && ["New goal", "target", () => openGoalSheet(), "", "goal coordinator plan bigger project objective"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
     p && multiMember() && [mineOn() ? "Show everyone's tasks" : "Show only my tasks", "users", () => runCommand("mine"), ":mine", "mine my own created by me filter board"],
-    ["Issues", "bug", go("issues"), "gi", "bugs vulnerabilities problems triage scan"],
     ["Scans", "scan", go("scans"), "gn", "scan security review dependency audit schedule cron"],
     ["Toggle chat", "comment", () => toggleChatPane(), "gc", "chat open close claude ask project general"],
     [pane.pinned ? "Unpin chat" : "Pin chat", "pin", togglePin, ":pin", "pin unpin chat overlay dock"],
@@ -372,7 +371,6 @@ async function handleNormal(k, n, hadCount) {
     case "gd": return showView("deploys");
     case "gf": return showView("files");
     case "gp": return showView("planning");
-    case "gi": return showView("issues");
     case "gn": return showView("scans");
     case "p": return openProjects();
     case "J": case "K": return stepProject(k === "J" ? n : -n);

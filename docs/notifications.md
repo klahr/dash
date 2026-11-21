@@ -31,7 +31,7 @@ Choose under **Account → Notifications → Tasks**:
 
 This covers a task ready for review, failed, merged, or waiting for you to approve a tool.
 A task no person is behind reaches everyone who wants that event, whatever they chose: one Dash
-made (from an issue or an automation), one whose creator's account was deleted, and one whose
+made (a draft from a reported problem, or an automation), one whose creator's account was deleted, and one whose
 creator left the organization.
 
 A [planner](users.md#planners) can't open tasks. A task a planner started with **Start** on a
@@ -82,11 +82,11 @@ also pushes these to the browser, so they arrive while Dash is closed. Choose wh
 - GitHub Actions starts failing on the default branch
 - a [deploy](deploys.md#when-a-deploy-fails) fails
 - a runner's disk is nearly full ([Disk space on a runner](several-computers.md#disk-space-on-a-runner))
-- a scan or Claude finds a new issue (off until you tick it)
+- a scan or Claude adds a draft for a new problem (off until you tick it)
 - you're mentioned or added to a [Planning card](#planning-cards), or its work needs a planner
 
-Tapping a notification opens the task, the goal on the **Goals** page, the issue on the
-**Issues** page, the deploy on the **Deploys** page, or the card on **Planning**. **Send a test**, under the switch, pushes one right away.
+Tapping a notification opens the task (for a new problem, its draft), the goal on the **Goals**
+page, the deploy on the **Deploys** page, or the card on **Planning**. **Send a test**, under the switch, pushes one right away.
 On an iPhone or iPad, add Dash to the home screen first ([phone.md](phone.md)) and turn
 notifications on in the installed app: Safari tabs can't get pushes there.
 
@@ -128,7 +128,7 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | `task.merged`       | a task's work landed, or it was closed with no changes       |
 | `permission.needed` | Claude waits for you to approve a tool, or to answer a question |
 | `goal.attention`    | a [goal](goals.md) waits for you, can't run, is done or out of budget |
-| `issue.new`         | a [scan](scans.md) or Claude (`report_issue`) finds a new issue (off by default) |
+| `issue.new`         | a [scan](scans.md) or Claude (`report_issue`) adds a draft for a new problem (off by default) |
 | `build.failing`     | GitHub Actions starts failing on the default branch          |
 | `deploy.failed`     | a [deploy](deploys.md#when-a-deploy-fails) or rollback failed |
 | `runner.disk`       | a runner that works on the project is nearly out of disk space |
@@ -172,9 +172,10 @@ address your phone can reach. A question from Claude has no buttons: tap it and 
 }
 ```
 
-`issue.new` events have `"issue": {"id", "title", "severity", "url"}` instead of `task`, and
-the issue's file in `message`. They fire once per issue: an issue reported again (the same
-type, file and rule or title) doesn't fire, nor does one you add by hand. Existing webhooks
+`issue.new` events have `"issue": {"id", "title", "severity", "url"}` instead of `task`: the
+draft task's id, title and link, and the problem's severity. The problem's file is in `message`.
+They fire once per draft: a problem reported again (the same type, file and rule or title)
+bumps its task and doesn't fire, nor does one sent by hand. Existing webhooks
 don't get them until you tick the event; neither do new ones.
 `goal.attention` events have `"goal": {"id", "title", "status", "url"}` instead of `task`, and say
 in `message` what the goal waits for, or why it ended. For a goal whose coordinator can't run,
@@ -238,7 +239,7 @@ once it has a time, somewhere to go and its projects; until then, the field stil
 - **Send it to**: email, one or more of your personal webhooks, or both. Pick at least one.
   Email goes to your account's address, shown beside it; it is greyed out when this Dash has no
   [SMTP](signup.md#email-smtp) set up.
-- **What goes in it**: new issues (from the severity you choose up), tasks ready for review,
+- **What goes in it**: drafts for new problems (from the severity you choose up), tasks ready for review,
   failed tasks, merged tasks, your goals waiting for you, and failing builds. Task items
   follow [whose tasks](#whose-tasks) you chose.
 
@@ -289,7 +290,7 @@ summary stops after 40 items (or about 3,500 characters) with "and N more" and a
         "url": "https://dash.example.com/p/a1b2c3d4e5f6",
         "items": [
           { "kind": "issue", "title": "SQL injection in search", "severity": "high",
-            "url": "https://dash.example.com/p/a1b2c3d4e5f6/issues/9f8e7d6c5b4a", "at": "2026-11-17T15:02:11Z" },
+            "url": "https://dash.example.com/p/a1b2c3d4e5f6/tasks/9f8e7d6c5b4a", "at": "2026-11-17T15:02:11Z" },
           { "kind": "failed", "title": "Fix checkout rounding",
             "url": "https://dash.example.com/p/a1b2c3d4e5f6/tasks/0f9e8d7c6b5a", "at": "2026-11-17T16:40:00Z" }
         ]

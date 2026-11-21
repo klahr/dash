@@ -69,7 +69,7 @@ type Server struct {
 	Board     *mcptools.Tokens // chat runs' tokens for /mcp/dash
 	OAuth     *auth.OAuth      // remote MCP clients (claude.ai) on /mcp; nil = off
 	Usage     *usage.Tracker
-	Scans     *scan.Runner    // read-only scans that file issues (optional)
+	Scans     *scan.Runner    // read-only scans that file findings as draft tasks (optional)
 	Scheduler *scan.Scheduler // runs scans on their schedules (optional)
 	// Trackers syncs projects whose board is an external tracker (nil:
 	// every board is Dash's own, and the backend can't be changed).
@@ -336,13 +336,12 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/hub/github-repos", s.hubGitHubRepos)
 	mux.HandleFunc("POST /api/hub/github-repos", s.hubCreateGitHubRepo)
 
-	// Issues: known bugs, vulnerabilities and other problems, triaged into tasks
-	mux.HandleFunc("GET /api/projects/{pid}/issues", s.listIssues)
-	mux.HandleFunc("POST /api/projects/{pid}/issues", s.addIssue)
-	mux.HandleFunc("POST /api/projects/{pid}/issues/tasks", s.issueTasks)
-	mux.HandleFunc("POST /api/projects/{pid}/issues/dismiss", s.dismissIssues)
-	mux.HandleFunc("PATCH /api/issues/{iid}", s.updateIssue)
-	mux.HandleFunc("DELETE /api/issues/{iid}", s.deleteIssue)
+	// Reported issues: each becomes a draft task (or bumps the task that has
+	// it); the dismissed ones are kept apart, and drafts can be merged.
+	mux.HandleFunc("POST /api/projects/{pid}/issues", s.reportIssue)
+	mux.HandleFunc("GET /api/projects/{pid}/dismissed", s.listDismissed)
+	mux.HandleFunc("DELETE /api/projects/{pid}/dismissed/{fp}", s.undismiss)
+	mux.HandleFunc("POST /api/projects/{pid}/todos/merge", s.mergeTodos)
 
 	// Goals: a coordinator plans and dispatches tasks towards each
 	s.goalRoutes(mux)
@@ -352,7 +351,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	// Planning: the org's plan for a product owner, cards linked to tasks and goals
 	s.planningRoutes(mux)
 
-	// Scans: preconfigured read-only reviews that file their findings as issues
+	// Scans: preconfigured read-only reviews that file their findings as draft tasks
 	mux.HandleFunc("GET /api/projects/{pid}/scans", s.listScans)
 	mux.HandleFunc("POST /api/projects/{pid}/scans/{name}/run", s.runScan)
 	mux.HandleFunc("PATCH /api/projects/{pid}/scans/{name}", s.updateScan)
@@ -658,14 +657,13 @@ func writeText(w http.ResponseWriter, s string) {
 func writeErr(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
 	var inv model.ErrInvalidTransition
-	var invIssue model.ErrInvalidIssueTransition
 	var gitErr *gitops.CmdError
 	var callErr *tunnel.CallError
 	switch {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound), errors.Is(err, preview.ErrNotFound), errors.Is(err, preview.ErrNoTry),
 		errors.Is(err, scan.ErrNoScan), errors.Is(err, gitops.ErrNoCommit), errors.Is(err, gitops.ErrNoFileChange):
 		code = http.StatusNotFound
-	case errors.As(err, &inv), errors.As(err, &invIssue), errors.Is(err, store.ErrReviewing):
+	case errors.As(err, &inv), errors.Is(err, store.ErrReviewing):
 		code = http.StatusConflict
 	case errors.As(err, new(*queue.PullRefused)), errors.As(err, new(*queue.MergeRefused)), errors.Is(err, queue.ErrNotQueued):
 		code = http.StatusConflict
@@ -693,7 +691,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusForbidden
 	case errors.Is(err, errConflict):
 		code = http.StatusConflict
-	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue), errors.Is(err, store.ErrBadMember), errors.Is(err, store.ErrTooManyFiles), errors.Is(err, store.ErrBadPlanningBoard),
+	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue), errors.Is(err, store.ErrBadMerge), errors.Is(err, store.ErrBadMember), errors.Is(err, store.ErrTooManyFiles), errors.Is(err, store.ErrBadPlanningBoard),
 		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview), errors.Is(err, preview.ErrNotTerminal):
 		code = http.StatusBadRequest
 	}

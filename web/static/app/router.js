@@ -9,7 +9,6 @@ import { closeDetail, openDetail } from "./detail.js";
 import { closeGoal, gp, loadGoals, openGoal } from "./goals.js";
 import { closeDeploy, dp, loadDeploys, openDeploy } from "./deploys.js";
 import { closeCommit, selectCommit } from "./history.js";
-import { showIssue } from "./issues.js";
 import { cardError, cardId, closeCard, openCard, planningFilters, setPlanningFilters } from "./planning.js";
 import { openSettings } from "./settings.js";
 import { ACCOUNT_MOVED, openAccount } from "./accountsheet.js";
@@ -210,7 +209,12 @@ async function apply(r, { startup = false, settle = !startup } = {}) {
       }
     } else if (cp.sha) closeCommit();
 
-    if (r.issue && !(await showIssue(r.issue))) missing.push("issue");
+    // An old link to an issue opens the task it became, if there is one;
+    // else the board.
+    if (r.issue) {
+      const t = [...state.todos.values()].find((x) => x.id === r.issue || x.finding?.legacy_ids?.includes(r.issue));
+      if (t && state.detail !== t.id) await openDetail(t.id);
+    }
 
     if (r.card) {
       if (cardId() !== r.card) {

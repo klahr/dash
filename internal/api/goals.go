@@ -895,16 +895,9 @@ func (gb goalBoard) RequeueTodo(id string, fresh bool, note string) (model.Todo,
 	return t, nil
 }
 
-func (gb goalBoard) Issues(projectID string) ([]model.Issue, error) {
+func (gb goalBoard) ReportIssue(projectID string, is model.Issue) (mcptools.Reported, error) {
 	if _, err := gb.Project(projectID); err != nil {
-		return nil, err
-	}
-	return gb.b.Issues(projectID)
-}
-
-func (gb goalBoard) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
-	if _, err := gb.Project(projectID); err != nil {
-		return is, "", err
+		return mcptools.Reported{}, err
 	}
 	return gb.b.ReportIssue(projectID, is)
 }

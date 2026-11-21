@@ -10,7 +10,7 @@ import (
 
 // projectBoard is the board as a run in one project uses it: a task's run,
 // a project chat, a chat a hub asks a runner for in one of its projects. It
-// sees and changes that project only: its tasks, issues, goals
+// sees and changes that project only: its tasks, goals
 // and Try terminal. Other projects, even in the same org, look as if they
 // didn't exist. Only the general chat (no project) gets the whole org's
 // board.
@@ -163,16 +163,9 @@ func (pb projectBoard) DeleteTodo(id string) error {
 	return pb.b.DeleteTodo(id)
 }
 
-func (pb projectBoard) Issues(projectID string) ([]model.Issue, error) {
+func (pb projectBoard) ReportIssue(projectID string, is model.Issue) (mcptools.Reported, error) {
 	if err := pb.check(projectID); err != nil {
-		return nil, err
-	}
-	return pb.b.Issues(pb.project)
-}
-
-func (pb projectBoard) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
-	if err := pb.check(projectID); err != nil {
-		return model.Issue{}, "", err
+		return mcptools.Reported{}, err
 	}
 	return pb.b.ReportIssue(pb.project, is)
 }

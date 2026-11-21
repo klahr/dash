@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -527,10 +528,19 @@ func (c *client) scanRun(pid, id string, out any) {
 	c.t.Fatalf("scan run %s isn't in project %s's runs", id, pid)
 }
 
+// hasIssue reports whether a task on the project's board has an issue
+// titled title (a reported issue is a draft task there).
 func (c *client) hasIssue(pid, title string) bool {
 	c.t.Helper()
-	_, b := c.try("GET", "/api/projects/"+pid+"/issues", nil)
-	return strings.Contains(b, title)
+	_, b := c.try("GET", "/api/projects/"+pid+"/todos", nil)
+	var ts []model.Todo
+	_ = json.Unmarshal([]byte(b), &ts)
+	for _, t := range ts {
+		if t.Finding != nil && slices.ContainsFunc(t.Finding.Issues, func(is model.Issue) bool { return is.Title == title }) {
+			return true
+		}
+	}
+	return false
 }
 
 // scanName is a scan that runs in any repository: not one limited to some

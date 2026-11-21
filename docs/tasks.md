@@ -44,6 +44,31 @@ model, dependencies, the task it builds on and attachments.
   own. Edit, remove or add to them, then save them all, each one waiting for the tasks it builds
   on.
 
+## Tags
+
+A task can have tags: short labels such as `backend` or `docs`. They show as chips on the card
+and in the task. Edit them under **Tags** in the task. A task has at most 20 tags, each at most
+40 characters. Click a tag on a card to show only tasks with that tag; remove the filter with
+its chip above the board.
+
+## Drafts from reported problems
+
+Problems that scans find, that Claude reports during a task (`report_issue`), or that are sent to
+the API become draft tasks. Each is ready to queue: its prompt holds the title, details, file and
+line, suggested fix, severity and type. It gets tags for its type (`bug`, `security`, `issue`),
+its severity and its source (`scan:<scan name>` or `reported`).
+
+- A problem a task already has adds no draft. That task's card shows how many times it was
+  reported, e.g. "×3".
+- Deleting such a draft dismisses the problem: it won't come back as a draft. See
+  **Scans → Dismissed** to undo it.
+- A problem that comes back after its task was merged gets a new draft that names that task.
+- Drafts from scans below `high` severity are hidden behind the **From scans (N)** chip. Click
+  it to show them.
+- To combine drafts, tick them and click **Merge**. **Clear** unticks them.
+
+See [Scans](scans.md#findings-on-the-board) for how Dash spots the same problem twice.
+
 ## Queue it
 
 Every way of making tasks ends with the same two buttons: **Save draft** keeps it in the

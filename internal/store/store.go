@@ -68,13 +68,12 @@ type snapshot struct {
 	// keyed by projectChatOwner. A state.json's shared project chats
 	// (project_chats) aren't imported.
 	ProjectChats map[string][]model.ChatMessage `json:"-"`
-	// Issues are each project's known bugs, vulnerabilities and other
-	// problems, keyed by issue id.
-	Issues map[string]*model.Issue `json:"issues,omitempty"`
-	// issueIDs indexes Issues by issueKey(project id, fingerprint) → issue
-	// id, so an upsert finds the issue it updates without scanning them all.
-	// nil until built (see Store.issueIndexLocked).
-	issueIDs map[string]string
+	// Issues are a state.json's issues, from before issues became draft
+	// tasks: importLegacy turns them into tasks (see issuesToTasks).
+	Issues map[string]*legacyIssue `json:"issues,omitempty"`
+	// Dismissed are the issues users dismissed, keyed by issueKey(project
+	// id, fingerprint): reports of them add no draft.
+	Dismissed map[string]*model.DismissedFinding `json:"-"`
 	// ScanRuns are the recent runs of each project's scans, keyed by run id.
 	ScanRuns map[string]*model.ScanRun `json:"scan_runs,omitempty"`
 	// ScanSettings are the schedule changes and approvals users made, keyed by
@@ -155,6 +154,9 @@ func open(db *sql.DB, path string, pub Publisher) (*Store, error) {
 		return nil
 	}); err != nil {
 		return nil, err
+	}
+	if err := migrateIssues(db); err != nil {
+		return nil, fmt.Errorf("turn issues into tasks: %w", err)
 	}
 	if legacy := filepath.Join(filepath.Dir(path), LegacyFile); legacy != filepath.Clean(path) {
 		if err := importLegacy(db, legacy); err != nil {
@@ -414,12 +416,9 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 			delete(s.data.TodoChats, tid)
 		}
 	}
-	for iid, is := range s.data.Issues {
-		if is.ProjectID == id {
-			delete(s.data.Issues, iid)
-			if s.data.issueIDs != nil {
-				delete(s.data.issueIDs, issueKey(is.ProjectID, is.Fingerprint))
-			}
+	for k, d := range s.data.Dismissed {
+		if d.ProjectID == id {
+			delete(s.data.Dismissed, k)
 		}
 	}
 	for rid, r := range s.data.ScanRuns {
@@ -467,7 +466,7 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 				return err
 			}
 		}
-		for _, table := range []string{"todos", "issues", "scan_runs", "scan_settings", "scan_templates", "webhooks",
+		for _, table := range []string{"todos", "dismissed_findings", "scan_runs", "scan_settings", "scan_templates", "webhooks",
 			"tracker_projects", "tracker_links", "project_events", "goals", "deploys", "environment_changes", "release_builds"} {
 			if _, err := tx.Exec("DELETE FROM "+table+" WHERE project_id = ?", id); err != nil {
 				return err
@@ -630,24 +629,13 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 	}
 	cp.ID, cp.ProjectID, cp.UpdatedAt = t.ID, t.ProjectID, time.Now()
 	s.data.Todos[id] = &cp
-	var resolved []model.Issue
-	if cp.Status == model.StatusMerged && t.Status != model.StatusMerged {
-		resolved = s.resolveIssuesLocked(id)
-	}
-	err := s.writeLocked(func(tx *sql.Tx) error {
-		if err := putTodo(tx, &cp); err != nil {
-			return err
-		}
-		return putIssues(tx, resolved)
-	})
-	if err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return putTodo(tx, &cp) }); err != nil {
 		return cp, err
 	}
 	if cp.Status == model.StatusFailed && t.Status != model.StatusFailed {
 		metrics.TasksFailed.Inc()
 	}
 	s.emit(model.EvTodoUpdated, cp.ProjectID, cp.ID, cp)
-	s.emitIssues(resolved)
 	return cp, nil
 }
 
@@ -678,7 +666,15 @@ func statusFn(to model.TodoStatus, errMsg string) func(*model.Todo) error {
 	}
 }
 
+// DeleteTodo deletes a task. The issues of a task made from reported
+// issues (its Finding) are dismissed with it, unless it was merged: they
+// add no draft when reported again (see ReportFindings, Undismiss).
 func (s *Store) DeleteTodo(id string) (model.Todo, error) {
+	return s.deleteTodo(id, 0)
+}
+
+// deleteTodo is DeleteTodo by user by (0: unknown).
+func (s *Store) deleteTodo(id string, by int64) (model.Todo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.data.Todos[id]
@@ -687,7 +683,7 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 	}
 	delete(s.data.Todos, id)
 	delete(s.data.TodoChats, id)
-	unlinked := s.unlinkIssuesLocked(id)
+	dismissed := s.dismissLocked(t, by)
 	// Forget the deleted todo in the dependencies of others, and in those
 	// building on it (they start fresh, with their full prompt).
 	var changed []*model.Todo
@@ -717,7 +713,12 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 				return err
 			}
 		}
-		return putIssues(tx, unlinked)
+		for _, d := range dismissed {
+			if err := putDismissed(tx, d); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return *t, err
@@ -726,7 +727,9 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 	for _, o := range changed {
 		s.emit(model.EvTodoUpdated, o.ProjectID, o.ID, *o)
 	}
-	s.emitIssues(unlinked)
+	if len(dismissed) > 0 {
+		s.emit(model.EvDismissedUpdated, t.ProjectID, "", map[string]int{"dismissed": len(dismissed)})
+	}
 	return *t, nil
 }
 
@@ -997,6 +1000,8 @@ func (s *Store) ProjectChats() [][]model.ChatMessage {
 func clone(t model.Todo) model.Todo {
 	cp := t
 	cp.Feedback = append([]string(nil), t.Feedback...)
+	cp.Tags = slices.Clone(t.Tags)
+	cp.Finding = t.Finding.Clone()
 	cp.DependsOn = append([]string(nil), t.DependsOn...)
 	cp.Attachments = append([]model.Attachment(nil), t.Attachments...)
 	cp.ConflictNoted = append([]string(nil), t.ConflictNoted...)

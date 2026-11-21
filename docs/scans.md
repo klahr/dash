@@ -1,7 +1,7 @@
 # Scans
 
-The Scans section runs preconfigured, read-only reviews of a project and adds what they find to
-its Issues. Run one with "Run now", or let it run on a schedule. A scan uses its own throwaway
+The Scans section runs preconfigured, read-only reviews of a project. Each problem a scan finds
+becomes a draft task on the project's Board. Run one with "Run now", or let it run on a schedule. A scan uses its own throwaway
 checkout of the default branch. It never makes a branch, so nothing goes to review or the merge
 queue.
 
@@ -39,7 +39,7 @@ Scans come from three places, marked on each card:
   lock files and metadata already on the computer and installs nothing.
   The dead code scan (suggested monthly) reports unused functions, types, flags, routes, config
   keys and files, and TODO/FIXME comments older than 90 days (dated with git blame) worth
-  turning into issues. It checks "unused" against the whole repository, including references by
+  turning into tasks. It checks "unused" against the whole repository, including references by
   string, reflection and templates, and leaves out the exported API of libraries.
   The flaky-test scan (suggested weekly, Sundays at 03:00) finds the project's test command (CLAUDE.md, the Makefile,
   package.json, the CI configuration, go.mod, …), runs the suite 3 to 5 times, shuffled where the
@@ -95,9 +95,8 @@ Look for vulnerabilities in {{path}} …
   also none) and `{a,b}` is either. A glob without `/` matches a file name in any directory, as in
   `.gitignore`: `*.vue` is `**/*.vue`. The setting is for template files (built-in and
   `.dash/scans/`); scans written in Dash don't have it, so duplicating a scan that has it drops it.
-- **Kinds.** A scan's kind sets the type a finding gets when it names none, and every issue a
-  scan files records its kind (`scan_kind`). Issues has a scan-kind filter once a scan has filed
-  some, and the API and `list_issues` filter by kind too (see API below):
+- **Kinds.** A scan's kind sets the type a finding gets when it names none. Each finding on a
+  draft also records the kind of scan that filed it (`scan_kind` in the task's `finding`):
 
   | Kind               | Aliases                                                   | Default type |
   | ------------------ | --------------------------------------------------------- | ------------ |
@@ -119,7 +118,7 @@ Look for vulnerabilities in {{path}} …
 - **Dash scans.** The editor has the same settings as a file's frontmatter (title, kind,
   scope, path, model, effort, schedule, tools) and the prompt, and checks them with the same
   rules. Only Dash scans can be edited or deleted in Dash; a scan's name can't change (duplicate
-  it instead). Deleting one keeps its earlier runs and the issues it filed. Creating one with
+  it instead). Deleting one keeps its earlier runs and the drafts it filed. Creating one with
   the name of a built-in or repository scan replaces that scan; its schedule and approvals don't
   carry over. Deleting it brings the replaced scan back, with its schedule off.
 - **Scopes.** `since_last_scan` looks only at what changed since this scan's last run, which
@@ -128,9 +127,9 @@ Look for vulnerabilities in {{path}} …
   the prompt are filled in.
 - **Findings.** The scan answers with JSON findings (title, type, severity, file and line,
   details, fix and a fingerprint). Invalid findings are dropped and noted in the run's log. Each
-  valid one is added to Issues with source `scan:<name>`, matched by fingerprint: a known issue
-  is updated, a dismissed one stays dismissed, and a resolved one that comes back is reopened.
-  The scan is shown the issues it reported before so it reuses their fingerprints.
+  valid one becomes a draft task, as described in [Findings on the Board](#findings-on-the-board).
+  The scan is shown the findings it reported before, open and dismissed, so it reuses their
+  fingerprints.
 - **Approvals.** Anyone who can merge to the repository can change its templates, so a
   repository template's `tools:` and `schedule:` only apply once you approve them in the Scans
   section. Until then the scan runs with read-only tools and its schedule is off. The approval
@@ -166,16 +165,46 @@ Look for vulnerabilities in {{path}} …
   out in its clone and runs Claude there, and the hub records the findings. While none of the
   project's runners is online the run waits, showing "no runner online", and goes ahead as soon as
   one connects; a project no runner has the labels of can't be scanned. `-scan-timeout` is the hub's.
-- **Tasks from issues.** Check issues in **Issues**, then open **Create tasks ▾** and pick how:
-  **One per issue**, **One for all**, or **Grouped by Claude**, where Claude puts similar issues
-  together (same pattern, rule, file or feature) and names each group's task for what it fixes.
-  An issue unlike the others gets a task of its own. Grouping runs on one of your runners, as
-  splitting a task does, and takes up to 100 issues at a time. Then click **Save draft** to keep
-  the tasks as drafts, or **Queue** to queue them.
-- **Reports.** Each run shows what it found, e.g. "2 new, 3 already known, 1 reopened". The
-  numbers link to those issues. A red badge counts the run's new or reopened critical and high
-  issues that are still open, e.g. "1 critical · 2 high". A scheduled run that finds new critical or high issues sends a
-  notification.
+- **Reports.** Each run shows what it found, e.g. "2 added, 3 already there, 1 dismissed". A
+  red badge counts the critical and high drafts the run added, e.g. "1 critical · 2 high". A
+  scheduled run that adds critical or high drafts sends a notification.
+
+## Findings on the Board
+
+Every finding becomes a draft task on the Board. So does every problem Claude reports during a
+task (`report_issue`, see [MCP](mcp.md)) and every issue sent to the API. The draft's prompt is
+written from the finding (title, details, file and line, suggested fix, severity, type, rule), so
+you can queue it as it is.
+
+A draft from a finding gets tags:
+
+- its type: `bug`, `security` or `issue`;
+- its severity: `critical`, `high`, `medium`, `low` or `info`;
+- its source: `scan:<scan name>`, or `reported` for Claude's reports and issues sent by hand.
+
+Before Dash adds a draft, it looks for the same problem by fingerprint. The fingerprint is the
+type, the file and the rule (or the title, when there is no rule). The line is left out, so a
+problem keeps its fingerprint when code above it moves.
+
+- **A task has it already** (a draft, or a task that is queued, running, in Review, merging or
+  failed): no new draft. The task counts the report and its card shows "×N". The same source
+  twice in a row counts once, so a daily scan doesn't inflate it. The line and details are
+  updated. A draft's prompt is written again, unless someone edited it.
+- **It was dismissed:** nothing is added. Deleting a draft (or any task with findings that isn't
+  merged) dismisses its findings. They are listed under **Scans → Dismissed**. Click **Undo** to
+  let the next report add a draft again.
+- **A merged task had it:** the problem came back. Dash adds a new draft that names the earlier
+  task.
+
+Two reports of one problem at the same moment, or twice in one scan, add one draft.
+
+To keep the Board usable when scans find a lot:
+
+- Drafts from scans with severity `critical` or `high` show on the Board. Lower ones are hidden
+  behind the **From scans (N)** chip above the board. Click it to show them.
+- Click a tag on a card to show only tasks with that tag. Remove the filter with its chip.
+- Tick drafts and click **Merge** to combine them into one draft. The merged draft keeps all
+  their fingerprints, so later reports of any of them land on it, and adds up their counts.
 
 ## API
 
@@ -186,15 +215,27 @@ Look for vulnerabilities in {{path}} …
   "path", "model", "effort", "schedule", "tools": [], "prompt"}`. 409 if another Dash scan has
   the name; a built-in or repository scan of the name is replaced.
 - `PUT /api/projects/{pid}/scans/{name}` replaces a Dash scan's prompt and settings.
-- `DELETE /api/projects/{pid}/scans/{name}` deletes a Dash scan; its runs and issues stay.
-- `GET /api/projects/{pid}/issues?kind=<kind>&type=<type>` lists the issues a kind of scan filed
-  (aliases work; an unknown kind is a 400), optionally of one type (`bug`, `vuln`, `issue`). The
-  MCP `list_issues` tool takes the same `kind`.
-- `POST /api/projects/{pid}/issues/tasks` creates tasks for issues: `{"ids": [], "combine",
-  "group", "enqueue"}`. `combine` makes one task for them all; `group` one for each group of
-  similar ones (503 if no runner of yours is online).
+- `DELETE /api/projects/{pid}/scans/{name}` deletes a Dash scan; its runs and drafts stay.
+- `GET /api/projects/{pid}/todos?tag=scan:security` lists the tasks with a tag.
+- `POST /api/projects/{pid}/issues` reports an issue: `{"title", "type", "severity", "file",
+  "line", "details", "fix", "rule", "source"}`. It adds a draft or bumps the task that has it,
+  and answers `{"todo", "result", "reason"}`. `result` is `new`, `updated`, `known`, `dismissed`
+  or `reopened` (it came back after a merge).
+- `GET /api/projects/{pid}/dismissed` lists the dismissed findings, and
+  `DELETE /api/projects/{pid}/dismissed/{fingerprint}` undoes one.
+- `POST /api/projects/{pid}/todos/merge` merges drafts: `{"ids": []}`. The first one is kept.
 - `PATCH /api/projects/{pid}/scans/{name}` changes any scan's schedule and approvals, and
   `POST …/scans/{name}/run` runs it. `{"early": {"on": true, "when": "any" | "night",
   "lead_minutes": 0, "max_percent": 0}}` sets **Run early if there's spare usage**; fields left
   out keep their value, and `0` means the default. The scan's `schedule.early` shows it, and each
   run's `trigger` is `manual`, `schedule`, `early` or `resume`.
+
+A run's `counts` are `new`, `updated` and `known` (already there), `dismissed` and `reopened`.
+Its `new_tasks` and `reopened_tasks` are the ids of the drafts it added.
+
+## Upgrading from Issues
+
+Dash used to keep findings on a separate **Issues** page. On upgrade, open issues become drafts
+with the same id, so old links still open them. Dismissed issues become dismissed findings.
+Issues that had a task attach their fingerprint to that task. Old `/p/<project>/issues` links
+open the Board.

@@ -8,7 +8,7 @@ import (
 )
 
 // OrgStore is the store as one organization sees it: only its projects, and
-// the todos, issues, scans and chats that belong to them. Records of other
+// the todos, dismissed issues, scans and chats that belong to them. Records of other
 // orgs don't exist here: reading or changing one is ErrNotFound, and lists
 // leave them out. The HTTP API and the MCP tools reach records only through
 // an OrgStore (Store.ForOrg), so a handler can't read across orgs by
@@ -44,13 +44,6 @@ func (o *OrgStore) ownsProject(projectID string) bool {
 func (o *OrgStore) ownsTodo(todoID string) bool {
 	org, ok := o.s.TodoOrg(todoID)
 	return ok && o.org != 0 && org == o.org
-}
-
-func (o *OrgStore) ownsIssue(id string) bool {
-	o.s.mu.RLock()
-	is, ok := o.s.data.Issues[id]
-	o.s.mu.RUnlock()
-	return ok && o.ownsProject(is.ProjectID)
 }
 
 func (o *OrgStore) ownsScanRun(id string) bool {
@@ -182,11 +175,13 @@ func (o *OrgStore) SetStatus(id string, to model.TodoStatus, errMsg string) (mod
 	return o.UpdateTodo(id, statusFn(to, errMsg))
 }
 
+// DeleteTodo is Store.DeleteTodo by the view's user: the issues of a task
+// made from them are dismissed by them.
 func (o *OrgStore) DeleteTodo(id string) (model.Todo, error) {
 	if !o.ownsTodo(id) {
 		return model.Todo{}, ErrNotFound
 	}
-	return o.s.DeleteTodo(id)
+	return o.s.deleteTodo(id, o.user)
 }
 
 // ---- chats ----
@@ -245,68 +240,53 @@ func (o *OrgStore) ClearProjectChat(projectID string, user int64) error {
 	return o.s.ClearProjectChat(projectID, user)
 }
 
-// ---- issues ----
+// ---- findings: reported issues, as draft tasks ----
 
-func (o *OrgStore) GetIssue(id string) (model.Issue, error) {
-	if !o.ownsIssue(id) {
-		return model.Issue{}, ErrNotFound
-	}
-	return o.s.GetIssue(id)
-}
-
-// ListIssues is a project's issues; "" means all of the org's.
-func (o *OrgStore) ListIssues(projectID string) []model.Issue {
-	if projectID != "" && !o.ownsProject(projectID) {
-		return []model.Issue{}
-	}
-	return o.s.listIssues(func(is *model.Issue) bool {
-		return (projectID == "" || is.ProjectID == projectID) && o.ownsProject(is.ProjectID)
-	})
-}
-
-// OpenIssues is the open issues of the org's projects that keep accepts
-// (nil keeps all), most severe first, then newest.
-func (o *OrgStore) OpenIssues(keep func(projectID string) bool) []model.Issue {
-	return o.s.listIssues(func(is *model.Issue) bool {
-		return is.Status == model.IssueOpen && (keep == nil || keep(is.ProjectID)) && o.ownsProject(is.ProjectID)
-	})
-}
-
-func (o *OrgStore) UpsertIssue(in model.Issue) (model.Issue, model.UpsertResult, error) {
+// ReportFinding is Store.ReportFinding, for one of the org's projects.
+func (o *OrgStore) ReportFinding(in model.Issue) (FindingOutcome, error) {
 	if !o.ownsProject(in.ProjectID) {
-		return in, "", ErrNotFound
+		return FindingOutcome{}, ErrNotFound
 	}
-	return o.s.UpsertIssue(in)
+	return o.s.ReportFinding(in)
 }
 
-func (o *OrgStore) UpdateIssue(id string, fn func(*model.Issue) error) (model.Issue, error) {
-	if !o.ownsIssue(id) {
-		return model.Issue{}, ErrNotFound
+// OpenFindings are the org's tasks made from reported issues that aren't
+// merged, in the projects keep accepts (nil keeps all), most severe first.
+func (o *OrgStore) OpenFindings(keep func(projectID string) bool) []model.Todo {
+	ts := o.s.listTodos(func(p string) bool { return (keep == nil || keep(p)) && o.ownsProject(p) })
+	out := []model.Todo{}
+	for _, t := range ts {
+		if t.Finding != nil && t.Status != model.StatusMerged {
+			out = append(out, t)
+		}
 	}
-	return o.s.UpdateIssue(id, fn)
+	slices.SortStableFunc(out, func(a, b model.Todo) int { return a.Finding.Severity().Rank() - b.Finding.Severity().Rank() })
+	return out
 }
 
-func (o *OrgStore) SetIssueStatus(id string, to model.IssueStatus, reason string) (model.Issue, error) {
-	if !o.ownsIssue(id) {
-		return model.Issue{}, ErrNotFound
+// ListDismissed is a project's dismissed issues; "" means all of the org's.
+func (o *OrgStore) ListDismissed(projectID string) []model.DismissedFinding {
+	if projectID != "" && !o.ownsProject(projectID) {
+		return []model.DismissedFinding{}
 	}
-	return o.s.SetIssueStatus(id, to, reason)
+	return o.s.listDismissed(func(p string) bool { return (projectID == "" || p == projectID) && o.ownsProject(p) })
 }
 
-// LinkIssues is Store.LinkIssues; the issues must be in the todo's project
-// (the store checks), hence in the org.
-func (o *OrgStore) LinkIssues(ids []string, todoID string) ([]model.Issue, error) {
-	if !o.ownsTodo(todoID) {
-		return nil, ErrNotFound
+func (o *OrgStore) Undismiss(projectID, fingerprint string) (model.DismissedFinding, error) {
+	if !o.ownsProject(projectID) {
+		return model.DismissedFinding{}, ErrNotFound
 	}
-	return o.s.LinkIssues(ids, todoID)
+	return o.s.Undismiss(projectID, fingerprint)
 }
 
-func (o *OrgStore) DeleteIssue(id string) (model.Issue, error) {
-	if !o.ownsIssue(id) {
-		return model.Issue{}, ErrNotFound
+// MergeTodos is Store.MergeTodos for the org's drafts.
+func (o *OrgStore) MergeTodos(ids []string) (model.Todo, error) {
+	for _, id := range ids {
+		if !o.ownsTodo(id) {
+			return model.Todo{}, ErrNotFound
+		}
 	}
-	return o.s.DeleteIssue(id)
+	return o.s.MergeTodos(ids)
 }
 
 // ---- scans ----

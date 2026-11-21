@@ -20,11 +20,10 @@ Any other page can be shared by copying the address bar.
 | Address                         | Opens                                    |
 |---------------------------------|------------------------------------------|
 | `/p/<project>/board`            | a project's board                        |
-| `/p/<project>/<view>`           | `issues`, `scans`, `run` (the **Shell** at main), `try` (the **Shell** at a commit), `history`, `goals`, `files` |
+| `/p/<project>/<view>`           | `scans`, `run` (the **Shell** at main), `try` (the **Shell** at a commit), `history`, `goals`, `files` |
 | `/p/<project>/tasks/<id>`       | a task, over the board                   |
 | `/p/<project>/goals/<id>`       | a goal, on **Goals**                     |
 | `/p/<project>/history/<sha>`    | a commit, on **History**                 |
-| `/p/<project>/issues/<id>`      | an issue, expanded on **Issues**         |
 | `/planning`                     | **Planning**                             |
 | `/planning/cards/<id>`          | a Planning card                          |
 
@@ -61,6 +60,9 @@ browser's or the system's Back closes a full-screen task, card, goal or commit.
 
 Notifications sent before these addresses existed, `/?project=<id>&task=<id>` (and
 `goal=`, `issue=`), still open.
+
+Issues are draft tasks now. `/p/<project>/issues` opens the board, and
+`/p/<project>/issues/<id>` opens the draft that issue became, or the board if there is none.
 
 Planners use Planning only: a link into the app opens their Planning page, at the card if
 it names one.

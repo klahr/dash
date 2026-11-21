@@ -17,7 +17,7 @@ export const WEBHOOK_EVENTS = {
   "task.merged": "Merged",
   "permission.needed": "Claude needs approval",
   "goal.attention": "Goal needs you, done or out of budget",
-  "issue.new": "New issue (from a scan or Claude)",
+  "issue.new": "New issue: a draft from a scan or Claude",
   "build.failing": "Build failing",
   "deploy.failed": "Deploy failed",
   "runner.disk": "Runner disk nearly full",

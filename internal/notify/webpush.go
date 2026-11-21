@@ -379,7 +379,7 @@ func pushPayload(n Notification, actions []PushAction) PushPayload {
 		p.URL = itemURL(pid, n.Goal.ID, applink.Goal)
 		p.Tag = "dash-goal-" + n.Goal.ID
 	case n.Type == model.NotifyIssue && n.Issue != nil:
-		p.URL = itemURL(pid, n.Issue.ID, applink.Issue)
+		p.URL = itemURL(pid, n.Issue.ID, applink.Task) // the draft task made for it
 		p.Tag = "dash-issue-" + n.Issue.ID
 	case n.Type == model.NotifyDeploy && n.Deploy != nil:
 		p.URL = itemURL(pid, n.Deploy.ID, applink.Deploy)

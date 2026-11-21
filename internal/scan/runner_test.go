@@ -177,15 +177,22 @@ func TestRunRecordsFindings(t *testing.T) {
 	if r.Status != model.ScanSucceeded || r.Error != "" {
 		t.Fatalf("run: %+v", r)
 	}
-	if r.Counts != (model.UpsertCounts{New: 2}) || r.Findings != 2 || r.Invalid != 1 || len(r.NewIssues) != 2 || r.Urgent != 1 || r.High != 1 || r.Critical != 0 {
+	if r.Counts != (model.UpsertCounts{New: 2}) || r.Findings != 2 || r.Invalid != 1 || len(r.NewTasks) != 2 || r.Urgent != 1 || r.High != 1 || r.Critical != 0 {
 		t.Fatalf("counts: %+v", r)
 	}
 	if r.Commit == "" || r.FinishedAt == nil || r.CostUSD != 0.12 || r.Turns != 3 {
 		t.Fatalf("run record: %+v", r)
 	}
-	issues := fx.st.ListIssues(fx.p.ID)
-	if len(issues) != 2 || issues[0].Source != "scan:sec" || issues[0].Severity != model.SevHigh {
-		t.Fatalf("issues: %+v", issues)
+	drafts := findingDrafts(fx.st, fx.p.ID)
+	if len(drafts) != 2 || drafts[0].Status != model.StatusDraft {
+		t.Fatalf("drafts: %+v", drafts)
+	}
+	high := drafts[0]
+	if high.Finding.Severity() != model.SevHigh {
+		high = drafts[1]
+	}
+	if is := high.Finding.Issues[0]; is.Source != "scan:sec" || is.ScanKind != "security" || !slices.Contains(high.Tags, "scan:sec") || !slices.Contains(high.Tags, "high") {
+		t.Fatalf("draft: %+v, tags %q", is, high.Tags)
 	}
 	// The scan is read-only: no branch, and its worktree is gone.
 	if b := gitRun(t, fx.repo, "branch", "--list"); strings.Count(b, "\n") != 0 || !strings.Contains(b, "main") {
@@ -212,19 +219,22 @@ func TestRunCountsKnownDismissedReopened(t *testing.T) {
 	fx := newFixture(t, "sec", "---\nkind: security\n---\nScan.")
 	fx.exec.setAnswer(findingsAB)
 	fx.run(t, "sec")
-	var key, unchecked model.Issue
-	for _, is := range fx.st.ListIssues(fx.p.ID) {
-		if is.Rule == "hardcoded-key" {
-			key = is
+	var key, unchecked model.Todo
+	for _, d := range findingDrafts(fx.st, fx.p.ID) {
+		if d.Finding.Issues[0].Rule == "hardcoded-key" {
+			key = d
 		} else {
-			unchecked = is
+			unchecked = d
 		}
 	}
-	if _, err := fx.st.SetIssueStatus(key.ID, model.IssueDismissed, "test key"); err != nil {
+	// The key's draft is deleted (dismissed); the unchecked error's task is merged.
+	if _, err := fx.st.DeleteTodo(key.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fx.st.SetIssueStatus(unchecked.ID, model.IssueResolved, ""); err != nil {
-		t.Fatal(err)
+	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress, model.StatusReview, model.StatusMerging, model.StatusMerged} {
+		if _, err := fx.st.SetStatus(unchecked.ID, st, ""); err != nil {
+			t.Fatal(err)
+		}
 	}
 	// Same problems, reworded, on other lines, plus a new one.
 	fx.exec.setAnswer(`{"findings": [
@@ -233,11 +243,14 @@ func TestRunCountsKnownDismissedReopened(t *testing.T) {
 		{"title":"Race on map","type":"bug","severity":"medium","file":"main.go","fingerprint":"race:m"}
 	]}`)
 	r := fx.run(t, "sec")
-	if r.Counts != (model.UpsertCounts{New: 1, Dismissed: 1, Reopened: 1}) || len(r.ReopenedIssues) != 1 || r.ReopenedIssues[0] != unchecked.ID || r.Urgent != 0 {
+	if r.Counts != (model.UpsertCounts{New: 1, Dismissed: 1, Reopened: 1}) || len(r.ReopenedTasks) != 1 || r.Urgent != 0 {
 		t.Fatalf("counts: %+v", r)
 	}
-	if got, _ := fx.st.GetIssue(key.ID); got.Status != model.IssueDismissed || got.Severity != model.SevHigh {
-		t.Fatalf("dismissed issue changed: %+v", got)
+	if back, _ := fx.st.GetTodo(r.ReopenedTasks[0]); back.ID == unchecked.ID || back.Finding.Earlier != unchecked.ID {
+		t.Fatalf("came back: %+v", back)
+	}
+	if ds := fx.st.ListDismissed(fx.p.ID); len(ds) != 1 || ds[0].Severity != model.SevHigh || ds[0].Rule != "hardcoded-key" {
+		t.Fatalf("dismissed issue changed: %+v", ds)
 	}
 	// The agent was told what it reported before, dismissed ones included.
 	if p := fx.exec.lastPrompt(); !strings.Contains(p, "`hardcoded-key` · dismissed") {
@@ -245,11 +258,11 @@ func TestRunCountsKnownDismissedReopened(t *testing.T) {
 	}
 	// Reported again unchanged: already known.
 	r = fx.run(t, "sec")
-	if r.Counts != (model.UpsertCounts{Known: 2, Dismissed: 1}) || len(r.NewIssues) != 0 {
+	if r.Counts != (model.UpsertCounts{Known: 2, Dismissed: 1}) || len(r.NewTasks) != 0 {
 		t.Fatalf("third run: %+v", r.Counts)
 	}
-	if n := len(fx.st.ListIssues(fx.p.ID)); n != 3 {
-		t.Fatalf("%d issues, want 3", n)
+	if n := len(findingDrafts(fx.st, fx.p.ID)); n != 3 { // the merged task, and two drafts
+		t.Fatalf("%d tasks with issues, want 3", n)
 	}
 }
 
@@ -394,16 +407,16 @@ func TestRecordCounts(t *testing.T) {
 		{Title: "B", Type: model.IssueBug, Severity: model.SevLow, File: "b.go", Rule: "b"},
 	}
 	out, err := Record(fx.st, run, in)
-	if err != nil || out.Counts != (model.UpsertCounts{New: 2}) || out.Urgent != 1 || out.Critical != 1 || out.High != 0 || len(out.NewIssues) != 2 {
+	if err != nil || out.Counts != (model.UpsertCounts{New: 2}) || out.Urgent != 1 || out.Critical != 1 || out.High != 0 || len(out.NewTasks) != 2 {
 		t.Fatalf("first: %+v %v", out, err)
 	}
 	in[1].Severity = model.SevHigh
 	out, err = Record(fx.st, run, in)
-	if err != nil || out.Counts != (model.UpsertCounts{Known: 1, Updated: 1}) || out.Urgent != 0 || out.Critical != 0 || out.High != 0 || out.NewIssues != nil {
+	if err != nil || out.Counts != (model.UpsertCounts{Known: 1, Updated: 1}) || out.Urgent != 0 || out.Critical != 0 || out.High != 0 || out.NewTasks != nil {
 		t.Fatalf("second: %+v %v", out, err)
 	}
-	for _, is := range fx.st.ListIssues(fx.p.ID) {
-		if is.Source != "scan:x" {
+	for _, d := range findingDrafts(fx.st, fx.p.ID) {
+		if is := d.Finding.Issues[0]; is.Source != "scan:x" {
 			t.Fatalf("source %q", is.Source)
 		}
 	}
@@ -653,4 +666,15 @@ func TestJobCheck(t *testing.T) {
 			t.Errorf("%s: accepted %+v", name, j)
 		}
 	}
+}
+
+// findingDrafts are the project's tasks made from reported issues.
+func findingDrafts(st *store.Store, pid string) []model.Todo {
+	var out []model.Todo
+	for _, t := range st.ListTodos(pid) {
+		if t.Finding != nil {
+			out = append(out, t)
+		}
+	}
+	return out
 }

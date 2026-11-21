@@ -51,12 +51,6 @@ type deployLister interface {
 	ListDeploys(projectID, env string) []model.Deploy
 }
 
-// issueLister is a Store that has issues: Start remembers them, so only
-// issues made from then on are new.
-type issueLister interface {
-	ListIssues(projectID string) []model.Issue
-}
-
 // activityRecorder is a Store that keeps what the summaries tell about.
 type activityRecorder interface {
 	RecordActivity(a model.Activity) error
@@ -112,7 +106,6 @@ type Notifier struct {
 	status map[string]model.TodoStatus // todo id → last status
 	goals  map[string]model.GoalStatus // goal id → last status
 	ci     map[string]string           // project id → last build state
-	issues map[string]bool             // issue ids known (one per fingerprint and project)
 	stuck  map[[2]string]bool          // {project, runner} → its checkout is left behind
 	told   map[[2]string]time.Time     // {project, runner} → when that last notified
 	// diskLow: runner id → its disk is low; diskTold: when that last notified.
@@ -130,7 +123,6 @@ func (n *Notifier) init() {
 		n.status = map[string]model.TodoStatus{}
 		n.goals = map[string]model.GoalStatus{}
 		n.ci = map[string]string{}
-		n.issues = map[string]bool{}
 		n.stuck, n.told = map[[2]string]bool{}, map[[2]string]time.Time{}
 		n.diskLow, n.diskTold = map[string]bool{}, map[string]time.Time{}
 		n.deploys = map[string]model.DeployStatus{}
@@ -172,7 +164,7 @@ func (n *Notifier) now() time.Time {
 func (n *Notifier) Observe(ev model.Event) {
 	switch ev.Type {
 	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts, model.EvRunnerDisk, model.EvGoalUpdated,
-		model.EvIssueUpdated, model.EvDeployUpdated:
+		model.EvDeployUpdated:
 	default:
 		return
 	}
@@ -202,11 +194,6 @@ func (n *Notifier) Start(ctx context.Context) {
 			if !d.Status.Done() {
 				n.deploys[d.ID] = d.Status
 			}
-		}
-	}
-	if is, ok := n.Store.(issueLister); ok {
-		for _, i := range is.ListIssues("") {
-			n.issues[i.ID] = true
 		}
 	}
 	go func() {
@@ -242,9 +229,10 @@ func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 		n.goal(ctx, ev)
 		return
 	}
-	if ev.Type == model.EvIssueUpdated {
-		n.issue(ctx, ev)
-		return
+	if t, ok := ev.Data.(model.Todo); ok && ev.Type == model.EvTodoUpdated {
+		if _, known := n.status[t.ID]; !known && t.Finding != nil && t.Status == model.StatusDraft {
+			n.issue(ctx, t) // classify, below, remembers the task
+		}
 	}
 	if ev.Type == model.EvDeployUpdated {
 		n.deploy(ctx, ev)
@@ -371,33 +359,32 @@ func (n *Notifier) goal(ctx context.Context, ev model.Event) {
 	n.toWebhooks(ctx, note, []string{g.ProjectID})
 }
 
-// issue notifies of an issue a scan or Claude (report_issue) reported for
-// the first time: one the store hadn't got with that fingerprint, so a
-// known issue seen again (updated, reopened) doesn't notify, nor does one
+// issue notifies of a draft a scan or Claude (report_issue) added for an
+// issue it reported: a task it hadn't seen, so a report that bumps a task
+// that has the issue already doesn't notify, nor does a draft for an issue
 // added by hand.
-func (n *Notifier) issue(ctx context.Context, ev model.Event) {
-	is, ok := ev.Data.(model.Issue)
-	if !ok || is.ID == "" {
+func (n *Notifier) issue(ctx context.Context, t model.Todo) {
+	var is *model.Issue
+	for i := range t.Finding.Issues {
+		if src := t.Finding.Issues[i].Source; src != "" && src != "manual" {
+			is = &t.Finding.Issues[i]
+			break
+		}
+	}
+	if is == nil {
 		return
 	}
-	if n.issues[is.ID] {
-		return
-	}
-	n.issues[is.ID] = true
-	if is.Source == "" || is.Source == "manual" {
-		return
-	}
-	note, ok := n.build(model.NotifyIssue, is.ProjectID, "")
+	note, ok := n.build(model.NotifyIssue, t.ProjectID, "")
 	if !ok {
 		return
 	}
-	note.Issue = &IssueRef{ID: is.ID, Title: is.Title, Severity: is.Severity, URL: n.issueURL(is.ProjectID, is.ID)}
+	note.Issue = &IssueRef{ID: t.ID, Title: TaskTitle(t), Severity: t.Finding.Severity(), URL: n.taskURL(t.ProjectID, t.ID)}
 	if loc := is.Location(); loc != "" {
 		note.Message = loc
 	}
 	n.record(note, 0)
 	n.push(ctx, note)
-	n.toWebhooks(ctx, note, []string{is.ProjectID})
+	n.toWebhooks(ctx, note, []string{t.ProjectID})
 }
 
 // deploy notifies of a deploy that failed: one seen on its way (queued or
@@ -653,15 +640,6 @@ func (n *Notifier) goalURL(projectID, goalID string) string {
 		return ""
 	}
 	return o + applink.Goal(projectID, goalID)
-}
-
-// issueURL opens the issue on the project's Issues page.
-func (n *Notifier) issueURL(projectID, issueID string) string {
-	o := n.origin(projectID)
-	if o == "" {
-		return ""
-	}
-	return o + applink.Issue(projectID, issueID)
 }
 
 // deployURL opens the deploy on the project's Deploys page.

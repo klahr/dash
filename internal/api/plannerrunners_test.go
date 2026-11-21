@@ -220,7 +220,7 @@ func TestPlannerChatHasPlanningToolsOnly(t *testing.T) {
 		t.Errorf("planner's project scope: %d %s", w.Code, w.Body)
 	}
 	member := tools(mcptools.Scope{Org: org, User: testOwner(t, f.hub).User})
-	for _, want := range []string{"create_todo", "list_projects", "list_issues", "link_card", "create_goal"} {
+	for _, want := range []string{"create_todo", "list_projects", "report_issue", "link_card", "create_goal"} {
 		if !slices.Contains(member, want) {
 			t.Errorf("a member's chat lost %s: %v", want, member)
 		}

@@ -138,7 +138,7 @@ func migrate(db *sql.DB, backup func(from, to int) error) error {
 	return nil
 }
 
-var dataTables = []string{"projects", "todos", "issues", "scan_runs", "scan_settings", "scan_templates", "chat_messages", "goals", "deploys"}
+var dataTables = []string{"projects", "todos", "dismissed_findings", "scan_runs", "scan_settings", "scan_templates", "chat_messages", "goals", "deploys"}
 
 func dbEmpty(db *sql.DB) (bool, error) {
 	for _, t := range dataTables {
@@ -184,12 +184,18 @@ func importLegacy(db *sql.DB, legacy string) error {
 			if t.Priority != nil && *t.Priority == 0 {
 				t.Priority = nil // 0 meant "unset" before priorities were optional (see 0013)
 			}
+		}
+		if data.Todos == nil {
+			data.Todos = map[string]*model.Todo{}
+		}
+		_, dismissed := issuesToTasks(data.Issues, data.Todos) // changes data.Todos, all written below
+		for _, t := range data.Todos {
 			if err := putTodo(tx, t); err != nil {
 				return err
 			}
 		}
-		for _, is := range data.Issues {
-			if err := putIssue(tx, is); err != nil {
+		for _, d := range dismissed {
+			if err := putDismissed(tx, d); err != nil {
 				return err
 			}
 		}
@@ -243,7 +249,7 @@ func load(db *sql.DB) (snapshot, error) {
 		Todos:         map[string]*model.Todo{},
 		TodoChats:     map[string][]model.ChatMessage{},
 		ProjectChats:  map[string][]model.ChatMessage{},
-		Issues:        map[string]*model.Issue{},
+		Dismissed:     map[string]*model.DismissedFinding{},
 		ScanRuns:      map[string]*model.ScanRun{},
 		ScanSettings:  map[string]*model.ScanSetting{},
 		ScanTemplates: map[string]*model.ScanTemplate{},
@@ -262,7 +268,9 @@ func load(db *sql.DB) (snapshot, error) {
 	if err := loadRows(db, "SELECT data FROM todos", func(t *model.Todo, _ int64) { data.Todos[t.ID] = t }); err != nil {
 		return data, err
 	}
-	if err := loadRows(db, "SELECT data FROM issues", func(is *model.Issue, _ int64) { data.Issues[is.ID] = is }); err != nil {
+	if err := loadRows(db, "SELECT data FROM dismissed_findings", func(d *model.DismissedFinding, _ int64) {
+		data.Dismissed[issueKey(d.ProjectID, d.Fingerprint)] = d
+	}); err != nil {
 		return data, err
 	}
 	if err := loadRows(db, "SELECT data FROM goals", func(g *model.Goal, _ int64) { data.Goals[g.ID] = g }); err != nil {
@@ -400,12 +408,6 @@ func putGoal(tx *sql.Tx, g *model.Goal) error {
 	return put(tx, "INSERT INTO goals (id, project_id, org_id, data) VALUES (?, ?, "+projectOrg+", ?)"+
 		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, org_id = excluded.org_id, data = excluded.data",
 		g, g.ID, g.ProjectID, g.ProjectID)
-}
-
-func putIssue(tx *sql.Tx, is *model.Issue) error {
-	return put(tx, "INSERT INTO issues (id, project_id, org_id, data) VALUES (?, ?, "+projectOrg+", ?)"+
-		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, org_id = excluded.org_id, data = excluded.data",
-		is, is.ID, is.ProjectID, is.ProjectID)
 }
 
 func putScanRun(tx *sql.Tx, r *model.ScanRun) error {

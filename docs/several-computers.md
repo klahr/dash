@@ -741,7 +741,7 @@ warning and ignores it.)
 ### Moving projects off the hub
 
 A hub from before this kept projects of its own, in its own `-projects` directory. They are kept,
-with their tasks, issues and history on the board, and the hub deletes nothing on disk; at
+with their tasks and history on the board, and the hub deletes nothing on disk; at
 startup it logs a warning for each project that runs on no runner labels (`project needs a runner`), and
 the dashboard marks them **needs a runner**. Their work waits until you do one of these, per
 project:
@@ -769,7 +769,7 @@ command). Until one is online, the dashboard says so where Claude would be used.
 **no `claude` install, no `-claude` flag, no login and no API key**; it never starts `claude` and
 never reads `ANTHROPIC_API_KEY`. Runners
 keep no board of their own for the hub's work: what Claude changes on the board through Dash's
-tools (issues it reports, tasks it creates) goes straight to the hub's.
+tools (problems it reports, tasks it creates) goes straight to the hub's.
 
 Where each kind of Claude work runs:
 
@@ -778,7 +778,7 @@ Where each kind of Claude work runs:
   A task of a project no runner has the labels of waits, saying which labels it runs on.
 - **Scans**: on one of the project's runners online of the member the run is for (or a shared
   runner), in a throwaway checkout of its clone at
-  origin's default branch. The hub keeps the runs, their logs and the issues they file; the run's
+  origin's default branch. The hub keeps the runs, their logs and the drafts they file; the run's
   log says which runner it ran on. With the project's runners all offline a run waits, showing
   "no runner online: laptop is offline", and starts when one comes back; a project no runner has the
   labels of can't be scanned. Repository scans (`.dash/scans/`) are used only by a runner's own
@@ -983,7 +983,7 @@ curl -b cookies.txt -X POST https://dash.example.com/api/runners/r1b2c3/repos \
 ## What a runner lets the hub do
 
 A runner only does the dashboard's normal work on its own projects: tasks, reviews, merges,
-issues, scans, chats about a project or task, CI, previews and permission prompts. It refuses:
+scans, chats about a project or task, CI, previews and permission prompts. It refuses:
 
 - terminals, and any command other than the project's own **Run**, **Test** and **Deploy**, for
   anyone but its owner (it always takes the hub's project commands, and opens terminals and runs

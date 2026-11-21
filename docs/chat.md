@@ -11,8 +11,8 @@ runs on one of your own runners, with its Claude login (see
 
 A [planner](users.md#planners) has the general chat only: **Chat** in their sidebar. It runs on
 their own runner, with their own Claude login. Its Dash tools are Planning's: list, read,
-create, update, comment on and start cards, nothing about projects, tasks, goals, runners or
-issues. Without a runner of theirs online, **Chat** says **Install a runner to use Claude here**
+create, update, comment on and start cards, nothing about projects, tasks, goals or
+runners. Without a runner of theirs online, **Chat** says **Install a runner to use Claude here**
 and links to the setup steps. See [A planner's runner](several-computers.md#a-planners-runner).
 
 ## Task chat: Ask Claude or Rework

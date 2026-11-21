@@ -423,15 +423,14 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 		d.Today.FirstTry = &f
 	}
 
-	// Open issues: one pass over the store for the whole org.
-	open := data.OpenIssues(func(id string) bool { _, ok := byProject[id]; return ok })
-	for _, is := range open {
-		d.Issues.Severity[string(is.Severity)]++
+	// Open issues: tasks made from reported issues that aren't merged, one
+	// pass over the store for the whole org, most severe first.
+	open := data.OpenFindings(func(id string) bool { _, ok := byProject[id]; return ok })
+	for _, t := range open {
+		d.Issues.Severity[string(t.Finding.Severity())]++
 	}
 	d.Issues.Open = len(open)
 	if !privacy {
-		rank := map[model.Severity]int{model.SevCritical: 0, model.SevHigh: 1, model.SevMedium: 2, model.SevLow: 3, model.SevInfo: 4}
-		sort.SliceStable(open, func(i, j int) bool { return sevRank(rank, open[i].Severity) < sevRank(rank, open[j].Severity) })
 		for i := 0; i < len(open) && i < 3; i++ {
 			d.Issues.Top = append(d.Issues.Top, open[i].Title)
 		}
@@ -440,13 +439,6 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 	s.wallRunners(&d, todos, projects, runners, runnerName)
 	s.wallQueue(&d, c, runners)
 	return d, nil
-}
-
-func sevRank(rank map[model.Severity]int, s model.Severity) int {
-	if r, ok := rank[s]; ok {
-		return r
-	}
-	return len(rank)
 }
 
 func startOf(r wallRun) time.Time {

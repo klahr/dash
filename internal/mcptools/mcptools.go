@@ -319,6 +319,7 @@ type NewTodo struct {
 	BuildsOn      string   // id of a task whose Claude session its first run continues
 	Model         string   // claude --model: an alias or model id; empty: the default
 	RunOn         string   // on a hub: the id of the project's runner it must run on; empty: any
+	Tags          []string // short labels (see model.CleanTags)
 }
 
 // TodoUpdate changes a task; nil fields stay as they are. ClearPriority
@@ -331,6 +332,7 @@ type TodoUpdate struct {
 	BuildsOn      *string   // "" builds on no task
 	Model         *string   // "" goes back to the default model
 	RunOn         *string   // a runner id; "" runs on any of the project's runners
+	Tags          *[]string // replaces the tags; empty clears them
 }
 
 // NewRelease is a release to tag: a version ("1.4.0", or a tag in the
@@ -365,10 +367,9 @@ type Board interface {
 	UpdateTodo(id string, u TodoUpdate) (model.Todo, error)
 	// DeleteTodo deletes a task and its worktree.
 	DeleteTodo(id string) error
-	// Issues lists a project's issues, most severe first.
-	Issues(projectID string) ([]model.Issue, error)
-	// ReportIssue adds an issue, or updates the one with its fingerprint.
-	ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error)
+	// ReportIssue adds an issue as a draft task, or bumps the task that has
+	// its fingerprint.
+	ReportIssue(projectID string, is model.Issue) (Reported, error)
 	// CreateRelease tags a commit in the project's tag format and pushes the tag.
 	CreateRelease(projectID string, r NewRelease) (Release, error)
 }
@@ -401,6 +402,9 @@ type StartNower interface {
 	PaceWait(t model.Todo) string
 }
 
+// tagsDesc describes create_todo's and update_todo's tags.
+const tagsDesc = "Short labels for the task, e.g. [\"backend\", \"security\"]: at most 20, each at most 40 characters."
+
 // Options adapt the board tools to where they run.
 type Options struct {
 	// Project is used when a call names none (the project chat's project).
@@ -414,9 +418,9 @@ type Options struct {
 
 // Tool names the chat may call; ReadTools never change anything.
 var (
-	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "list_goals", "get_goal", "list_cards", "get_card", "list_deploys"}
+	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "read_try_terminal", "list_goals", "get_goal", "list_cards", "get_card", "list_deploys"}
 	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "create_release", "delete_todo",
-		"list_issues", "report_issue", "read_try_terminal",
+		"report_issue", "read_try_terminal",
 		"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal", "accept_goal_plan", "reject_goal_plan", "message_goal",
 		"list_cards", "get_card", "create_card", "update_card", "comment_card", "start_card", "link_card",
 		"list_deploys", "deploy", "rollback", "promote"}
@@ -426,7 +430,7 @@ var (
 		"deploy", "rollback", "promote"}
 	// IssueToolNames are the IssueTools; a running task gets them and
 	// active_work (TaskToolNames).
-	IssueToolNames = []string{"list_issues", "report_issue"}
+	IssueToolNames = []string{"report_issue"}
 )
 
 // Tools returns list_projects, list_todos, get_todo, create_todo,
@@ -502,61 +506,17 @@ func projectParam(o Options) (Param, func(b Board, a Args) (model.Project, error
 	}
 }
 
-// IssueTools returns list_issues and report_issue: the project's known bugs,
-// vulnerabilities and other problems, which the user triages into tasks.
+// IssueTools returns report_issue: a bug, vulnerability or other problem
+// becomes a draft task on the project's Board, tagged with its type,
+// severity and source, unless a task has it already (that one is bumped)
+// or the user dismissed it.
 func IssueTools(b Board, o Options) []Tool {
 	pProject, project := projectParam(o)
-	reportDesc := "Report a bug, vulnerability or other problem in the project to its Issues list, for the user to triage. " +
+	reportDesc := "Report a bug, vulnerability or other problem in the project. It becomes a draft task on the project's Board, " +
+		"tagged with its type, severity and source, for the user to queue. " +
 		"Use it for problems you notice that are outside what you were asked to do, instead of ignoring them or fixing them here. " +
-		"Reporting the same problem again updates it rather than duplicating it."
+		"Reporting a problem a task already has adds a report to that task (shown as ×N) instead of another draft."
 	return []Tool{
-		{"list_issues", "List the project's known issues (bugs, vulnerabilities, other problems), most severe first. Check it before reporting one.", []Param{pProject,
-			{"status", "string", "Only this status: open, task_created, resolved or dismissed (default: open and task_created).", false},
-			{"type", "string", "Only this type: bug, vuln or issue.", false},
-			{"kind", "string", "Only issues filed by this kind of scan: " + strings.Join(model.ScanKinds(), ", ") + " (aliases such as perf, a11y or dead-code work too).", false}},
-			func(a Args) (any, error) {
-				p, err := project(b, a)
-				if err != nil {
-					return nil, err
-				}
-				is, err := b.Issues(p.ID)
-				if err != nil {
-					return nil, err
-				}
-				type row struct {
-					ID       string            `json:"id"`
-					Title    string            `json:"title"`
-					Type     model.IssueType   `json:"type"`
-					Severity model.Severity    `json:"severity"`
-					Location string            `json:"location,omitempty"`
-					Status   model.IssueStatus `json:"status"`
-					Source   string            `json:"source"`
-					Kind     string            `json:"kind,omitempty"`
-					Tasks    []string          `json:"tasks,omitempty"`
-				}
-				kind := model.NormalizeScanKind(a.Str("kind"))
-				if kind != "" && !slices.Contains(model.ScanKinds(), kind) {
-					return nil, fmt.Errorf("unknown kind %q (%s)", a.Str("kind"), strings.Join(model.ScanKinds(), ", "))
-				}
-				out := []row{}
-				for _, i := range is {
-					if st := a.Str("status"); st != "" {
-						if string(i.Status) != st {
-							continue
-						}
-					} else if i.Status != model.IssueOpen && i.Status != model.IssueTaskCreated {
-						continue
-					}
-					if ty := a.Str("type"); ty != "" && string(i.Type) != ty {
-						continue
-					}
-					if kind != "" && i.ScanKind != kind {
-						continue
-					}
-					out = append(out, row{i.ID, i.Title, i.Type, i.Severity, i.Location(), i.Status, i.Source, i.ScanKind, i.TodoIDs})
-				}
-				return out, nil
-			}},
 		{"report_issue", reportDesc, []Param{pProject,
 			{"title", "string", "One line saying what is wrong.", true},
 			{"type", "string", "bug, vuln (security vulnerability) or issue (anything else). Default issue.", false},
@@ -574,7 +534,7 @@ func IssueTools(b Board, o Options) []Tool {
 				if o.Todo != "" {
 					source = "agent:" + o.Todo
 				}
-				is, res, err := b.ReportIssue(p.ID, model.Issue{
+				r, err := b.ReportIssue(p.ID, model.Issue{
 					Title: a.Str("title"), Type: model.IssueType(a.Str("type")), Severity: model.Severity(a.Str("severity")),
 					File: a.Str("file"), Line: a.Num("line", 0), Details: a.Str("details"), Fix: a.Str("fix"),
 					Source: source,
@@ -582,16 +542,38 @@ func IssueTools(b Board, o Options) []Tool {
 				if err != nil {
 					return nil, err
 				}
-				msg := map[model.UpsertResult]string{
-					model.UpsertNew:       "Reported as a new issue.",
-					model.UpsertUpdated:   "This issue was already known; updated it.",
-					model.UpsertKnown:     "This issue is already known; nothing changed.",
-					model.UpsertReopened:  "This issue had been resolved; reopened it.",
-					model.UpsertDismissed: "The user already dismissed this issue (" + is.DismissReason + "); leave it.",
-				}[res]
-				return fmt.Sprintf("%s id %s, status %s.", msg, is.ID, is.Status), nil
+				return r.Message(), nil
 			}},
 	}
+}
+
+// Reported is what report_issue did: the task that has the issue now (zero
+// when it was dismissed), the outcome, and why it was dismissed.
+type Reported struct {
+	Todo   model.Todo         `json:"todo"`
+	Result model.UpsertResult `json:"result"`
+	// Reason is why the user dismissed the issue, when they did and said why.
+	Reason string `json:"reason,omitempty"`
+}
+
+// Message says what reporting an issue did, for Claude.
+func (r Reported) Message() string {
+	t := r.Todo
+	switch r.Result {
+	case model.UpsertNew:
+		return fmt.Sprintf("Added draft task %s, %q, to the Board.", t.ID, t.Title)
+	case model.UpsertReopened:
+		return fmt.Sprintf("A merged task had fixed this before; it came back, so added draft task %s, %q, to the Board.", t.ID, t.Title)
+	case model.UpsertUpdated, model.UpsertKnown:
+		return fmt.Sprintf("Task %s, %q (%s), already has this problem; added your report to it (reported %d times).", t.ID, t.Title, t.Status, t.Finding.Reports())
+	case model.UpsertDismissed:
+		why := ""
+		if r.Reason != "" {
+			why = " (" + r.Reason + ")"
+		}
+		return "The user dismissed this problem before" + why + "; leave it."
+	}
+	return string(r.Result)
 }
 
 func boardTools(b Board, o Options) []Tool {
@@ -659,9 +641,12 @@ func boardTools(b Board, o Options) []Tool {
 				}
 				return out, nil
 			}},
-		{"list_todos", "List a project's tasks (id, title, status), optionally filtered by status. " +
+		{"list_todos", "List a project's tasks (id, title, status, tags), optionally filtered by status or tag. " +
+			"Drafts made from reported problems (scans, report_issue) have tags for their type (bug, security, issue), severity (critical, high, medium, low, info) " +
+			"and source (scan:<name> or reported), and reports, how many times the problem was reported. " +
 			"Tasks merged more than 14 days ago are left out unless status is merged or since is given.", []Param{pProject,
 			{"status", "string", "Only this status: draft, queued, in_progress, review, merging, merged or failed.", false},
+			{"tag", "string", "Only tasks with this tag (case does not matter), e.g. security, high or scan:security.", false},
 			{"since", "string", "Only tasks changed on or after this date (2006-01-02 or an RFC 3339 time).", false},
 			{"limit", "integer", "At most this many tasks.", false}},
 			func(a Args) (any, error) {
@@ -684,6 +669,7 @@ func boardTools(b Board, o Options) []Tool {
 					return nil, err
 				}
 				status := a.Str("status")
+				tag := strings.TrimSpace(a.Str("tag"))
 				// Old merged tasks are history: by default they stay out of
 				// the list, so it doesn't grow with every task ever made.
 				var oldMerged time.Time
@@ -703,6 +689,9 @@ func boardTools(b Board, o Options) []Tool {
 					Error     string           `json:"error,omitempty"`
 					StartNow  bool             `json:"start_now,omitempty"`
 					Waiting   string           `json:"waiting,omitempty"` // "pace": it waits for the weekly pace
+					Tags      []string         `json:"tags,omitempty"`
+					Severity  model.Severity   `json:"severity,omitempty"` // of a task made from reported problems: the worst
+					Reports   int              `json:"reports,omitempty"`  // how many times its problems were reported, when more than once
 				}
 				out := []row{}
 				// The pace holds back every task of a project alike, so it is
@@ -721,11 +710,18 @@ func boardTools(b Board, o Options) []Tool {
 					if !oldMerged.IsZero() && t.Status == model.StatusMerged && t.UpdatedAt.Before(oldMerged) {
 						continue
 					}
+					if tag != "" && !slices.ContainsFunc(t.Tags, func(x string) bool { return strings.EqualFold(x, tag) }) {
+						continue
+					}
 					var waiting []string
 					for _, d := range t.BlockersIn(byID) {
 						waiting = append(waiting, d.ID)
 					}
-					r := row{t.ID, t.Title, t.Status, t.Priority, t.DependsOn, t.BuildsOn, waiting, t.Error, t.StartNow, ""}
+					r := row{ID: t.ID, Title: t.Title, Status: t.Status, Priority: t.Priority, DependsOn: t.DependsOn, BuildsOn: t.BuildsOn,
+						WaitingOn: waiting, Error: t.Error, StartNow: t.StartNow, Tags: t.Tags, Severity: t.Finding.Severity()}
+					if n := t.Finding.Reports(); n > 1 {
+						r.Reports = n
+					}
 					if t.Status == model.StatusQueued && !t.Paused && !t.StartNow && len(waiting) == 0 {
 						if !paceKnown {
 							pace, paceKnown = paceWait(t), true
@@ -738,7 +734,8 @@ func boardTools(b Board, o Options) []Tool {
 				}
 				return out, nil
 			}},
-		{"get_todo", "Show a task: prompt, status, dependencies (depends_on), feedback, test results, diff size, pull request, and each Claude run's kind, tokens, turns and cost (run_stats). " +
+		{"get_todo", "Show a task: prompt, status, tags, dependencies (depends_on), feedback, test results, diff size, pull request, and each Claude run's kind, tokens, turns and cost (run_stats). " +
+			"A task made from reported problems has finding: each problem's fingerprint, severity, file and line, and how many times and by whom it was reported. " +
 			"A queued task that waits for the weekly pace has waiting \"pace\" and pace_reason; start_now is set once the user asked to start it now.", []Param{PTodo},
 			func(a Args) (any, error) {
 				if a.Str("todo") == "" {
@@ -769,6 +766,7 @@ func boardTools(b Board, o Options) []Tool {
 			{"builds_on", "string", buildsOnDesc, false},
 			{"model", "string", modelDesc, false},
 			{"run_on", "string", runOnDesc, false},
+			{"tags", "array", tagsDesc, false},
 			{"draft", "boolean", draftDesc, false}},
 			func(a Args) (any, error) {
 				p, err := project(a)
@@ -786,6 +784,7 @@ func boardTools(b Board, o Options) []Tool {
 					Title: a.Str("title"), Prompt: a.Str("prompt"),
 					Priority: prio, Enqueue: !a.FlagOr("draft", o.Draft),
 					DependsOn: a.List("depends_on"), BuildsOn: a.Str("builds_on"), Model: a.Str("model"), RunOn: a.Str("run_on"),
+					Tags: a.List("tags"),
 				})
 			}},
 		{"queue_todo", queueDesc, queueParams,
@@ -832,7 +831,7 @@ func boardTools(b Board, o Options) []Tool {
 		tools = append(tools, restartTools(b, restarter)...)
 	}
 	tools = append(tools, []Tool{
-		{"update_todo", "Change a task's title, prompt, priority, dependencies, the task it builds on, its model or the runner it runs on; only the given fields change. " +
+		{"update_todo", "Change a task's title, prompt, priority, dependencies, the task it builds on, its model, the runner it runs on or its tags; only the given fields change. " +
 			"The prompt can only be changed while the task is a draft, queued or failed.", []Param{PTodo,
 			{"title", "string", "New short title.", false},
 			{"prompt", "string", "New task for Claude.", false},
@@ -841,12 +840,13 @@ func boardTools(b Board, o Options) []Tool {
 			{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts; replaces the list, an empty array clears it.", false},
 			{"builds_on", "string", buildsOnDesc + " An empty string builds on none. It can only be changed while the task is a draft, queued or failed.", false},
 			{"model", "string", modelDesc + " An empty string goes back to the default; a new model applies from the task's next run.", false},
-			{"run_on", "string", runOnDesc + " An empty string runs it on any of them. It can only be changed while the task is a draft, queued or failed.", false}},
+			{"run_on", "string", runOnDesc + " An empty string runs it on any of them. It can only be changed while the task is a draft, queued or failed.", false},
+			{"tags", "array", tagsDesc + " Replaces the task's tags; an empty array clears them.", false}},
 			func(a Args) (any, error) {
 				if a.Str("todo") == "" {
 					return nil, errors.New("todo is required")
 				}
-				u := TodoUpdate{Title: a.OptStr("title"), Prompt: a.OptStr("prompt"), DependsOn: a.OptList("depends_on"), BuildsOn: a.OptStr("builds_on"), Model: a.OptStr("model"), RunOn: a.OptStr("run_on")}
+				u := TodoUpdate{Title: a.OptStr("title"), Prompt: a.OptStr("prompt"), DependsOn: a.OptList("depends_on"), BuildsOn: a.OptStr("builds_on"), Model: a.OptStr("model"), RunOn: a.OptStr("run_on"), Tags: a.OptList("tags")}
 				if _, ok := a["priority"]; ok {
 					prio, err := a.OptPriority("priority")
 					if err != nil {
@@ -860,8 +860,8 @@ func boardTools(b Board, o Options) []Tool {
 					}
 					u.ClearPriority = true
 				}
-				if u.Title == nil && u.Prompt == nil && u.Priority == nil && !u.ClearPriority && u.DependsOn == nil && u.BuildsOn == nil && u.Model == nil && u.RunOn == nil {
-					return nil, errors.New("nothing to change: pass title, prompt, priority, clear_priority, depends_on, builds_on, model or run_on")
+				if u.Title == nil && u.Prompt == nil && u.Priority == nil && !u.ClearPriority && u.DependsOn == nil && u.BuildsOn == nil && u.Model == nil && u.RunOn == nil && u.Tags == nil {
+					return nil, errors.New("nothing to change: pass title, prompt, priority, clear_priority, depends_on, builds_on, model, run_on or tags")
 				}
 				t, err := b.UpdateTodo(a.Str("todo"), u)
 				if err != nil {
@@ -880,7 +880,8 @@ func boardTools(b Board, o Options) []Tool {
 					BuildsOn  string           `json:"builds_on,omitempty"`
 					Model     string           `json:"model,omitempty"`
 					RunOn     string           `json:"run_on,omitempty"`
-				}{t.ID, t.Title, t.Status, t.Priority, deps, t.BuildsOn, t.Model, t.RunOn}, nil
+					Tags      []string         `json:"tags,omitempty"`
+				}{t.ID, t.Title, t.Status, t.Priority, deps, t.BuildsOn, t.Model, t.RunOn, t.Tags}, nil
 			}},
 		{"create_release", "Tag a release: an annotated tag in the project's tag format (e.g. vX.Y.Z), pushed to origin, " +
 			"which starts the repository's release workflow. Only when the user asks for a release. Give version or bump.", []Param{pProject,
@@ -1009,7 +1010,7 @@ func restartTools(b Board, r Restarter) []Tool {
 }
 
 // FleetReadTools are the FleetTools that only look.
-var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "list_issues", "get_diff", "get_log", "get_project", "list_goals", "get_goal", "list_cards", "get_card"}
+var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "get_diff", "get_log", "get_project", "list_goals", "get_goal", "list_cards", "get_card"}
 
 // ReadOnly returns tools with those not in read made to fail with err: a
 // read-only caller still sees every tool, and learns why one doesn't work.
@@ -1204,8 +1205,8 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, sc Scope) {
 		srv.Instructions = PlannerInstructions
 		srv.Tools = PlannerTools(pb)
 	case sc.Todo != "":
-		srv.Instructions = "The project's Issues list (known bugs, vulnerabilities and other problems the user triages into tasks), " +
-			"and what the project's other tasks are working on (active_work)."
+		srv.Instructions = "Report problems you notice outside your task as draft tasks on the project's Board (report_issue), " +
+			"and see what the project's other tasks are working on (active_work)."
 		srv.Tools = TaskTools(board, Options{Project: sc.Project, Todo: sc.Todo})
 	case sc.Goal != "":
 		gb, ok := board.(GoalBoard)

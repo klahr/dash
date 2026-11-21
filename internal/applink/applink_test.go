@@ -26,11 +26,10 @@ func TestIs(t *testing.T) {
 
 func TestPaths(t *testing.T) {
 	for got, want := range map[string]string{
-		Project("p1"):     "/p/p1",
-		Task("p1", "t1"):  "/p/p1/tasks/t1",
-		Goal("p1", "g1"):  "/p/p1/goals/g1",
-		Issue("p1", "i1"): "/p/p1/issues/i1",
-		Card("c1"):        "/planning/cards/c1",
+		Project("p1"):    "/p/p1",
+		Task("p1", "t1"): "/p/p1/tasks/t1",
+		Goal("p1", "g1"): "/p/p1/goals/g1",
+		Card("c1"):       "/planning/cards/c1",
 	} {
 		if got != want {
 			t.Errorf("got %q, want %q", got, want)

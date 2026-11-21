@@ -81,10 +81,6 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Chat</span><span class="badge chat-badge" id="chat-badge" hidden></span>
       </button>
-      <button data-view="issues" title="Issues (gi)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10a4 4 0 0 1 8 0v4a4 4 0 0 1-8 0zM12 10v8M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2M9.5 6.5 8 4M14.5 6.5 16 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Issues</span><span class="badge quiet" id="issue-badge" hidden></span>
-      </button>
       <button data-view="scans" title="Scans (gn)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Scans</span><span class="badge quiet" id="scan-badge" hidden></span>
@@ -225,7 +221,10 @@
         <div class="board-filters" id="board-filters" role="group" aria-label="Filters" hidden>
           <button class="mine-filter" type="button" id="mine-filter" aria-pressed="false" title="Show only the tasks you created" hidden></button>
           <div class="goal-filter" id="goal-filter" hidden></div>
+          <!-- Drafts from scans below high, behind From scans (N), and the tag filter (app/tags.js) -->
+          <div class="tag-filter" id="tag-filter" hidden></div>
         </div>
+        <div class="merge-bar" id="merge-bar" role="toolbar" aria-label="Selected drafts" hidden></div>
         <div class="sync-warn billing-warn" id="billing-banner" role="status" hidden></div>
         <div class="sync-warn disk-warn" id="disk-banner" role="alert" hidden></div>
         <div class="sync-warn" id="sync-warn" role="alert" hidden></div>
@@ -240,80 +239,7 @@
         </button>
       </section>
 
-      <!-- Issues: what is wrong with the project, triaged into tasks -->
-      <section class="view" id="view-issues" aria-label="Issues">
-        <div class="page issues">
-          <header class="cl-head">
-            <h2 class="cl-title page-title">Issues</h2>
-            <span class="cl-state" id="issue-state" aria-live="polite"></span>
-          </header>
-          <div class="cl-progress" id="issue-progress" hidden>
-            <div class="cl-bar" aria-hidden="true"><span id="issue-bar-fill"></span></div>
-            <span class="cl-count" id="issue-done"></span>
-          </div>
-          <div class="issue-tools" id="issue-tools" hidden>
-            <label class="cl-check issue-pick issue-all" title="Select all shown open issues (ones without a task)"><input type="checkbox" id="issue-all"><span class="sr-only">Select all</span></label>
-            <div class="issue-filters">
-              <select id="issue-f-status" aria-label="Status">
-                <option value="active">Open &amp; in a task</option>
-                <option value="open">Open</option>
-                <option value="task_created">In a task</option>
-                <option value="resolved">Resolved</option>
-                <option value="dismissed">Dismissed</option>
-                <option value="all">All</option>
-              </select>
-              <select id="issue-f-type" aria-label="Type">
-                <option value="">Any type</option>
-                <option value="bug">Bugs</option>
-                <option value="vuln">Vulnerabilities</option>
-                <option value="issue">Other issues</option>
-              </select>
-              <select id="issue-f-severity" aria-label="Severity">
-                <option value="">Any severity</option>
-                <option value="critical">Critical</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-                <option value="info">Info</option>
-              </select>
-              <select id="issue-f-source" aria-label="Source"><option value="">Any source</option></select>
-              <select id="issue-f-kind" aria-label="Scan kind" hidden><option value="">Any scan kind</option></select>
-              <button class="issue-run-filter" type="button" id="issue-f-run" hidden title="Show all issues again"></button>
-            </div>
-          </div>
-          <div class="issue-bulk" id="issue-bulk" role="toolbar" aria-label="Selected issues" hidden>
-            <span class="issue-count" id="issue-count"></span>
-            <!-- Create tasks ▾: how to turn the issues into tasks, then Save draft or Queue (app/issues.js) -->
-            <div class="issue-create" id="issue-create">
-              <button class="btn small primary" type="button" id="issue-create-btn" aria-haspopup="true" aria-expanded="false" aria-controls="issue-create-menu">Create tasks <span class="issue-caret" aria-hidden="true">▾</span></button>
-              <div class="issue-create-menu" id="issue-create-menu" role="group" aria-label="Create tasks" hidden>
-                <label class="issue-how"><input type="radio" name="issue-how" value="each" checked><span>One per issue</span></label>
-                <label class="issue-how"><input type="radio" name="issue-how" value="group"><span>Grouped by Claude</span></label>
-                <label class="issue-how"><input type="radio" name="issue-how" value="one"><span>One for all</span></label>
-                <div class="issue-create-actions">
-                  <button class="btn small" type="button" id="issue-draft" data-icon="draft">Save draft</button>
-                  <button class="btn small primary" type="button" id="issue-queue" data-icon="queue">Queue</button>
-                </div>
-              </div>
-            </div>
-            <button class="btn small danger" type="button" id="issue-dismiss" data-icon="x">Dismiss…</button>
-            <button class="link" type="button" id="issue-clear">Clear</button>
-          </div>
-          <div class="cl-body issue-list" id="issue-list"></div>
-          <div class="empty" id="issue-empty"><p class="empty-title" id="issue-empty-title">No project</p><p id="issue-empty-text">Select a project to see its issues.</p></div>
-          <form class="cl-add issue-add" id="issue-add" hidden>
-            <input id="issue-add-title" placeholder="Add an issue: what's wrong?" aria-label="New issue title" autocomplete="off" required>
-            <select id="issue-add-type" aria-label="Type">
-              <option value="bug">Bug</option>
-              <option value="vuln">Vulnerability</option>
-              <option value="issue" selected>Issue</option>
-            </select>
-            <button class="btn primary" type="submit" data-icon="plus">Add</button>
-          </form>
-        </div>
-      </section>
-
-      <!-- Scans: preconfigured read-only reviews that feed the Issues list -->
+      <!-- Scans: preconfigured read-only reviews that add what they find to the Board as draft tasks -->
       <section class="view" id="view-scans" aria-label="Scans">
         <div class="page scans">
           <header class="cl-head">
@@ -326,9 +252,11 @@
           <ul class="scan-problems" id="scan-problems" hidden></ul>
           <ul class="scan-list" id="scan-list"></ul>
           <div class="scan-create" id="scan-create" hidden>
-            <div><p class="scan-create-title">Need something else?</p><p>Describe what to look for; Dash runs it like the built-in scans and adds what it finds to Issues.</p></div>
+            <div><p class="scan-create-title">Need something else?</p><p>Describe what to look for; Dash runs it like the built-in scans and adds what it finds to the Board as drafts.</p></div>
             <button class="btn" type="button" id="scan-new" data-icon="plus">Create custom scan…</button>
           </div>
+          <!-- Dismissed: issues whose drafts were deleted, with Undo (app/scans.js) -->
+          <section class="scan-dismissed" id="scan-dismissed" aria-label="Dismissed issues" hidden></section>
           <div class="empty" id="scan-empty"><p class="empty-title">No project</p><p>Select a project to see its scans.</p></div>
         </div>
       </section>
@@ -536,6 +464,7 @@
           <input class="title-input" id="d-title-input" hidden autocomplete="off" aria-label="Task title" placeholder="Claude names it if empty">
           <div class="detail-meta" id="d-meta"></div>
           <div class="meta-edit" id="d-meta-edit" hidden></div>
+          <div class="detail-tags" id="d-tags"></div>
         </div>
         <button class="icon-btn" id="d-link" type="button" aria-label="Copy link" title="Copy a link that opens this task" data-icon="link"></button>
         <button class="icon-btn" id="d-more" type="button" aria-label="More actions" title="More actions" aria-haspopup="menu" aria-expanded="false">
@@ -543,6 +472,7 @@
         </button>
       </header>
       <div class="detail-body">
+        <div class="finding-note" id="d-finding" hidden></div>
         <details class="prompt" id="d-prompt-wrap">
           <summary>Prompt</summary>
           <div class="prompt-text" id="d-prompt"></div>
@@ -1036,7 +966,7 @@
       <details class="np-advanced scan-advanced" id="scan-advanced">
         <summary>Advanced</summary>
         <div class="scan-form-grid">
-          <label class="field"><span>Name <em>its issues get source scan:&lt;name&gt;; empty: made from the title</em></span><input name="name" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="api-error-handling"></label>
+          <label class="field"><span>Name <em>its drafts get the tag scan:&lt;name&gt;; empty: made from the title</em></span><input name="name" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="api-error-handling"></label>
           <label class="field"><span>Kind <em>the default issue type</em></span><select name="kind">
             <option value="custom">Custom</option><option value="security">Security</option><option value="code_review">Code review</option><option value="dependencies">Dependencies</option>
             <option value="tests">Tests</option><option value="docs">Docs</option><option value="performance">Performance</option><option value="dead_code">Dead code</option>
@@ -1906,7 +1836,6 @@
               <caption class="sr-only">Sections</caption>
               <tbody>
                 <tr><th scope="row"><kbd>gb</kbd></th><td>Board</td></tr>
-                <tr><th scope="row"><kbd>gi</kbd></th><td>Issues</td></tr>
                 <tr><th scope="row"><kbd>gn</kbd></th><td>Scans</td></tr>
                 <tr><th scope="row"><kbd>gs</kbd></th><td>Shell</td></tr>
                 <tr><th scope="row"><kbd>gh</kbd></th><td>History</td></tr>

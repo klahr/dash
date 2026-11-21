@@ -2275,12 +2275,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .nav > .nav-chat { order: 1; }
   .nav > button[data-view="planning"] { order: 2; }
   .nav > button[data-view="goals"] { order: 3; }
-  .nav > button[data-view="issues"] { order: 4; }
-  /* Open issues nobody has dealt with yet: a dot on the Issues icon (the count is in its title). */
-  .nav #issue-badge {
-    top: 10px; left: calc(50% + 8px); min-width: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%;
-    background: var(--review); font-size: 0; box-shadow: 0 0 0 2px var(--surface);
-  }
   /* Chat is a page like the others (the nav's Chat tab, shown active): the view under it
      (and the board's New-task button) is hidden and the chat fills the room between the
      top bar and the nav. It's fixed and fitted to the visible area (app/viewport.js sets --vv-*),
@@ -3044,86 +3038,7 @@ a.claude-incident-name:hover { text-decoration: underline; }
   .draw-canvas { box-shadow: none; }
 }
 
-/* ---------- issues ----------
-   Laid out with the shared page parts (.cl-head, .cl-progress, .cl-section,
-   .cl-list, .cl-check and .cl-add): a section per group, rows in a card. */
-.issues .cl-progress { margin-bottom: 12px; }
-/* Filters: pill-shaped selects; on a phone one row that scrolls sideways. */
-.issue-tools { display: flex; align-items: center; gap: 4px; margin: 0 0 4px; }
-.issue-filters { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.issue-filters select {
-  width: auto; flex: none; min-height: 36px; padding: 0 30px 0 12px; border-radius: var(--r-pill); font-size: var(--fs-s);
-  border: 1px solid var(--line); background: var(--surface) right 10px center / 12px no-repeat;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m7 10 5 5 5-5' fill='none' stroke='%238a9ab2' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  appearance: none; -webkit-appearance: none; cursor: pointer; transition: border-color .15s, background-color .15s;
-}
-.issue-filters select:hover { border-color: var(--faint); }
-/* A filter that narrows the list stands out. */
-.issue-filters select:has(option:checked:not([value=""], [value="active"])) {
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); background-color: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--accent);
-}
-.issue-run-filter {
-  flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: var(--r-pill); font-size: var(--fs-s);
-  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-.issue-run-filter .ico { width: 14px; height: 14px; }
-/* Selecting is not ticking off: a rounded square in the accent colour, not .cl-check's green circle. */
-.cl-check.issue-pick input { border-radius: var(--r-s); }
-.cl-check.issue-pick:hover input { border-color: var(--accent); }
-.cl-check.issue-pick input:checked { border-color: var(--accent); background-color: var(--accent); }
-.cl-check.issue-pick input:indeterminate { border-color: var(--accent); background: var(--accent) center / 12px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12h12' fill='none' stroke='%23101722' stroke-width='3.5' stroke-linecap='round'/%3E%3C/svg%3E"); }
-.cl-check.issue-pick input:disabled { opacity: .35; cursor: default; }
-.issue-bulk {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-  position: sticky; top: var(--top-h); z-index: 5;
-  padding: 8px 10px; margin: 8px 0 0; border-radius: var(--r-m);
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
-  box-shadow: 0 6px 16px -8px rgb(0 0 0 / .5);
-}
-.issue-count { font-weight: 600; margin-right: 4px; }
-/* Create tasks ▾: how (one per issue, grouped, one for all), then Save draft or Queue. */
-.issue-create { position: relative; }
-.issue-caret { margin-left: 2px; font-size: .8em; }
-.issue-create-menu {
-  position: absolute; top: calc(100% + 6px); left: 0; z-index: 6; min-width: 15rem;
-  display: grid; gap: 2px; padding: 6px; border-radius: var(--r-m);
-  background: var(--surface); border: 1px solid var(--line); box-shadow: 0 10px 24px -10px rgb(0 0 0 / .6);
-}
-.issue-create-menu[hidden] { display: none; }
-.issue-how { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: var(--r-s); cursor: pointer; }
-.issue-how:hover { background: var(--raised); }
-.issue-how:has(input:disabled) { color: var(--faint); cursor: default; }
-.issue-how:has(input:disabled):hover { background: none; }
-.issue-create-actions { display: flex; gap: 6px; padding: 6px 4px 2px; margin-top: 4px; border-top: 1px solid var(--line); }
-.issue-create-actions .btn { flex: 1 1 0; }
-.issue-section.g-task h3 { color: var(--accent); }
-.issue-section.g-closed h3 { color: var(--faint); }
-/* A row: [mark] [title over severity · type · place] [task pills]. */
-.issue { position: relative; border-radius: var(--r-s); transition: background .15s; }
-.issue + .issue::before { content: ""; position: absolute; top: 0; left: 48px; right: 8px; border-top: 1px solid var(--line); }
-.issue:hover { background: color-mix(in srgb, var(--raised) 60%, transparent); }
-.issue.open { background: var(--raised); }
-.issue.open::before, .issue.open + .issue::before { display: none; }
-.issue.picked { background: color-mix(in srgb, var(--accent) 9%, transparent); }
-.issue.status-task_created { box-shadow: inset 3px 0 0 var(--accent); }
-.issue.task-failed { box-shadow: inset 3px 0 0 var(--failed); }
-.issue-row { display: flex; align-items: center; gap: 4px; padding: 0 8px 0 0; }
-.issue-row > .cl-check, .issue-row > .issue-mark { align-self: flex-start; }
-.issue-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; padding: 10px 0; text-align: left; border-radius: var(--r-s); }
-.issue-title { flex: 1 1 0; min-width: 0; font-weight: 500; overflow-wrap: anywhere; transition: color .15s; }
-.issue-chev { flex: none; order: 2; display: grid; place-items: center; color: var(--faint); transition: transform .2s var(--ease); }
-.issue-chev .ico { width: 16px; height: 16px; }
-.issue.open .issue-chev { transform: rotate(180deg); color: var(--muted); }
-.issue-sub { order: 3; flex-basis: 100%; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--muted); }
-.issue-sub .sev { width: auto; padding: 0 7px; font-size: var(--fs-3xs); line-height: 17px; }
-.issue-type { flex: none; }
-.issue-type.type-vuln { color: var(--accent2); }
-.issue-status { flex: none; color: var(--faint); }
-.issue-reports { flex: none; font-variant-numeric: tabular-nums; }
-.issue-loc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-xs) var(--mono); color: var(--faint); }
-.issue.status-resolved .issue-title, .issue.status-dismissed .issue-title, .issue.status-task_created .issue-title { color: var(--muted); }
-.issue.status-resolved .issue-title { text-decoration: line-through; text-decoration-color: var(--faint); }
-.issue.status-task_created .issue-title { font-weight: 400; }
+/* ---------- severities, tags, picking drafts (app/tags.js) ---------- */
 .sev {
   flex: none; width: 64px; text-align: center; padding: 2px 0; border-radius: var(--r-pill);
   font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
@@ -3134,75 +3049,80 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .sev-medium { color: var(--running); }
 .sev-low { color: var(--review); }
 .sev-info { color: var(--muted); }
-.issue-chips { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.issue-task {
-  flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 10px;
-  border-radius: var(--r-pill); font-size: var(--fs-s); font-weight: 500;
-  /* A linked task's pill takes the task's status colour (--c from .s-*). */
-  color: var(--c, var(--accent)); border: 1px solid color-mix(in srgb, var(--c, var(--accent)) 45%, var(--line)); background: color-mix(in srgb, var(--c, var(--accent)) 8%, transparent);
+/* Tags: on a card under its title (each filters the Board), and in a task's pane (editable). */
+.todo-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; min-width: 0; }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 2px; max-width: 18ch; min-height: 20px; padding: 0 7px;
+  border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted);
+  font: inherit; font-size: var(--fs-2xs); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.issue-task.s-draft { --c: var(--muted); }
-.issue-task:hover { background: color-mix(in srgb, var(--c, var(--accent)) 16%, transparent); }
-.issue-task .ico { width: 14px; height: 14px; }
-.issue-task .act-spin { width: 8px; height: 8px; }
-/* The linked task's name, beside where it stands: on a desktop (phones keep the status only). */
-.issue-task-title { min-width: 0; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
-.issue-task-title::before { content: "· "; color: var(--muted); }
-@media (max-width: 1023px) { .issue-task-title { display: none; } }
-/* Where the checkbox would be: what a task is doing, or how a closed issue ended (44px, like .cl-check). */
-.issue-mark { flex: none; display: grid; place-items: center; width: 44px; height: 44px; color: var(--c, var(--accent)); }
-.issue-mark.s-draft { --c: var(--muted); }
-.issue-mark .ico { width: 16px; height: 16px; }
-.issue-end::before { content: ""; position: absolute; width: 20px; height: 20px; border-radius: 50%; }
-.issue-end { position: relative; }
-.issue-end .ico { position: relative; width: 12px; height: 12px; }
-.issue-end .ico path { stroke-width: 3; }
-.issue-end.end-resolved { color: var(--bg); }
-.issue-end.end-resolved::before { background: var(--merged); }
-.issue-end.end-dismissed { color: var(--faint); }
-.issue-end.end-dismissed::before { border: 2px solid var(--line); }
-.issue-tasknote {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 8px 12px;
-  border-radius: var(--r-m); font-size: var(--fs-m); border: 1px solid color-mix(in srgb, var(--c, var(--accent)) 40%, var(--line)); background: color-mix(in srgb, var(--c, var(--accent)) 8%, transparent);
+button.tag-chip { cursor: pointer; }
+button.tag-chip:hover { color: var(--text); border-color: var(--faint); }
+.tag-chip.sev { width: auto; padding: 0 7px; font-size: var(--fs-3xs); border-color: currentColor; }
+.tag-chip.sev-critical { color: var(--bg); background: var(--failed); border-color: var(--failed); }
+button.tag-chip.sev:hover { border-color: currentColor; filter: brightness(1.15); }
+.tag-chip.on { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.reports-tag { font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (pointer: coarse) { .tag-chip { min-height: 26px; } }
+.detail-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.tag-chip.editable { max-width: 24ch; padding-right: 2px; }
+.tag-x { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
+.tag-x:hover { background: var(--raised); color: var(--text); }
+.tag-input { flex: 0 1 9rem; min-width: 6rem; min-height: 26px; padding: 0 8px; border: 1px dashed var(--line); border-radius: var(--r-pill); background: transparent; color: var(--text); font: inherit; font-size: var(--fs-xs); }
+.tag-input:focus { border-style: solid; border-color: var(--accent); outline: none; }
+/* What a task made from reported issues knows about them. */
+.finding-note { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); font-size: var(--fs-s); color: var(--muted); }
+.finding-note[hidden] { display: none; }
+.finding-head { margin: 0 0 6px; font-weight: 600; color: var(--text); }
+.finding-back { margin: 0 0 6px; }
+.finding-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.finding-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.finding-loc { min-width: 0; overflow-wrap: anywhere; font: var(--fs-xs) var(--mono); }
+.finding-title { color: var(--text); overflow-wrap: anywhere; }
+.finding-src { color: var(--faint); }
+/* The Board's filter bar: From scans (N), the tag filtered to, the tag picker. */
+.tag-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.tag-filter[hidden] { display: none; }
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted);
+  font: inherit; font-size: var(--fs-xs); font-weight: 600; cursor: pointer;
 }
-.issue-tasknote.s-draft { --c: var(--muted); }
-.issue-tasknote p { flex: 1 1 16rem; margin: 0; }
-.issue-body { padding: 0 14px 14px 48px; }
-.issue-meta { margin: 0 0 8px; font-size: var(--fs-s); color: var(--muted); }
-.issue-reason { margin: 0 0 8px; font-size: var(--fs-m); color: var(--muted); font-style: italic; }
-.issue-none { margin: 0 0 8px; color: var(--faint); font-size: var(--fs-m); }
-.issue-md { font-size: var(--fs-m); overflow-wrap: anywhere; }
-.issue-md > :first-child { margin-top: 0; }
-.issue-md pre { overflow-x: auto; }
-.issue-fix h4 { margin: 12px 0 4px; font-size: var(--fs-s); color: var(--muted); font-weight: 600; }
-.issue-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.issue-edit { display: grid; gap: 10px; }
-.issue-edit-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.issue-field { display: grid; gap: 4px; font-size: var(--fs-s); color: var(--muted); }
-.issue-field select { min-height: 44px; }
-.cl-add.issue-add select { flex: 0 1 160px; }
-@media (min-width: 1024px) { .issue-bulk { top: 0; } }
-@media (min-width: 640px) {
-  .issue-edit-row { grid-template-columns: 9rem 8rem 1fr 6rem; }
+.filter-chip .ico { width: 14px; height: 14px; }
+.filter-chip:hover { color: var(--text); border-color: var(--faint); }
+.filter-chip[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.filter-chip .x { font-size: 15px; line-height: 1; }
+.tag-filter-pick { min-height: 26px; max-width: 14rem; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted); font: inherit; font-size: var(--fs-xs); }
+@media (pointer: coarse) { .filter-chip, .tag-filter-pick { min-height: 32px; } }
+/* Picking drafts to merge: a box over the card's node, shown on hover, while
+   picking and on touch screens; the bar floats above the bottom edge. */
+.todo-pick { position: absolute; left: 16px; top: 12px; z-index: 2; display: grid; place-items: center; width: 24px; height: 24px; opacity: 0; cursor: pointer; }
+.todo-pick input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.todo:hover > .todo-pick, .todo-pick:focus-within, .picking .todo-pick { opacity: 1; }
+.todo:has(> .todo-pick:is(:hover, :focus-within)) > .node, .todo:hover:has(> .todo-pick) > .node, .picking .todo:has(> .todo-pick) > .node { opacity: 0; }
+@media (hover: none) { .todo-pick { opacity: 1; } .todo:has(> .todo-pick) > .node { opacity: 0; } }
+.todo.picked { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.merge-bar {
+  position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + var(--safe-b) + 16px);
+  display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 24px); padding: 8px 12px 8px 16px; border-radius: var(--r-m);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  box-shadow: 0 6px 16px -8px rgb(0 0 0 / .5);
 }
-@media (max-width: 719px) {
-  /* Filters in one row that scrolls sideways, edge to edge. */
-  .issue-filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: calc(-1 * var(--pad-x)); padding: 4px var(--pad-x) 4px 0; scroll-padding-inline: var(--pad-x); }
-  .issue-filters::-webkit-scrollbar { display: none; }
-  /* Task pills drop under the title, lined up with it. */
-  .issue-row { flex-wrap: wrap; }
-  .issue-chips { flex-basis: 100%; justify-content: flex-start; padding: 0 0 10px 48px; margin-top: -4px; }
-  .issue-body { padding: 0 12px 14px 14px; }
-  .issue-actions .btn { flex: 1 1 auto; }
-  .issue-bulk { gap: 6px; padding: 6px 8px; }
-  .issue-bulk .btn.small { padding: 0 10px; }
-  .issue-count { flex-basis: 100%; font-size: var(--fs-m); }
-  /* One line on a phone too, so the pinned row stays short. */
-  .cl-add.issue-add { flex-wrap: nowrap; gap: 6px; }
-  .cl-add.issue-add input { flex: 1 1 0; min-width: 0; }
-  .cl-add.issue-add select { flex: none; width: 6.5rem; }
-  .cl-add.issue-add .btn { flex: none; padding: 0 14px; }
-}
+.merge-bar[hidden] { display: none; }
+.merge-count { font-weight: 600; white-space: nowrap; }
+.picking .fab { display: none; }
+/* Scans → Dismissed: issues whose drafts were deleted, each with Undo. */
+.scan-dismissed { margin-top: 24px; }
+.scan-dismissed[hidden] { display: none; }
+.scan-dismissed h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: var(--fs-m); }
+.scan-dismissed h3 .n { color: var(--faint); font-weight: 500; }
+.dismissed-list { list-style: none; margin: 8px 0 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-m); }
+.dismissed-list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.dismissed-list li + li { border-top: 1px solid var(--line); }
+.dismissed-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.dismissed-title { overflow-wrap: anywhere; }
+.dismissed-sub { font-size: var(--fs-xs); color: var(--muted); overflow-wrap: anywhere; }
+.dismissed-sub code { font-size: var(--fs-xs); }
 
 /* ---------- scans ---------- */
 .scan-bar { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 12px; }

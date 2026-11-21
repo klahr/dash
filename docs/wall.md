@@ -9,7 +9,8 @@ From top to bottom: whether the queue runs and how many runner slots are busy, t
 usage of the 5-hour and 7-day windows (with the time left until each resets, e.g. "resets in 3d 4h"), a clock; the
 number of tasks in each stage; a card per running task (elapsed time, run, cost so far,
 lines changed, the tool call it is making); what needs a human (reviews oldest first, failed
-tasks, open issues; red when waiting too long); the runners; and today's merges, spend and
+tasks, open issues, which are the tasks made from reported problems that aren't merged yet; red
+when waiting too long); the runners; and today's merges, spend and
 merges per hour.
 
 It refreshes every 5 seconds. Changes are animated: a new task's card slides in, a finished

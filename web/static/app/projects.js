@@ -32,7 +32,6 @@ import { renderQuick } from "./terminal.js";
 import { loadProcs, loadTry, renderProcs } from "./try.js";
 import { closeCommit, loadGraph, renderGraph } from "./history.js";
 import { loadFiles, renderFile, renderFileTree } from "./files.js";
-import { loadIssues, resetIssues } from "./issues.js";
 import { loadScans, resetScans } from "./scans.js";
 import { gp, loadGoals, resetGoals, showGoal } from "./goals.js";
 import { planner } from "./planner.js";
@@ -104,14 +103,13 @@ export async function selectProject(p, { follow = true } = {}) {
   renderCheckouts();
   loadCheckouts().catch(() => {});
   renderChatPane();
-  resetIssues();
   resetScans();
   resetGoals();
   loadTry().catch(() => {});
   // Planning is the hub's: it follows a hub project, not a runner's.
   if (follow && p && !p.prefix) followProject(p.id);
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); return; }
-  await Promise.all([loadIssues(), loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "scans" && loadScans()]);
+  await Promise.all([loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "scans" && loadScans()]);
 }
 
 async function loadPerms() {

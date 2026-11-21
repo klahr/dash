@@ -40,7 +40,7 @@ type Job struct {
 	From *Resume `json:"from,omitempty"`
 	// Known are the issues this scan reported before; the prompt lists
 	// those in the scanned scope.
-	Known []model.Issue `json:"known,omitempty"`
+	Known []Known `json:"known,omitempty"`
 	// Ref is the default branch's ref ("": refs/heads/<default>). A runner
 	// scans origin's, which it fetched, rather than its clone's.
 	Ref string `json:"-"`

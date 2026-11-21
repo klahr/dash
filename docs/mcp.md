@@ -91,7 +91,7 @@ and enter `https://<machine>.<tailnet>.ts.net:8443/mcp` in claude.ai.
 ## The chat's task tools
 
 Dash's own chats (the general chat and each project's chat) get a smaller set of task tools,
-`dash_board`: `list_projects`, `list_todos` (with `status`, `since` and `limit`; tasks merged
+`dash_board`: `list_projects`, `list_todos` (with `status`, `tag`, `since` and `limit`; tasks merged
 more than 14 days ago are left out unless you ask for `status` merged or a `since` date),
 `get_todo`, `create_todo` (as a draft; `builds_on`
 makes it a follow-up of a finished task, continuing that task's Claude session; on a hub, `run_on`
@@ -99,9 +99,9 @@ sends it only to that one of the project's runners),
 `queue_todo` (a draft, or a failed task to retry, when you ask for it to run; with `start_now`
 also a queued task, when you ask to start it now despite the weekly pace), `stop_todo` and
 `restart_todo` (see below), `update_todo` (title, prompt, priority, or
-`clear_priority` to unset it, dependencies, `builds_on` or `run_on`; the prompt, `builds_on` and `run_on` only while the task is a draft, queued or failed), `delete_todo` (only
-draft, queued or failed tasks, when you ask to remove one), `create_release`, `list_issues` and
-`report_issue`, the
+`clear_priority` to unset it, dependencies, `builds_on`, `run_on` or `tags`; the prompt, `builds_on` and `run_on` only while the task is a draft, queued or failed), `delete_todo` (only
+draft, queued or failed tasks, when you ask to remove one), `create_release`,
+`report_issue` (see [Tags and reported problems](#tags-and-reported-problems)), the
 [goal tools](#goals), the [planning tools](#planning) and the [deploy tools](#deploys). A read-only chat calls them without asking, except `create_release`,
 `deploy`, `rollback` and `promote`, which it can't use; a shell chat asks for the ones that change something. They act as the user chatting,
 in the org they're working in.
@@ -115,7 +115,7 @@ When a hub runs a chat or a task on a runner, these tools act on the hub's board
 runner's: the runner passes each call to the hub (`POST /runner/mcp/dash`, with its runner
 token), and the hub decides who it acts as. A task's run acts as the task's owner, and only for a
 task the hub sent that runner, in that task's project. A chat acts as the runner's owner, in the
-runner's org: a project's chat only in its project, which that runner must work on (have its labels). So tasks and issues created there show up on the hub's board,
+runner's org: a project's chat only in its project, which that runner must work on (have its labels). So tasks and drafts created there show up on the hub's board,
 under the hub's ids. If the hub can't be reached, the tool call fails; it never writes to the
 runner's own database instead.
 
@@ -191,15 +191,32 @@ a new task). Tasks always come back with the number, or `null` for none. Draggin
 board changes the numbers but keeps a task in its level. For example, `PATCH /api/todos/{id}`
 with `{"priority": "urgent"}` makes a task urgent. An unknown level is refused with `400`.
 
+## Tags and reported problems
+
+Tasks have tags: short labels, at most 20, each at most 40 characters.
+
+- `create_todo` and `update_todo` take `tags`, an array. `update_todo` replaces the list; `[]`
+  clears it.
+- `list_todos` takes `tag` and lists only the tasks with it. Each task comes with its `tags`, and
+  a task made from reported problems also with its `severity` and `reports` (how many times they
+  were reported, when more than once).
+- `get_todo` returns `tags`, and `finding` for a task made from reported problems: each problem's
+  fingerprint, severity, file and line, and how many times and by whom it was reported.
+- `report_issue` (title, type, severity, file, line, details, fix) adds a draft task, tagged with
+  its type (`bug`, `security`, `issue`), severity and `reported`. If a task that isn't merged has
+  the same problem, it counts the report on that task instead. If the user dismissed it, nothing
+  is added. See [Scans](scans.md#findings-on-the-board) for how Dash matches problems.
+
+`list_issues` is gone: use `list_todos` with a `tag` instead, e.g. `security` or `scan:security`.
+
 ## A task's tools
 
 A task's own Claude run gets these `dash_board` tools, in its project only, and calls them
 without asking:
 
-- `list_issues` and `report_issue`: the project's Issues list. Claude reports problems it notices
-  outside its task there instead of fixing them on the task's branch. When another task reports
-  an issue that is already listed, the issue counts the report and shows it (e.g. "×15") with
-  who reported it last.
+- `report_issue`: Claude reports a problem it notices outside its task, instead of fixing it on
+  the task's branch. It becomes a draft task on the Board. When a task already has that problem,
+  the report is added to that task instead, and its card shows the count (e.g. "×15").
 - `active_work(paths?)`: what the project's other tasks are doing. It lists every other task that
   is queued, running, in review or merging, with its id, status, title, a short intent from its
   prompt, and the files it has changed so far compared with the branch it lands on (a running
@@ -306,7 +323,7 @@ doesn't get these tools.
 A [goal](goals.md)'s coordinator gets its own set of `dash_board` tools, for its goal only:
 
 - the board tools `list_todos`, `get_todo`, `create_todo`, `queue_todo`, `stop_todo`,
-  `restart_todo`, `update_todo`, `delete_todo`, `list_issues` and
+  `restart_todo`, `update_todo`, `delete_todo` and
   `report_issue`, in the goal's project only. Those that change a task only change the goal's
   own tasks. Tasks it creates get the goal's id and count against its budget; in "ask" mode they
   stay drafts and `queue_todo` is refused.

@@ -59,9 +59,9 @@ func init() {
 		// Editing a task's changes in review (todofile.go).
 		"GET /api/todos/{tid}/file", "PUT /api/todos/{tid}/file",
 
-		"GET /api/projects/{pid}/issues", "POST /api/projects/{pid}/issues",
-		"POST /api/projects/{pid}/issues/tasks", "POST /api/projects/{pid}/issues/dismiss",
-		"PATCH /api/issues/{iid}", "DELETE /api/issues/{iid}",
+		// Reported issues, as draft tasks (findings.go).
+		"POST /api/projects/{pid}/issues", "GET /api/projects/{pid}/dismissed", "DELETE /api/projects/{pid}/dismissed/{fp}",
+		"POST /api/projects/{pid}/todos/merge",
 
 		"GET /api/projects/{pid}/scans", "POST /api/projects/{pid}/scans/{name}/run", "PATCH /api/projects/{pid}/scans/{name}",
 		"GET /api/projects/{pid}/scan-runs", "GET /api/scan-runs/{rid}/log",

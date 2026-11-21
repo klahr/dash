@@ -85,7 +85,7 @@ import "./app/releases.js";
 import "./app/files.js";
 import "./app/dnd.js";
 import "./app/hovercard.js";
-import "./app/issues.js";
+import "./app/tags.js";
 import "./app/scans.js";
 import { setMode } from "./app/vim.js";
 import "./app/palette.js";

@@ -119,7 +119,7 @@ existing one stopped being active or trialing: a failed payment (`past_due`, whi
 retries), a trial that ended without a card, a cancelled subscription. After the grace period:
 
 - the **board is read-only**: everything can still be read, but the API answers changes to
-  projects, tasks, issues, scans, files and processes with `402` and
+  projects, tasks, scans, files and processes with `402` and
   `{"code": "billing_read_only"}`; the chat and the board's MCP tools refuse to change
   anything too;
 - its **queued tasks don't start**, here or on its runners: they stay queued, saying why;

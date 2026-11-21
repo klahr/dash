@@ -211,6 +211,9 @@ func (sv *service) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
 		return t, fmt.Errorf("%w: %v", errBadRequest, err)
 	}
 	t.Model = m
+	if t.Tags, err = model.CleanTags(t.Tags); err != nil {
+		return t, fmt.Errorf("%w: %v", errBadRequest, err)
+	}
 	if t.RunOn, err = sv.runOn(t, t.RunOn); err != nil {
 		return t, err
 	}
@@ -448,6 +451,13 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 		}
 		u.Model = &m
 	}
+	if u.Tags != nil {
+		tags, err := model.CleanTags(*u.Tags)
+		if err != nil {
+			return model.Todo{}, fmt.Errorf("%w: %v", errBadRequest, err)
+		}
+		u.Tags = &tags
+	}
 	if u.RunOn != nil {
 		cur, err := sv.data.GetTodo(id)
 		if err != nil {
@@ -483,6 +493,7 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 		}
 		set(&t.DependsOn, u.DependsOn) // validated by the store
 		set(&t.Model, u.Model)         // used from its next run
+		set(&t.Tags, u.Tags)
 		return nil
 	})
 	if err != nil {

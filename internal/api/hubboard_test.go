@@ -112,11 +112,11 @@ func TestRunnerTaskReportsIssuesToTheHub(t *testing.T) {
 	if text, isErr := call(t, h, token, "report_issue", `{"title":"CLA fails on every PR","type":"bug"}`); isErr {
 		t.Fatalf("report_issue: %s", text)
 	}
-	is := raw(hub).ListIssues(linked.ID)
+	is := reportedIssues(raw(hub), linked.ID)
 	if len(is) != 1 || is[0].Title != "CLA fails on every PR" || is[0].Source != "agent:"+hubTodo.ID {
 		t.Fatalf("hub's issues: %+v", is)
 	}
-	if n := len(raw(runner).ListIssues(rp.ID)); n != 0 {
+	if n := len(reportedIssues(raw(runner), rp.ID)); n != 0 {
 		t.Errorf("the runner's own board got %d issues", n)
 	}
 
@@ -149,7 +149,7 @@ func TestRunnerTaskReportsIssuesToTheHub(t *testing.T) {
 	if text, isErr := call(t, h, token3, "report_issue", `{"title":"local"}`); isErr {
 		t.Fatalf("report_issue of the runner's own task: %s", text)
 	}
-	if n := len(raw(runner).ListIssues(rp.ID)); n != 1 {
+	if n := len(reportedIssues(raw(runner), rp.ID)); n != 1 {
 		t.Errorf("runner's own task's issue: %d issues here", n)
 	}
 }

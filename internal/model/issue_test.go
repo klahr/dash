@@ -1,30 +1,10 @@
 package model
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
-
-func TestIssueTransitions(t *testing.T) {
-	for _, c := range []struct {
-		from, to IssueStatus
-		ok       bool
-	}{
-		{IssueOpen, IssueTaskCreated, true},
-		{IssueOpen, IssueDismissed, true},
-		{IssueTaskCreated, IssueResolved, true},
-		{IssueResolved, IssueOpen, true},
-		{IssueDismissed, IssueOpen, true},
-		{IssueDismissed, IssueResolved, false},
-		{IssueDismissed, IssueTaskCreated, false},
-		{IssueResolved, IssueTaskCreated, false},
-		{IssueResolved, IssueDismissed, false},
-	} {
-		if got := CanTransitionIssue(c.from, c.to); got != c.ok {
-			t.Errorf("%s → %s: %v, want %v", c.from, c.to, got, c.ok)
-		}
-	}
-}
 
 func TestFingerprintIgnoresLineAndFormatting(t *testing.T) {
 	a := Issue{Type: IssueBug, File: "./src/a.go", Line: 3, Title: "Off by one"}
@@ -80,5 +60,51 @@ func TestIssueAddReport(t *testing.T) {
 	}
 	if i.ReportCount() != 3 || i.LatestSource() != "agent:b" || i.Source != "scan:gosec" {
 		t.Fatalf("after reports: %+v", i)
+	}
+	if !slices.Equal(i.Sources, []string{"scan:gosec", "agent:a", "agent:b"}) {
+		t.Fatalf("sources %q", i.Sources)
+	}
+}
+
+func TestIssueTags(t *testing.T) {
+	for _, c := range []struct {
+		is   Issue
+		want []string
+	}{
+		{Issue{Type: IssueVuln, Severity: SevHigh, Source: "scan:Security"}, []string{"security", "high", "scan:security"}},
+		{Issue{Type: IssueBug, Severity: SevLow, Source: "agent:t1"}, []string{"bug", "low", "reported"}},
+		{Issue{Type: IssueOther, Severity: SevInfo, Source: "manual"}, []string{"issue", "info", "reported"}},
+	} {
+		if got := c.is.Tags(); !slices.Equal(got, c.want) {
+			t.Errorf("%+v: tags %q, want %q", c.is, got, c.want)
+		}
+	}
+}
+
+func TestFinding(t *testing.T) {
+	f := &Finding{Issues: []Issue{
+		{Type: IssueBug, Severity: SevMedium, Source: "scan:lint", Fingerprint: "a", Reports: 2},
+		{Type: IssueVuln, Severity: SevHigh, Source: "agent:t1", Fingerprint: "b"},
+	}}
+	if f.Severity() != SevHigh || f.Reports() != 3 || f.Index("b") != 1 || f.Index("c") != -1 {
+		t.Fatalf("severity %s, reports %d", f.Severity(), f.Reports())
+	}
+	if !slices.Equal(f.Fingerprints(), []string{"a", "b"}) {
+		t.Fatalf("fingerprints %q", f.Fingerprints())
+	}
+	// The worst severity replaces another severity tag; other tags stay.
+	got := WithFindingTags([]string{"backend", "medium"}, f)
+	if want := []string{"backend", "bug", "security", "high", "scan:lint", "reported"}; !slices.Equal(got, want) {
+		t.Fatalf("tags %q, want %q", got, want)
+	}
+	cp := f.Clone()
+	cp.Issues[0].Sources = append(cp.Issues[0].Sources, "x")
+	cp.Issues[1].Title = "changed"
+	if f.Issues[1].Title != "" || len(f.Issues[0].Sources) != 0 {
+		t.Fatal("Clone shares issues with the original")
+	}
+	var none *Finding
+	if none.Severity() != "" || none.Reports() != 0 || none.Index("a") != -1 || none.Clone() != nil {
+		t.Fatal("a nil Finding isn't empty")
 	}
 }

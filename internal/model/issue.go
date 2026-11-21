@@ -5,22 +5,18 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 	"time"
 )
 
 // An Issue is something wrong with a project — a bug, a vulnerability or
-// another problem — that nobody has decided to work on yet. Issues are cheap
-// to add (by hand, by a scan, or by an agent that noticed something unrelated
-// to its task) and may never be fixed. Turning one into a Todo is triage.
-//
-//	Open ──create task──▶ TaskCreated ──task merged──▶ Resolved
-//	 │ ▲                       │                          │
-//	 │ └────────reopen─────────┴──────────────────────────┘
-//	 └──dismiss──▶ Dismissed ──reopen──▶ Open
+// another problem — as it was reported: by a scan, by Claude during a task
+// (report_issue) or by hand. Dash doesn't keep issues apart: each becomes a
+// draft task on the Board (see Finding), or bumps the task that already has
+// it, found by its fingerprint.
 type Issue struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"project_id"`
+	ProjectID string    `json:"project_id,omitempty"`
 	Title     string    `json:"title"`
 	Type      IssueType `json:"type"`
 	Severity  Severity  `json:"severity"`
@@ -37,22 +33,18 @@ type Issue struct {
 	Source string `json:"source"`
 	// Reports is how many times it was reported, counting a report again only
 	// when it comes from another reporter than the last one (so a scan that
-	// finds it on every run counts once). 0 in issues saved before it was
-	// kept; see ReportCount.
+	// finds it on every run counts once). 0 means 1; see ReportCount.
 	Reports int `json:"reports,omitempty"`
 	// LastSource is who reported it last, in Source's form; "" when only
 	// Source did.
 	LastSource string `json:"last_source,omitempty"`
+	// Sources are everyone who reported it, each once, first reporter first.
+	Sources []string `json:"sources,omitempty"`
 	// ScanKind is the kind of scan that reported it (ScanKinds: "security",
 	// "tests", "performance", …); "" when no scan did.
-	ScanKind string      `json:"scan_kind,omitempty"`
-	Status   IssueStatus `json:"status"`
+	ScanKind string `json:"scan_kind,omitempty"`
 	// Fingerprint identifies the same issue across reports (see ComputeFingerprint).
-	Fingerprint   string    `json:"fingerprint"`
-	TodoIDs       []string  `json:"todo_ids,omitempty"` // tasks created for it
-	DismissReason string    `json:"dismiss_reason,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 type IssueType string
@@ -88,39 +80,6 @@ func (s Severity) Rank() int {
 		return 4
 	}
 	return 5
-}
-
-type IssueStatus string
-
-const (
-	IssueOpen        IssueStatus = "open"
-	IssueTaskCreated IssueStatus = "task_created"
-	IssueResolved    IssueStatus = "resolved"
-	IssueDismissed   IssueStatus = "dismissed"
-)
-
-var issueTransitions = map[IssueStatus][]IssueStatus{
-	IssueOpen:        {IssueTaskCreated, IssueDismissed, IssueResolved},
-	IssueTaskCreated: {IssueResolved, IssueOpen, IssueDismissed}, // → open: its tasks were deleted
-	IssueResolved:    {IssueOpen},
-	IssueDismissed:   {IssueOpen},
-}
-
-// CanTransitionIssue reports whether an issue may move between statuses.
-func CanTransitionIssue(from, to IssueStatus) bool {
-	for _, s := range issueTransitions[from] {
-		if s == to {
-			return true
-		}
-	}
-	return false
-}
-
-// ErrInvalidIssueTransition is returned when an issue status change is not allowed.
-type ErrInvalidIssueTransition struct{ From, To IssueStatus }
-
-func (e ErrInvalidIssueTransition) Error() string {
-	return fmt.Sprintf("invalid issue status change %s → %s", e.From, e.To)
 }
 
 // Normalize trims the issue's fields, fills in defaults (type "issue",
@@ -199,12 +158,21 @@ func (i Issue) LatestSource() string {
 // AddReport counts a report of the issue from source, unless source is the
 // last reporter again. It reports whether it counted one.
 func (i *Issue) AddReport(source string) bool {
+	i.noteSource(i.Source)
 	if source == "" || source == i.LatestSource() {
 		return false
 	}
 	i.Reports = i.ReportCount() + 1
 	i.LastSource = source
+	i.noteSource(source)
 	return true
+}
+
+// noteSource adds source to Sources, once.
+func (i *Issue) noteSource(source string) {
+	if source != "" && !slices.Contains(i.Sources, source) {
+		i.Sources = append(i.Sources, source)
+	}
 }
 
 // Location is "file:line", "file" or "".
@@ -215,24 +183,24 @@ func (i Issue) Location() string {
 	return i.File
 }
 
-// UpsertCounts is what adding a batch of issues did, by outcome.
+// UpsertCounts is what reporting a batch of issues did, by outcome.
 type UpsertCounts struct {
-	New       int `json:"new"`
-	Updated   int `json:"updated"` // already there, changed
-	Known     int `json:"known"`   // already there, unchanged
-	Dismissed int `json:"dismissed"`
-	Reopened  int `json:"reopened"` // had been resolved, and came back
+	New       int `json:"new"`       // a new draft
+	Updated   int `json:"updated"`   // already on a task, which was bumped or changed
+	Known     int `json:"known"`     // already on a task, unchanged
+	Dismissed int `json:"dismissed"` // dismissed before, left out
+	Reopened  int `json:"reopened"`  // a merged task had fixed it, and it came back: a new draft
 }
 
-// UpsertResult is the outcome of adding one issue.
+// UpsertResult is the outcome of reporting one issue.
 type UpsertResult string
 
 const (
 	UpsertNew       UpsertResult = "new"
 	UpsertUpdated   UpsertResult = "updated"
 	UpsertKnown     UpsertResult = "known"
-	UpsertDismissed UpsertResult = "dismissed" // matched a dismissed issue, which stays dismissed
-	UpsertReopened  UpsertResult = "reopened"  // matched a resolved issue, which is open again
+	UpsertDismissed UpsertResult = "dismissed" // its fingerprint was dismissed: no draft
+	UpsertReopened  UpsertResult = "reopened"  // a merged task had it: a new draft that names that task
 )
 
 // Add counts one result.
@@ -303,4 +271,183 @@ func TaskFromIssues(issues []Issue, reporter func(source string) string) (title,
 	}
 	b.WriteString("\nIf an issue turns out not to be real, say so in your final message instead of changing code for it.")
 	return title, b.String()
+}
+
+// IssueTypeTag is the tag of an issue type: bug, security or issue.
+func IssueTypeTag(t IssueType) string {
+	if t == IssueVuln {
+		return "security"
+	}
+	return string(t)
+}
+
+// SourceTag is the tag of an issue's source: "scan:<name>" for a scan's,
+// "reported" for anyone else's (Claude, or by hand).
+func SourceTag(source string) string {
+	if strings.HasPrefix(source, "scan:") {
+		return strings.ToLower(source)
+	}
+	return "reported"
+}
+
+// IssueTags are the tags a draft made from the issue gets: its type, its
+// severity and its source.
+func (i Issue) Tags() []string {
+	return []string{IssueTypeTag(i.Type), string(i.Severity), SourceTag(i.Source)}
+}
+
+// Severities are the severities, most severe first.
+var Severities = []Severity{SevCritical, SevHigh, SevMedium, SevLow, SevInfo}
+
+// A Finding is what a task made from reported issues knows about them, kept
+// apart from its prompt so later reports find the task by fingerprint and
+// the Board can filter by severity. A task merged from several drafts has
+// all of their issues.
+type Finding struct {
+	// Issues are the task's issues, one per fingerprint.
+	Issues []Issue `json:"issues"`
+	// Earlier is a merged task that had fixed one of them before they came
+	// back (empty: none).
+	Earlier string `json:"earlier,omitempty"`
+	// LegacyIDs are the ids the issues had on the Issues page, before they
+	// became tasks, so old links still find the task.
+	LegacyIDs []string `json:"legacy_ids,omitempty"`
+	// PromptSum is the checksum of the prompt Dash wrote from the issues
+	// (PromptSum). While the task's prompt is still that one, a new report
+	// writes it again; once someone edited it, it stays theirs. Empty: the
+	// prompt isn't Dash's.
+	PromptSum string `json:"prompt_sum,omitempty"`
+}
+
+// PromptSum is the checksum Finding.PromptSum keeps of a prompt.
+func PromptSum(prompt string) string {
+	sum := sha256.Sum256([]byte(prompt))
+	return hex.EncodeToString(sum[:8])
+}
+
+// Clone copies f deeply.
+func (f *Finding) Clone() *Finding {
+	if f == nil {
+		return nil
+	}
+	cp := *f
+	cp.Issues = make([]Issue, len(f.Issues))
+	for n, i := range f.Issues {
+		i.Sources = slices.Clone(i.Sources)
+		cp.Issues[n] = i
+	}
+	cp.LegacyIDs = slices.Clone(f.LegacyIDs)
+	return &cp
+}
+
+// Index is the index of the issue with fingerprint fp, or -1.
+func (f *Finding) Index(fp string) int {
+	if f == nil {
+		return -1
+	}
+	return slices.IndexFunc(f.Issues, func(i Issue) bool { return i.Fingerprint == fp })
+}
+
+// Fingerprints are the fingerprints of f's issues.
+func (f *Finding) Fingerprints() []string {
+	if f == nil {
+		return nil
+	}
+	out := make([]string, len(f.Issues))
+	for n, i := range f.Issues {
+		out[n] = i.Fingerprint
+	}
+	return out
+}
+
+// Severity is the worst severity of f's issues ("" for none).
+func (f *Finding) Severity() Severity {
+	var worst Severity
+	if f == nil {
+		return worst
+	}
+	for _, i := range f.Issues {
+		if worst == "" || i.Severity.Rank() < worst.Rank() {
+			worst = i.Severity
+		}
+	}
+	return worst
+}
+
+// Reports is how many times f's issues were reported, all together.
+func (f *Finding) Reports() int {
+	n := 0
+	if f != nil {
+		for _, i := range f.Issues {
+			n += i.ReportCount()
+		}
+	}
+	return n
+}
+
+// Tags are the tags f's issues give a task: each one's type and source, and
+// the worst severity.
+func (f *Finding) Tags() []string {
+	var out []string
+	if f == nil {
+		return out
+	}
+	for _, i := range f.Issues {
+		out = append(out, IssueTypeTag(i.Type))
+	}
+	if sev := f.Severity(); sev != "" {
+		out = append(out, string(sev))
+	}
+	for _, i := range f.Issues {
+		out = append(out, SourceTag(i.Source))
+	}
+	return out
+}
+
+// WithFindingTags is tags with f's tags added: a severity tag that isn't
+// f's worst severity any more is taken out, and the other tags stay.
+func WithFindingTags(tags []string, f *Finding) []string {
+	sev := f.Severity()
+	out := []string{}
+	for _, t := range tags {
+		if s := Severity(strings.ToLower(t)); sev != "" && s != sev && slices.Contains(Severities, s) {
+			continue
+		}
+		out = append(out, t)
+	}
+	out = append(out, f.Tags()...)
+	clean, err := CleanTags(out)
+	if err != nil { // too many: keep the first that fit
+		clean, _ = CleanTags(out[:min(len(out), MaxCardTags)])
+	}
+	return clean
+}
+
+// A DismissedFinding is an issue the user dismissed: they deleted the draft
+// that had it. Reports of its fingerprint add no draft until it is undone.
+type DismissedFinding struct {
+	ProjectID   string    `json:"project_id"`
+	Fingerprint string    `json:"fingerprint"`
+	Title       string    `json:"title"`
+	Type        IssueType `json:"type,omitempty"`
+	Severity    Severity  `json:"severity,omitempty"`
+	File        string    `json:"file,omitempty"`
+	Rule        string    `json:"rule,omitempty"`
+	Source      string    `json:"source,omitempty"`
+	ScanKind    string    `json:"scan_kind,omitempty"`
+	Reason      string    `json:"reason,omitempty"`
+	// TodoID is the task that was deleted, and TodoTitle its title.
+	TodoID    string    `json:"todo_id,omitempty"`
+	TodoTitle string    `json:"todo_title,omitempty"`
+	By        int64     `json:"by,omitempty"` // who dismissed it (0: unknown)
+	At        time.Time `json:"at"`
+}
+
+// Dismissal is the record of dismissing issue i of task t.
+func Dismissal(t Todo, i Issue, reason string, by int64, at time.Time) DismissedFinding {
+	return DismissedFinding{
+		ProjectID: t.ProjectID, Fingerprint: i.Fingerprint, Title: i.Title, Type: i.Type, Severity: i.Severity,
+		File: i.File, Rule: i.Rule, Source: i.Source, ScanKind: i.ScanKind, Reason: reason,
+		TodoID: t.ID, TodoTitle: t.Title, By: by, At: at,
+	}
 }

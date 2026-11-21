@@ -95,7 +95,7 @@ type IssueRef struct {
 	ID       string         `json:"id"`
 	Title    string         `json:"title"`
 	Severity model.Severity `json:"severity"`
-	URL      string         `json:"url,omitempty"` // the issue in Dash
+	URL      string         `json:"url,omitempty"` // the draft task made for the issue, in Dash
 }
 
 type DeployRef struct {

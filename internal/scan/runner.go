@@ -510,23 +510,24 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 		run.Findings, run.Counts.New, run.Counts.Updated, run.Counts.Known, run.Counts.Dismissed, run.Counts.Reopened))
 }
 
-// Record files a run's findings in the project's Issues (by fingerprint: a
-// known issue is updated, a dismissed one stays dismissed, a resolved one
-// is reopened) and returns the run with its counts.
+// Record files a run's findings as draft tasks on the project's Board, by
+// fingerprint: one a task has already bumps that task, a dismissed one
+// adds nothing, one a merged task had fixed comes back as a new draft
+// (store.Store.ReportFindings). It returns the run with its counts.
 func Record(st *store.Store, run model.ScanRun, issues []model.Issue) (model.ScanRun, error) {
-	counts, outcomes, err := st.UpsertIssueBatch(run.ProjectID, "scan:"+run.Scan, issues)
+	counts, outcomes, err := st.ReportFindings(run.ProjectID, "scan:"+run.Scan, issues)
 	if err != nil {
 		return run, err
 	}
 	run.Findings, run.Counts = len(issues), counts
-	run.NewIssues, run.ReopenedIssues = nil, nil
+	run.NewTasks, run.ReopenedTasks = nil, nil
 	run.Critical, run.High, run.Urgent = 0, 0, 0
 	for _, o := range outcomes {
 		switch o.Result {
 		case model.UpsertNew:
-			run.NewIssues = append(run.NewIssues, o.Issue.ID)
+			run.NewTasks = append(run.NewTasks, o.Todo.ID)
 		case model.UpsertReopened:
-			run.ReopenedIssues = append(run.ReopenedIssues, o.Issue.ID)
+			run.ReopenedTasks = append(run.ReopenedTasks, o.Todo.ID)
 		default:
 			continue
 		}
@@ -544,17 +545,45 @@ func Record(st *store.Store, run model.ScanRun, issues []model.Issue) (model.Sca
 // maxKnown is how many issues a scan's prompt lists as reported before.
 const maxKnown = 100
 
+// Known is an issue a scan reported before, for its next prompt: on a
+// task that isn't merged ("open"), or dismissed.
+type Known struct {
+	Rule   string `json:"rule"`
+	File   string `json:"file,omitempty"`
+	Title  string `json:"title"`
+	Status string `json:"status"` // open or dismissed
+}
+
 // scanIssues are the issues this scan reported before (at most a few
-// hundred), for knownIssues.
-func (r *Runner) scanIssues(projectID string, t Template) []model.Issue {
-	var out []model.Issue
-	for _, is := range r.Store.ListIssues(projectID) {
-		if is.Source != t.Source() || is.Rule == "" {
+// hundred), for knownIssues: those on tasks that aren't merged, most
+// severe first, then the dismissed ones.
+func (r *Runner) scanIssues(projectID string, t Template) []Known {
+	var out []Known
+	full := func() bool { return len(out) >= 10*maxKnown }
+	var open []model.Issue
+	for _, td := range r.Store.ListTodos(projectID) {
+		if td.Finding == nil || td.Status == model.StatusMerged {
 			continue
 		}
-		out = append(out, is)
-		if len(out) == 10*maxKnown {
+		for _, is := range td.Finding.Issues {
+			if is.Source == t.Source() && is.Rule != "" {
+				open = append(open, is)
+			}
+		}
+	}
+	slices.SortStableFunc(open, func(a, b model.Issue) int { return a.Severity.Rank() - b.Severity.Rank() })
+	for _, is := range open {
+		if full() {
+			return out
+		}
+		out = append(out, Known{Rule: is.Rule, File: is.File, Title: is.Title, Status: "open"})
+	}
+	for _, d := range r.Store.ListDismissed(projectID) {
+		if full() {
 			break
+		}
+		if d.Source == t.Source() && d.Rule != "" {
+			out = append(out, Known{Rule: d.Rule, File: d.File, Title: d.Title, Status: "dismissed"})
 		}
 	}
 	return out
@@ -562,7 +591,7 @@ func (r *Runner) scanIssues(projectID string, t Template) []model.Issue {
 
 // knownIssues are the issues of all this scan reported before in its scope,
 // so the agent can reuse their fingerprints and leave dismissed ones out.
-func knownIssues(all []model.Issue, t Template, tg target) []model.Issue {
+func knownIssues(all []Known, t Template, tg target) []Known {
 	var in map[string]bool
 	if tg.incremental {
 		in = map[string]bool{}
@@ -570,7 +599,7 @@ func knownIssues(all []model.Issue, t Template, tg target) []model.Issue {
 			in[f] = true
 		}
 	}
-	var out []model.Issue
+	var out []Known
 	for _, is := range all {
 		if in != nil && !in[is.File] {
 			continue
@@ -751,7 +780,7 @@ func DenyReads(dir string, secrets []string) []string {
 
 // BuildPrompt is what the scan agent is asked: the template's prompt, what
 // to look at, the issues it reported before, and the answer format.
-func BuildPrompt(t Template, tg target, known []model.Issue) string {
+func BuildPrompt(t Template, tg target, known []Known) string {
 	var b strings.Builder
 	b.WriteString(t.Render(t.Path, tg.since))
 	b.WriteString("\n\n## Scope\n\n")

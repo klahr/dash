@@ -292,7 +292,7 @@ func CleanTags(in []string) ([]string, error) {
 		out = append(out, t)
 	}
 	if len(out) > MaxCardTags {
-		return nil, fmt.Errorf("a card has at most %d tags", MaxCardTags)
+		return nil, fmt.Errorf("at most %d tags", MaxCardTags)
 	}
 	return out, nil
 }

@@ -35,7 +35,7 @@ func otherProject(t *testing.T, s *Server) (model.Project, model.Todo, model.Goa
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := raw(s).UpsertIssue(model.Issue{ProjectID: other.ID, Title: "Secret issue", Type: model.IssueBug, Severity: model.SevHigh, Source: "manual"}); err != nil {
+	if _, err := raw(s).ReportFinding(model.Issue{ProjectID: other.ID, Title: "Secret issue", Type: model.IssueBug, Severity: model.SevHigh, Source: "manual"}); err != nil {
 		t.Fatal(err)
 	}
 	g, err := raw(s).CreateGoal(model.Goal{ProjectID: other.ID, Title: "Secret goal"})
@@ -57,22 +57,19 @@ func TestTaskRunCantReachOtherProjects(t *testing.T) {
 	defer release()
 
 	for _, ref := range []string{other.ID, other.Name} {
-		if text, isErr := toolCall(h, token, "list_issues", fmt.Sprintf(`{"project":%q}`, ref)); !isErr || strings.Contains(text, "Secret") {
-			t.Errorf("list_issues in %s: %s", ref, text)
-		}
 		call := fmt.Sprintf(`{"project":%q,"title":"Planted","type":"bug","severity":"low"}`, ref)
 		if text, isErr := toolCall(h, token, "report_issue", call); !isErr {
 			t.Errorf("report_issue in %s: %s", ref, text)
 		}
 	}
-	for _, is := range raw(s).ListIssues(other.ID) {
+	for _, is := range reportedIssues(raw(s), other.ID) {
 		if is.Title == "Planted" {
 			t.Errorf("a task planted an issue in another project: %+v", is)
 		}
 	}
 	// Its own project still works, by name too.
-	if text, isErr := toolCall(h, token, "list_issues", `{"project":"web"}`); isErr {
-		t.Errorf("list_issues in its own project: %s", text)
+	if text, isErr := toolCall(h, token, "report_issue", `{"project":"web","title":"Mine"}`); isErr {
+		t.Errorf("report_issue in its own project: %s", text)
 	}
 
 	// A token whose project doesn't match its task's is refused outright.
@@ -102,7 +99,6 @@ func TestProjectChatCantReachOtherProjects(t *testing.T) {
 		{"list_todos", inOther},
 		{"list_todos", fmt.Sprintf(`{"project":%q}`, other.ID)},
 		{"create_todo", fmt.Sprintf(`{"project":%q,"title":"x"}`, other.Name)},
-		{"list_issues", inOther},
 		{"report_issue", fmt.Sprintf(`{"project":%q,"title":"x","type":"bug","severity":"low"}`, other.Name)},
 		{"list_goals", inOther},
 		{"create_goal", fmt.Sprintf(`{"project":%q,"title":"x"}`, other.Name)},
@@ -139,10 +135,10 @@ func TestProjectChatCantReachOtherProjects(t *testing.T) {
 	if got, _ := raw(s).GetGoal(otherGoal.ID); got.Title != "Secret goal" || got.Status != otherGoal.Status {
 		t.Errorf("other goal %+v", got)
 	}
-	if n := len(raw(s).ListTodos(other.ID)); n != 1 {
+	if n := len(raw(s).ListTodos(other.ID)); n != 2 { // the plan, and the secret issue's draft
 		t.Errorf("other project has %d tasks", n)
 	}
-	if n := len(raw(s).ListIssues(other.ID)); n != 1 {
+	if n := len(reportedIssues(raw(s), other.ID)); n != 1 {
 		t.Errorf("other project has %d issues", n)
 	}
 }

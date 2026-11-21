@@ -52,9 +52,9 @@ minutes without typing (or with **Stop**), and its worktree is removed.
 
 The project chat sits beside the terminal (on a phone: the **Chat** tab, and **Terminal** to come
 back). While a session runs, the chat is told about it and can read the terminal's last lines with
-the `read_try_terminal` tool. Say "note …" or describe a bug and it files an issue (`report_issue`)
-with the command, its output and the commit hash; say "make a task of this" and it creates a draft
-task instead. Turn issues into tasks later from the Issues list as usual.
+the `read_try_terminal` tool. Say "note …" or describe a bug and it reports it (`report_issue`)
+with the command, its output and the commit hash: that adds a draft task on the Board, tagged
+`reported`. Say "make a task of this" and it creates a draft task in its own words instead.
 
 The hub's routes are `GET|POST|DELETE /api/projects/<id>/try` (`{"runner", "ref"}` to start),
 `GET /api/projects/<id>/try/commits?runner=&q=&fetch=1`, `GET /api/projects/<id>/try/log?lines=N`
