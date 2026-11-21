@@ -607,14 +607,23 @@ func TestPlannerStartsGoalForADeveloper(t *testing.T) {
 	if err != nil || g.Owner != dev || g.Mode != model.GoalAsk || !hasLog(g, "from a Planning card, for u") {
 		t.Fatalf("the planner's goal: %+v %v", g, err)
 	}
+	// Nothing runs as its owner until they resume it.
+	if g.Status != model.GoalPaused || g.PausedFrom != model.GoalPlanning {
+		t.Fatalf("the planner's goal isn't paused for its owner: %s from %s", g.Status, g.PausedFrom)
+	}
 
 	// A member owns what they start, and can't hand it to someone else.
 	cid = card(a)
 	if w := start(a, cid, fmt.Sprintf(`,"owner":%d`, pat.ID)); w.Code != http.StatusBadRequest {
 		t.Errorf("a member's goal for someone else: %d %s", w.Code, w.Body)
 	}
-	if w := start(a, cid, ""); w.Code != http.StatusOK {
+	w = start(a, cid, "")
+	if w.Code != http.StatusOK {
 		t.Fatalf("a member's goal: %d %s", w.Code, w.Body)
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &started)
+	if g, err := raw(s).GetGoal(started.Started.ID); err != nil || g.Status == model.GoalPaused {
+		t.Errorf("a member's own goal: %+v %v", g, err)
 	}
 
 	// Start's owner picker leaves planners out.

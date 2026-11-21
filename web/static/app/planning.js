@@ -1410,13 +1410,15 @@ async function startSheet(c) {
     h("select", { name: "owner" },
       h("option", { value: "", selected: !suggested }, devs.length ? "Choose a developer" : "No developers in the organization"),
       ...devs.map((u) => h("option", { value: String(u.id), selected: u === suggested }, u.username))),
-    h("small", { class: "hint" }, "The goal is theirs: its coordinator runs on their runner, and they accept its plan.")) : null;
+    h("small", { class: "hint" }, "The goal is theirs: it starts paused, and its coordinator runs on their runner once they resume it.")) : null;
   // A planner has no runner: their task runs for a developer, on that
-  // developer's runners (the card's first developer by default).
+  // developer's runners (the card's first developer by default). It waits
+  // as a draft until that developer queues it.
   const runFor = pl.planner ? h("label", { class: "field" }, h("span", {}, "Runs for"),
     h("select", { name: "run_by", required: true },
       h("option", { value: "", selected: !devs.length }, devs.length ? "Choose a developer" : "No developers in the organization"),
-      ...devs.map((u) => h("option", { value: String(u.id), selected: u === (suggested || devs[0]) }, u.username)))) : null;
+      ...devs.map((u) => h("option", { value: String(u.id), selected: u === (suggested || devs[0]) }, u.username))),
+    h("small", { class: "hint" }, "The task waits as a draft until they queue it. They are told.")) : null;
   const kindChanged = (e) => {
     if (!owner) return;
     const goal = e.target.value === "goal";
@@ -1426,7 +1428,9 @@ async function startSheet(c) {
     runFor.querySelector("select").required = !goal;
   };
   const data = await sheet("Start this card", [
-    h("p", { class: "hint" }, "Dash makes the work from the card's title and description, links it to the card and moves the card to In progress."),
+    h("p", { class: "hint" }, pl.planner
+      ? "Dash makes the work from the card's title and description and links it to the card. It waits for the developer you choose: the card moves to In progress once they start it."
+      : "Dash makes the work from the card's title and description, links it to the card and moves the card to In progress."),
     open.length ? h("p", { class: "hint warn" }, ico("alert"),
       ` This card already has ${open.length} ${noun} in progress. Start makes another one.`) : null,
     waits.length ? h("p", { class: "hint warn" }, ico("lock"), ` Waits for: ${waits.join(", ")} (not done).`) : null,
@@ -1437,7 +1441,7 @@ async function startSheet(c) {
     h("fieldset", { class: "field choice" },
       h("legend", {}, "Make"),
       h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "task", checked: true, onchange: kindChanged }),
-        h("span", {}, "A task ", h("em", {}, "one piece of work, queued for Claude now"))),
+        h("span", {}, "A task ", h("em", {}, pl.planner ? "one piece of work, for a developer to queue" : "one piece of work, queued for Claude now"))),
       h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "goal", onchange: kindChanged }),
         h("span", {}, "A goal ", h("em", {}, "something bigger: a coordinator breaks it into tasks")))),
     owner,

@@ -125,8 +125,8 @@ On **Start**, pick one:
 - **A goal**: a coordinator breaks it into tasks. See [Goals](goals.md).
 - **Save to Planned**: nothing starts yet. Start it from the card later.
 
-A planner has **A task** and **Save to Planned**. The task runs for a developer, as **Start…**
-does. To start a goal, save to Planned, then use **Start…** on the card to choose its owner.
+A planner has **A task** and **Save to Planned**. The task is for a developer, as **Start…**
+makes it: it waits as a draft until they queue it. To start a goal, save to Planned, then use **Start…** on the card to choose its owner.
 
 Dash puts the brief on the card as its description (a new card in **Ideas** if the card was
 deleted), then starts the task or goal the way **Start…** on a card does: it is linked to the

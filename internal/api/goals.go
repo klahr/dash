@@ -178,7 +178,14 @@ func (sv *service) createGoal(req goalRequest) (model.Goal, error) {
 	if req.owner != 0 {
 		owner = req.owner
 	}
+	// A goal made for someone else (a planner's, from a Planning card)
+	// starts paused: its coordinator runs as its owner, on their runner,
+	// so nothing runs until they read it and press Resume.
+	forOther := owner != sv.c.User
 	g := model.Goal{ProjectID: p.ID, Owner: owner}
+	if forOther {
+		g.Status = model.GoalPaused
+	}
 	set(&g.Title, req.Title)
 	set(&g.Description, req.Description)
 	set(&g.Budget, req.Budget)
@@ -188,16 +195,18 @@ func (sv *service) createGoal(req goalRequest) (model.Goal, error) {
 	}
 	g.Pending = []model.GoalWake{{Event: model.GoalWakeStart, At: now()}}
 	created := "Goal created; the coordinator reads the code and proposes a plan."
-	if owner != sv.c.User {
-		created = fmt.Sprintf("Goal created by %s from a Planning card, for %s; the coordinator reads the code and proposes a plan.",
-			cmp.Or(sv.s.username(sv.c.User), "a planner"), cmp.Or(sv.s.username(owner), "its owner"))
+	if forOther {
+		created = fmt.Sprintf("Goal created by %s from a Planning card, for %s. It is paused: nothing runs until %s reads it and presses Resume; then the coordinator reads the code and proposes a plan.",
+			cmp.Or(sv.s.username(sv.c.User), "a planner"), cmp.Or(sv.s.username(owner), "its owner"), cmp.Or(sv.s.username(owner), "its owner"))
 	}
 	g.Log = []model.GoalLogEntry{{At: now(), Kind: model.GoalLogUser, Text: created}}
 	g, err = sv.data.CreateGoal(g)
 	if err != nil {
 		return g, err
 	}
-	sv.s.goals().kick(g.ID)
+	if !forOther {
+		sv.s.goals().kick(g.ID)
+	}
 	return g, nil
 }
 

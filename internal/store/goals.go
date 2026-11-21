@@ -11,8 +11,9 @@ import (
 
 // ---- Goals ----
 
-// CreateGoal adds a goal to its project, planning. g must be cleaned
-// (model.CleanGoal) by the caller.
+// CreateGoal adds a goal to its project, planning; or paused, to plan once
+// resumed, when g.Status is model.GoalPaused (a planner's goal waits for its
+// owner to agree). g must be cleaned (model.CleanGoal) by the caller.
 func (s *Store) CreateGoal(g model.Goal) (model.Goal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -20,7 +21,11 @@ func (s *Store) CreateGoal(g model.Goal) (model.Goal, error) {
 		return g, ErrNotFound
 	}
 	g.ID = NewID()
-	g.Status = model.GoalPlanning
+	if g.Status == model.GoalPaused {
+		g.PausedFrom = model.GoalPlanning
+	} else {
+		g.Status, g.PausedFrom = model.GoalPlanning, ""
+	}
 	g.CreatedAt = time.Now()
 	g.UpdatedAt = g.CreatedAt
 	g = cloneGoal(g)

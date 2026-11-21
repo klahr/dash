@@ -257,6 +257,7 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 			}},
 		{"start_card", "Start the work for a card, like Start on the Planning page: a task (queued to run now, its prompt the card's title " +
 			"and description) or a goal (a coordinator plans it into tasks), linked to the card, which moves to in_progress. " +
+			"A planner's task is a draft for a developer: it runs, and the card moves, only once they queue it. " +
 			"Only when the user asks to start the card.",
 			[]Param{pCard,
 				{"kind", "string", "task (the default) or goal.", false},

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -1192,6 +1193,9 @@ func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (
 		return "", err
 	}
 	var id string
+	// forUser is the developer a planner made the work for (0: the
+	// caller's own work). It waits for them: a draft task, a paused goal.
+	var forUser int64
 	switch kind {
 	case "", model.LinkTask:
 		kind = model.LinkTask
@@ -1203,11 +1207,17 @@ func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (
 		if c.Description != "" {
 			prompt += "\n\n" + c.Description
 		}
-		t, err := run.addTodo(model.Todo{ProjectID: p.ID, Title: c.Title, Prompt: prompt, Attachments: sv.cardAttachments(c)}, true)
+		// A planner's task is the developer's, so it waits as a draft for
+		// them to read and queue: nothing runs as them, on their runner,
+		// until they agree.
+		t, err := run.addTodo(model.Todo{ProjectID: p.ID, Title: c.Title, Prompt: prompt, Attachments: sv.cardAttachments(c)}, run == sv)
 		if err != nil {
 			return "", err
 		}
 		id = t.ID
+		if run != sv {
+			forUser = run.c.User
+		}
 	case model.LinkGoal:
 		title, desc := c.Title, c.Description
 		if desc == "" {
@@ -1222,6 +1232,9 @@ func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (
 			return "", err
 		}
 		id = g.ID
+		if owner != 0 && owner != sv.c.User {
+			forUser = owner
+		}
 	default:
 		return "", fmt.Errorf("%w: start a task or a goal", errBadRequest)
 	}
@@ -1233,8 +1246,26 @@ func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (
 			return id, err
 		}
 	}
+	if forUser != 0 {
+		sv.madeFor(c, kind, forUser)
+		return id, nil // the card moves on once they start it (ObservePlanning)
+	}
 	sv.cardStarted(c)
 	return id, nil
+}
+
+// madeFor records on card c, as the caller (a planner), that they made its
+// work of kind in developer dev's name, and tells dev it waits for them:
+// the task as a draft to queue, the goal paused to resume.
+func (sv *service) madeFor(c model.Card, kind string, dev int64) {
+	who := cmp.Or(sv.s.username(dev), "the developer")
+	what, waits, ask := "a task", "It waits as a draft until "+who+" reads it and queues it.", "Nothing runs until you read the draft task and queue it."
+	if kind == model.LinkGoal {
+		what, waits, ask = "a goal", "It is paused until "+who+" reads it and presses Resume.", "Nothing runs until you read the goal and press Resume on Goals."
+	}
+	// Best effort: the card's history says who made the work.
+	_, _ = sv.data.AddCardComment(c.ID, fmt.Sprintf("Started %s for %s. %s", what, who, waits))
+	sv.cardNews(c, []int64{dev}, sv.callerName()+" started "+what+" for you", ask)
 }
 
 // startsFor is the service a card's Start makes its task as. A member's
@@ -1245,7 +1276,9 @@ func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (
 // developer's name instead (a member who isn't a planner), so one of their
 // runners takes it: runBy when given, else the first of the card's members
 // who is a developer, else the one Dash's own work of p goes to
-// (store.OrgStore.DashWorkFor).
+// (store.OrgStore.DashWorkFor). The task it makes there is a draft, which
+// runs only once that developer queues it (startCard): a planner never
+// runs work as someone else without their say.
 func (sv *service) startsFor(c model.Card, p model.Project, runBy int64) (*service, error) {
 	if !sv.c.Planner {
 		if runBy != 0 && runBy != sv.c.User {

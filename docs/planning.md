@@ -161,8 +161,8 @@ their own online (see [Planners](users.md#planners)).
 **Start…** on a card makes the work for it:
 
 1. Choose the project.
-2. Choose **A task** (queued for Claude now) or **A goal** (a coordinator plans it into
-   tasks; see [Goals](goals.md)).
+2. Choose **A task** (queued for Claude now; a planner's waits for a developer) or **A goal**
+   (a coordinator plans it into tasks; see [Goals](goals.md)).
 3. As a planner, choose a developer (a member who isn't a planner): who a task **Runs for**,
    or a goal's **Owner**. The card's first developer is suggested.
 4. Click **Start**.
@@ -186,6 +186,14 @@ a planner starts belongs to its **Owner** the same way. Without a choice for a t
 `start_card` tool), Dash picks the card's first developer, else whoever added the project,
 else the organization's owner. A goal always needs its **Owner** chosen.
 
+Nothing a planner starts runs until that developer agrees:
+
+- A task waits as a draft. The developer reads it and clicks **Queue**.
+- A goal starts paused. The owner reads it on **Goals** and clicks **Resume**.
+
+The developer is notified, and the card gets a comment from the planner saying what they
+started and for whom. The card moves to **In progress** once the developer starts the work.
+
 If no runner can take the work, the card says so, for example **Waiting for a runner: ask a
 developer to take it**. Ask the developer to connect a runner for the project, or to turn on
 **Take other members' tasks** for a runner in **Runners**.
@@ -199,9 +207,9 @@ as if they had created it. Put the developer on the card before you press **Star
 planners on the card, and the planner who pressed **Start**, hear of it as card news (see
 [Planning cards](notifications.md#planning-cards)).
 
-A goal a planner starts belongs to the developer they chose as its **Owner**. Its coordinator
-runs as that developer, on their runner. Its first plan of tasks waits for them to accept it on
-**Goals**, and they are notified. The card says **Waiting for a decision** until they do. A
+A goal a planner starts belongs to the developer they chose as its **Owner**. Once they resume
+it, its coordinator runs as that developer, on their runner. Its first plan of tasks waits for
+them to accept it on **Goals**, and they are notified. The card says **Waiting for a decision** until they do. A
 member who presses **Start** owns the goal themselves.
 
 ## Link existing work

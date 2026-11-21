@@ -73,8 +73,9 @@ func TestPlannerStartRunsForADeveloper(t *testing.T) {
 	proj := `"project":"` + p.ID + `"`
 
 	// Picked by the planner.
+	// It is a draft: nothing runs as the developer until they queue it.
 	w, td := start(ph, card(`{"title":"One"}`), `{`+proj+`,"run_by":`+strconv.FormatInt(dev.ID, 10)+`}`)
-	if w.Code != http.StatusOK || td.CreatedBy != dev.ID || !slices.Equal(td.WorkFor(), []int64{dev.ID}) {
+	if w.Code != http.StatusOK || td.CreatedBy != dev.ID || !slices.Equal(td.WorkFor(), []int64{dev.ID}) || td.Status != model.StatusDraft {
 		t.Fatalf("picked: %d %s; task %+v", w.Code, w.Body, td)
 	}
 	// Not a planner, nor someone outside the org.
@@ -93,7 +94,7 @@ func TestPlannerStartRunsForADeveloper(t *testing.T) {
 		t.Errorf("no developer on the card: task %+v", td)
 	}
 	// A member's own Start is theirs; they don't pick someone else.
-	if _, td := start(a, card(`{"title":"Four"}`), `{`+proj+`}`); td.CreatedBy != owner.User.ID {
+	if _, td := start(a, card(`{"title":"Four"}`), `{`+proj+`}`); td.CreatedBy != owner.User.ID || td.Status != model.StatusQueued {
 		t.Errorf("a member's start: task %+v", td)
 	}
 	if w, _ := start(a, card(`{"title":"Five"}`), `{`+proj+`,"run_by":`+strconv.FormatInt(dev.ID, 10)+`}`); w.Code != http.StatusBadRequest {
@@ -103,6 +104,9 @@ func TestPlannerStartRunsForADeveloper(t *testing.T) {
 	// No runner may take it: the card says what to do, not which runner.
 	c = card(`{"title":"Six"}`)
 	_, td = start(ph, c, `{`+proj+`}`)
+	if _, err := raw(s).SetStatus(td.ID, model.StatusQueued, ""); err != nil { // the developer queued it
+		t.Fatal(err)
+	}
 	for _, step := range []struct{ waiting, text string }{
 		{"waiting: no runner of dev's has the labels any; laptop is u's runner and only takes u's tasks", "Waiting for a runner: ask a developer to take it"},
 		{"no runner online: laptop is offline", "Waiting for a runner to come online"},
@@ -184,7 +188,8 @@ func TestPlanningCardFollowsItsWork(t *testing.T) {
 		t.Fatalf("start: %d %s", w.Code, w.Body)
 	}
 	c = decodeCard(t, w)
-	if len(c.Links) != 1 || c.Links[0].ID != "" || c.Links[0].Title != "Export as PDF" || c.Column != model.CardInProgress || c.ProjectID != p.ID {
+	// A planner's task is a draft the developer queues: the card waits.
+	if len(c.Links) != 1 || c.Links[0].ID != "" || c.Links[0].Title != "Export as PDF" || c.Column != model.CardIdeas || c.ProjectID != p.ID || c.Comments != 1 {
 		t.Fatalf("started card, as the planner: %+v", c)
 	}
 	// The member sees the task's id; the task's prompt is the card.
@@ -193,8 +198,18 @@ func TestPlanningCardFollowsItsWork(t *testing.T) {
 		t.Fatalf("started card, as a member: %+v", c)
 	}
 	td, err := raw(s).GetTodo(c.Links[0].ID)
-	if err != nil || td.Status != model.StatusQueued || !strings.Contains(td.Prompt, "Reports, as **PDF**.") || td.CreatedBy == 0 {
+	if err != nil || td.Status != model.StatusDraft || !strings.Contains(td.Prompt, "Reports, as **PDF**.") || td.CreatedBy == 0 {
 		t.Fatalf("the task: %+v %v", td, err)
+	}
+	// The developer queues it; the card moves to In progress.
+	if w := do(t, a, "POST", "/api/todos/"+td.ID+"/enqueue", ""); w.Code != http.StatusOK {
+		t.Fatalf("enqueue: %d %s", w.Code, w.Body)
+	}
+	td, _ = raw(s).GetTodo(td.ID)
+	s.ObservePlanning(model.Event{Type: model.EvTodoUpdated, TodoID: td.ID, Data: td})
+	deadline := time.Now().Add(5 * time.Second)
+	for decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+c.ID, "")).Column != model.CardInProgress && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	for _, step := range []struct {
@@ -240,7 +255,8 @@ func TestPlanningCardFollowsItsWork(t *testing.T) {
 		t.Fatalf("comment: %d %s", w.Code, w.Body)
 	}
 	got := decodeCard(t, do(t, a, "GET", "/api/planning/cards/"+c.ID, ""))
-	if len(got.Discussion) != 1 || got.Discussion[0].AuthorName != "pat" || got.Comments != 1 {
+	// The first is the note pat's Start left: who made the task, for whom.
+	if len(got.Discussion) != 2 || !strings.HasPrefix(got.Discussion[0].Text, "Started a task for u") || got.Discussion[1].AuthorName != "pat" || got.Comments != 2 {
 		t.Errorf("discussion %+v", got.Discussion)
 	}
 	// Only its author (or an admin) deletes a comment; pat is neither for u's.
