@@ -22,6 +22,7 @@ import { tokenTag } from "./runstats.js";
 import { loadChecklist } from "./checklist.js";
 import { keys, laneHidden, todoKey } from "./vim.js";
 import { desktop } from "./viewport.js";
+import { chatPage } from "./nav.js";
 import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
 import { creator, mineOn, multiMember, myID, people, setMine } from "./people.js";
 import { hasBoards, onBoard, renderBoardSwitch } from "./boards.js";
@@ -319,23 +320,38 @@ function renderBoardNow() {
 // The Board button's dot when nothing waits on you: yellow while tasks run or
 // merge, green once every task that ran this session has landed in Done.
 // Waiting work wins: the review-coloured count above replaces the dot.
-const boardRun = { project: null, ids: new Set() };
+// The green dot goes once the board has been looked at, until the next round.
+// (Only in memory: after a reload the round is empty, so no dot comes back.)
+const boardRun = { project: null, ids: new Set(), seen: false };
 function renderBoardDot(waiting) {
   const pid = state.project?.id ?? null;
-  if (boardRun.project !== pid) { boardRun.project = pid; boardRun.ids.clear(); }
+  if (boardRun.project !== pid) { boardRun.project = pid; boardRun.ids.clear(); boardRun.seen = false; }
   const active = [...state.todos.values()].filter((t) => t.status === "in_progress" || t.status === "merging");
   // A new run after everything settled starts a fresh round.
-  if (active.length && !active.some((t) => boardRun.ids.has(t.id))) boardRun.ids.clear();
+  if (active.length && !active.some((t) => boardRun.ids.has(t.id))) { boardRun.ids.clear(); boardRun.seen = false; }
   for (const t of active) boardRun.ids.add(t.id);
   const tracked = [...boardRun.ids].map((id) => state.todos.get(id)).filter(Boolean);
   const done = !active.length && tracked.length > 0 && tracked.every((t) => t.status === "merged");
+  if (done && boardShown()) boardRun.seen = true;
   const dot = $("#board-dot");
-  dot.hidden = !!waiting || (!active.length && !done);
+  dot.hidden = !!waiting || (!active.length && (!done || boardRun.seen));
   dot.classList.toggle("done", !active.length && done);
   // A dot on a phone; on a desktop it says which, in a word.
   dot.textContent = active.length ? "running" : "all merged";
   dot.title = active.length ? `${plural(active.length, "task")} running or merging` : "Every task that ran has merged";
 }
+// Whether the board is in front of the user: its view, not under the phone's
+// chat page, in a tab that isn't hidden.
+function boardShown() { return state.view === "board" && !chatPage() && !document.hidden; }
+// boardSeen hides a green dot once the board is shown (nav.js calls it on every
+// view change). The DOM check first: at startup this module may not have run yet.
+export function boardSeen() {
+  const dot = $("#board-dot");
+  if (!dot || !dot.classList.contains("done") || !boardShown()) return;
+  boardRun.seen = true;
+  dot.hidden = true;
+}
+document.addEventListener("visibilitychange", boardSeen);
 
 // ------------------------------------------------------------------ swipe between lanes (phones)
 // On a phone the board shows one lane at a time: a horizontal swipe on it

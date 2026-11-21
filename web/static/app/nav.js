@@ -16,6 +16,7 @@ import { closeGoal, loadGoals } from "./goals.js";
 import { closeDeploy, loadDeploys } from "./deploys.js";
 import { closeCard, planningShown } from "./planning.js";
 import { changed, initial } from "./routes.js";
+import { boardSeen } from "./branches.js";
 
 // ------------------------------------------------------------------ navigation
 // Shell is one page with two places, main (view "run") and a commit (view
@@ -73,6 +74,7 @@ export function renderNavActive() {
   };
   $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => mark(b, !chatOn && b.dataset.view === navView(state.view)));
   mark($("#nav-chat"), chatOn);
+  boardSeen();
 }
 desktop.addEventListener("change", () => renderNavActive());
 // The nav's sections, and the menu drawer's copies of those that don't fit the
