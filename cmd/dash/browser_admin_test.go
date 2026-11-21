@@ -62,6 +62,8 @@ func TestBrowserAdminSheet(t *testing.T) {
 
 	// On a phone: the pane in the list's place, with Back.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	// On a phone the account menu is in the drawer, off screen until Menu opens it.
+	b.until("open the drawer", `document.querySelector(".app").classList.contains("menu-open")`, chromedp.Click(chromedp.ID("menu-open")))
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu > summary`)))
 	b.until("open Admin", `document.querySelector("#admin-sheet").open`, chromedp.Click(chromedp.ID("admin-open")))
 	b.until("open a user", `!document.querySelector("#admin-user-detail").hidden`, chromedp.Click(chromedp.CSS(`#admin-users-list .admin-row`)))
