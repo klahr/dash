@@ -11,7 +11,6 @@ import { closeCommit, loadGraph } from "./history.js";
 import { loadFiles } from "./files.js";
 import { loadIssues } from "./issues.js";
 import { loadScans } from "./scans.js";
-import { cl, flushChecklist, loadChecklist } from "./checklist.js";
 import { closeGoal, loadGoals } from "./goals.js";
 import { closeDeploy, loadDeploys } from "./deploys.js";
 import { closeCard, planningShown } from "./planning.js";
@@ -52,8 +51,6 @@ function applyView(name) {
   if (name === "planning") planningShown();
   else closeCard();
   if (name === "files" && state.project) loadFiles().catch(fail); // at startup the project (and the files code below) isn't ready yet
-  if (name === "checklist" && state.project) loadChecklist().catch(fail);
-  else if (state.project && typeof cl !== "undefined" && cl.pending.length) flushChecklist().catch(fail); // leaving it saves at once
   if (name === "issues" && state.project) loadIssues().catch(fail);
   if (name === "scans" && state.project) loadScans().catch(fail);
   if (name === "try") requestAnimationFrame(() => enterTry().catch(fail));
@@ -78,7 +75,7 @@ export function renderNavActive() {
 }
 desktop.addEventListener("change", () => renderNavActive());
 // The nav's sections, and the menu drawer's copies of those that don't fit the
-// bottom nav on mobile (Scans, Shell, History, Deploys, Files, Checklist). Picking
+// bottom nav on mobile (Scans, Shell, History, Deploys, Files). Picking
 // one leaves the mobile chat page.
 $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => b.addEventListener("click", () => {
   if (!desktop.matches && pane.open) toggleChatPane(false);

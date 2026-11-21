@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -8,8 +9,38 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/queue"
 )
+
+// repoServer is a board server with a project whose repository is a fresh
+// local git repository (merging locally into main), a running merge queue,
+// and a handler that signs requests in as the owner.
+func repoServer(t *testing.T) (*Server, model.Project, http.Handler) {
+	t.Helper()
+	s, _, p := boardServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	s.Git = gitops.New(nil)
+	dir := filepath.Join(t.TempDir(), "web")
+	if err := s.Git.InitRepo(ctx, p.ID, dir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := raw(s).UpdateProject(p.ID, func(x *model.Project) error {
+		x.Path, x.DefaultBranch, x.MergeMode = dir, "main", model.MergeLocal
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Merges = queue.NewMergeQueue(raw(s), s.Git, s.Hub, &queue.TodoLog{Root: t.TempDir()}, 4)
+	s.Merges.WorktreeRoot = t.TempDir()
+	go s.Merges.Run(ctx)
+	h := s.mux()
+	owned := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.ServeHTTP(w, asOwner(t, s, r)) })
+	return s, p, owned
+}
 
 // featureRound is an interviewer's reply to a feature plan: a question on
 // a feature topic, and on a project's (dropped), and the brief.
@@ -20,12 +51,12 @@ const featureRound = `{"note":"Who is it for?",
 	"brief":"# CSV export\nExport the board as CSV.\n## Done when\nA test reads the file back.",
 	"open_questions":[],"verdict":{"ready":true,"summary":"Enough."}}`
 
-// featureServer is checklistServer (a project with a repository here) with
+// featureServer is repoServer (a project with a repository here) with
 // a CLAUDE.md and README.md on its branch and a planner whose rounds answer
 // featureRound.
 func featureServer(t *testing.T) (*Server, model.Project, http.Handler, *fakePlanner) {
 	t.Helper()
-	s, p, h := checklistServer(t, "")
+	s, p, h := repoServer(t)
 	for name, text := range map[string]string{"CLAUDE.md": "# Rules\nUse Go.\n", "README.md": "# Web\nThe board.\n", "web/app.js": "x\n"} {
 		full := filepath.Join(p.Path, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {

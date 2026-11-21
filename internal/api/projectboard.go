@@ -10,7 +10,7 @@ import (
 
 // projectBoard is the board as a run in one project uses it: a task's run,
 // a project chat, a chat a hub asks a runner for in one of its projects. It
-// sees and changes that project only: its tasks, issues, checklist, goals
+// sees and changes that project only: its tasks, issues, goals
 // and Try terminal. Other projects, even in the same org, look as if they
 // didn't exist. Only the general chat (no project) gets the whole org's
 // board.
@@ -189,27 +189,6 @@ func (pb projectBoard) CreateRelease(projectID string, r mcptools.NewRelease) (m
 		return mcptools.Release{}, err
 	}
 	return pb.b.CreateRelease(pb.project, r)
-}
-
-func (pb projectBoard) ReadChecklist(projectID string) (mcptools.Checklist, error) {
-	if err := pb.check(projectID); err != nil {
-		return mcptools.Checklist{}, err
-	}
-	return pb.b.ReadChecklist(pb.project)
-}
-
-func (pb projectBoard) ChangeChecklist(projectID string, c mcptools.ChecklistChange) (mcptools.ChecklistSaved, error) {
-	if err := pb.check(projectID); err != nil {
-		return mcptools.ChecklistSaved{}, err
-	}
-	return pb.b.ChangeChecklist(pb.project, c)
-}
-
-func (pb projectBoard) MoveChecklistItem(projectID string, m mcptools.ChecklistMove) (mcptools.ChecklistMoved, error) {
-	if err := pb.check(projectID); err != nil {
-		return mcptools.ChecklistMoved{}, err
-	}
-	return pb.b.MoveChecklistItem(pb.project, m)
 }
 
 // Goals lists the project's goals, also for projectID "" (every project's

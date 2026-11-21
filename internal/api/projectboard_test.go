@@ -120,7 +120,6 @@ func TestProjectChatCantReachOtherProjects(t *testing.T) {
 		{"reject_goal_plan", onGoal},
 		{"message_goal", fmt.Sprintf(`{"goal":%q,"text":"hi"}`, otherGoal.ID)},
 		// Last: they reach git, which this test server has none of.
-		{"read_checklist", inOther},
 		{"read_try_terminal", inOther},
 		{"create_release", fmt.Sprintf(`{"project":%q,"bump":"patch"}`, other.Name)},
 	} {

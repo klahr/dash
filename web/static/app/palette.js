@@ -34,7 +34,6 @@ import { closeCommit, commitScroller, moveCommit, stepCommitFile } from "./histo
 import { closeGoal, goalsOn, gp, openGoalSheet, stepGoal } from "./goals.js";
 import { closeDeploy, dp, stepDeploy } from "./deploys.js";
 import { cardOpen, closeCard } from "./planning.js";
-import { checklistKey } from "./checklist.js";
 import { focusTry, openTry } from "./try.js";
 import { BOUND, VIEWS, openKeys, cursorTodo, enterKey, isTyping, keys, laneCount, laneSkipped, laneTodos, moveCursor, openCommandLine, openDialog, permKey, runCommand, scrollBy, scroller, setMode, stepLane, todoKey } from "./vim.js";
 
@@ -81,7 +80,6 @@ function paletteCommands() {
     ["History", "log", go("history"), "gh", "git graph tree commits view"],
     ["Goals", "target", go("goals"), "go", "goal coordinator plan progress budget"],
     ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
-    ["Checklist (TODO.md)", "checks", go("checklist"), "gl", "todo.md checklist to-do list check off tick items"],
     ["Planning", "plan", go("planning"), "gp", "plan roadmap product owner cards ideas planned"],
     ["Switch project", "repo", openProjects, "p", "projects"],
     ["Add project", "plus", () => openNewProject(), "", "new create local repository runner github clone url"],
@@ -373,7 +371,6 @@ async function handleNormal(k, n, hadCount) {
     case "go": return showView("goals");
     case "gd": return showView("deploys");
     case "gf": return showView("files");
-    case "gl": return showView("checklist");
     case "gp": return showView("planning");
     case "gi": return showView("issues");
     case "gn": return showView("scans");
@@ -497,8 +494,6 @@ async function handleNormal(k, n, hadCount) {
       }
       if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(dp.open ? $("#dd-body") : scroller(), k, n);
       return;
-    case "checklist":
-      return checklistKey(k, n, hadCount);
   }
 }
 

@@ -34,7 +34,6 @@ import { closeCommit, loadGraph, renderGraph } from "./history.js";
 import { loadFiles, renderFile, renderFileTree } from "./files.js";
 import { loadIssues, resetIssues } from "./issues.js";
 import { loadScans, resetScans } from "./scans.js";
-import { loadChecklist } from "./checklist.js";
 import { gp, loadGoals, resetGoals, showGoal } from "./goals.js";
 import { planner } from "./planner.js";
 import { followProject } from "./planning.js";
@@ -70,7 +69,7 @@ export async function loadProjects() {
     renderProjectHeader();
     // No project from the start: selectProject didn't run, so the project
     // views draw their "No project" states here.
-    if (first && !next) { renderBoard(); resetGoals(); renderProcs(); renderFileTree(); renderFile(); loadTry().catch(() => {}); loadChecklist().catch(fail); }
+    if (first && !next) { renderBoard(); resetGoals(); renderProcs(); renderFileTree(); renderFile(); loadTry().catch(() => {}); }
   }
   renderProjectList();
   if (first) startRouter().catch(fail);
@@ -111,8 +110,8 @@ export async function selectProject(p, { follow = true } = {}) {
   loadTry().catch(() => {});
   // Planning is the hub's: it follows a hub project, not a runner's.
   if (follow && p && !p.prefix) followProject(p.id);
-  if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); loadChecklist().catch(fail); return; }
-  await Promise.all([loadIssues(), loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "checklist" && loadChecklist(), state.view === "scans" && loadScans()]);
+  if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); return; }
+  await Promise.all([loadIssues(), loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "scans" && loadScans()]);
 }
 
 async function loadPerms() {

@@ -33,10 +33,10 @@ import { isQuestion } from "./chatparts.js";
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
 // In the nav's order: the project's sections, then Planning (the organization's).
-export const VIEWS = ["board", "issues", "scans", "run", "history", "goals", "files", "checklist", "planning"];
+export const VIEWS = ["board", "issues", "scans", "run", "history", "goals", "files", "planning"];
 export const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gn|gc|gs|gh|go|gf|gl|gp|m|M|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gn|gc|gs|gh|go|gf|gp|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 export const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 export const openDialog = () => document.querySelector("dialog[open]");
 
@@ -234,7 +234,7 @@ export async function runCommand(line) {
 // openKeys opens the Keyboard sheet at the keys of what is shown: the open
 // task, else the page (the Shell at a commit is the Shell; Files and Planning
 // have no keys of their own, so they start at Everywhere).
-const KEY_AREA = { board: "board", run: "shell", try: "shell", history: "history", goals: "goals", checklist: "checklist" };
+const KEY_AREA = { board: "board", run: "shell", try: "shell", history: "history", goals: "goals" };
 export function openKeys() {
   const d = $("#keys-sheet");
   d.showModal();

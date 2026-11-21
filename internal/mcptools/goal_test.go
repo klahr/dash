@@ -34,7 +34,7 @@ func TestPlanItems(t *testing.T) {
 // A coordinator never gets a tool that approves, merges or publishes.
 func TestGoalToolNames(t *testing.T) {
 	for _, name := range append(slices.Clone(GoalBoardTools), GoalToolNames...) {
-		for _, banned := range []string{"approve", "merge", "release", "start_now", "checklist_item"} {
+		for _, banned := range []string{"approve", "merge", "release", "start_now"} {
 			if strings.Contains(name, banned) {
 				t.Errorf("coordinator tool %s", name)
 			}

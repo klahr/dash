@@ -90,8 +90,8 @@ const suggestPrompt = "Below is the end of a conversation between a developer (U
 	"It must answer or follow from Claude's latest message:\n" +
 	"- If Claude asked a question, answer it.\n" +
 	"- If Claude offered to do something, accept it or turn it down.\n" +
-	"- If Claude already did something (created or queued a task, added a checklist item, ran the tests, " +
-	"made an edit), never ask for it again.\n" +
+	"- If Claude already did something (created or queued a task, ran the tests, made an edit), " +
+	"never ask for it again.\n" +
 	"- Never repeat or rephrase the developer's own last message, and never ask for anything the " +
 	"conversation shows is already done.\n" +
 	"- Write in the same language as the developer's messages.\n" +
@@ -176,27 +176,22 @@ func ActionNote(tool string) string {
 }
 
 var actionNotes = map[string]string{
-	"create_todo":                 "created a task",
-	"queue_todo":                  "queued a task",
-	"enqueue_todo":                "queued a task",
-	"restart_todo":                "restarted a task",
-	"rework_todo":                 "sent a task back for rework",
-	"stop_todo":                   "stopped a task",
-	"update_todo":                 "changed a task",
-	"cancel_todo":                 "cancelled a task",
-	"delete_todo":                 "deleted a task",
-	"create_release":              "created a release",
-	"report_issue":                "reported an issue",
-	"add_checklist_item":          "added a checklist item",
-	"check_checklist_item":        "checked off a checklist item",
-	"edit_checklist_item":         "edited a checklist item",
-	"delete_checklist_item":       "deleted a checklist item",
-	"move_checklist_item_to_task": "created a task from a checklist item",
-	"Edit":                        "edited files",
-	"MultiEdit":                   "edited files",
-	"Write":                       "edited files",
-	"NotebookEdit":                "edited files",
-	"Bash":                        "ran commands",
+	"create_todo":    "created a task",
+	"queue_todo":     "queued a task",
+	"enqueue_todo":   "queued a task",
+	"restart_todo":   "restarted a task",
+	"rework_todo":    "sent a task back for rework",
+	"stop_todo":      "stopped a task",
+	"update_todo":    "changed a task",
+	"cancel_todo":    "cancelled a task",
+	"delete_todo":    "deleted a task",
+	"create_release": "created a release",
+	"report_issue":   "reported an issue",
+	"Edit":           "edited files",
+	"MultiEdit":      "edited files",
+	"Write":          "edited files",
+	"NotebookEdit":   "edited files",
+	"Bash":           "ran commands",
 }
 
 // cutEnd keeps s's first n bytes (whole runes), marking the cut.
@@ -247,8 +242,8 @@ func CleanSuggestion(s string) string {
 // FitSuggestion checks a cleaned suggestion (see CleanSuggestion) against
 // the conversation it follows (history, and done: what Claude's latest
 // reply did with its tools, see ActionNote). "" when it repeats the user's
-// last message (ignoring case and punctuation), or asks for a task or a
-// checklist item that the latest reply says is already created or queued.
+// last message (ignoring case and punctuation), or asks for a task that
+// the latest reply says is already created or queued.
 func FitSuggestion(s string, history []ChatMessage, done []string) string {
 	if s == "" {
 		return ""
@@ -272,9 +267,8 @@ func FitSuggestion(s string, history []ChatMessage, done []string) string {
 	notes := strings.Join(done, "; ")
 	queued := strings.Contains(notes, "queued a task") || queuedTask.MatchString(reply)
 	created := queued || strings.Contains(notes, "created a task") || createdTask.MatchString(reply)
-	listed := strings.Contains(notes, "added a checklist item") || addedItem.MatchString(reply)
 	low := strings.ToLower(s)
-	if created && asksTask.MatchString(low) || queued && asksQueue.MatchString(low) || listed && asksItem.MatchString(low) {
+	if created && asksTask.MatchString(low) || queued && asksQueue.MatchString(low) {
 		return ""
 	}
 	return s
@@ -293,11 +287,9 @@ var (
 	// task for this", "Task created", "It's queued").
 	queuedTask  = regexp.MustCompile(`(?i)\b(?:i'?ve|i have|i|it'?s|it is|it has|that'?s|and|task is|is now|has been|have been|now|just)\s+(?:been\s+|just\s+|now\s+)*queued\b|(?:^|[.!\n]\s*)queued\b|\btask (?:is |has been )?queued\b`)
 	createdTask = regexp.MustCompile(`(?i)\b(?:i'?ve|i have|i|just|now)\s+(?:just\s+|now\s+)?(?:created|drafted|filed|added|opened|made)\b[^.!?\n]{0,40}\b(?:task|todo|draft)s?\b|(?:^|[.!\n]\s*)(?:created|drafted)\s+(?:a|the|it|task|draft)\b|\b(?:task|draft) (?:is |has been )?created\b`)
-	addedItem   = regexp.MustCompile(`(?i)\b(?:i'?ve|i have|i|just|now)\s+(?:just\s+)?added\b[^.!?\n]{0,60}\b(?:checklist|to-?do list|todo\.md)\b`)
-	// The user asking for a task, for it to be queued, or for a checklist item.
+	// The user asking for a task, or for it to be queued.
 	asksTask  = regexp.MustCompile(`\b(?:create|make|add|open|file|draft|turn|put)\b[^.!?]{0,30}\b(?:task|todo|ticket)s?\b`)
 	asksQueue = regexp.MustCompile(`\bqueue\b`)
-	asksItem  = regexp.MustCompile(`\b(?:add|put|write)\b[^.!?]{0,40}\b(?:checklist|to-?do list|todo\.md)\b`)
 )
 
 // Part is one of the todos a large task is split into.

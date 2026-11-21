@@ -181,14 +181,14 @@ func TestHubAsksTheUsersRunnerForSuggestions(t *testing.T) {
 }
 
 // toolChat answers after calling tools: create_todo and queue_todo work,
-// add_checklist_item fails, list_todos only reads.
+// create_release fails, list_todos only reads.
 type toolChat struct{ echoChat }
 
 func (c *toolChat) Stream(_ context.Context, _ string, _ []agent.ChatMessage, emit func(agent.ChatDelta)) error {
-	for i, tool := range []string{"mcp__dash_board__list_todos", "mcp__dash_board__create_todo", "mcp__dash_board__queue_todo", "mcp__dash_board__add_checklist_item"} {
+	for i, tool := range []string{"mcp__dash_board__list_todos", "mcp__dash_board__create_todo", "mcp__dash_board__queue_todo", "mcp__dash_board__create_release"} {
 		id := string(rune('a' + i))
 		emit(agent.ChatDelta{Kind: "tool_use", ID: id, Tool: tool})
-		emit(agent.ChatDelta{Kind: "tool_result", ID: id, IsError: strings.HasSuffix(tool, "checklist_item")})
+		emit(agent.ChatDelta{Kind: "tool_result", ID: id, IsError: strings.HasSuffix(tool, "create_release")})
 	}
 	emit(agent.ChatDelta{Kind: "text", Text: "Done, it will run shortly."})
 	emit(agent.ChatDelta{Kind: "done"})

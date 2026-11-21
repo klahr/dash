@@ -107,10 +107,6 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Files</span>
       </button>
-      <button data-view="checklist" title="Checklist: TODO.md (gl)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.5 1.5L8 5.5M4 12.5l1.5 1.5L8 11.5M4.5 18.5h3M11 7h9M11 13h9M11 19h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Checklist</span>
-      </button>
       <!-- Planning is the organization's, not this project's: below a divider of its own. -->
       <div class="nav-sep" role="presentation"><span>Organization</span></div>
       <button data-view="planning" title="Planning: the organization's plan, across projects (gp)">
@@ -154,10 +150,6 @@
           <button class="menu-view" data-view="files" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
             <span>Files</span>
-          </button>
-          <button class="menu-view" data-view="checklist" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.5 1.5L8 5.5M4 12.5l1.5 1.5L8 11.5M4.5 18.5h3M11 7h9M11 13h9M11 19h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Checklist</span>
           </button>
         </div>
         <!-- The project's actions: what runs on its code, each showing how it went. -->
@@ -454,34 +446,6 @@
             </header>
             <textarea class="file-text" id="file-text" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="File content" hidden></textarea>
             <div class="empty" id="file-empty"><p class="empty-title" id="file-empty-title">No file open</p><p id="file-empty-text">Pick a file on the left to view and edit it. Saving creates a task that goes to review like any other; local files git doesn't track, like .env, are saved straight to disk.</p></div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Checklist: the project's TODO.md as a task list. Ticking, adding and
-           editing commit straight to the default branch (batched); moving an
-           item makes a task of it. -->
-      <section class="view" id="view-checklist" aria-label="Checklist">
-        <div class="page checklist">
-          <header class="cl-head">
-            <h2 class="cl-title page-title">Checklist</h2>
-            <code class="cl-file" title="The checklist is this file at the root of the repository">TODO.md</code>
-            <span class="cl-state" id="cl-state" aria-live="polite"></span>
-          </header>
-          <div class="cl-progress" id="cl-progress" hidden>
-            <div class="cl-bar" aria-hidden="true"><span id="cl-bar-fill"></span></div>
-            <span class="cl-count" id="cl-count"></span>
-          </div>
-          <div class="cl-body" id="cl-body"></div>
-          <form class="cl-add" id="cl-add" hidden>
-            <input id="cl-add-text" placeholder="Add an item" autocomplete="off" aria-label="New item">
-            <select id="cl-add-section" aria-label="Section"></select>
-            <button class="btn primary" type="submit" data-icon="plus">Add</button>
-          </form>
-          <div class="empty" id="cl-empty" hidden>
-            <p class="empty-title" id="cl-empty-title">No TODO.md</p>
-            <p id="cl-empty-text">This project has no TODO.md at the root of its repository. Add a first item to create one.</p>
-            <button class="btn primary" type="button" id="cl-create" data-icon="plus">Create TODO.md</button>
           </div>
         </div>
       </section>
@@ -1824,7 +1788,6 @@
           <button type="button" class="rail-item" data-rail="history">History</button>
           <button type="button" class="rail-item" data-rail="goals">Goals</button>
           <button type="button" class="rail-item" data-rail="deploys">Deploys</button>
-          <button type="button" class="rail-item" data-rail="checklist">Checklist</button>
           <button type="button" class="rail-item" data-rail="chat">Chat</button>
           <button type="button" class="rail-item" data-rail="forms">Forms</button>
           <button type="button" class="rail-item" data-rail="commands">Commands</button>
@@ -1863,7 +1826,6 @@
                 <tr><th scope="row"><kbd>go</kbd></th><td>Goals</td></tr>
                 <tr><th scope="row"><kbd>gd</kbd></th><td>Deploys</td></tr>
                 <tr><th scope="row"><kbd>gf</kbd></th><td>Files</td></tr>
-                <tr><th scope="row"><kbd>gl</kbd></th><td>Checklist</td></tr>
                 <tr><th scope="row"><kbd>gp</kbd></th><td>Planning (the organization's)</td></tr>
                 <tr><th scope="row"><kbd>gt</kbd> <kbd>gT</kbd></th><td>Next / previous section</td></tr>
               </tbody>
@@ -1984,22 +1946,6 @@
               <tbody>
                 <tr><th scope="row"><kbd>j</kbd> <kbd>k</kbd></th><td>Open the next / previous deploy (also <kbd>↓</kbd>/<kbd>↑</kbd>)</td></tr>
                 <tr><th scope="row"><kbd>q</kbd> <kbd>Esc</kbd></th><td>Close it</td></tr>
-              </tbody>
-            </table>
-          </section>
-          <section class="rail-section" data-section="checklist">
-            <table class="keys-table">
-              <caption class="sr-only">Checklist</caption>
-              <tbody>
-                <tr><th scope="row"><kbd>j</kbd> <kbd>k</kbd></th><td>Move between items</td></tr>
-                <tr><th scope="row"><kbd>x</kbd> <kbd>Space</kbd></th><td>Check or uncheck</td></tr>
-                <tr><th scope="row"><kbd>a</kbd></th><td>Add an item</td></tr>
-                <tr><th scope="row"><kbd>e</kbd></th><td>Edit</td></tr>
-                <tr><th scope="row"><kbd>dd</kbd></th><td>Delete</td></tr>
-                <tr><th scope="row"><kbd>+</kbd> <kbd>-</kbd></th><td>Move up / down</td></tr>
-                <tr><th scope="row"><kbd>m</kbd></th><td>Move to a draft task</td></tr>
-                <tr><th scope="row"><kbd>M</kbd></th><td>Move and queue</td></tr>
-                <tr><th scope="row"><kbd>r</kbd></th><td>Read TODO.md again (for hand edits to an untracked one)</td></tr>
               </tbody>
             </table>
           </section>

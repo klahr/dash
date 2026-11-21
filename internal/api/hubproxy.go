@@ -53,11 +53,37 @@ func (sv *service) projectRunner(ctx context.Context, p model.Project, prefer st
 }
 
 // pushRunner is projectRunner for work that pushes or commits to p's
-// remote (a push, a tag, a branch, a pull request, a checklist save): a
+// remote (a push, a tag, a branch, a pull request): a
 // runner does it with its owner's git login, so it runs only on one of the
 // caller's own runners or a shared one, never on another member's.
 func (sv *service) pushRunner(ctx context.Context, p model.Project, prefer string) (tunnel.Runner, string, error) {
 	return sv.projectRunnerFor(ctx, p, prefer, []int64{sv.c.User})
+}
+
+// callRunner calls a project endpoint ("/file", "/brief", …) on one of p's
+// runners, from a hub. Anything but a GET commits to the default branch and
+// pushes, so it runs only on a runner of the caller's own or a shared one
+// (pushRunner).
+func (sv *service) callRunner(ctx context.Context, p model.Project, method, rest string, in, out any) error {
+	pick := sv.pushRunner
+	if method == http.MethodGet {
+		pick = sv.projectRunner
+	}
+	run, rpid, err := pick(ctx, p, "")
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(tunnel.WithUser(ctx, sv.c.User), 2*time.Minute)
+	defer cancel()
+	err = sv.s.fleet().Call(ctx, run.ID, method, "/api/projects/"+url.PathEscape(rpid)+rest, in, out)
+	if errors.Is(err, tunnel.ErrOffline) || errors.Is(err, tunnel.ErrUnknownName) {
+		return errNoRunnerOnline
+	}
+	var ce *tunnel.CallError
+	if errors.As(err, &ce) && ce.Status == http.StatusConflict {
+		return fmt.Errorf("%w: %w", errConflict, err)
+	}
+	return err
 }
 
 // pushRoutes are the forwarded routes (see viaRunner) that push or commit

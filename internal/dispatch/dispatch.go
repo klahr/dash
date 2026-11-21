@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/klahr/dash/internal/checklist"
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
@@ -537,9 +536,6 @@ func (d *Dispatcher) Report(id string, body []byte) error {
 	}
 	for _, pid := range rep.Procs {
 		d.procsChanged(r, pid)
-	}
-	for _, pid := range rep.Checklists {
-		d.projectEvent(r, pid, model.EvChecklist, map[string]string{"path": checklist.Name})
 	}
 	d.setPermissions(r, rep.Permissions)
 	if fresh, ok := d.Fleet.Get(id); ok {

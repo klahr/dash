@@ -16,7 +16,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/klahr/dash/internal/checklist"
 	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
 )
@@ -89,7 +88,7 @@ func fileVersion(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// fileContent is a file as the editor (and the checklist) reads it.
+// fileContent is a file as the editor reads it.
 type fileContent struct {
 	Path     string  `json:"path"`
 	Blob     string  `json:"blob,omitempty"` // its blob on the branch, or the hash of a local file
@@ -188,11 +187,7 @@ func (s *Server) writeLocalFile(ctx context.Context, p model.Project, name, vers
 	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
 		return "", err
 	}
-	v := fileVersion([]byte(content))
-	if name == checklist.Name && s.Merges != nil {
-		s.Merges.Remote.ChecklistChanged(p.ID, v) // open checklists read it again
-	}
-	return v, nil
+	return fileVersion([]byte(content)), nil
 }
 
 // saveLocalFile writes a local file in the checkout, unless it changed on

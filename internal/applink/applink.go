@@ -6,8 +6,9 @@
 // the same paths in the browser; keep the two in step.
 //
 //	/p/{project}                     the project's board
-//	/p/{project}/{view}              board, issues, scans, run, try, history, goals, deploys, files, checklist
+//	/p/{project}/{view}              board, issues, scans, run, try, history, goals, deploys, files
 //	                                 (run and try: the Shell page at main and at a commit)
+//	/p/{project}/checklist           the board (an old view's address, kept for bookmarks)
 //	/p/{project}/tasks/{id}          a task, open over the board
 //	/p/{project}/goals/{id}          a goal, open on Goals
 //	/p/{project}/history/{sha}       a commit, open on History
@@ -28,8 +29,12 @@ import (
 // Views are the project views a path may name.
 var Views = map[string]bool{
 	"board": true, "issues": true, "scans": true, "run": true, "try": true,
-	"history": true, "goals": true, "deploys": true, "files": true, "checklist": true,
+	"history": true, "goals": true, "deploys": true, "files": true,
 }
+
+// oldViews are views Dash no longer has. Their paths still serve the app's
+// page, which opens the project's board there, so old links still work.
+var oldViews = map[string]bool{"checklist": true}
 
 // items are the kinds of thing /p/{project}/{kind}/{id} opens.
 var items = map[string]bool{"tasks": true, "goals": true, "history": true, "issues": true, "deploys": true}
@@ -78,7 +83,7 @@ func Is(path string) bool {
 	case 1:
 		return true
 	case 2:
-		return Views[parts[1]]
+		return Views[parts[1]] || oldViews[parts[1]]
 	case 3:
 		return items[parts[1]]
 	}

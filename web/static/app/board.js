@@ -47,7 +47,7 @@ export async function pushDone() {
   try {
     await api("POST", `/api/projects/${p.id}/push`);
     toast(`Pushed ${baseBranch(p)}`);
-    await loadUnpushed(); // a checklist the push's sync changed hears of it (checklist.updated)
+    await loadUnpushed();
   } finally { renderPushMain(); }
 }
 

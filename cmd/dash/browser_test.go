@@ -174,81 +174,6 @@ func TestBrowserMainFlows(t *testing.T) {
 	}
 }
 
-// The checklist (TODO.md) of a hub's project, whose checkout is on its
-// runner: create TODO.md from the empty state, add items, tick one, move
-// one to a draft task and drag one to the top. Each change reaches origin's main as a commit, with
-// no task for it.
-func TestBrowserChecklist(t *testing.T) {
-	chrome := needChrome(t)
-	h := startRunnerHub(t)
-	api, pid := h.api, h.project.ID
-	b := newBrowser(t, chrome)
-	b.signIn(h)
-	onOrigin := func(what string, ok func(string) bool) {
-		t.Helper()
-		waitFor(t, nil, what, func() bool {
-			out, err := exec.Command("git", "--git-dir", h.origin, "show", "main:TODO.md").CombinedOutput()
-			return err == nil && ok(string(out))
-		})
-	}
-
-	b.until("open the checklist", `document.querySelector("#view-checklist.active")`,
-		chromedp.Click(chromedp.CSS(`.nav > button[data-view=checklist]`)))
-	b.waitJS("the empty state", `!document.querySelector("#cl-empty").hidden`)
-	b.until("create TODO.md", `document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.ID("cl-create")))
-	b.do("write the first item", chromedp.SendKeys(chromedp.ID("ask-input"), "First thing"))
-	b.waitJS("the item written", `document.querySelector("#ask-input").value === "First thing"`)
-	b.until("save it", `!document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.ID("ask-ok")))
-	b.waitJS("the saved item", `[...document.querySelectorAll("#cl-body .cl-item:not(.pending)")].some((e) => e.textContent.includes("First thing"))`)
-	onOrigin("TODO.md created on origin", func(s string) bool { return strings.Contains(s, "- [ ] First thing") })
-
-	// Two quick additions are saved together.
-	for _, item := range []string{"Second thing", "Third thing"} {
-		b.do("add "+item, chromedp.SendKeys(chromedp.ID("cl-add-text"), item))
-		b.waitJS(item+" written", fmt.Sprintf(`document.querySelector("#cl-add-text").value === %q`, item))
-		b.do("submit "+item, chromedp.Click(chromedp.CSS(`#cl-add button[type=submit]`)))
-	}
-	b.waitJS("both saved", `document.querySelectorAll("#cl-body .cl-item:not(.pending)").length === 3`)
-	onOrigin("both items on origin", func(s string) bool {
-		return strings.Contains(s, "- [ ] Second thing\n- [ ] Third thing")
-	})
-
-	// Tick one.
-	b.clickIn("#cl-body .cl-item", "First thing", ".cl-check input")
-	onOrigin("the tick on origin", func(s string) bool { return strings.Contains(s, "- [x] First thing") })
-	b.waitJS("the tick saved", `!document.querySelector("#cl-body .cl-item.pending") && document.querySelector("#cl-body .cl-item.done")?.textContent.includes("First thing")`)
-
-	// Move one to a draft.
-	b.clickIn("#cl-body .cl-item", "Second thing", ".cl-move button")
-	b.waitJS("the item gone", `![...document.querySelectorAll("#cl-body .cl-item")].some((e) => e.textContent.includes("Second thing"))`)
-	b.waitJS("the toast", `[...document.querySelectorAll("#toasts .toast")].some((e) => e.textContent.includes("Moved to draft"))`)
-	onOrigin("the item gone from origin", func(s string) bool { return !strings.Contains(s, "Second thing") && strings.Contains(s, "Third thing") })
-	var todos []todo
-	api.must("GET", "/api/projects/"+pid+"/todos", nil, http.StatusOK, &todos)
-	if len(todos) != 1 || todos[0].Title != "Second thing" || todos[0].Status != "draft" {
-		t.Fatalf("tasks: %+v", todos)
-	}
-
-	// A change made elsewhere (another tab, the board's MCP tools) shows
-	// up by itself: the runner commits it, the hub hears of it in the
-	// runner's report and tells the page, which reads TODO.md again.
-	api.must("POST", "/api/projects/"+pid+"/checklist", map[string]any{
-		"ops": []map[string]any{{"op": "add", "text": "Made elsewhere"}},
-	}, http.StatusOK, nil)
-	b.waitJS("the change made elsewhere", `[...document.querySelectorAll("#cl-body .cl-item")].some((e) => e.textContent.includes("Made elsewhere"))`)
-	b.waitJS("no Reload button", `!document.querySelector("#cl-reload")`)
-
-	// Drag an item by its grip onto the section's heading: to the top.
-	b.waitJS("the item to drag", markText("#cl-body .cl-item", "Made elsewhere"))
-	b.do("drag it to the top", chromedp.DragAndDrop(chromedp.CSS(`[data-e2e-click] .cl-grip`), chromedp.CSS(`#cl-body .cl-section > h3`)))
-	onOrigin("the item on top on origin", func(s string) bool { return strings.Contains(s, "- [ ] Made elsewhere\n- [x] First thing") })
-	b.waitJS("on top", `document.querySelector("#cl-body .cl-item:not(.pending)")?.textContent.includes("Made elsewhere")`)
-
-	// And with keys: gg to the first item, - moves it down a place.
-	b.do("move it down", chromedp.KeyEvent("gg-"))
-	onOrigin("the item moved down on origin", func(s string) bool { return strings.Contains(s, "- [x] First thing\n- [ ] Made elsewhere") })
-}
-
 // Split a large task: from the full task form, Claude (on the user's
 // runner) proposes tasks; one is edited, another added, and saving makes
 // them drafts, the second waiting for the first.
@@ -932,8 +857,8 @@ func (b *browser) clickTextUntil(sel, text, expr string) {
 }
 
 // clickIn clicks inner inside the first element matching sel whose text has
-// text, for a list a re-render may replace (the checklist, read again when
-// the runner reports a commit) and a click that mustn't be repeated: it
+// text, for a list a re-render may replace and a click that mustn't be
+// repeated: it
 // clicks again only when the marked node went before the click found it.
 func (b *browser) clickIn(sel, text, inner string) {
 	b.t.Helper()

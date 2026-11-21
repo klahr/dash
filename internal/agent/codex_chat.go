@@ -38,7 +38,7 @@ func (c CodexChat) system(dir string, coordinator bool) string {
 	}
 	tools := " and can read files and run commands that only read, in a read-only sandbox. You cannot edit files: " +
 		"Dash can't ask the user before a change in this chat."
-	return chatSystem(dir, tools, c.Board != nil && c.BoardURL != "", false)
+	return chatSystem(dir, tools, c.Board != nil && c.BoardURL != "")
 }
 
 func (c CodexChat) Stream(ctx context.Context, dir string, history []ChatMessage, emit func(ChatDelta)) error {

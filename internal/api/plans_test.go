@@ -249,7 +249,7 @@ func TestPlanInterviewNeeds(t *testing.T) {
 // Committing the brief: BRIEF.md and CLAUDE.md on the default branch, each
 // its own commit, and a file the branch has already is kept.
 func TestCommitBrief(t *testing.T) {
-	_, p, h := checklistServer(t, "")
+	_, p, h := repoServer(t)
 	w := do(t, h, "POST", "/api/projects/"+p.ID+"/brief", `{"brief":"# Recipes\n","claude_md":"# Rules\n"}`)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"committed":["BRIEF.md","CLAUDE.md"]`) {
 		t.Fatalf("commit: %d %s", w.Code, w.Body)

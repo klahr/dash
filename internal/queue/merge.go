@@ -843,7 +843,6 @@ func (m *MergeQueue) land(ctx context.Context, p model.Project, fn func(dir stri
 	if err := m.Git.Advance(ctx, p.ID, p.Path, p.Base(), old, head); err != nil {
 		return head, err
 	}
-	m.Remote.checklistMoved(ctx, p) // a project that doesn't sync never recounts
 	return head, nil
 }
 

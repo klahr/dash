@@ -101,11 +101,9 @@ also a queued task, when you ask to start it now despite the weekly pace), `stop
 `restart_todo` (see below), `update_todo` (title, prompt, priority, or
 `clear_priority` to unset it, dependencies, `builds_on` or `run_on`; the prompt, `builds_on` and `run_on` only while the task is a draft, queued or failed), `delete_todo` (only
 draft, queued or failed tasks, when you ask to remove one), `create_release`, `list_issues` and
-`report_issue`, and the checklist tools on the project's `TODO.md` (`read_checklist`,
-`add_checklist_item`, `check_checklist_item`, `edit_checklist_item`, `delete_checklist_item`,
-`reorder_checklist_item`, `move_checklist_item_to_task`; see [Checklist](checklist.md)), the
-[goal tools](#goals), the [planning tools](#planning) and the [deploy tools](#deploys). A read-only chat calls them without asking, except `create_release`, the
-checklist tools that change `TODO.md` (all of them but `read_checklist`), and `deploy`, `rollback` and `promote`, which it can't use; a shell chat asks for the ones that change something. They act as the user chatting,
+`report_issue`, the
+[goal tools](#goals), the [planning tools](#planning) and the [deploy tools](#deploys). A read-only chat calls them without asking, except `create_release`,
+`deploy`, `rollback` and `promote`, which it can't use; a shell chat asks for the ones that change something. They act as the user chatting,
 in the org they're working in.
 
 A project's chat and a task's run reach their own project only: `list_projects` lists just that
@@ -187,9 +185,8 @@ one, oldest first. The board's **Priority** levels sit on top of that number:
 | **High**   | `0` and higher | `"high"` (sets `0`)       |
 | **Urgent** | below `0`      | `"urgent"` (sets `-1`)    |
 
-`create_todo`, `update_todo` and `move_checklist_item_to_task` take either form, and so do
-`POST /api/projects/{id}/todos`, `PATCH /api/todos/{id}` and
-`POST /api/projects/{id}/checklist/move`. Leave `priority` out to keep it as it is (no priority on
+`create_todo` and `update_todo` take either form, and so do
+`POST /api/projects/{id}/todos` and `PATCH /api/todos/{id}`. Leave `priority` out to keep it as it is (no priority on
 a new task). Tasks always come back with the number, or `null` for none. Dragging cards on the
 board changes the numbers but keeps a task in its level. For example, `PATCH /api/todos/{id}`
 with `{"priority": "urgent"}` makes a task urgent. An unknown level is refused with `400`.
@@ -306,7 +303,7 @@ doesn't get these tools.
 A [goal](goals.md)'s coordinator gets its own set of `dash_board` tools, for its goal only:
 
 - the board tools `list_todos`, `get_todo`, `create_todo`, `queue_todo`, `stop_todo`,
-  `restart_todo`, `update_todo`, `delete_todo`, `read_checklist`, `list_issues` and
+  `restart_todo`, `update_todo`, `delete_todo`, `list_issues` and
   `report_issue`, in the goal's project only. Those that change a task only change the goal's
   own tasks. Tasks it creates get the goal's id and count against its budget; in "ask" mode they
   stay drafts and `queue_todo` is refused.
@@ -318,7 +315,7 @@ A [goal](goals.md)'s coordinator gets its own set of `dash_board` tools, for its
 - `add_log(text, why, todo)`, `ask_user(question)`, `finish_goal(summary)`
 - `get_diff(todo)` and `get_log(todo)`
 
-It has no tool to approve or merge a task, tag a release, change the checklist or start a task
+It has no tool to approve or merge a task, tag a release or start a task
 despite the weekly pace. On a runner, a coordinator turn the hub runs gets the hub goal's tools:
 the runner passes the goal's id to the hub with its calls (`X-Dash-Hub-Goal`), and the hub checks
 that the goal is in a project that runner works on.

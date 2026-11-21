@@ -32,7 +32,6 @@ import { loadProcs } from "./try.js";
 import { refreshGraph } from "./history.js";
 import { iss, onIssueEvent, renderIssues } from "./issues.js";
 import { loadScans, onScanRun, scanFinished, scans } from "./scans.js";
-import { clChanged } from "./checklist.js";
 import { checkForUpdate } from "./updates.js";
 import { onPlanningEvent } from "./planning.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
@@ -266,9 +265,6 @@ function onEvent(ev, m = { name: "" }) {
       break;
     case "process.updated":
       if (mine) loadProcs().catch(fail);
-      break;
-    case "checklist.updated":
-      if (mine) clChanged(ev.data?.version);
       break;
     case "preview.updated":
       previewEvent(ev.data, m);

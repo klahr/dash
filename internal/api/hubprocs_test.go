@@ -17,9 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/auth"
-	"github.com/klahr/dash/internal/checklist"
 	"github.com/klahr/dash/internal/dispatch"
-	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/runner"
@@ -394,7 +392,7 @@ func TestShellRunnerPick(t *testing.T) {
 }
 
 // A runner pushes with its owner's git login, so a member's pushes (push,
-// tag, branch, pull request, a checklist save) never run on another
+// tag, branch, pull request, a brief committed) never run on another
 // member's runner, even when none of theirs is online; their reads still
 // fall back to it.
 func TestHubPushesOnlyOnTheCallersOrASharedRunner(t *testing.T) {
@@ -443,9 +441,9 @@ func TestHubPushesOnlyOnTheCallersOrASharedRunner(t *testing.T) {
 		}
 	}
 	sv := hub.as(Caller{User: mid, Org: owner.Org})
-	if _, err := sv.changeChecklist(ctx, p, mcptools.ChecklistChange{Ops: []checklist.Op{{Op: "add", Text: "x"}}}); err == nil ||
+	if err := sv.callRunner(ctx, p, http.MethodPost, "/brief", map[string]string{"brief": "x"}, nil); err == nil ||
 		!strings.Contains(err.Error(), "none of yours, or a shared one") {
-		t.Errorf("member's checklist save: %v", err)
+		t.Errorf("member's brief commit: %v", err)
 	}
 	// A read still goes to the owner's runner.
 	if w := send(m, "GET", "/api/projects/"+p.ID+"/branches", ""); w.Code != http.StatusOK {

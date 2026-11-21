@@ -28,22 +28,3 @@ func TestParsePriority(t *testing.T) {
 		}
 	}
 }
-
-// The checklist move's body takes a level too, and still sends a number.
-func TestChecklistMovePriority(t *testing.T) {
-	var m ChecklistMove
-	if err := json.Unmarshal([]byte(`{"ref":"r","queue":true,"priority":"urgent","depends_on":["a"]}`), &m); err != nil {
-		t.Fatal(err)
-	}
-	if m.Ref != "r" || !m.Queue || m.Priority == nil || *m.Priority != -1 || len(m.DependsOn) != 1 {
-		t.Errorf("decoded %+v", m)
-	}
-	b, _ := json.Marshal(m)
-	var back ChecklistMove
-	if err := json.Unmarshal(b, &back); err != nil || back.Priority == nil || *back.Priority != -1 {
-		t.Errorf("round trip %s: %+v %v", b, back, err)
-	}
-	if err := json.Unmarshal([]byte(`{"ref":"r","priority":"later"}`), &m); err == nil {
-		t.Error("unknown level accepted")
-	}
-}

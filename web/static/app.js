@@ -83,7 +83,6 @@ import "./app/dnd.js";
 import "./app/hovercard.js";
 import "./app/issues.js";
 import "./app/scans.js";
-import "./app/checklist.js";
 import { setMode } from "./app/vim.js";
 import "./app/palette.js";
 import "./app/updates.js";

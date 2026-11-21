@@ -690,8 +690,7 @@ var briefFiles = []string{"BRIEF.md", "CLAUDE.md"}
 
 // commitBrief handles POST /api/projects/{pid}/brief: {"brief",
 // "claude_md"} committed as BRIEF.md and CLAUDE.md straight onto the
-// project's default branch (queue.MergeQueue.CommitFile, as the checklist
-// is), on a hub by one of its runners. A file the branch has already is
+// project's default branch (queue.MergeQueue.CommitFile), on a hub by one of its runners. A file the branch has already is
 // kept as it is. A project that lands changes through pull requests gets
 // nothing committed (400): the goal adds the files then.
 func (s *Server) commitBrief(w http.ResponseWriter, r *http.Request) {

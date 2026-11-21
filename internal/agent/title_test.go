@@ -248,13 +248,12 @@ func TestSuggestTranscriptMarks(t *testing.T) {
 
 func TestActionNote(t *testing.T) {
 	for tool, want := range map[string]string{
-		"mcp__dash_board__create_todo":        "created a task",
-		"mcp__dash_board__queue_todo":         "queued a task",
-		"mcp__dash_board__add_checklist_item": "added a checklist item",
-		"Edit":                                "edited files",
-		"mcp__dash_board__list_todos":         "",
-		"Read":                                "",
-		"":                                    "",
+		"mcp__dash_board__create_todo": "created a task",
+		"mcp__dash_board__queue_todo":  "queued a task",
+		"Edit":                         "edited files",
+		"mcp__dash_board__list_todos":  "",
+		"Read":                         "",
+		"":                             "",
 	} {
 		if got := ActionNote(tool); got != want {
 			t.Errorf("ActionNote(%q) = %q, want %q", tool, got, want)
@@ -284,7 +283,6 @@ func TestFitSuggestion(t *testing.T) {
 		{"task queued: queue it again", "Queue it", ask("Make a task for it", "Task created and queued."), nil, ""},
 		{"task created as a draft: queueing it fits", "Queue it", ask("Make a task for it", "I've created a draft task for this."), []string{"created a task"}, "Queue it"},
 		{"task created: another one", "Make it a task", ask("Make a task for it", "I created the task."), nil, ""},
-		{"checklist item added", "Add it to the checklist", ask("Note that down", "I've added it to the checklist."), []string{"added a checklist item"}, ""},
 		{"nothing done: a task fits", "Create a task for it", ask("The export is slow", "It reads every row twice. Want a task to fix it?"), nil, "Create a task for it"},
 		{"empty", "", ask("Hi", "Hello"), nil, ""},
 		{"only punctuation", "?!", ask("Hi", "Hello"), nil, ""},

@@ -19,7 +19,6 @@ import { loadFiles } from "./files.js";
 import { PRIORITY_LEVELS, drag, priorityLevel } from "./dnd.js";
 import { hoverCard } from "./hovercard.js";
 import { tokenTag } from "./runstats.js";
-import { loadChecklist } from "./checklist.js";
 import { keys, laneHidden, todoKey } from "./vim.js";
 import { desktop } from "./viewport.js";
 import { chatPage } from "./nav.js";
@@ -123,7 +122,7 @@ async function switchBranch(name, create = false) {
   if (projectKey(state.project) !== projectKey(p)) return;
   state.unpushed = 0;
   state.unpushedTodos = null;
-  await Promise.all([loadUnpushed(), loadRemote(true), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "checklist" && loadChecklist()]);
+  await Promise.all([loadUnpushed(), loadRemote(true), state.view === "history" && loadGraph(), state.view === "files" && loadFiles()]);
 }
 
 // Push the working branch and open its pull request into the default branch.

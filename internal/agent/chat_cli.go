@@ -122,14 +122,13 @@ func (c ClaudeCodeChat) system(dir string, coordinator bool) string {
 	} else {
 		tools = " and can read files with Read, Grep and Glob. You cannot edit files or run commands."
 	}
-	return chatSystem(dir, tools, c.Board != nil && c.BoardURL != "", c.shell())
+	return chatSystem(dir, tools, c.Board != nil && c.BoardURL != "")
 }
 
 // chatSystem is a chat's system prompt: where it runs (dir: a project's
 // checkout, else the home directory), what its tools can do (tools, a
-// sentence after "You run in …"), and, with board, the Dash task tools;
-// writes says whether it may change the checklist too.
-func chatSystem(dir, tools string, board, writes bool) string {
+// sentence after "You run in …"), and, with board, the Dash task tools.
+func chatSystem(dir, tools string, board bool) string {
 	where := " You run in the user's home directory"
 	if dir != "" {
 		where = " You run in the project's checkout"
@@ -143,15 +142,7 @@ func chatSystem(dir, tools string, board, writes bool) string {
 			"Fix a task's title, prompt, priority or dependencies with update_todo; delete a task (delete_todo) only when the user asks to remove it. " +
 			"queue_todo also retries a failed task. Stop a queued or running task (stop_todo), or stop it, change its prompt and run it again (restart_todo), " +
 			"only when the user explicitly asks to stop, restart or rerun it. " +
-			"When the user decides to build or change something, create a Dash task for it instead of editing code yourself. " +
-			"The project's checklist is its TODO.md, the user's to-do list in the repository, separate from the task board: read it with read_checklist"
-		if writes {
-			s += ", and change it with add_checklist_item, check_checklist_item, edit_checklist_item, delete_checklist_item and reorder_checklist_item (each change is committed right away). " +
-				"When the user says to add something to the todo list, the to-do list or TODO.md, add a checklist item, not a task; " +
-				"move_checklist_item_to_task turns an item into a draft task and removes it from TODO.md (queue: true only when the user asks for it to run)."
-		} else {
-			s += ". You cannot change the checklist in this chat; it is read-only here."
-		}
+			"When the user decides to build or change something, create a Dash task for it instead of editing code yourself."
 	}
 	return s
 }
@@ -178,8 +169,8 @@ func (c ClaudeCodeChat) args(dir string, servers map[string]any, coordinator boo
 	if servers[mcptools.ServerName] != nil {
 		// Readonly has no one to ask, so creating tasks is allowed outright there;
 		// shell mode asks for create_todo and queue_todo like for any other tool.
-		// AskTools (create_release, the checklist writes) publish to the default
-		// branch or origin: shell mode asks for them, read-only mode never gets them.
+		// AskTools (create_release, the deploy tools) publish to origin or
+		// deploy: shell mode asks for them, read-only mode never gets them.
 		allow := mcptools.ReadTools
 		if !c.shell() {
 			allow = mcptools.BoardTools

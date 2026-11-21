@@ -8,8 +8,9 @@
 //
 //   /                              no place named: the last view and project (localStorage)
 //   /p/{project}/{view}            a project's view: board, issues, scans, run, try,
-//                                  history, goals, deploys, files, checklist (/p/{project} is its board;
-//                                  run and try are the Shell page at main and at a commit)
+//                                  history, goals, deploys, files (/p/{project} is its board;
+//                                  run and try are the Shell page at main and at a commit;
+//                                  checklist, a view Dash no longer has, opens the board)
 //   /p/{project}/tasks/{id}        a task, open (over the board, after a reload)
 //   /p/{project}/goals/{id}        a goal, open on Goals
 //   /p/{project}/history/{sha}     a commit, open on History
@@ -32,10 +33,12 @@
 //
 // Older links, /?project=<id>&task=<id> (also goal=, issue=), still open.
 
-export const VIEWS = ["board", "issues", "scans", "run", "try", "history", "goals", "deploys", "files", "checklist", "planning"];
+export const VIEWS = ["board", "issues", "scans", "run", "try", "history", "goals", "deploys", "files", "planning"];
 export const SHEETS = ["settings", "account", "org", "runners"];
 const ITEMS = { tasks: "task", goals: "goal", history: "sha", issues: "issue", deploys: "deploy" };
 const ITEM_VIEW = { task: "board", goal: "goals", sha: "history", issue: "issues", deploy: "deploys" };
+// OLD_VIEWS are views Dash no longer has, and the view their links open.
+const OLD_VIEWS = { checklist: "board" };
 
 const dec = (s) => { try { return decodeURIComponent(s); } catch { return null; } };
 const enc = encodeURIComponent;
@@ -88,6 +91,7 @@ export function parse(loc) {
     r.named = true;
     if (parts.length === 2) r.view = "board";
     else if (parts.length === 3 && VIEWS.includes(parts[2]) && parts[2] !== "planning") r.view = parts[2];
+    else if (parts.length === 3 && Object.hasOwn(OLD_VIEWS, parts[2])) r.view = OLD_VIEWS[parts[2]];
     else if (parts.length === 4 && ITEMS[parts[2]] && parts[3]) {
       const k = ITEMS[parts[2]];
       r[k] = parts[3];

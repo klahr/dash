@@ -37,7 +37,6 @@ page you are on.
 | `go`       | **Goals**                      |
 | `gd`       | **Deploys**                    |
 | `gf`       | **Files**                      |
-| `gl`       | **Checklist**                  |
 | `gp`       | **Planning** (the organization's) |
 | `gt` `gT`  | next / previous section        |
 
@@ -107,14 +106,12 @@ A question from Claude has no key for an answer: answer it in its card. `X` decl
 | `D`           | open **Deploys**           |
 | `!`           | a new shell                |
 
-## History, Goals, Deploys and Checklist
+## History, Goals and Deploys
 
 - **History**: `j`/`k` next / previous commit, `gg`/`G` first / last, `n`/`p` next / previous
   changed file of the open commit, `Ctrl-d`/`Ctrl-u` scroll it, `q`/`Esc` close it.
 - **Goals**: `j`/`k` open the next / previous goal, `q`/`Esc` close it.
 - **Deploys**: `j`/`k` open the next / previous deploy, `q`/`Esc` close it.
-- **Checklist**: `j`/`k` move, `x`/`Space` check, `a` add, `e` edit, `dd` delete, `+`/`-` move up
-  or down, `m` move to a draft task, `M` move and queue, `r` read TODO.md again.
 
 ## Chat
 

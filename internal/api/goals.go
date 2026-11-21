@@ -689,7 +689,7 @@ func (s *Server) goalOverBudget(sv *service, g model.Goal) string {
 // goalBoard is the board as a goal's coordinator may use it (an
 // mcptools.GoalBoard): the goal's project only, changes to the goal's own
 // tasks only, within its mode and budget. It has no way to approve or merge
-// a task, publish a release or change the checklist. What it does to a task
+// a task or publish a release. What it does to a task
 // is noted on the task's timeline and in the goal's log.
 type goalBoard struct {
 	b    board
@@ -909,26 +909,11 @@ func (gb goalBoard) ReportIssue(projectID string, is model.Issue) (model.Issue, 
 	return gb.b.ReportIssue(projectID, is)
 }
 
-func (gb goalBoard) ReadChecklist(projectID string) (mcptools.Checklist, error) {
-	if _, err := gb.Project(projectID); err != nil {
-		return mcptools.Checklist{}, err
-	}
-	return gb.b.ReadChecklist(projectID)
-}
-
 // errCoordinator is what a coordinator gets for what only the user does.
 var errCoordinator = errors.New("a goal's coordinator can't do that: ask the user")
 
 func (gb goalBoard) CreateRelease(string, mcptools.NewRelease) (mcptools.Release, error) {
 	return mcptools.Release{}, errCoordinator
-}
-
-func (gb goalBoard) ChangeChecklist(string, mcptools.ChecklistChange) (mcptools.ChecklistSaved, error) {
-	return mcptools.ChecklistSaved{}, errCoordinator
-}
-
-func (gb goalBoard) MoveChecklistItem(string, mcptools.ChecklistMove) (mcptools.ChecklistMoved, error) {
-	return mcptools.ChecklistMoved{}, errCoordinator
 }
 
 func (gb goalBoard) ProposePlan(items []model.GoalPlanItem, why string) (string, error) {

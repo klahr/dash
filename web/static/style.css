@@ -1759,12 +1759,11 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .keys-table code { font: var(--fs-xs) var(--mono); color: var(--accent); white-space: nowrap; }
 
 /* ---------- pages ----------
-   Checklist, Issues and Scans share one frame: a centred column, a .cl-head
-   with the page's title (.page-title, as the nav names the page) and the same
-   padding on every width. The checklist names its file beside the title. */
+   Issues, Scans, Goals and Deploys share one frame: a centred column, a
+   .cl-head with the page's title (.page-title, as the nav names the page) and
+   the same padding on every width. */
 .page { width: 100%; max-width: 860px; margin: 0 auto; padding: var(--sp-3) var(--pad-x) var(--sp-5); }
 .cl-title.page-title { font-family: var(--ui); font-size: var(--fs-xl); letter-spacing: -.01em; }
-.cl-file { align-self: center; color: var(--muted); font: var(--fs-xs) var(--mono); }
 
 /* ---------- small helpers ---------- */
 .board-tools { position: sticky; top: var(--top-h); z-index: 10; display: flex; align-items: center; background: var(--bg); border-bottom: 1px solid var(--line); padding-right: 8px; }
@@ -1946,7 +1945,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 
 /* ---------- menu: sidebar on desktop, drawer on mobile ---------- */
 .remote-pill, .checkouts, .side-runners { order: 5; margin-top: 8px; }
-/* Mobile: the sections the bottom nav has no room for (Scans, History, Checklist); the side rail has them on desktop. */
+/* Mobile: the sections the bottom nav has no room for (Scans, Shell, History, Deploys, Files); the side rail has them on desktop. */
 .menu-views { order: 4; display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
 .menu-view { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 10px; border-radius: var(--r-m); color: var(--muted); font-size: var(--fs-body); font-weight: 500; text-align: left; }
 .menu-view svg { width: 22px; height: 22px; flex: none; }
@@ -2192,9 +2191,9 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .detail:has(.composer textarea:focus) .actionbar { display: none; }
 
   /* Bottom nav: Board · Chat · Planning · Goals · Issues, put in that order here (the DOM
-     order is the desktop sidebar's). Scans, Shell, History, Deploys, Files and Checklist are
-     in the menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
-  .nav > button:is([data-view="scans"], [data-view="run"], [data-view="history"], [data-view="deploys"], [data-view="files"], [data-view="checklist"]), #pc-open { display: none; }
+     order is the desktop sidebar's). Scans, Shell, History, Deploys and Files are in
+     the menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
+  .nav > button:is([data-view="scans"], [data-view="run"], [data-view="history"], [data-view="deploys"], [data-view="files"]), #pc-open { display: none; }
   .nav > .nav-chat { order: 1; }
   .nav > button[data-view="planning"] { order: 2; }
   .nav > button[data-view="goals"] { order: 3; }
@@ -2957,7 +2956,7 @@ a.claude-incident-name:hover { text-decoration: underline; }
 }
 
 /* ---------- issues ----------
-   Laid out like the checklist (its .cl-head, .cl-progress, .cl-section,
+   Laid out with the shared page parts (.cl-head, .cl-progress, .cl-section,
    .cl-list, .cl-check and .cl-add): a section per group, rows in a card. */
 .issues .cl-progress { margin-bottom: 12px; }
 /* Filters: pill-shaped selects; on a phone one row that scrolls sideways. */
@@ -2979,7 +2978,7 @@ a.claude-incident-name:hover { text-decoration: underline; }
   color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .issue-run-filter .ico { width: 14px; height: 14px; }
-/* Selecting is not ticking off: a rounded square in the accent colour, where the checklist has a green circle. */
+/* Selecting is not ticking off: a rounded square in the accent colour, not .cl-check's green circle. */
 .cl-check.issue-pick input { border-radius: var(--r-s); }
 .cl-check.issue-pick:hover input { border-color: var(--accent); }
 .cl-check.issue-pick input:checked { border-color: var(--accent); background-color: var(--accent); }
@@ -3274,11 +3273,11 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .repo-facts dt { color: var(--muted); }
 .repo-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 
-/* ---- Checklist: the project's TODO.md as a task list ---- */
+/* ---- Page parts the list pages share (Issues, Goals, Deploys, Planning) ---- */
 .cl-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .cl-title { margin: 0; font: 600 var(--fs-body)/1.3 var(--mono); }
 .cl-state { flex: 1; min-width: 0; color: var(--muted); font-size: var(--fs-s); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Done so far: a bar over the whole file, turning green when everything is ticked. */
+/* Progress: a bar, turning green when everything is done. */
 .cl-progress { display: flex; align-items: center; gap: 12px; margin: 0 0 6px; }
 .cl-bar { flex: 1; height: 6px; border-radius: var(--r-pill); background: var(--raised); overflow: hidden; }
 .cl-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--merged)); transition: width .4s var(--ease); }
@@ -3287,18 +3286,9 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .cl-progress.complete .cl-count { color: var(--merged); font-weight: 600; }
 .cl-section { margin: 22px 0 6px; }
 .cl-section h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: var(--fs-s); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
-.cl-section.lvl-1 h3 { font-size: var(--fs-l); letter-spacing: 0; text-transform: none; color: var(--text); }
 .cl-section-count { padding: 1px 8px; border-radius: var(--r-pill); background: var(--raised); color: var(--muted); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
 .cl-section-count.complete { background: color-mix(in srgb, var(--merged) 16%, transparent); color: var(--merged); }
-.cl-note { margin: 4px 0 10px; padding-left: 12px; border-left: 2px solid var(--line); color: var(--muted); font-size: var(--fs-m); white-space: pre-wrap; }
 .cl-list { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); box-shadow: var(--shadow-1); }
-.cl-item { display: flex; align-items: flex-start; gap: 4px; padding: 0 4px 0 calc(var(--indent, 0) * 22px); border-radius: var(--r-s); position: relative; transition: background .15s; }
-.cl-item + .cl-item::before { content: ""; position: absolute; top: 0; left: calc(68px + var(--indent, 0) * 22px); right: 8px; border-top: 1px solid var(--line); }
-.cl-item:hover { background: color-mix(in srgb, var(--raised) 60%, transparent); }
-.cl-item:focus-visible, .cl-item.cursor { outline: 2px solid var(--accent); outline-offset: -2px; }
-.cl-item.pending .cl-text::after { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 0 2px 8px; border-radius: 50%; background: var(--running); vertical-align: middle; animation: cl-pulse 1.2s ease-in-out infinite; }
-@keyframes cl-pulse { 50% { opacity: .3; } }
-@media (prefers-reduced-motion: reduce) { .cl-item.pending .cl-text::after { animation: none; } }
 /* A 44px tap target around a round checkbox that fills green when ticked. */
 .cl-check { flex: none; display: grid; place-items: center; width: 44px; height: 44px; margin: 0; cursor: pointer; }
 .cl-check input { appearance: none; -webkit-appearance: none; width: 20px; height: 20px; margin: 0; border: 2px solid var(--faint); border-radius: 50%; background: transparent center / 12px no-repeat; cursor: pointer; transition: background-color .15s, border-color .15s, transform .15s var(--ease); }
@@ -3306,37 +3296,6 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .cl-check input:checked { border-color: var(--merged); background-color: var(--merged); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5' fill='none' stroke='%23101722' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 .cl-check input:active { transform: scale(.85); }
 .cl-check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.cl-text { flex: 1; min-width: 0; padding: 11px 0; overflow-wrap: anywhere; cursor: text; transition: color .15s; }
-.cl-item.done .cl-text { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
-.cl-more { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-s); white-space: pre-wrap; }
-.cl-actions { flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 0; transition: opacity .15s; }
-/* With a mouse, a row's actions show when it is pointed at or has the keys. */
-@media (hover: hover) {
-  .cl-item:not(:hover, :focus-within, .cursor) .cl-actions, .cl-item:not(:hover, :focus-within, .cursor) .cl-grip { opacity: 0; }
-}
-/* An item's grip drags it to another place in the list (app/checklist.js: clDragStart). */
-.cl-grip { flex: none; width: 20px; height: 44px; margin-right: -4px; padding: 0; display: grid; place-items: center; border: 0; background: none; color: var(--faint); cursor: grab; touch-action: none; transition: opacity .15s, color .15s; }
-.cl-grip:hover, .cl-grip:focus-visible { color: var(--text); }
-.cl-grip .ico { width: 16px; height: 16px; }
-.cl-item.dragging { opacity: .4; }
-.cl-item.drop-before::after, .cl-item.drop-after::after { content: ""; position: absolute; left: calc(var(--indent, 0) * 22px); right: 4px; height: 2px; border-radius: 1px; background: var(--accent); pointer-events: none; }
-.cl-item.drop-before::after { top: -1px; }
-.cl-item.drop-after::after { bottom: -1px; }
-.cl-section h3.drop-into { color: var(--accent); }
-.cl-move { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-s); overflow: hidden; }
-.cl-move button { min-height: 32px; padding: 0 10px; border: 0; background: var(--raised); color: var(--text); font: inherit; font-size: var(--fs-s); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
-.cl-move button + button { border-left: 1px solid var(--line); padding: 0 8px; }
-.cl-move button:hover { background: color-mix(in srgb, var(--accent) 18%, var(--raised)); }
-.cl-move .ico { width: 16px; height: 16px; }
-.cl-menu { position: absolute; right: 6px; top: calc(100% - 4px); z-index: 5; display: flex; flex-direction: column; min-width: 180px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); box-shadow: var(--shadow-2); }
-.cl-menu button { min-height: 40px; padding: 0 12px; text-align: left; border: 0; border-radius: var(--r-s); background: none; color: var(--text); font: inherit; cursor: pointer; display: flex; align-items: center; gap: 8px; }
-.cl-menu button:hover, .cl-menu button:focus-visible { background: var(--raised); }
-.cl-icon { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: var(--r-s); background: none; color: var(--muted); cursor: pointer; }
-.cl-icon:hover { color: var(--text); background: var(--raised); }
-.cl-icon.cl-del:hover { color: var(--failed); }
-.cl-icon .ico { width: 16px; height: 16px; }
-.cl-edit { flex: 1; min-width: 0; padding: 6px 0; }
-.cl-edit textarea { width: 100%; min-height: 64px; font: inherit; }
 /* The add row stays pinned to the bottom of the view (above the phone nav) however long the list. */
 .cl-add {
   display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap;
@@ -3347,10 +3306,6 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .cl-add input { flex: 1 1 240px; min-height: 44px; }
 .cl-add select { flex: 0 1 180px; min-height: 44px; }
 .cl-add .btn { min-height: 44px; }
-@media (max-width: 719px) {
-  .cl-move .cl-move-label { display: none; }
-  .cl-item .cl-icon.cl-del { display: none; }
-}
 
 /* "!" commands in a chat: a block with the command, where it ran, its output
    and how it ended; the composer shows shell mode while its text starts with "!". */

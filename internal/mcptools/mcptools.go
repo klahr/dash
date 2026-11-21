@@ -371,13 +371,6 @@ type Board interface {
 	ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error)
 	// CreateRelease tags a commit in the project's tag format and pushes the tag.
 	CreateRelease(projectID string, r NewRelease) (Release, error)
-	// ReadChecklist reads the project's TODO.md as a checklist.
-	ReadChecklist(projectID string) (Checklist, error)
-	// ChangeChecklist changes TODO.md and saves it: committed straight onto
-	// the default branch (or written in the checkout when git doesn't track it).
-	ChangeChecklist(projectID string, c ChecklistChange) (ChecklistSaved, error)
-	// MoveChecklistItem creates a task from an item, then removes the item.
-	MoveChecklistItem(projectID string, m ChecklistMove) (ChecklistMoved, error)
 }
 
 // Restarter is a Board that stops tasks and queues them again, for
@@ -421,18 +414,15 @@ type Options struct {
 
 // Tool names the chat may call; ReadTools never change anything.
 var (
-	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "read_checklist", "list_goals", "get_goal", "list_cards", "get_card", "list_deploys"}
+	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "list_goals", "get_goal", "list_cards", "get_card", "list_deploys"}
 	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "create_release", "delete_todo",
-		"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "reorder_checklist_item", "move_checklist_item_to_task",
 		"list_issues", "report_issue", "read_try_terminal",
 		"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal", "accept_goal_plan", "reject_goal_plan", "message_goal",
 		"list_cards", "get_card", "create_card", "update_card", "comment_card", "start_card", "link_card",
 		"list_deploys", "deploy", "rollback", "promote"}
 	// AskTools are board tools a chat never gets without asking: they publish
-	// something (a release tag pushed to origin, a TODO.md change committed
-	// onto the default branch, which may be pushed to origin, or a deploy).
+	// something (a release tag pushed to origin, or a deploy).
 	AskTools = []string{"create_release",
-		"add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "reorder_checklist_item", "move_checklist_item_to_task",
 		"deploy", "rollback", "promote"}
 	// IssueToolNames are the IssueTools; a running task gets them and
 	// active_work (TaskToolNames).
@@ -441,10 +431,7 @@ var (
 
 // Tools returns list_projects, list_todos, get_todo, create_todo,
 // queue_todo, stop_todo and restart_todo (when b is a Restarter),
-// update_todo, create_release and delete_todo; the checklist
-// tools on the project's TODO.md (read_checklist, add_checklist_item,
-// check_checklist_item, edit_checklist_item, delete_checklist_item,
-// reorder_checklist_item and move_checklist_item_to_task); the IssueTools; read_try_terminal when
+// update_todo, create_release and delete_todo; the IssueTools; read_try_terminal when
 // b reads Try terminals (TryReader); the goal tools when b manages goals (GoalManager);
 // the planning tools when b has the org's plan (CardBoard); and the deploy
 // tools when b deploys (Deployer).
@@ -931,7 +918,7 @@ func boardTools(b Board, o Options) []Tool {
 				return fmt.Sprintf("Deleted task %s (%s).", t.ID, t.Title), nil
 			}},
 	}...)
-	return append(tools, checklistTools(b, o, project, pProject)...)
+	return tools
 }
 
 // freshDesc is the fresh parameter of queue_todo and restart_todo.
@@ -1022,7 +1009,7 @@ func restartTools(b Board, r Restarter) []Tool {
 }
 
 // FleetReadTools are the FleetTools that only look.
-var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "list_issues", "get_diff", "get_log", "get_project", "read_checklist", "list_goals", "get_goal", "list_cards", "get_card"}
+var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "list_issues", "get_diff", "get_log", "get_project", "list_goals", "get_goal", "list_cards", "get_card"}
 
 // ReadOnly returns tools with those not in read made to fail with err: a
 // read-only caller still sees every tool, and learns why one doesn't work.

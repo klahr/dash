@@ -41,9 +41,6 @@ type Computer interface {
 	// Text is a task's "diff" or "log".
 	Text(id, kind string) (string, error)
 	CreateRelease(projectID string, r NewRelease) (Release, error)
-	ReadChecklist(projectID string) (Checklist, error)
-	ChangeChecklist(projectID string, c ChecklistChange) (ChecklistSaved, error)
-	MoveChecklistItem(projectID string, m ChecklistMove) (ChecklistMoved, error)
 }
 
 // Machine is one computer of a fleet. Board is unset while it is
@@ -488,34 +485,6 @@ func (f Fleet) CreateRelease(projectID string, r NewRelease) (Release, error) {
 	return c.CreateRelease(p.ID, r)
 }
 
-func (f Fleet) ReadChecklist(projectID string) (Checklist, error) {
-	p, c, err := f.projectOn(projectID)
-	if err != nil {
-		return Checklist{}, err
-	}
-	return c.ReadChecklist(p.ID)
-}
-
-func (f Fleet) ChangeChecklist(projectID string, ch ChecklistChange) (ChecklistSaved, error) {
-	p, c, err := f.projectOn(projectID)
-	if err != nil {
-		return ChecklistSaved{}, err
-	}
-	return c.ChangeChecklist(p.ID, ch)
-}
-
-func (f Fleet) MoveChecklistItem(projectID string, m ChecklistMove) (ChecklistMoved, error) {
-	p, c, err := f.projectOn(projectID)
-	if err != nil {
-		return ChecklistMoved{}, err
-	}
-	out, err := c.MoveChecklistItem(p.ID, m)
-	if err == nil {
-		f.remember(out.Task.ID, p.Machine)
-	}
-	return out, err
-}
-
 // Text returns a task's diff or log, cut to max characters (from the end if tail).
 func (f Fleet) Text(id, kind string, max int, tail bool) (string, error) {
 	c, err := f.todoOn(id)
@@ -649,21 +618,6 @@ func (c RESTComputer) CreateRelease(projectID string, r NewRelease) (Release, er
 	return out, c.API.Call("POST", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/tags", map[string]any{
 		"version": r.Version, "bump": r.Bump, "sha": r.SHA, "notes": r.Notes,
 	}, &out)
-}
-
-func (c RESTComputer) ReadChecklist(projectID string) (Checklist, error) {
-	var out Checklist
-	return out, c.API.Call("GET", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/checklist", nil, &out)
-}
-
-func (c RESTComputer) ChangeChecklist(projectID string, ch ChecklistChange) (ChecklistSaved, error) {
-	var out ChecklistSaved
-	return out, c.API.Call("POST", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/checklist", ch, &out)
-}
-
-func (c RESTComputer) MoveChecklistItem(projectID string, m ChecklistMove) (ChecklistMoved, error) {
-	var out ChecklistMoved
-	return out, c.API.Call("POST", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/checklist/move", m, &out)
 }
 
 func (c RESTComputer) Text(id, kind string) (string, error) {

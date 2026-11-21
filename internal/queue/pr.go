@@ -116,7 +116,7 @@ type Merged struct {
 // repository's default) and the gh account signed in on this computer.
 // GitHub decides whether it may: branch protection is never bypassed. Once
 // merged the task is followed at once on the project's merge worker, so it
-// becomes merged (notifications, dependants, the checklist) without
+// becomes merged (notifications, dependants) without
 // waiting for the next poll; a pull request added to a merge queue is
 // followed as before until GitHub merges it.
 func (m *MergeQueue) MergePR(ctx context.Context, t model.Todo, method string) (Merged, error) {

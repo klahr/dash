@@ -44,7 +44,7 @@ again.
 
 ## The Goals page
 
-**Goals** is in the sidebar, next to **History** and **Checklist** (a tab in the bottom bar on a phone;
+**Goals** is in the sidebar, next to **History** and **Deploys** (a tab in the bottom bar on a phone;
 `go` on the keyboard). Each goal shows how many of its tasks are merged ("4 of 7 merged") and
 its status. Goals waiting for you, and goals that can't run, come first.
 
@@ -135,7 +135,7 @@ note. Answer in the goal's chat, or with `message_goal` from Claude (see below).
 It runs with the chat machinery, read-only (Read, Grep and Glob) in the project's checkout, with
 the `dash_board` tools of its goal (see [MCP](mcp.md#a-goals-coordinator)). It acts as the
 goal's owner (in the goal's chat, as you). It can only change the goal's own tasks, only in the
-goal's project. It has no tool to approve, merge, tag a release or change the checklist, and it
+goal's project. It has no tool to approve, merge, or tag a release, and it
 can't start a task despite the weekly pace.
 
 On a hub, the coordinator runs on the owner's runner that works on the project, like a project chat.

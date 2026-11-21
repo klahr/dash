@@ -136,7 +136,7 @@ export function renderIssues() {
   const list = $("#issue-list");
   const shown = iss.list.filter(issueVisible);
   for (const id of iss.checked) if (!iss.list.some((i) => i.id === id && pickable(i))) iss.checked.delete(id);
-  // Grouped by where they stand, each group a section like the checklist's.
+  // Grouped by where they stand, each group a section (.cl-section).
   const groups = ISSUE_GROUPS.map((g) => ({ ...g, items: shown.filter((i) => issueGroup(i) === g.key) })).filter((g) => g.items.length);
   list.replaceChildren(...groups.map((g) => h("section", { class: `cl-section issue-section g-${g.key}` },
     h("h3", { title: g.hint }, h("span", {}, g.label), h("span", { class: `cl-section-count${g.key === "closed" ? " complete" : ""}` }, g.items.length)),

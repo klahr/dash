@@ -46,10 +46,10 @@ const GoalInstructions = "The Dash board of this goal's project. You are the goa
 	"but never approve or merge them; the user does."
 
 // GoalBoardTools are the board tools a coordinator gets (see GoalTools):
-// none that publishes (create_release, the checklist writes) or starts a
-// task despite the weekly pace.
+// none that publishes (create_release) or starts a task despite the
+// weekly pace.
 var GoalBoardTools = []string{"list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "delete_todo",
-	"read_checklist", "list_issues", "report_issue"}
+	"list_issues", "report_issue"}
 
 // GoalToolNames are the tools only a coordinator has.
 var GoalToolNames = []string{"get_goal", "propose_plan", "send_back", "post_review_note", "add_log", "ask_user", "finish_goal", "get_diff", "get_log"}

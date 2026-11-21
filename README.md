@@ -85,7 +85,6 @@ Using Dash:
 - [Deploys](docs/deploys.md)
 - [Live previews](docs/previews.md) and [Draw](docs/draw.md)
 - [Scans](docs/scans.md)
-- [Checklist](docs/checklist.md)
 - [Task boards](docs/boards.md)
 - [Notifications](docs/notifications.md)
 - [Claude status](docs/claude-status.md)

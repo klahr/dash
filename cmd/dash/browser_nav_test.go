@@ -30,9 +30,10 @@ func TestBrowserNavigation(t *testing.T) {
 			&& els.slice(sep + 1).map((e) => e.dataset.view).join() === "planning";
 	})()`)
 
-	// Checklist's heading is the nav's label.
-	b.until("open Checklist", `document.querySelector("#view-checklist.active")`, chromedp.Click(chromedp.CSS(`.nav > button[data-view=checklist]`)))
-	b.waitJS("its heading", `document.querySelector("#view-checklist h2").textContent === "Checklist"`)
+	// The Checklist's old link opens the board.
+	b.do("open the Checklist's old link", chromedp.Navigate(h.base+"/p/"+pid+"/checklist"))
+	b.waitJS("the board", `document.querySelector("#view-board.active") && location.pathname === "/p/`+pid+`/board"`)
+	b.waitJS("no Checklist", `!document.querySelector("#view-checklist, [data-view=checklist]")`)
 
 	// Keys: gn is Scans, gs the Shell (no gS any more).
 	b.run("leave any field", `document.activeElement?.blur(); true`)
@@ -104,7 +105,7 @@ func TestBrowserNavigation(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`.nav > button[data-view=goals]`)))
 	b.until("open the menu", `document.querySelector(".app").classList.contains("menu-open")`, chromedp.Click(chromedp.ID("menu-open")))
 	b.waitJS("Shell and Files in the drawer, Goals and Planning not", `[...document.querySelectorAll(".menu-views .menu-view")].filter((e) => e.offsetHeight > 0)
-		.map((e) => e.dataset.view).join() === "scans,run,history,deploys,files,checklist"`)
+		.map((e) => e.dataset.view).join() === "scans,run,history,deploys,files"`)
 	b.until("open the Shell from the drawer", `document.querySelector("#view-run.active") && document.querySelector('.menu-view[data-view=run][aria-current=page]') && !document.querySelector(".app").classList.contains("menu-open")`,
 		chromedp.Click(chromedp.CSS(`.menu-view[data-view=run]`)))
 	b.do("a wide screen", chromedp.EmulateReset())

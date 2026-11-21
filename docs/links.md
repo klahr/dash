@@ -20,7 +20,7 @@ Any other page can be shared by copying the address bar.
 | Address                         | Opens                                    |
 |---------------------------------|------------------------------------------|
 | `/p/<project>/board`            | a project's board                        |
-| `/p/<project>/<view>`           | `issues`, `scans`, `run` (the **Shell** at main), `try` (the **Shell** at a commit), `history`, `goals`, `files`, `checklist` |
+| `/p/<project>/<view>`           | `issues`, `scans`, `run` (the **Shell** at main), `try` (the **Shell** at a commit), `history`, `goals`, `files` |
 | `/p/<project>/tasks/<id>`       | a task, over the board                   |
 | `/p/<project>/goals/<id>`       | a goal, on **Goals**                     |
 | `/p/<project>/history/<sha>`    | a commit, on **History**                 |
@@ -30,6 +30,8 @@ Any other page can be shared by copying the address bar.
 
 `<project>` is the project's id, so a link keeps working when the project is renamed. A
 project on another computer of a hub is `<id>@<computer>`.
+
+An old link to a project's checklist (`/p/<project>/checklist`) opens its board.
 
 These can be added to any of them:
 
