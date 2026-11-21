@@ -37,6 +37,9 @@ func TestBrowserProjectBoards(t *testing.T) {
 	b.until("show Website", fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardSel(onWeb.ID), cardSel(main.ID)),
 		chromedp.Click(chromedp.CSS(`#board-switch .board-tab[data-board="`+web.Board.ID+`"]`)))
 
+	// The router writes the board into the URL a moment later (a timer); a
+	// reload before then opens the URL without it, on Main.
+	b.waitJS("Website in the URL", fmt.Sprintf(`new URLSearchParams(location.search).get("board") === %q`, web.Board.ID))
 	b.do("reload", chromedp.Reload())
 	b.waitCard(onWeb.ID, "draft")
 	b.waitJS("Website kept", tab("Website")+`?.getAttribute("aria-selected") === "true" && !document.querySelector(`+fmt.Sprintf("%q", cardSel(main.ID))+`)`)

@@ -1003,7 +1003,14 @@ $("#project-picker").addEventListener("keydown", (e) => {
 $("#menu-open").addEventListener("click", () => desktop.matches ? setSideCollapsed(!sideCollapsed()) : openProjects());
 $("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open").focus(); });
 $("#menu-scrim").addEventListener("click", () => setMenu(false));
-desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").hidden = true; renderProjectBranch(); });
+desktop.addEventListener("change", () => {
+  // Crossing to a phone's width turns the sidebar into the closed drawer at
+  // once: sliding out, it would cover the page for a moment and take taps.
+  const app = $(".app");
+  app.classList.add("layout-switch");
+  requestAnimationFrame(() => requestAnimationFrame(() => app.classList.remove("layout-switch")));
+  setMenu(false); $("#project-picker").hidden = true; renderProjectBranch();
+});
 $("#side-new-project").addEventListener("click", () => openNewProject());
 $("#pm-settings").addEventListener("click", openSettings);
 $("#push-main").addEventListener("click", attempt(pushDone));

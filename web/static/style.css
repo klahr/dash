@@ -2183,6 +2183,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
     transform: translateX(-100%); visibility: hidden; transition: transform .25s var(--ease), visibility 0s .25s;
   }
   .app.menu-open .menu { transform: none; visibility: visible; transition: transform .25s var(--ease); }
+  .app.layout-switch .menu { transition: none; } /* projects.js: no slide when the layout changes */
   .menu-head { order: 0; display: flex; align-items: center; justify-content: space-between; padding-left: 10px; font-weight: 700; font-size: var(--fs-xl); }
   .side-projects { flex: none; min-height: 0; margin-top: 4px; }
   .side-bottom { padding-bottom: calc(var(--safe-b) + 12px); }
