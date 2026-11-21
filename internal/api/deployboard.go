@@ -62,7 +62,7 @@ func (b board) Environments(projectID string) ([]mcptools.EnvRow, error) {
 	out := []mcptools.EnvRow{}
 	for i, e := range p.Environments {
 		deploys := b.sv.data.ListDeploys(p.ID, e.Name)
-		row := mcptools.EnvRow{Name: e.Name, Trigger: e.WithDefaults().Trigger, ReleaseTagsOnly: e.ReleaseTagsOnly, WhoDeploys: e.WhoDeploys(), NeedsApproval: e.WhoApproves(),
+		row := mcptools.EnvRow{Name: e.Name, Trigger: e.WithDefaults().Trigger, ReleaseTagsOnly: e.ReleaseTagsOnly, WaitForBuild: e.WaitsForBuild(), WhoDeploys: e.WhoDeploys(), NeedsApproval: e.WhoApproves(),
 			AgentMayDeploy: s.mayDeploy(b.sv.c, e) == nil}
 		var live *model.Deploy
 		for _, d := range deploys {

@@ -53,6 +53,9 @@ type releaseTag struct {
 	Compared bool `json:"compared"`
 	Ahead    int  `json:"ahead"`
 	Behind   int  `json:"behind"`
+	// Build is how the tag's release build went, as this Dash (the hub,
+	// on a hub) follows it; the hub fills it in (addTagBuilds).
+	Build *tagBuild `json:"build,omitempty"`
 }
 
 // deployTags answers a tagsQuery.
@@ -64,6 +67,8 @@ type deployTags struct {
 	// release tags on it (highest version first).
 	Commit     string   `json:"commit,omitempty"`
 	CommitTags []string `json:"commit_tags,omitempty"`
+	// CommitBuild is the build of CommitTags[0], if it has any.
+	CommitBuild *tagBuild `json:"commit_build,omitempty"`
 	// Format is the project's tag format.
 	Format string `json:"format"`
 }
@@ -223,7 +228,7 @@ func untaggedErr(e model.Environment, commit, what string) error {
 // ?environment=&commit=: the project's release tags, newest first, each
 // compared with what the environment runs now (Deploy's picker); with
 // commit (and no environment), only that commit and its release tags
-// (History's "Deploy to…").
+// (History's "Deploy to…"). Each tag has its release build (addTagBuilds).
 func (s *Server) deployTagsRoute(w http.ResponseWriter, r *http.Request) {
 	sv, p, ok := s.project(w, r)
 	if !ok {
@@ -249,6 +254,7 @@ func (s *Server) deployTagsRoute(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	s.addTagBuilds(p, &out)
 	writeJSON(w, http.StatusOK, out)
 }
 

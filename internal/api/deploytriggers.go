@@ -105,7 +105,9 @@ func (s *Server) deployRelease(p model.Project, tag, sha string, c Caller) map[s
 // A merge's deploy still waiting to start (queued, or awaiting an
 // approval) is moved on to the newer commit instead of queueing another.
 // One that a freeze or a requirement blocks is recorded failed, with the
-// reason, so the Deploys page shows that it didn't go. It returns the
+// reason, so the Deploys page shows that it didn't go. A release tag's
+// deploy to an environment that waits for the release build is recorded
+// waiting for it (waitForBuild), and checked when the build ends. It returns the
 // deploy it queued, moved on or recorded, if any.
 func (s *Server) triggerDeploy(p model.Project, e model.Environment, trigger, commit, ref string, c Caller) (model.Deploy, bool) {
 	c.Org = p.OrgID
@@ -126,6 +128,9 @@ func (s *Server) triggerDeploy(p model.Project, e model.Environment, trigger, co
 				return moved, true
 			}
 		}
+	}
+	if trigger == model.DeployByRelease && e.WaitsForBuild() {
+		return s.waitForBuild(p, e, commit, ref, c)
 	}
 	d, err := s.as(c).requestDeploy(p, deployAsk{Environment: e.Name, Commit: commit, Trigger: trigger, TriggerRef: ref})
 	if err == nil {

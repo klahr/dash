@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,7 +13,34 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
+
+	"github.com/klahr/dash/internal/model"
 )
+
+// putReleaseBuild saves the build of a release tag of project pid in the
+// running hub's database, as its CI watcher does when it follows one on
+// GitHub (these tests have no GitHub).
+func (h *runnerHub) putReleaseBuild(t *testing.T, pid, tag, sha, state string, runs ...model.CIRun) {
+	t.Helper()
+	if runs == nil {
+		runs = []model.CIRun{}
+	}
+	now := time.Now()
+	data, err := json.Marshal(model.ReleaseBuild{Tag: tag, SHA: sha, State: state, Runs: runs, Pushed: now, Updated: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(h.hubData, "dash.db")+"?_pragma=busy_timeout(10000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO release_builds (project_id, tag, state, pushed, data) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (project_id, tag) DO UPDATE SET state = excluded.state, pushed = excluded.pushed, data = excluded.data`,
+		pid, tag, state, now.UnixMilli(), string(data)); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // The Deploys page against a real hub and runner: a card per environment,
 // Deploy on one runs its script on the runner and goes live; the deploy
@@ -128,6 +157,28 @@ func TestBrowserDeploys(t *testing.T) {
 	b.waitJS("no rollback to the commit just rolled back", `!document.querySelector("#dd-actions").textContent.includes("Roll back") && !document.querySelector('#env-cards [data-env="staging"] .env-rollback')`)
 	shot("deploy-rollback-pane-wide")
 	b.until("close the pane", `document.querySelector("#deploy-detail").hidden`, chromedp.Click(chromedp.ID("dd-close")))
+
+	// Deploy's picker shows each tag's release build, kept up to date while
+	// one builds, with a link to its runs; deploying a tag whose build
+	// failed asks first, and nothing deploys when you don't confirm.
+	h.putReleaseBuild(t, pid, "1.1.0", next, "building")
+	build := func(tag string) string {
+		return `document.querySelector('dialog.sheet[open] .tag-pick-row[data-tag="` + tag + `"] .tag-build')`
+	}
+	b.until("open staging's Deploy with the builds", build("1.1.0"),
+		chromedp.Click(chromedp.CSS(`#env-cards [data-env="staging"] .env-deploy`)))
+	b.waitJS("1.1.0 building, 1.0.0 without a build", build("1.1.0")+`.dataset.build === "building" && `+build("1.0.0")+`.dataset.build === "unknown"`)
+	shot("deploy-builds-wide")
+	h.putReleaseBuild(t, pid, "1.1.0", next, "failed", model.CIRun{ID: 9, Workflow: "Release", Status: "completed", Conclusion: "failure",
+		SHA: next, Branch: "1.1.0", URL: "https://example.com/runs/9"})
+	b.waitJS("it turns failed while the picker is open, linked to its run", build("1.1.0")+`?.dataset.build === "failed" && `+build("1.1.0")+`.href === "https://example.com/runs/9"`)
+	b.do("pick 1.1.0", chromedp.Click(chromedp.CSS(`dialog.sheet[open] .tag-pick-row[data-tag="1.1.0"] input`)))
+	b.do("deploy it", chromedp.Click(chromedp.CSS(`dialog.sheet[open] footer button[value=ok]`)))
+	b.waitJS("it asks first", `document.querySelector("#ask-sheet").open && document.querySelector("#ask-title").textContent.includes("release build of 1.1.0 failed")`)
+	shot("deploy-build-failed-ask-wide")
+	b.until("don't deploy", `!document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.CSS(`#ask-sheet header button[value=cancel]`)))
+	time.Sleep(500 * time.Millisecond)
+	b.waitJS("nothing deployed", stagingDeploys+` === 3`)
 
 	// A commit after the newest tag: the picker offers a new release from
 	// origin/main first, tags it and deploys it in one go.

@@ -24,8 +24,10 @@ import { estimate, etaText } from "../deployeta.js";
 export const DEPLOY_STATUS = {
   queued: "Queued", building: "Building", deploying: "Deploying", verifying: "Verifying",
   live: "Live", failed: "Failed", rolled_back: "Rolled back", superseded: "Replaced",
-  awaiting_approval: "Awaiting approval", rejected: "Rejected",
+  awaiting_approval: "Awaiting approval", rejected: "Rejected", waiting_build: "Waiting for build",
 };
+// Not started yet: may be cancelled (taken off the queue).
+const PENDING = ["queued", "awaiting_approval", "waiting_build"];
 const ACTIVE = ["building", "deploying", "verifying"];
 const TRIGGER = { user: "", merge: "after a merge", release: "for a release", auto_rollback: "automatically, its checks failed", agent: "by Claude" };
 const ENV_TRIGGER = { merge: "Deploys each merge to the default branch", release: "Deploys each release tag" };
@@ -50,6 +52,7 @@ export const dp = {
   get open() { return state.deployOpen || null; }, // in state: nav.js may close it before this module has run
   set open(v) { state.deployOpen = v; },
   detail: null,  // the open deploy, with its log
+  build: null,   // { id, build }: the release build the open deploy waits for
   error: "",
 };
 
@@ -141,9 +144,13 @@ function envCard(e) {
     active ? h("button", { type: "button", class: "env-line env-active", onclick: () => openDeploy(active.id).catch(fail) },
       h("span", { class: "act-spin", "aria-hidden": "true" }), `${DEPLOY_STATUS[active.status]} ${short(active.commit)}…`) : null,
     e.queued ? h("p", { class: "env-line hint" }, `${plural(e.queued, "deploy")} queued`) : null,
+    ...dp.list.filter((d) => d.environment === e.name && d.status === "waiting_build").map((d) => h("p", { class: "env-line" },
+      h("button", { type: "button", class: "link", onclick: () => openDeploy(d.id).catch(fail) }, statusTag(d)),
+      " ", h("span", { class: "hint" }, `${d.tag || short(d.ref)} deploys once its release build passes`))),
     e.trigger === "merge" && e.release_tags_only ? h("p", { class: "env-line hint warn" }, "Set to deploy each merge, but it only deploys release tags: merges deploy nothing here.")
       : ENV_TRIGGER[e.trigger] ? h("p", { class: "env-line hint" }, `${ENV_TRIGGER[e.trigger]}.`) : null,
     e.release_tags_only ? h("p", { class: "env-line hint" }, "Deploys release tags only.") : null,
+    e.trigger === "release" && e.wait_for_build ? h("p", { class: "env-line hint" }, "Waits for the release build to pass before deploying a release tag.") : null,
     pol.awaiting?.length ? h("ul", { class: "env-line env-awaiting", "aria-label": `Deploys to ${e.name} awaiting approval` }, ...pol.awaiting.map((d) => h("li", {},
       h("button", { type: "button", class: "link", onclick: () => openDeploy(d.id).catch(fail) }, statusTag(d)),
       h("code", {}, short(d.ref || d.commit) || "tip"),
@@ -233,6 +240,51 @@ export function tagDistance(t, env, live) {
   return `${plural(t.ahead, "commit")} ahead of and ${t.behind} behind ${env}`;
 }
 
+// A release tag's build, as Deploy's picker shows it (GET …/deploys/tags
+// gives each tag one; GET …/ci/releases the raw builds, read again while
+// one builds).
+const BUILD_LABEL = { building: "Building", passed: "Build passed", failed: "Build failed", unknown: "No build found" };
+const BUILD_TITLE = {
+  building: "Its release workflows are still running: open the runs",
+  passed: "Its release workflows passed: open the runs",
+  failed: "Its release workflows failed: open the runs",
+  unknown: "Dash found no GitHub Actions runs of this tag",
+};
+const RAW_BUILD = { building: "building", published: "passed", failed: "failed" };
+
+// buildFromRelease is tag build b (GET …/ci/releases) of a tag on commit,
+// as …/deploys/tags would say it; was is what was shown before.
+export function buildFromRelease(b, commit, was = null) {
+  if (!b || (commit && b.sha && b.sha !== commit)) return { state: "unknown" };
+  const state = RAW_BUILD[b.state] || "unknown";
+  if (state === "unknown") return { state };
+  const runs = b.runs || [];
+  return { state, runs, url: runs.length === 1 ? runs[0].url : was?.url || runs[0]?.url || "" };
+}
+
+// buildBadge shows build (state, url), linked to its runs when it has them.
+export function buildBadge(build) {
+  const state = build?.state || "unknown";
+  const props = { class: `status tag-build b-${state}`, title: BUILD_TITLE[state] || "", "data-build": state };
+  return build?.url
+    ? h("a", { ...props, href: build.url, target: "_blank", rel: "noopener" }, BUILD_LABEL[state] || state)
+    : h("span", props, BUILD_LABEL[state] || state);
+}
+
+// sureOfBuild asks before deploying tag, whose build failed or still runs,
+// to env; it is true when there is nothing to ask, or they said go.
+async function sureOfBuild(tag, build, env) {
+  if (build?.state === "failed") {
+    return ask({ title: `The release build of ${tag} failed; deploy it to ${env} anyway?`,
+      body: "Its release workflows failed on GitHub Actions, so what it publishes (an image, a package) may be missing or broken.", ok: "Deploy anyway", danger: true });
+  }
+  if (build?.state === "building") {
+    return ask({ title: `The release build of ${tag} is still running; deploy it to ${env} now?`,
+      body: "Its release workflows haven't finished on GitHub Actions, so what it publishes (an image, a package) may not be there yet.", ok: "Deploy now" });
+  }
+  return true;
+}
+
 // deployCommit is History's "Deploy to…" on commit c ({ sha, short,
 // subject }): a picker of the project's environments (those the caller may
 // not deploy to, and those that deploy release tags only when c has none,
@@ -265,7 +317,7 @@ export async function deployCommit(c) {
   const live = (e) => e.live?.commit === sha ? "live there now" : e.live ? `runs ${commitLabel(e.live)}` : "nothing deployed yet";
   const first = (envs || []).findIndex((e) => !why(e));
   fill(body,
-    h("p", {}, tag ? ["Release ", h("strong", {}, tag), " ", h("code", {}, short(sha)), c.subject ? ` ${c.subject}` : ""]
+    h("p", {}, tag ? ["Release ", h("strong", {}, tag), " ", h("code", {}, short(sha)), c.subject ? ` ${c.subject}` : "", tags.commit_build ? buildBadge(tags.commit_build) : ""]
       : [h("code", {}, short(sha)), ` isn't tagged${c.subject ? ` (${c.subject})` : ""}. Deploy a release tag from the Deploys page when you can.`]),
     envs?.length ? h("fieldset", { class: "field choice" }, h("legend", {}, "Environment"),
       ...envs.map((e, i) => h("label", { class: "radio" },
@@ -277,7 +329,10 @@ export async function deployCommit(c) {
   if ((await closed) !== "ok") return;
   const env = new FormData(form).get("env");
   if (!env) return;
-  const sure = tag
+  const risky = ["failed", "building"].includes(tags.commit_build?.state);
+  const sure = tag && risky
+    ? await sureOfBuild(tag, tags.commit_build, env)
+    : tag
     ? await ask({ title: `Deploy ${tag} (${short(sha)}) to ${env}?`, body: c.subject || "", ok: "Deploy" })
     : await ask({ title: `${short(sha)} isn't tagged; deploy it to ${env} anyway?`, body: `${c.subject ? `“${c.subject}”. ` : ""}It has no release tag, so it isn't a release.`, ok: "Deploy anyway" });
   if (!sure) return;
@@ -363,9 +418,9 @@ async function pickTag(e) {
       h("em", {}, offer.blocked?.length ? `Unavailable: ${offer.blocked.join("; ")}.`
         : [offer.deploy.tag ? short(offer.deploy.commit) : "", `live on ${offer.from} ${agoText(liveSince(offer.deploy))}`, "no build"].filter(Boolean).join(" · ")))) : null;
 
-  const row = (t, i) => h("label", { class: "radio tag-pick-row" },
+  const row = (t, i) => h("label", { class: "radio tag-pick-row", "data-tag": t.tag },
     pickRadio(t.tag),
-    h("span", {}, t.tag, " ", h("code", { class: "hint" }, short(t.commit)),
+    h("span", {}, t.tag, " ", h("code", { class: "hint" }, short(t.commit)), buildBadge(t.build),
       h("em", {}, [i === 0 ? "newest" : "", tagDistance(t, e.name, res.live)].filter(Boolean).join(" · "))));
   const tags = res.tags?.length
     ? h("fieldset", { class: "field choice tag-pick-list" }, h("legend", { class: later || fresh ? "" : "sr-only" }, "Release tags"), ...res.tags.map(row))
@@ -405,6 +460,7 @@ async function pickTag(e) {
   body.addEventListener("change", (ev) => { if (ev.target.name === "tag") sync(); });
   sync();
   $('input[name="tag"]:checked', body)?.focus();
+  followBuilds(p, res.tags || [], body, dialog);
 
   // A new release stays open while the tag is pushed; the rest close first.
   form.addEventListener("submit", attempt(async (ev) => {
@@ -426,7 +482,35 @@ async function pickTag(e) {
     return;
   }
   const t = res.tags?.find((x) => x.tag === v);
-  if (t) await deployTo(e.name, t.commit, { project: p, tag: t.tag });
+  if (t && await sureOfBuild(t.tag, t.build, e.name)) await deployTo(e.name, t.commit, { project: p, tag: t.tag });
+}
+
+// followBuilds reads the release builds again every few seconds while the
+// picker is open and one of its tags builds, and updates their badges (and
+// tags, so the confirmation sees the news).
+export const BUILD_POLL = { ms: 10000 };
+function followBuilds(p, tags, body, dialog) {
+  let timer = 0;
+  const building = () => tags.some((t) => t.build?.state === "building");
+  const next = () => { if (dialog.open && building()) timer = setTimeout(poll, BUILD_POLL.ms); };
+  async function poll() {
+    let list;
+    try {
+      list = await api("GET", `/api/projects/${p.id}/ci/releases?limit=100`, null, p.prefix || "");
+    } catch {
+      return next();
+    }
+    if (!dialog.open) return;
+    const byTag = new Map((list || []).map((b) => [b.tag, b]));
+    for (const t of tags) {
+      if (t.build?.state !== "building") continue;
+      t.build = buildFromRelease(byTag.get(t.tag), t.commit, t.build);
+      $(`.tag-pick-row[data-tag="${CSS.escape(t.tag)}"] .tag-build`, body)?.replaceWith(buildBadge(t.build));
+    }
+    next();
+  }
+  dialog.addEventListener("close", () => clearTimeout(timer), { once: true });
+  next();
 }
 
 // released tells how a release made from Deploy's picker went: tagged, and
@@ -558,6 +642,11 @@ async function loadDeploy(id) {
     const d = await api("GET", `/api/deploys/${id}`, null, prefix());
     if (dp.open !== id) return;
     dp.detail = d;
+    if (d.status === "waiting_build" && d.tag) {
+      const b = await api("GET", `/api/projects/${d.project_id}/ci/releases?tag=${encodeURIComponent(d.tag)}`, null, prefix()).catch(() => null);
+      if (dp.open !== id) return;
+      dp.build = { id, build: buildFromRelease(b, d.ref) };
+    }
     dp.error = "";
   } catch (e) {
     if (dp.open !== id) return;
@@ -566,6 +655,7 @@ async function loadDeploy(id) {
   renderDeploy();
   const d = dp.detail;
   if (d && (ACTIVE.includes(d.status) || d.status === "queued")) pollTimer = setTimeout(() => loadDeploy(id).catch(() => {}), 2000);
+  else if (d?.status === "waiting_build") pollTimer = setTimeout(() => loadDeploy(id).catch(() => {}), BUILD_POLL.ms);
 }
 
 export function closeDeploy() {
@@ -620,6 +710,8 @@ function renderDeploy() {
     d.runner ? row("Ran on", d.runner) : null,
     d.exit_code != null ? row("Exit code", String(d.exit_code)) : null,
     d.promoted_from ? row("Promoted from", d.promoted_env || "", " ", openLink(d.promoted_from)) : null,
+    d.status === "waiting_build" ? row("Release build", dp.build?.id === d.id ? buildBadge(dp.build.build) : h("span", { class: "hint" }, "…"),
+      h("span", { class: "hint" }, " · it deploys once this passes")) : null,
     d.needs_approval && !d.approval ? row("Needs approval", `from ${ROLE_WORD[d.needs_approval] ? `one of the ${ROLE_WORD[d.needs_approval]}` : d.needs_approval}`) : null,
     d.approval ? row(d.approval.approved ? "Approved by" : "Rejected by", d.approval.by_name || "someone", " ",
       h("span", { class: "hint", title: dateTimeText(d.approval.at) }, agoText(d.approval.at)), d.approval.note ? ` · ${d.approval.note}` : "") : null,
@@ -636,6 +728,7 @@ function renderDeploy() {
   const log = $("#dd-log");
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
   log.textContent = d.log || (d.status === "queued" ? "Waiting for its turn…" : d.status === "awaiting_approval" ? "Waiting for an approval…"
+    : d.status === "waiting_build" ? `Waiting for the release build of ${d.tag || "its tag"} to pass…`
     : ACTIVE.includes(d.status) ? "Starting…" : "No output.");
   if (atEnd) log.scrollTop = log.scrollHeight;
   renderEta(d);
@@ -697,15 +790,15 @@ function renderDeployActions(d) {
   const pol = dp.envs.find((e) => e.name === d.environment)?.policy;
   fill($("#dd-actions"),
     ...approveButtons(d, pol),
-    d.status === "queued" || d.status === "awaiting_approval" ? btn("x", "Cancel", () => stopDeploy(d), "btn small danger", "Take it off the queue") : null,
+    PENDING.includes(d.status) ? btn("x", "Cancel", () => stopDeploy(d), "btn small danger", "Take it off the queue") : null,
     running ? btn("stop", "Stop", () => stopDeploy(d), "btn small danger", "Stop its script on the runner") : null,
     d.rollback_target ? rollbackButton(d.environment, d.id, d.rollback_target) : null,
-    !running && !["queued", "awaiting_approval"].includes(d.status) && d.commit && pol?.can_deploy ? btn("redo", "Deploy again", () => deployTo(d.environment, d.commit, { tag: d.tag }), "btn small", `Deploy ${commitLabel(d)} to ${d.environment} again`) : null,
+    !running && !PENDING.includes(d.status) && d.commit && pol?.can_deploy ? btn("redo", "Deploy again", () => deployTo(d.environment, d.commit, { tag: d.tag }), "btn small", `Deploy ${commitLabel(d)} to ${d.environment} again`) : null,
     btn("link", "Copy link", () => copy(linkTo({ view: "deploys", deploy: d.id }, state.project), "Link copied"), "btn small", "Copy a link that opens this deploy"));
 }
 
 async function stopDeploy(d) {
-  const queued = d.status === "queued" || d.status === "awaiting_approval";
+  const queued = PENDING.includes(d.status);
   if (!queued && !await ask({ title: `Stop the deploy to ${d.environment}?`, body: "Its script is stopped where it runs, part way through: the environment may be left half deployed.", ok: "Stop deploy", danger: true })) return;
   await api("DELETE", `/api/deploys/${d.id}`, null, prefix());
   toast(queued ? "Deploy cancelled" : "Stopping the deploy");

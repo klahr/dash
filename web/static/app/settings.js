@@ -166,6 +166,7 @@ const cleanEnvs = (list) => list.map((e) => ({
   ...roleDefaults(e), require_tests: !!e.require_tests, require_live_on: (e.require_live_on || "").trim().toLowerCase(),
   freezes: (e.freezes || []).map((f) => ({ from: (f.from || "").trim(), to: (f.to || "").trim(), note: (f.note || "").trim() })).filter((f) => f.from || f.to || f.note),
   time_zone: (e.time_zone || "").trim(), trigger: e.trigger || "manual", release_tags_only: !!e.release_tags_only,
+  wait_for_build: !!e.wait_for_build,
 }));
 const TRIGGER_OPTS = [["manual", "No, only when someone deploys"], ["merge", "On each merge to the default branch"], ["release", "On each release tag"]];
 const ROLE_OPTS = [["member", "Members"], ["admin", "Admins"], ["owner", "Owners"]];
@@ -189,6 +190,7 @@ const ENV_FIELD = {
   auto_rollback: "Roll back on its own", deploy_role: "Who may deploy", approve_role: "Needs approval from", settings_role: "Who may change settings",
   require_tests: "Tests must pass", require_live_on: "Live on first", freezes: "Freeze windows", time_zone: "Time zone",
   trigger: "Deploys on its own", release_tags_only: "Deploys: release tags only",
+  wait_for_build: "Wait for the release build before deploying",
 };
 const ENV_ACTION = { added: "added", changed: "changed", removed: "removed" };
 
@@ -252,7 +254,13 @@ function envPolicy(e, field) {
   Object.assign(e, roleDefaults(e));
   // Merges deploy nothing while only release tags may: say so where both are set.
   const mergeNote = h("p", { class: "hint warn env-merge-note" });
+  // Waiting for the release build is about release-triggered deploys only.
+  const waitBuild = h("label", { class: "toggle env-wait-build" },
+    h("input", { type: "checkbox", checked: !!e.wait_for_build, onchange: (ev) => { e.wait_for_build = ev.target.checked; } }),
+    h("span", {}, "Wait for the release build before deploying ",
+      h("em", {}, "a release tag deploys once its GitHub Actions runs pass; if they fail, it doesn't deploy and you get a notice")));
   const syncMergeNote = () => {
+    waitBuild.hidden = e.trigger !== "release";
     mergeNote.hidden = !(e.trigger === "merge" && e.release_tags_only);
     mergeNote.textContent = "Merges deploy nothing while “Deploys: release tags only” is on: deploy release tags, or set it to deploy on each release tag.";
   };
@@ -277,6 +285,7 @@ function envPolicy(e, field) {
       field("Needs approval from", "not their own deploy", select("approve_role", [["none", "No one"], ...ROLE_OPTS])),
       field("Who may change settings", "of this environment", select("settings_role", ROLE_OPTS))),
     field("Deploys on its own", "through the approvals, requirements and freezes below, like any deploy", select("trigger", TRIGGER_OPTS)),
+    waitBuild,
     h("label", { class: "toggle" },
       h("input", { type: "checkbox", checked: !!e.release_tags_only, onchange: (ev) => { e.release_tags_only = ev.target.checked; syncMergeNote(); } }),
       h("span", {}, "Deploys: release tags only ", h("em", {}, "a commit without a release tag is refused, whoever asks (a rollback too); a new release tag always deploys"))),

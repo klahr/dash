@@ -141,6 +141,7 @@ type runnerHub struct {
 	calls              string // what fakeclaude ran, one line per call
 	gitEnv             []string
 	origin             string // the bare repository's path
+	hubData            string // the hub's data folder (its dash.db)
 	project            struct{ ID, RemoteURL string }
 	username, password string
 }
@@ -177,11 +178,11 @@ func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 	remote := origin.URL + "/app.git"
 
 	// The hub: default flags, no claude on its PATH.
-	h := &runnerHub{dash: dash, calls: calls, gitEnv: gitEnv, origin: bare, username: "admin", password: "a-long-enough-password"}
+	h := &runnerHub{dash: dash, calls: calls, gitEnv: gitEnv, origin: bare, hubData: filepath.Join(dir, "hub"), username: "admin", password: "a-long-enough-password"}
 	hubPath := pathWithout(t, "claude")
 	// A scan waiting for a runner asks again often, not every 5s.
 	h.hub, h.addr, h.api = startHub(t, dash, append(gitEnv, "PATH="+hubPath, "DASH_USERNAME="+h.username, "DASH_PASSWORD="+h.password, "DASH_TEST_SCAN_WAIT_EVERY=200ms"),
-		"-data", filepath.Join(dir, "hub"), "-projects", filepath.Join(dir, "hub-projects"), "-env", filepath.Join(dir, "none.env"))
+		"-data", h.hubData, "-projects", filepath.Join(dir, "hub-projects"), "-env", filepath.Join(dir, "none.env"))
 	h.base = "http://" + h.addr
 	api := h.api
 	api.must("POST", "/api/login", map[string]string{"username": h.username, "password": h.password}, http.StatusOK, nil)

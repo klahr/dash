@@ -194,3 +194,24 @@ func TestOldDeploysGo(t *testing.T) {
 		t.Errorf("the live deploy went: %v", err)
 	}
 }
+
+// A deploy waiting for its release build is created waiting, and still
+// waits after a restart (reopening the store).
+func TestWaitingDeploySurvivesReopening(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "dash.db")
+	s := openTest(t, path)
+	p, err := s.CreateProject(model.Project{Name: "app", Environments: []model.Environment{{Name: "production", DeployCommand: "true"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := s.CreateDeploy(model.Deploy{ProjectID: p.ID, Environment: "production", Ref: "abc", Tag: "1.0.0", Trigger: model.DeployByRelease, Status: model.DeployWaitingBuild})
+	if err != nil || d.Status != model.DeployWaitingBuild || len(d.Phases) != 1 {
+		t.Fatalf("create: %+v %v", d, err)
+	}
+	s = reopen(t, s, path)
+	got, err := s.GetDeploy(d.ID)
+	if err != nil || got.Status != model.DeployWaitingBuild || got.Tag != "1.0.0" {
+		t.Fatalf("after reopening: %+v %v", got, err)
+	}
+}

@@ -88,6 +88,11 @@ type Environment struct {
 	// Merges deploy nothing while it is on (see DeploysOnMerge), and a release
 	// tag's own deploy always may.
 	ReleaseTagsOnly bool `json:"release_tags_only,omitempty"`
+	// WaitForBuild: a deploy a release tag triggers (Trigger
+	// EnvTriggerRelease) waits (DeployWaitingBuild) until the GitHub
+	// Actions runs the tag started pass, then goes on as any deploy; if they
+	// fail, or none ran, it doesn't deploy. Other deploys don't wait.
+	WaitForBuild bool `json:"wait_for_build,omitempty"`
 }
 
 // Environment.Trigger.
@@ -103,6 +108,10 @@ func (e Environment) DeploysOnMerge() bool { return e.Trigger == EnvTriggerMerge
 
 // DeploysOnRelease reports whether e deploys each release tag.
 func (e Environment) DeploysOnRelease() bool { return e.Trigger == EnvTriggerRelease }
+
+// WaitsForBuild reports whether e's release-triggered deploys wait for the
+// tag's release build to pass.
+func (e Environment) WaitsForBuild() bool { return e.WaitForBuild && e.DeploysOnRelease() }
 
 // Limits of an environment's checks.
 const (
@@ -308,6 +317,9 @@ func (p Project) DeployHeld(env string) string {
 //
 //	awaiting_approval ──▶ queued (approved), or ──▶ rejected
 //
+//	waiting_build ──▶ queued or awaiting_approval (the release build
+//	passed), or ──▶ failed (it failed, or none ran)
+//
 //	queued ──▶ building ──▶ deploying ──▶ verifying ──▶ live ──▶ superseded
 //	   │           │            │             │           │
 //	   └───────────┴────────────┴─────────────┴──▶ failed └──▶ rolled_back
@@ -330,6 +342,10 @@ const (
 	// queued (Environment.ApproveRole); DeployRejected: it was refused.
 	DeployAwaiting DeployStatus = "awaiting_approval"
 	DeployRejected DeployStatus = "rejected"
+	// DeployWaitingBuild: a release tag's deploy waits for the tag's
+	// release build to pass (Environment.WaitForBuild); the queue doesn't
+	// run it.
+	DeployWaitingBuild DeployStatus = "waiting_build"
 )
 
 // Active reports whether a deploy in status s holds its environment: it
@@ -339,7 +355,15 @@ func (s DeployStatus) Active() bool {
 }
 
 // Done reports whether a deploy in status s has finished, one way or another.
-func (s DeployStatus) Done() bool { return s != DeployQueued && s != DeployAwaiting && !s.Active() }
+func (s DeployStatus) Done() bool {
+	return s != DeployQueued && s != DeployAwaiting && s != DeployWaitingBuild && !s.Active()
+}
+
+// Pending reports whether a deploy in status s hasn't started yet and may
+// be taken off the queue: queued, awaiting an approval or its build.
+func (s DeployStatus) Pending() bool {
+	return s == DeployQueued || s == DeployAwaiting || s == DeployWaitingBuild
+}
 
 // What started a deploy (Deploy.Trigger).
 const (

@@ -30,7 +30,8 @@ func putDeploy(tx *sql.Tx, d *model.Deploy) error {
 
 // CreateDeploy queues a deploy: d's project, environment, ref and trigger
 // are the caller's, its id, status and times the store's. It is queued,
-// or awaits approval when d's status says so (model.DeployAwaiting).
+// or awaits approval or its release build when d's status says so
+// (model.DeployAwaiting, model.DeployWaitingBuild).
 func (s *Store) CreateDeploy(d model.Deploy) (model.Deploy, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -43,8 +44,8 @@ func (s *Store) CreateDeploy(d model.Deploy) (model.Deploy, error) {
 	}
 	now := time.Now()
 	first := model.DeployQueued
-	if d.Status == model.DeployAwaiting {
-		first = model.DeployAwaiting
+	if d.Status == model.DeployAwaiting || d.Status == model.DeployWaitingBuild {
+		first = d.Status
 	}
 	d.ID, d.CreatedAt, d.Status, d.Phases, d.Log = NewID(), now, "", nil, ""
 	d.StartedAt, d.FinishedAt, d.ExitCode = nil, nil, nil

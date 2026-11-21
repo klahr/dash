@@ -42,6 +42,20 @@ newest first. Each shows its commit and how far it is from what the environment 
 "4 commits ahead of production", "2 commits behind production" or "live on production now". Press
 **Deploy** to deploy it.
 
+Each tag also shows its release build: the GitHub Actions runs pushing the tag started.
+
+- **Building**: the runs haven't finished. The picker updates it while it is open.
+- **Build passed**: they all passed.
+- **Build failed**: one of them failed.
+- **No build found**: Dash knows of no runs of the tag (none ran, or the project isn't on GitHub).
+
+Click the state to open the runs on GitHub. This works on a hub and on a single machine: Dash
+follows each release tag's build (see [Tag a release](github.md#tag-a-release)).
+
+If you pick a tag whose build failed or is still running, Dash asks you to confirm first
+("The release build of 1.4.0 failed; deploy it to production anyway?"). It doesn't refuse it.
+**Deploy to…** in **History** asks the same for a tagged commit.
+
 ### Tag a new release from the picker
 
 When `origin/main` (the default branch) has commits after the newest release tag, the picker also
@@ -109,7 +123,9 @@ screen with **Back** on a phone; `Esc` closes it, `j`/`k` step through the list)
   replaced;
 - who or what started it ("by ana", "by Claude for ana", "after a merge", "for release 1.4.0"),
   with the task a merge or Claude deployed for, the runner it ran on, its exit code;
-- its phases and how long each took: **Awaiting approval** (when it needs one), **Queued**, **Building**, **Deploying**, **Verifying**,
+- its phases and how long each took: **Waiting for build** (see
+  [Wait for the release build](#wait-for-the-release-build)), **Awaiting approval** (when it needs
+  one), **Queued**, **Building**, **Deploying**, **Verifying**,
   then **Live** or **Failed**. A live deploy becomes **Replaced** when the next one goes live, or
   **Rolled back** when a rollback replaces it;
 - how its checks went;
@@ -120,7 +136,8 @@ screen with **Back** on a phone; `Esc` closes it, `j`/`k` step through the list)
   timed apart. With no successful deploy yet, there is no estimate. Past the usual time, it says
   "taking longer than usual".
 
-**Stop** stops a running deploy where it runs. **Cancel** takes a queued one off the queue.
+**Stop** stops a running deploy where it runs. **Cancel** takes a queued or waiting one off the
+queue.
 You may stop or cancel your own deploys, and others' where you may deploy.
 
 ## Roles and approvals
@@ -163,6 +180,30 @@ it.
 
 On a hub, the hub triggers the deploys: it keeps the records. A typical setup deploys `staging` on
 each merge and `production` on each release tag, with **Live on first** set to `staging`.
+
+### Wait for the release build
+
+A release tag's deploy starts as soon as the tag is pushed. If your release workflow publishes what
+the deploy needs (an image, a package), the deploy can start before it is there. To wait for it:
+
+1. Open **Project settings → Deploy**.
+2. Under **Who and when**, set **Deploys on its own** to **On each release tag**.
+3. Tick **Wait for the release build before deploying**. It is off by default.
+
+Then a release tag's deploy shows as **Waiting for build** on the environment's card and in the
+list. Dash looks at the tag's GitHub Actions runs every 15 seconds:
+
+- When they all pass, the deploy goes on as any deploy: the requirements, the freezes, an approval,
+  then the queue.
+- When one fails, it doesn't deploy. The deploy is recorded as **Failed** with why ("the release
+  build of 1.4.0 failed (Release), so it didn't deploy"), and you get a notice, as for any failed
+  deploy.
+- When no workflow ran for the tag, when Dash finds no build of it within 15 minutes, or when the
+  build doesn't finish within 6 hours, it doesn't deploy either, and says why.
+
+A waiting deploy survives a restart of Dash. **Cancel** in its pane takes it off. Turning the
+setting off lets the waiting deploys go at once. Only deploys a release tag triggers wait: a deploy
+you start yourself doesn't (the picker asks you instead, see [Deploy](#deploy)).
 
 ## Release tags only
 
@@ -375,11 +416,17 @@ The hub never sees the values. A runner only tells it which environments it has 
 - `GET /api/projects/{id}/deploys/tags?environment=production`: the release tags, newest first
   (at most 30), as `{"tag", "commit", "compared", "ahead", "behind"}`: the commits the tag has that
   the environment's live commit (`live`) hasn't, and the other way round. With `?commit=<sha>`
-  instead, `commit` is the full commit and `commit_tags` its release tags.
+  instead, `commit` is the full commit and `commit_tags` its release tags. Each tag has `build`
+  (`{"state", "url", "runs"}`): `state` is `building`, `passed`, `failed` or `unknown`, and `url`
+  the tag's runs on GitHub. With `?commit=`, `commit_build` is the build of its first tag.
+- `GET /api/projects/{id}/ci/releases?tag=1.4.0`: the release build Dash follows for a tag
+  (`state`: `building`, `published`, `failed` or `no_build`, with its `runs`). Without `tag`, the
+  latest ones.
 - `POST /api/projects/{id}/deploys` with `{"environment": "production", "commit": "<sha>"}`: queue
   a deploy. `commit` may also be a tag. An empty `commit` deploys the tip of the default branch.
   With `"promote_from": "staging"` instead of `commit`, it promotes what is live there. A deploy
-  that needs an approval has the status `awaiting_approval`. A blocked one, or an untagged commit
+  that needs an approval has the status `awaiting_approval`; a release tag's deploy waiting for
+  its release build, `waiting_build`. A blocked one, or an untagged commit
   for an environment that only deploys release tags, gets `409` with the reason. A deploy's `tag`
   is the release tag on its commit, if any.
 - `POST /api/projects/{id}/tags` with `{"bump": "patch", "deploy": "staging"}`: tag the tip of the
@@ -392,7 +439,7 @@ The hub never sees the values. A runner only tells it which environments it has 
   decide on a deploy awaiting approval.
 - `GET /api/projects/{id}/environments/history`: the settings history, newest first.
 - `GET /api/deploys/{id}`: one deploy, with its log.
-- `DELETE /api/deploys/{id}`: cancel a queued deploy, or stop a running one.
+- `DELETE /api/deploys/{id}`: cancel a queued or waiting deploy, or stop a running one.
 - `POST /api/deploys/{id}/rollback`: roll back deploy `{id}` to the last good deploy before it.
   `GET /api/projects/{id}/environments` has the rollback each environment allows now in `rollback`
   (`{"of", "to"}`), and `GET /api/deploys/{id}` in `rollback_target`.
@@ -401,7 +448,7 @@ The environments are the `environments` field of `PATCH /api/projects/{id}` and 
 `update_project` tool: a list of `{"name", "deploy_command", "build_command", "runs_on", "url",
 "health_path", "health_status", "health_timeout", "verify_command", "soak", "auto_rollback",
 "deploy_role", "approve_role", "settings_role", "require_tests", "require_live_on", "freezes",
-"time_zone", "trigger", "release_tags_only"}`, which replaces the project's environments. Roles are `member`, `admin` or
+"time_zone", "trigger", "release_tags_only", "wait_for_build"}`, which replaces the project's environments. Roles are `member`, `admin` or
 `owner` (`approve_role` also `none`). `freezes` is a list of `{"from", "to", "note"}`. `trigger` is
 `manual` (the default), `merge` or `release`.
 

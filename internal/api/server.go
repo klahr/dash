@@ -163,6 +163,10 @@ type Server struct {
 	DeployRoot string
 	EnvDir     string
 	DeployPoll time.Duration
+	// BuildWaitPoll is how often the deploys waiting for their release
+	// build look at it again (default 15s; see deploywait.go).
+	BuildWaitPoll time.Duration
+	buildWaits    sync.Mutex // one look at the waiting deploys at a time
 	// deployRuns are the deploys running on this computer; deploys runs
 	// each environment's queue (on a hub, or a Dash that isn't one).
 	deployRuns  deploy.Manager

@@ -339,6 +339,17 @@ type deployAsk struct {
 // (but always a release tag's own deploy). It waits for an approval when
 // the environment needs one.
 func (sv *service) requestDeploy(p model.Project, a deployAsk) (model.Deploy, error) {
+	d, err := sv.prepareDeploy(p, a)
+	if err != nil {
+		return d, err
+	}
+	return sv.s.queueDeploy(sv.c, d)
+}
+
+// prepareDeploy checks the deploy a asks of p for sv's caller, as
+// requestDeploy does, and returns it ready to queue (awaiting an approval
+// when the environment needs one), without queueing it.
+func (sv *service) prepareDeploy(p model.Project, a deployAsk) (model.Deploy, error) {
 	s := sv.s
 	e, ok := p.Environment(strings.TrimSpace(a.Environment))
 	if !ok {
@@ -390,7 +401,7 @@ func (sv *service) requestDeploy(p model.Project, a deployAsk) (model.Deploy, er
 	if need := e.WhoApproves(); need != "" {
 		d.Status, d.NeedsApproval = model.DeployAwaiting, need
 	}
-	return s.queueDeploy(sv.c, d)
+	return d, nil
 }
 
 // pinCommit resolves ref, a commit id someone asked to deploy, to the full
@@ -563,9 +574,9 @@ func (s *Server) cancelDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	who := cmp.Or(s.username(sv.c.User), "someone")
 	switch {
-	case d.Status == model.DeployQueued || d.Status == model.DeployAwaiting:
+	case d.Status.Pending():
 		_, err = s.Store.UpdateDeploy(d.ID, func(x *model.Deploy) error {
-			if x.Status != model.DeployQueued && x.Status != model.DeployAwaiting {
+			if !x.Status.Pending() {
 				return fmt.Errorf("%w: it has started meanwhile; stop it again", errConflict)
 			}
 			x.Error, x.Cancelled = "cancelled by "+who, true
@@ -617,7 +628,8 @@ func (s *Server) deployPoll() time.Duration {
 }
 
 // StartDeploys picks up, once Dash has started, the deploys a restart cut
-// short (asking their runners how they went) and the queued ones, and notes
+// short (asking their runners how they went), the queued ones and those
+// waiting for their release build (deploywait.go), and notes
 // the tasks merged so far (only those merged from now on trigger deploys).
 func (s *Server) StartDeploys(ctx context.Context) {
 	s.primeMerges()
@@ -625,6 +637,7 @@ func (s *Server) StartDeploys(ctx context.Context) {
 	e.mu.Lock()
 	e.ctx = ctx
 	e.mu.Unlock()
+	go s.watchBuildWaits(ctx)
 	seen := map[string]bool{}
 	for _, d := range s.Store.ListDeploys("", "") {
 		key := d.ProjectID + "/" + d.Environment

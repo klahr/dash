@@ -24,6 +24,10 @@ type EnvRow struct {
 	// ReleaseTagsOnly: only commits with a release tag deploy here (a
 	// rollback too); merges don't.
 	ReleaseTagsOnly bool `json:"release_tags_only,omitempty"`
+	// WaitForBuild: a release tag's deploy here waits (status
+	// waiting_build) until the tag's GitHub Actions runs pass, and doesn't
+	// deploy if they fail.
+	WaitForBuild bool `json:"wait_for_build,omitempty"`
 	// WhoDeploys is the lowest org role that may deploy there; Claude may
 	// only where it is member (AgentMayDeploy).
 	WhoDeploys     string `json:"who_may_deploy"`
