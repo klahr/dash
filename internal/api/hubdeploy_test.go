@@ -188,9 +188,12 @@ func TestHubDeploysOnlyOnRunnersWithItsLabels(t *testing.T) {
 	if got, _ := os.ReadFile(marker); !strings.HasPrefix(string(got), "production "+live.Commit) {
 		t.Errorf("DASH_PREV_COMMIT: %q", got)
 	}
-	if old, _ := raw(hub).GetDeploy(live.ID); old.Status != model.DeploySuperseded {
-		t.Errorf("the deploy before: %s", old.Status)
-	}
+	// The deploy goes live first and supersedes the one before just after,
+	// in a store update of its own: wait for that.
+	eventually(t, "the deploy before to be superseded", func() bool {
+		old, _ := raw(hub).GetDeploy(live.ID)
+		return old.Status == model.DeploySuperseded
+	})
 
 	// The Deploys page: what is live and where it deploys. No runner has
 	// the secrets file, which is optional: no warning.
