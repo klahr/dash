@@ -1094,14 +1094,18 @@ function membersField(c) {
   const ids = c.members || [];
   const set = (members) => patchCard({ members })().catch(fail);
   const others = pl.people.filter((u) => !ids.includes(u.id));
+  // Who may delete the card may change its owner (the server checks too).
+  const me = pl.hooks.me?.();
+  const mayOwn = me && (me.admin || me.id === c.created_by || me.id === c.owner);
   return h("div", { class: "field pl-field pl-members-field", role: "group", "aria-labelledby": "pd-members" },
     h("span", { id: "pd-members" }, "Members"),
     h("div", { class: "pl-member-list" },
       ...(c.people || []).map((p) => h("span", { class: `pl-member${p.id === c.owner ? " pl-owner" : ""}` }, avatar(p), h("span", { class: "pl-member-name" }, p.username),
-        h("button", { type: "button", class: "pl-owner-btn", "aria-pressed": String(p.id === c.owner),
-          title: p.id === c.owner ? `${p.username} owns the card: click for no owner` : `Make ${p.username} the card's owner`,
+        h("button", { type: "button", class: "pl-owner-btn", "aria-pressed": String(p.id === c.owner), disabled: !mayOwn,
+          title: !mayOwn ? "Only the card's creator, its owner or an admin can change its owner" : p.id === c.owner ? `${p.username} owns the card: click for no owner` : `Make ${p.username} the card's owner`,
           onclick: () => patchCard({ owner: p.id === c.owner ? 0 : p.id })().catch(fail) }, "Owner"),
         ib({ type: "button", class: "icon-btn small", "aria-label": `Take ${p.username} off the card`, title: "Take off the card",
+          disabled: p.id === c.owner && !mayOwn,
           onclick: () => set(ids.filter((id) => id !== p.id)) }, "x"))),
       others.length ? h("select", { "aria-label": "Add a member", onchange: (e) => e.target.value && set([...ids, Number(e.target.value)]) },
         h("option", { value: "" }, ids.length ? "Add…" : "Add a member…"),

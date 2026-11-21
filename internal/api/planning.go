@@ -777,13 +777,24 @@ func (sv *service) updateCard(id string, req cardRequest) error {
 	if err := sv.writable(); err != nil {
 		return err
 	}
+	// Asked here, not in UpdateCard's transaction, which would wait on it.
+	admin := (req.Owner != nil || req.Members != nil) && sv.s.orgAdmin(sv.c)
 	var before []int64
 	c, err := sv.data.UpdateCard(id, func(c *model.Card) error {
 		if req.Version != nil && *req.Version != c.Version() {
 			return fmt.Errorf("%w: someone else changed the card since you opened it: reload it to see their change", errConflict)
 		}
 		before = slices.Clone(c.Members)
-		return req.apply(c)
+		old := *c
+		if err := req.apply(c); err != nil {
+			return err
+		}
+		// The owner may delete the card, so only those who may already
+		// (its creator, its owner, an admin) may change who owns it.
+		if c.Owner != old.Owner && !admin && !mayDeleteOwn(sv.c, old) {
+			return fmt.Errorf("%w: only the card's creator, its owner or an admin can change its owner", errForbidden)
+		}
+		return nil
 	})
 	if err == nil {
 		sv.membersAdded(c, before)
@@ -831,10 +842,13 @@ func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
 
 // canDeleteCard reports whether caller may delete c.
 func (s *Server) canDeleteCard(caller Caller, c model.Card) bool {
-	if caller.User != 0 && (caller.User == c.CreatedBy || caller.User == c.Owner) {
-		return true
-	}
-	return s.orgAdmin(caller)
+	return mayDeleteOwn(caller, c) || s.orgAdmin(caller)
+}
+
+// mayDeleteOwn reports whether caller is c's creator or owner, who may
+// delete it and change its owner without being an admin.
+func mayDeleteOwn(caller Caller, c model.Card) bool {
+	return caller.User != 0 && (caller.User == c.CreatedBy || caller.User == c.Owner)
 }
 
 // moveCard handles POST /api/planning/cards/{cid}/move: {column, position}.

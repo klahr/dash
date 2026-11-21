@@ -49,7 +49,8 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   yourself off. Someone you add gets a [notification](notifications.md#planning-cards).
   **Owner** on a member makes them the card's one owner, who answers for it; click it again for
   no owner. The owner's face comes first on the board, ringed. Taking the owner off the card
-  leaves it with no owner.
+  leaves it with no owner. The owner can delete the card, so only the card's creator, its
+  owner or an admin can change who owns it, or take the owner off.
 - **Tags**: short labels, such as `backend` or `Q3`, any number up to 20. Type one in the box
   and press `Enter` (or a comma) to add it; the org's other tags are offered as you type.
   Click **×** on a tag to take it off. Tags show on the card on the board. Case doesn't

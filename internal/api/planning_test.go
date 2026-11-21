@@ -274,11 +274,28 @@ func TestPlanningCardDeleteIsTheirs(t *testing.T) {
 	s, _, _ := boardServer(t)
 	h := s.Routes()
 	a := loggedIn(t, h) // an owner of the org
-	ph, _ := plannerOf(t, s, h)
+	ph, pat := plannerOf(t, s, h)
 
 	mine := decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Patient sign-up"}`))
 	if w := do(t, ph, "DELETE", "/api/planning/cards/"+mine.ID, ""); w.Code != http.StatusForbidden {
 		t.Errorf("a planner deleted someone's card: %d %s", w.Code, w.Body)
+	}
+	// Nor by making themselves its owner first, or taking its owner off.
+	if w := do(t, ph, "PATCH", "/api/planning/cards/"+mine.ID, fmt.Sprintf(`{"owner":%d}`, pat.ID)); w.Code != http.StatusForbidden {
+		t.Errorf("a planner made themselves owner of someone's card: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, ph, "DELETE", "/api/planning/cards/"+mine.ID, ""); w.Code != http.StatusForbidden {
+		t.Errorf("a planner deleted someone's card: %d %s", w.Code, w.Body)
+	}
+	owned := decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Cancel an appointment","owner":`+strconv.FormatInt(ownerSession(t, s).User.ID, 10)+`}`))
+	if w := do(t, ph, "PATCH", "/api/planning/cards/"+owned.ID, `{"members":[]}`); w.Code != http.StatusForbidden {
+		t.Errorf("a planner took the owner off someone's card: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, ph, "PATCH", "/api/planning/cards/"+owned.ID, `{"title":"Cancel a booking"}`); w.Code != http.StatusOK {
+		t.Errorf("a planner edits someone's card: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, a, "PATCH", "/api/planning/cards/"+owned.ID, `{"owner":0}`); w.Code != http.StatusOK {
+		t.Errorf("the owner gives up the card: %d %s", w.Code, w.Body)
 	}
 	if w := do(t, ph, "DELETE", "/api/planning/cards/nope", ""); w.Code != http.StatusNotFound {
 		t.Errorf("delete no card: %d", w.Code)
