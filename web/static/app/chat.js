@@ -15,6 +15,7 @@ import { loadTodoChat, renderChatBadge, renderChatDots, renderChatPane, viewingC
 import { timeline } from "./timeline.js";
 import { fmtTokens } from "./runstats.js";
 import { confirmRunAs } from "./people.js";
+import { dictation } from "./dictation.js";
 
 // ------------------------------------------------------------------ chat
 // usageLine shows what an answer took: tokens in and out, time spent
@@ -76,6 +77,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   const input = c.input = form.q;
   const composing = c.composing = () => !!input.value.trim() || att.items().length > 0;
   const sendBtn = chatSendButton(c, form, mode, composing);
+  dictation(input, { place: (b) => sendBtn.before(b) });
   // A turn that ends sends what's queued (done) or, when it was stopped or
   // failed, puts it back in the composer to send again or not.
   const finish = c.finish = (drain = false) => {

@@ -80,6 +80,7 @@ Using Dash:
 - [Write a project brief](docs/plan-project.md)
 - [Planning](docs/planning.md)
 - [Chat](docs/chat.md)
+- [Dictation](docs/dictation.md)
 - [GitHub](docs/github.md)
 - [Merge queue](docs/merge-queue.md)
 - [Deploys](docs/deploys.md)

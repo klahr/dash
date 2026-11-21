@@ -1377,6 +1377,7 @@
             <button type="button" class="rail-item" data-rail="editors">Editors</button>
             <button type="button" class="rail-item" data-rail="clock">Time</button>
             <button type="button" class="rail-item" data-rail="chat">Chat</button>
+            <button type="button" class="rail-item" data-rail="dictation">Dictation</button>
           </div>
           <div class="rail-group"><span class="rail-head">You</span>
             <button type="button" class="rail-item" data-rail="picture">Profile picture</button>
@@ -1408,6 +1409,12 @@
           </section>
           <section class="rail-section" data-section="chat">
             <label class="toggle"><input type="checkbox" name="chatSuggest" form="prefs-form"><span>Suggest what to say next</span></label>
+          </section>
+          <section class="rail-section" data-section="dictation">
+            <label class="toggle"><input type="checkbox" name="dictation" form="prefs-form"><span>Dictation <em>a mic button on the task instructions, chats and comments</em></span></label>
+            <p class="hint">The browser turns your speech into text. Chrome sends the audio to Google to transcribe it; Safari may do it on the device.
+              <kbd><span data-mod>Ctrl</span>-Shift-.</kbd> starts or stops it in the field you are in.</p>
+            <p class="hint warn" id="dictation-missing" hidden>This browser has no speech recognition (Firefox). Use your system's dictation instead: <a data-docs="dictation.md" target="_blank" rel="noopener">How</a>.</p>
           </section>
           <!-- The user's profile picture (app/avatar.js): shown in the account menu and members lists -->
           <section class="rail-section" data-section="picture">
@@ -2012,6 +2019,7 @@
                 <tr><th scope="row"><kbd>Backspace</kbd></th><td>New task sheet: in an empty field, remove it</td></tr>
                 <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Enter</kbd></th><td>New task sheet and task form: queue</td></tr>
                 <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Shift-Enter</kbd> <kbd><span data-mod>Ctrl</span>-s</kbd></th><td>Task form: save a draft</td></tr>
+                <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Shift-.</kbd></th><td>Dictate into the field you are in, when Dictation is on</td></tr>
                 <tr><th scope="row"><kbd>Esc</kbd></th><td>Close or cancel</td></tr>
               </tbody>
             </table>

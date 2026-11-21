@@ -8,6 +8,7 @@ import { desktop } from "./viewport.js";
 import { dropBefore, edgeScroller, glide } from "./glide.js";
 import { ACCEPT, clip, postFile } from "./attachments.js";
 import { extOf, isImage, sizeText } from "./lightbox.js";
+import { dictation } from "./dictation.js";
 
 // ------------------------------------------------------------------ Planning
 // The org's plan, for a product owner (docs/planning.md): cards in four
@@ -23,7 +24,7 @@ import { extOf, isImage, sizeText } from "./lightbox.js";
 // One module for both places Planning shows: the app's Planning view
 // (members, admins, owners; index.html) and planning.html, the page a
 // planner lands on. It uses only dom, api, dialogs, store, viewport, glide,
-// attachments and lightbox,
+// attachments, lightbox and dictation,
 // which load outside the app too, and builds its own markup in the root
 // it is mounted on. Planning is the hub's (api prefix "").
 
@@ -1439,7 +1440,9 @@ function renderCard() {
       await busy(e.submitter || $("button", e.currentTarget), () => call("POST", cardAPI(c.id, "/comments"), { text }));
       box.value = "";
       await loadCard(c.id);
-    }) }, box, ib({ type: "submit", class: "btn small" }, "comment", "Comment")));
+    }) }, box, h("div", { class: "pl-comment-actions" },
+      dictation(box, { place: () => {}, cls: "icon-btn small" }),
+      ib({ type: "submit", class: "btn small" }, "comment", "Comment"))));
 
   // Its creator, its owner or an admin deletes a card (the server checks too).
   const mayDelete = me && (me.admin || me.id === c.created_by || me.id === c.owner);

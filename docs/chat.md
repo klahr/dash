@@ -70,6 +70,11 @@ usual placeholder.
 To turn it off, open **Account → Chat** and clear **Suggest what to say next**. It's on by default
 and applies to this browser only. When it's off, no call is made.
 
+## Speak instead of typing
+
+Turn on **Account → Dictation** for a mic button on the message box. See
+[Dictation](dictation.md).
+
 ## Shell commands with `!`
 
 In a project chat or a task chat, a message starting with `!` isn't sent to Claude: the rest of

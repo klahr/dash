@@ -130,6 +130,7 @@ A question from Claude has no key for an answer: answer it in its card. `X` decl
 | `Backspace`             | new task sheet: in an empty field, remove it          |
 | `Ctrl-Enter`            | new task sheet and task form: queue                   |
 | `Ctrl-Shift-Enter` `Ctrl-s` | task form: save a draft                           |
+| `Ctrl-Shift-.`          | dictate into the field you are in ([Dictation](dictation.md)) |
 | `Esc`                   | close or cancel                                       |
 
 On a Mac, `Ctrl` here is `Cmd`.

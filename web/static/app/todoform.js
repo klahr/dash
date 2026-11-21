@@ -10,10 +10,12 @@ import { editing, pickProject, showNewTasks } from "./todos.js";
 import { PRIORITY_LEVELS, levelPriority, priorityLevel } from "./dnd.js";
 import { servesProject } from "../groups.js";
 import { agentCan, cantSay } from "./agents.js";
+import { dictation } from "./dictation.js";
 
 // ------------------------------------------------------------------ the task form
 export const promptEditor = mdEditor($("#todo-form").prompt);
 export const todoAttach = attachBox($("#todo-attach"), promptEditor.el, () => draft.changed());
+dictation({ ed: promptEditor }, { place: (b) => $("#todo-refine").before(b), text: true, cls: "btn small attach-btn" });
 
 // The task form's "Depends on" picker: the project's unmerged tasks other
 // than the one being edited. Ticked tasks must be merged before it starts.

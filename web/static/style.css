@@ -704,6 +704,11 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .chat-mode-note { font-weight: 400; }
 .composer.rework-mode textarea { border-color: var(--running); }
 .composer.rework-mode .icon-btn.primary { background: var(--running); }
+/* Dictation's mic button (app/dictation.js): shown while the preference is on; red and breathing while it listens. */
+:root:not(.dictation-on) .dictate-btn { display: none; }
+.dictate-btn.listening { color: var(--failed); border-color: var(--failed); animation: dictate-breathe 1.6s ease-in-out infinite; }
+@keyframes dictate-breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--failed) 45%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
+@media (prefers-reduced-motion: reduce) { .dictate-btn.listening { animation: none; } }
 /* Task timeline: who said what. The agent (the worker) is amber like a running
    task; the side chat keeps the plain chat look. */
 .msg-from { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; color: var(--muted); margin-bottom: 4px; white-space: normal; }
@@ -2546,6 +2551,11 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .draft-status[data-state="restored"] { color: var(--running); }
 .prompt-tools { display: flex; align-items: flex-start; gap: 8px; margin: -6px 0 8px; }
 .prompt-tools .draft-status { flex: 1; margin: 0; align-self: center; }
+/* On a phone the prompt's tools wrap under the status line rather than run off the edge. */
+@media (max-width: 600px) {
+  .prompt-tools, .prompt-edit-actions { flex-wrap: wrap; }
+  .prompt-tools .draft-status { flex-basis: 100%; }
+}
 
 /* ---- editing a task in its detail pane (desktop; app/inlineedit.js) ---- */
 .detail-titles h2.editable { cursor: text; border-radius: var(--r-s); margin: -2px -6px; padding: 2px 6px; }
@@ -3812,6 +3822,7 @@ select.pl-more-filter { width: auto; min-height: 32px; max-width: 12em; font-siz
 .pl-comment-text { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pl-comment-form { display: grid; gap: 8px; margin-top: 10px; }
 .pl-comment-form .btn { justify-self: end; }
+.pl-comment-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .pl-danger { display: flex; justify-content: flex-end; padding-top: 8px; border-top: 1px solid var(--line); }
 .pl-sheet .pl-pick { max-height: min(50dvh, 420px); overflow-y: auto; margin: 10px 0 4px; }
 .pl-sheet input[type="search"] { width: 100%; }

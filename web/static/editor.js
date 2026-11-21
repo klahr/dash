@@ -347,6 +347,8 @@ export function mdEditor(textarea) {
     el: m.wrap,
     view,
     render: m.render,
+    // A change that undo skips (dictation's interim text, app/dictation.js).
+    untracked: Transaction.addToHistory.of(false),
     setVim(on) { view.dispatch({ effects: vimMode.reconfigure(on ? vimKeys() : []) }); },
     setInvisibles(on) { view.dispatch({ effects: invisibles.reconfigure(on ? invisibleChars() : []) }); },
   };

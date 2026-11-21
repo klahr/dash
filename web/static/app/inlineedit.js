@@ -10,6 +10,7 @@ import { buildOnOptions, depOptions, draft, promptEditor, runOnOptions, setModel
 import { levelPriority, priorityLevel } from "./dnd.js";
 import { agentCan, cantSay } from "./agents.js";
 import { openDetail, renderDetail } from "./detail.js";
+import { dictation } from "./dictation.js";
 
 // ------------------------------------------------------------------ inline editing (desktop)
 // On a desktop the open task is edited in its detail pane: click the title to
@@ -76,6 +77,7 @@ titleIn.addEventListener("blur", () => { if (titleFor) attempt(() => saveTitle(f
 const promptBox = $("#d-prompt-edit"), promptIn = $("#d-prompt-input");
 const ed = mdEditor(promptIn);
 const attach = attachBox($("#d-prompt-attach"), ed.el, () => {}, { zone: promptBox });
+dictation({ ed }, { place: (b) => $("#d-prompt-full").before(b), text: true, cls: "btn small" });
 let promptFor = null; // the task whose instructions are being edited
 
 export function editPrompt(text, atts) {

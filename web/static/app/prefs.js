@@ -10,6 +10,7 @@ import { notifyOn, testPush, toggleNotifications } from "./notifications.js";
 import { renderUsage } from "./usage.js";
 import { copyBlock } from "./install.js";
 import { accountSection, openAccount } from "./accountsheet.js";
+import { dictationOn, dictationSupported, setDictation } from "./dictation.js";
 
 // ------------------------------------------------------------------ preferences (this browser only)
 export function syncPrefs() {
@@ -20,11 +21,14 @@ export function syncPrefs() {
   $("#push-hint").hidden = !(notifyOn() && state.pushOn);
   f.clock.value = clockPref();
   f.chatSuggest.checked = chatSuggestOn();
+  f.dictation.checked = dictationOn();
+  f.dictation.disabled = !dictationSupported;
+  $("#dictation-missing").hidden = dictationSupported;
 }
-// The preferences are the Account sheet's first sections (Editors, Time, Chat), and
+// The preferences are the Account sheet's first sections (Editors, Time, Chat, Dictation), and
 // this browser's push switch in Notifications.
 export function openPrefs() { return openAccount("editors"); }
-for (const key of ["editors", "notifications", "clock", "chat"]) accountSection(key, syncPrefs);
+for (const key of ["editors", "notifications", "clock", "chat", "dictation"]) accountSection(key, syncPrefs);
 // Each saves as it changes, with "Saved" in the sheet's header.
 const pref = (name, fn) => $("#prefs-form")[name].addEventListener("change", (e) => saveField(e.target, async () => fn(e.target)));
 pref("vim", (el) => { if (el.checked !== vimOn()) toggleVim(); });
@@ -39,6 +43,7 @@ pref("chatSuggest", (el) => {
   // Turned off: the chats drop a suggestion they show.
   document.dispatchEvent(new Event("dash:chatsuggest"));
 });
+pref("dictation", (el) => setDictation(el.checked));
 $("#push-test").addEventListener("click", attempt(testPush));
 // Asking for permission needs this change event's user gesture.
 $("#prefs-form").notify.addEventListener("change", attempt(async (e) => {
