@@ -1,13 +1,14 @@
 import { invisiblesOn, vimOn } from "../editor.js";
 import { $, applyClockPref, chatSuggestOn, clockPref, h, ico } from "./dom.js";
 import * as store from "./store.js";
-import { attempt, copy } from "./dialogs.js";
+import { attempt } from "./dialogs.js";
 import { saveField } from "./autosave.js";
 import { state } from "./state.js";
 import { toggleInvisibles, toggleVim } from "./diffedit.js";
 import { openConnector } from "./wallview.js";
 import { notifyOn, testPush, toggleNotifications } from "./notifications.js";
 import { renderUsage } from "./usage.js";
+import { copyBlock } from "./install.js";
 import { accountSection, openAccount } from "./accountsheet.js";
 
 // ------------------------------------------------------------------ preferences (this browser only)
@@ -50,32 +51,8 @@ $("#prefs-form").notify.addEventListener("change", attempt(async (e) => {
 // dashboard is served with -public-url; otherwise this says so.
 const CLAUDE_CONNECTORS = "https://claude.ai/settings/connectors";
 
-// commandParts splits a command into words the browser may not break inside,
-// so "--code C8R6-DYXQ" never wraps as "-" and "-code …". A flag keeps its
-// value with it. Long words (URLs) stay breakable so they can't overflow a
-// phone screen. The text itself is unchanged: the parts join back to it.
-const NOBREAK_MAX = 40;
-function commandParts(text) {
-  const words = text.split(/( )/);
-  const out = [];
-  for (let i = 0; i < words.length; i++) {
-    let w = words[i];
-    const next = words[i + 2];
-    if (w.startsWith("-") && next && !next.startsWith("-") && !w.includes("\n") && !next.includes("\n")
-        && w.length + 1 + next.length <= NOBREAK_MAX) {
-      w = `${w} ${next}`;
-      i += 2;
-    }
-    out.push(w && w !== " " && w.length <= NOBREAK_MAX && !w.includes("\n") ? h("span", { class: "nobreak" }, w) : w);
-  }
-  return out;
-}
-
-export function copyBlock(text, msg, { pre = false } = {}) {
-  return h("div", { class: "copy-row" },
-    h(pre ? "pre" : "code", { class: "copy-text" }, pre ? commandParts(text) : text),
-    h("button", { class: "btn small shrink", type: "button", onclick: () => copy(text, msg) }, ico("copy"), "Copy"));
-}
+// copyBlock lives in app/install.js; the app's modules take it from here.
+export { copyBlock };
 
 export function connectorSteps(c) {
   const step = (head, ...body) => h("li", {}, h("strong", {}, head), ...body);

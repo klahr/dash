@@ -8,7 +8,8 @@
 // the setup steps.
 import { $, docsLink, entering, fill, h, ib, ico, dateTimeText } from "./dom.js";
 import { api } from "./api.js";
-import { ask, attempt, copy, fail, railOf, toast } from "./dialogs.js";
+import { ask, attempt, fail, railOf, toast } from "./dialogs.js";
+import { copyBlock, installCmd, installCmdWin, psq, shq } from "./install.js";
 import { wsURL } from "./viewport.js";
 import { renderMarkdown } from "../editor.js";
 import { chatPermCard, permDecided, toolCall, toolResult, toolSettled } from "./chatparts.js";
@@ -112,13 +113,6 @@ async function remove(r) {
   toast(`${r.name} removed`);
 }
 
-// shq quotes s for a POSIX shell; psq for PowerShell (as app/runners.js does).
-const shq = (s) => /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replaceAll("'", `'\\''`)}'`;
-const psq = (s) => /^[\w%+=:./\\-]+$/.test(s) ? s : `'${s.replace(/['‘’‚‛]/g, (q) => q + q)}'`;
-const copyBlock = (text) => h("div", { class: "copy-row" },
-  h("pre", { class: "copy-text" }, text),
-  h("button", { class: "btn small shrink", type: "button", onclick: () => copy(text, "Command copied") }, ico("copy"), "Copy"));
-
 // startAdd gets a one-time code and shows how to install a runner with it,
 // the same pairing members use (app/runners.js); the sheet notices the
 // runner that registers with it.
@@ -135,9 +129,9 @@ async function startAdd() {
     const n = name.value.trim().toLowerCase();
     fill(cmds,
       h("p", {}, "On Linux or macOS, in a terminal:"),
-      copyBlock(`curl -fsSL ${cl.hub}/runner/install.sh | sh -s -- --code ${code}${n ? ` --name ${shq(n)}` : ""}`),
+      copyBlock(installCmd(cl.hub, `--code ${code}${n ? ` --name ${shq(n)}` : ""}`), "Command copied", { pre: true }),
       h("p", {}, "On Windows, in PowerShell:"),
-      copyBlock(`& ([scriptblock]::Create((irm ${cl.hub}/runner/install.ps1))) -Code ${code}${n ? ` -Name ${psq(n)}` : ""}`));
+      copyBlock(installCmdWin(cl.hub, `-Code ${code}${n ? ` -Name ${psq(n)}` : ""}`), "Command copied", { pre: true }));
   };
   name.addEventListener("input", render);
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });

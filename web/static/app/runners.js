@@ -9,7 +9,7 @@ import { refreshMachines } from "./events.js";
 import { isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, selectProject, setMenu } from "./projects.js";
 import { agoText, renderBoard } from "./branches.js";
 import { ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
-import { copyBlock } from "./prefs.js";
+import { copyBlock, installCmd as install, installCmdWin as installWin, psq, shq } from "./install.js";
 import { shortLabel } from "./usage.js";
 import { openSettings, syncSettingsRunners } from "./settings.js";
 import { ensureShell, forgetShellRefusal } from "./terminal.js";
@@ -29,17 +29,9 @@ const runnerInfo = { hub: location.origin, version: "", canUpdate: false };
 // so the one that registers with it can be told apart.
 let runnerAdd = null;
 
-// shq quotes s for a POSIX shell, leaving a leading ~/ for it to expand.
-const shq = (s) => {
-  if (s.startsWith("~/")) return `~/${s.length > 2 ? shq(s.slice(2)) : ""}`;
-  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replaceAll("'", `'\\''`)}'`;
-};
-const installCmd = (args = "") => `curl -fsSL ${runnerInfo.hub}/runner/install.sh | sh${args ? ` -s -- ${args}` : ""}`;
-// psq quotes s for PowerShell (a single-quoted string expands nothing).
-const psq = (s) => /^[\w%+=:./\\-]+$/.test(s) ? s : `'${s.replace(/['\u2018\u2019\u201a\u201b]/g, (q) => q + q)}'`;
-// installCmdWin is installCmd for Windows: the PowerShell installer, with
-// args as PowerShell parameters (-Code …).
-const installCmdWin = (args = "") => `& ([scriptblock]::Create((irm ${runnerInfo.hub}/runner/install.ps1)))${args ? ` ${args}` : ""}`;
+// installCmd and installCmdWin: the installers (app/install.js) from this hub.
+const installCmd = (args) => install(runnerInfo.hub, args);
+const installCmdWin = (args) => installWin(runnerInfo.hub, args);
 // updateCmds shows how to update a runner by hand, on any system.
 const updateCmds = () => [
   copyBlock(installCmd(), "Command copied", { pre: true }),
