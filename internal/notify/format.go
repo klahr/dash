@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/textutil"
 )
 
@@ -76,6 +77,10 @@ type PermissionRef struct {
 	ID   string `json:"id"`
 	Tool string `json:"tool"`
 }
+
+// Question reports whether the request is Claude asking the user a
+// question (perm.AskTool), which is answered in Dash, not approved.
+func (p *PermissionRef) Question() bool { return p != nil && p.Tool == perm.AskTool }
 
 type GoalRef struct {
 	ID     string           `json:"id"`
@@ -149,6 +154,9 @@ func (n Notification) Head() string {
 		return n.head
 	}
 	h := looks[n.Type].head
+	if n.Type == model.NotifyPermission && n.Permission.Question() {
+		h = "Claude has a question"
+	}
 	if n.Type == model.NotifyMerged && n.Message == ClosedNoChanges {
 		h = "Closed"
 	}

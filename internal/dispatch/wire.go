@@ -246,10 +246,11 @@ type Permission struct {
 const PermissionPath = "/api/hub/tasks/{htid}/permissions/{id}"
 
 // PermissionAnswer is how a permission request was answered: allow,
-// always or deny.
+// always or deny, with the user's answers to a question (perm.AskTool).
 type PermissionAnswer struct {
-	Decision string `json:"decision"`
-	Message  string `json:"message,omitempty"`
+	Decision string            `json:"decision"`
+	Message  string            `json:"message,omitempty"`
+	Answers  map[string]string `json:"answers,omitempty"`
 }
 
 // Push is a runner's push of a hub's project's branch to origin.

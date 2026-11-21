@@ -14,7 +14,12 @@ import { loadRunners, refreshRunnerLinks, renderRunners } from "./runners.js";
 import { syncSettingsRunners } from "./settings.js";
 import { notify, notifyGoal } from "./notifications.js";
 import { renderPerms } from "./review.js";
-import { describePerm } from "./chatparts.js";
+import { describePerm, isQuestion, permHead } from "./chatparts.js";
+
+// permNote is the title of a desktop notification about request p.
+const permNote = (p) => isQuestion(p) ? permHead(p) : `Claude wants to ${describePerm(p).title}`;
+// permLine is what a toast says request p asks: its first question, or what it would do.
+const permLine = (p) => isQuestion(p) ? describePerm(p).detail.split("\n")[0] || "Claude has a question" : describePerm(p).title;
 import { loadUsage, renderUsage } from "./usage.js";
 import { releaseNews, renderCI } from "./actions.js";
 import { loadCheckouts, renderCheckouts, renderRemote } from "./origin.js";
@@ -276,8 +281,8 @@ function onEvent(ev, m = { name: "" }) {
       if (!ev.data.decision) {
         state.perms.push(ev.data);
         const t = state.todos.get(ev.data.todo_id);
-        toast(t ? `${describePerm(ev.data).title} · ${title(t)}` : describePerm(ev.data).title, { tone: "approval", head: "Claude needs your approval", action: t ? { label: "Review", run: () => openDetail(t.id) } : null });
-        if (t) notify(`Claude wants to ${describePerm(ev.data).title}`, t, describePerm(ev.data).detail, !here(), "permission.needed");
+        toast(t ? `${permLine(ev.data)} · ${title(t)}` : permLine(ev.data), { tone: "approval", head: permHead(ev.data), action: t ? { label: isQuestion(ev.data) ? "Answer" : "Review", run: () => openDetail(t.id) } : null });
+        if (t) notify(permNote(ev.data), t, describePerm(ev.data).detail, !here(), "permission.needed");
       }
       renderPerms();
       break;
@@ -364,8 +369,8 @@ function elsewhere(ev, m) {
   if (ev.type === "scan.run" && ev.data.trigger !== "manual") scanFinished(ev.data, p, where);
   if (ev.type === "goal.updated") goalElsewhere(ev.data, p, m, where);
   if (ev.type === "permission.updated" && !ev.data.decision) {
-    toast(`${describePerm(ev.data).title} · ${where}`, { tone: "approval", head: "Claude needs your approval", action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
-    notify(`Claude wants to ${describePerm(ev.data).title}`, { title: where, prompt: "" }, describePerm(ev.data).detail, false, "permission.needed");
+    toast(`${permLine(ev.data)} · ${where}`, { tone: "approval", head: permHead(ev.data), action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
+    notify(permNote(ev.data), { title: where, prompt: "" }, describePerm(ev.data).detail, false, "permission.needed");
   }
 }
 

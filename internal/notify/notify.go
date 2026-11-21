@@ -26,6 +26,7 @@ import (
 	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Store is what the notifier reads: webhooks, and the records events name.
@@ -526,6 +527,12 @@ func (n *Notifier) classify(ev model.Event) (Notification, bool) {
 		kind, todoID = model.NotifyPermission, r.TodoID
 		permRef = &PermissionRef{ID: r.ID, Tool: r.Tool}
 		message = "Claude wants to use " + r.Tool
+		if r.Tool == perm.AskTool {
+			message = "Claude asks you a question"
+			if qs := perm.Questions(r.Input); len(qs) > 0 && qs[0].Question != "" {
+				message = "Claude asks: " + textutil.OneLine(qs[0].Question, 200)
+			}
+		}
 	case model.EvCI:
 		st, ok := ev.Data.(ci.Status)
 		if !ok {
@@ -785,7 +792,7 @@ func (n *Notifier) retry(ctx context.Context, attempts int, try func() error) er
 // send makes one attempt, and answers the HTTP status (0: none).
 func (n *Notifier) send(ctx context.Context, w model.Webhook, note Notification) (int, error) {
 	var actions []ntfyAction
-	if w.Format == model.WebhookNtfy && note.Permission != nil && n.Actions != nil {
+	if w.Format == model.WebhookNtfy && note.Permission != nil && !note.Permission.Question() && n.Actions != nil {
 		if o := n.origin(note.Project.ID); o != "" {
 			actions = n.Actions.buttons(o, note.Permission.ID, n.now())
 		}

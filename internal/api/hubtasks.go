@@ -718,7 +718,7 @@ func (s *Server) hubPermission(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: that permission request was answered or has ended", store.ErrNotFound))
 		return
 	}
-	if err := s.Perms.Decide(id, req.Decision, req.Message); err != nil {
+	if err := s.Perms.DecideAnswers(id, req.Decision, req.Message, req.Answers); err != nil {
 		if errors.Is(err, perm.ErrNotFound) {
 			writeErr(w, fmt.Errorf("%w: that permission request was answered or has ended", store.ErrNotFound))
 			return

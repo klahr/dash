@@ -247,6 +247,15 @@ func TestPushDelivery(t *testing.T) {
 		t.Fatalf("headers %v", g.hdr)
 	}
 
+	// A question from Claude says so, and has no buttons: it is answered in Dash.
+	n.Observe(model.Event{Type: model.EvPermission, ProjectID: "p1", Data: perm.Request{ID: "r2", TodoID: "t1", Tool: perm.AskTool,
+		Input: json.RawMessage(`{"questions":[{"question":"Which color?","header":"Color","options":[{"label":"Red"},{"label":"Blue"}]}]}`)}})
+	g = <-ch
+	if g.payload.Type != model.NotifyPermission || !strings.HasPrefix(g.payload.Title, "Claude has a question: ") ||
+		!strings.Contains(g.payload.Body, "Claude asks: Which color?") || len(g.payload.Actions) != 0 {
+		t.Fatalf("question payload %+v", g.payload)
+	}
+
 	// Merged isn't pushed: the next push is the failure.
 	status(fs, n, model.StatusMerged, "")
 	status(fs, n, model.StatusFailed, "tests failed")

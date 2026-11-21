@@ -515,7 +515,8 @@ func (n *Notifier) pushTo(ctx context.Context, note Notification, org int64, onl
 	ttl := 24 * time.Hour
 	if note.Type == model.NotifyPermission && note.Permission != nil {
 		ttl = DefaultActionTTL // an approval that waits longer is likely answered or over
-		if n.Actions != nil {
+		// A question has no buttons: it is answered in Dash.
+		if n.Actions != nil && !note.Permission.Question() {
 			if n.Actions.TTL > 0 {
 				ttl = n.Actions.TTL
 			}

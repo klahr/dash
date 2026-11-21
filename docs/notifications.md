@@ -76,7 +76,8 @@ also pushes these to the browser, so they arrive while Dash is closed. Choose wh
 - a task failed ([whose tasks](#whose-tasks))
 - Claude waits for you to approve a tool ([whose tasks](#whose-tasks)), with **Approve** and **Deny** buttons where the
   system shows them (they work for 15 minutes, until the request is answered, or until Dash
-  restarts)
+  restarts). A [question from Claude](tasks.md#when-claude-asks-a-question) says
+  **Claude has a question** and has no buttons: answer it in Dash.
 - a [goal](goals.md) waits for you, is done or ran out of budget
 - GitHub Actions starts failing on the default branch
 - a [deploy](deploys.md#when-a-deploy-fails) fails
@@ -125,7 +126,7 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | `task.review`       | a task is ready for review                                   |
 | `task.failed`       | a task failed                                                |
 | `task.merged`       | a task's work landed, or it was closed with no changes       |
-| `permission.needed` | Claude waits for you to approve a tool                       |
+| `permission.needed` | Claude waits for you to approve a tool, or to answer a question |
 | `goal.attention`    | a [goal](goals.md) waits for you, can't run, is done or out of budget |
 | `issue.new`         | a [scan](scans.md) or Claude (`report_issue`) finds a new issue (off by default) |
 | `build.failing`     | GitHub Actions starts failing on the default branch          |
@@ -150,7 +151,7 @@ tapping a notification opens the task. For protected or self-hosted servers, add
 token: it is sent as `Authorization: Bearer <token>`. Approval requests get **Approve** and
 **Deny** buttons that answer Claude straight from your phone. The buttons work for 15 minutes,
 until the request is answered, or until Dash restarts, and they need `-public-url` to be an
-address your phone can reach.
+address your phone can reach. A question from Claude has no buttons: tap it and answer in Dash.
 
 **JSON**: a `POST` with a JSON body to your own service:
 
@@ -178,7 +179,8 @@ don't get them until you tick the event; neither do new ones.
 `goal.attention` events have `"goal": {"id", "title", "status", "url"}` instead of `task`, and say
 in `message` what the goal waits for, or why it ended. For a goal whose coordinator can't run,
 `goal` also has `"blocked"`, the reason, which is in `message` too; existing webhooks don't get them until you
-tick the event. `permission.needed` events also have `"permission": {"id", "tool"}`, and `build.failing`
+tick the event. `permission.needed` events also have `"permission": {"id", "tool"}` (a question from
+Claude has the tool `AskUserQuestion`, and its `message` starts with `Claude asks:`), and `build.failing`
 events have `"build": {"branch", "sha", "url"}` (`task` is the task investigating the failure,
 if there is one). `deploy.failed` events have `"deploy": {"id", "environment", "commit", "rollback", "url"}`
 instead of `task`, and say in `message` why it failed. `checkout.behind` events say in `message` which runners' checkouts of the

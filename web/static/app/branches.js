@@ -26,6 +26,7 @@ import { chatPage } from "./nav.js";
 import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
 import { creator, mineOn, multiMember, myID, people, setMine } from "./people.js";
 import { hasBoards, onBoard, renderBoardSwitch } from "./boards.js";
+import { isQuestion } from "./chatparts.js";
 
 // ------------------------------------------------------------------ branches
 // The open switcher's GET /branches answer, for the project it was opened on.
@@ -309,10 +310,12 @@ function renderBoardNow() {
   badge.hidden = !review;
   badge.dataset.n = review;
   // The count on a phone (and a folded sidebar); on a desktop the breakdown in words.
-  const parts = [every.review.length && `${every.review.length} review`, state.perms.length && plural(state.perms.length, "approval"),
-    goals && plural(goals, "goal")].filter(Boolean);
+  const questions = state.perms.filter(isQuestion).length, approvals = state.perms.length - questions;
+  const parts = [every.review.length && `${every.review.length} review`, approvals && plural(approvals, "approval"),
+    questions && plural(questions, "question"), goals && plural(goals, "goal")].filter(Boolean);
   badge.replaceChildren(h("span", { class: "rb-n", "aria-hidden": "true" }, String(review)), h("span", { class: "rb-text" }, parts.join(" · ")));
-  badge.title = [every.review.length && `${every.review.length} to review`, state.perms.length && `${state.perms.length} waiting for approval`,
+  badge.title = [every.review.length && `${every.review.length} to review`, approvals && `${approvals} waiting for approval`,
+    questions && `${plural(questions, "question")} for you`,
     goals && `${goals} goal${goals > 1 ? "s" : ""} waiting for you`].filter(Boolean).join(" · ");
   renderBoardDot(review);
 }
@@ -739,7 +742,8 @@ export function todoRow(t, li = -1, ri = -1) {
   if (waitsOnGitHub(t)) { sub = prStatus(t.pr); subClass = `todo-sub pr-status ${prTone(sub)}`; }
   if (t.error) { sub = t.error; subClass += " err"; }
   if (t.reviewing) { sub = "Claude is reviewing…"; subClass = "todo-sub progress"; }
-  if (state.perms.some((p) => p.todo_id === t.id)) { sub = "Waiting for your approval"; subClass = "todo-sub waiting"; }
+  const asks = state.perms.filter((p) => p.todo_id === t.id);
+  if (asks.length) { sub = asks.every(isQuestion) ? "Waiting for your answer" : "Waiting for your approval"; subClass = "todo-sub waiting"; }
   const wait = !t.paused && !t.error && depWait(t);
   if (wait) { sub = depLine(wait); subClass = `todo-sub deps${wait.stuck.length ? " stuck" : ""}`; }
   // Held back only by the weekly pace: it says so, with Start now beside it.

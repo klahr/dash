@@ -1247,15 +1247,15 @@ func (d *Dispatcher) permission(id string) (perm.Request, string, bool) {
 }
 
 // DecidePermission answers the permission request id waiting on a runner
-// (allow, always or deny), on that runner. It is perm.ErrNotFound when no
-// runner waits on id.
-func (d *Dispatcher) DecidePermission(ctx context.Context, id, decision, message string) error {
+// (allow, always or deny, with answers to a question), on that runner. It
+// is perm.ErrNotFound when no runner waits on id.
+func (d *Dispatcher) DecidePermission(ctx context.Context, id, decision, message string, answers map[string]string) error {
 	q, rid, ok := d.permission(id)
 	if !ok {
 		return perm.ErrNotFound
 	}
 	path := strings.NewReplacer("{htid}", url.PathEscape(q.TodoID), "{id}", url.PathEscape(id)).Replace(PermissionPath)
-	err := d.Fleet.Call(ctx, rid, http.MethodPost, path, PermissionAnswer{Decision: decision, Message: message}, nil)
+	err := d.Fleet.Call(ctx, rid, http.MethodPost, path, PermissionAnswer{Decision: decision, Message: message, Answers: answers}, nil)
 	var callErr *tunnel.CallError
 	if errors.As(err, &callErr) && callErr.Status == http.StatusNotFound {
 		err = perm.ErrNotFound // answered or ended meanwhile

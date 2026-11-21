@@ -1705,6 +1705,16 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .perm-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .perm-actions .btn { min-height: 40px; padding: 0 14px; }
 .perm-actions .btn.allow { background: var(--running); border-color: var(--running); color: var(--on-running); }
+/* A question from Claude (AskUserQuestion): each question's choices, an Other field, Submit. */
+.perm.ask .ask-q { margin: 10px 0 12px; min-width: 0; }
+.perm.ask .ask-q legend { display: flex; flex-direction: column; gap: 2px; font-weight: 600; }
+.perm.ask .ask-head { font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.perm.ask .ask-text { overflow-wrap: anywhere; }
+.perm.ask .ask-multi { margin: 0 0 6px; }
+.perm.ask .radio { background: var(--surface); }
+.perm.ask .radio span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.perm.ask .ask-other span { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.perm.ask .ask-other-text { flex: 1 1 12em; min-width: 0; min-height: 34px; padding: 4px 8px; font: inherit; font-weight: 400; }
 .todo-sub.waiting { color: var(--running); font-weight: 600; }
 
 /* ---------- checks ---------- */

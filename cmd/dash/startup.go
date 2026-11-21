@@ -804,7 +804,7 @@ func (a *app) setupHub() {
 				// A request of a hub's task, waiting on its runner.
 				dctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 				defer cancel()
-				err = apiSrv.Dispatch.DecidePermission(dctx, id, decision, message)
+				err = apiSrv.Dispatch.DecidePermission(dctx, id, decision, message, nil)
 			}
 			return err
 		}),

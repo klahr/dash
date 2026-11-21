@@ -6,7 +6,9 @@
 // "dash_board" server of --mcp-config) and writes a file, so the test can see
 // both on the hub. A task whose prompt says "ask permission" first asks to
 // run a command through dash's --permission-prompt-tool and writes the
-// answer to permission.txt; a resumed run (rework) writes the notes it got
+// answer to permission.txt; one whose prompt says "ask a question" asks two
+// questions with AskUserQuestion through the same tool and writes the
+// answers it got to question.txt; a resumed run (rework) writes the notes it got
 // to rework-by-runner.txt.
 package main
 
@@ -149,6 +151,24 @@ func main() {
 			}
 			files["permission.txt"] = behavior(out) + "\n"
 		}
+		if strings.Contains(string(stdin), "ask a question") {
+			out, err := callTool(args, "dash", "permission_prompt", map[string]any{
+				"tool_name": "AskUserQuestion", "input": map[string]any{"questions": []any{
+					map[string]any{"question": "Which database should the app use?", "header": "Database", "multiSelect": false,
+						"options": []any{
+							map[string]any{"label": "Postgres", "description": "A server, for many users"},
+							map[string]any{"label": "SQLite", "description": "One file, no server"}}},
+					map[string]any{"question": "Which tests should I add?", "header": "Tests", "multiSelect": true,
+						"options": []any{
+							map[string]any{"label": "Unit", "description": "Fast, per function"},
+							map[string]any{"label": "Browser", "description": "Slow, end to end"}}},
+				}}})
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "permission_prompt:", err)
+				os.Exit(1)
+			}
+			files["question.txt"] = behavior(out) + " " + answers(out) + "\n"
+		}
 		if has("--resume") {
 			files["rework-by-runner.txt"] = string(stdin)
 		}
@@ -257,6 +277,28 @@ func toolText(out []byte) string {
 		b.WriteString(c.Text)
 	}
 	return b.String()
+}
+
+// answers are the answers in a permission_prompt response's updatedInput,
+// as JSON.
+func answers(out []byte) string {
+	var res struct {
+		Result struct {
+			Content []struct{ Text string } `json:"content"`
+		} `json:"result"`
+	}
+	_ = json.Unmarshal(out, &res)
+	for _, c := range res.Result.Content {
+		var answer struct {
+			UpdatedInput struct {
+				Answers json.RawMessage `json:"answers"`
+			} `json:"updatedInput"`
+		}
+		if json.Unmarshal([]byte(c.Text), &answer) == nil && answer.UpdatedInput.Answers != nil {
+			return string(answer.UpdatedInput.Answers)
+		}
+	}
+	return "{}"
 }
 
 // behavior is "allow" or "deny" from a permission_prompt response.

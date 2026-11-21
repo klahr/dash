@@ -54,6 +54,16 @@ queues.
 The task moves to *Queued*, then *Running* as soon as Claude starts on it in its own worktree.
 Open the card to follow along. If Claude needs permission for something, Dash asks you.
 
+### When Claude asks a question
+
+Claude can stop to ask you something. The task then shows a question card instead of
+**Allow** and **Deny**: each question with its choices, and an **Other** field for an answer
+in your own words. Pick an answer for each question and click **Submit**. Claude carries on
+with your answers.
+
+Click **Decline** to skip the question. You can tell Claude why. A question nobody answers is
+declined like any other request when it times out.
+
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
 ## Review

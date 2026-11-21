@@ -28,6 +28,7 @@ import { activeChat, toggleChatPane, togglePin } from "./chatpane.js";
 import { openShell } from "./terminal.js";
 import { openTry } from "./try.js";
 import { clearPriority, nextPriority } from "./dnd.js";
+import { isQuestion } from "./chatparts.js";
 
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
@@ -141,6 +142,7 @@ export async function permKey(k) {
   const p = state.perms.find((x) => x.todo_id === state.detail) || (!state.detail && state.perms[0]);
   if (!p) return false;
   const decision = { y: "allow", A: "always", X: "deny" }[k];
+  if (isQuestion(p) && decision !== "deny") return toast("Answer Claude's question in its card");
   await api("POST", `/api/permissions/${p.id}`, { decision });
   toast(decision === "deny" ? "Denied" : decision === "always" ? `${p.tool} always allowed in this project` : "Allowed");
 }

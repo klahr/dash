@@ -26,6 +26,9 @@ const (
 	ToolName   = "permission_prompt"
 	// PromptTool is the value for claude --permission-prompt-tool.
 	PromptTool = "mcp__" + ServerName + "__" + ToolName
+	// AskTool is Claude Code's tool for asking the user questions. Its
+	// request is answered with the user's answers, not a plain allow.
+	AskTool = "AskUserQuestion"
 )
 
 type Publisher interface{ Publish(model.Event) }
@@ -44,6 +47,53 @@ type Request struct {
 	Created  time.Time       `json:"created"`
 	Decision string          `json:"decision,omitempty"` // allow | deny | "" while pending
 	Message  string          `json:"message,omitempty"`  // reason given to Claude on deny
+	// Answers are the user's answers to an AskTool request, keyed by
+	// question text (several choices joined with ", ").
+	Answers map[string]string `json:"answers,omitempty"`
+}
+
+// Question is one question of an AskTool request's input.
+type Question struct {
+	Question    string `json:"question"`
+	Header      string `json:"header,omitempty"`
+	MultiSelect bool   `json:"multiSelect,omitempty"`
+	Options     []struct {
+		Label       string `json:"label"`
+		Description string `json:"description,omitempty"`
+	} `json:"options,omitempty"`
+}
+
+// Questions are the questions of an AskTool request's input.
+func Questions(input json.RawMessage) []Question {
+	var in struct {
+		Questions []Question `json:"questions"`
+	}
+	_ = json.Unmarshal(input, &in)
+	return in.Questions
+}
+
+// maxAnswer bounds the length of one answer, in bytes.
+const maxAnswer = 4000
+
+// checkAnswers checks that answers answer each of the questions in input,
+// and returns them trimmed, with only the questions' keys.
+func checkAnswers(input json.RawMessage, answers map[string]string) (map[string]string, error) {
+	qs := Questions(input)
+	if len(qs) == 0 {
+		return nil, errors.New("the request has no questions")
+	}
+	out := map[string]string{}
+	for _, q := range qs {
+		a := strings.TrimSpace(answers[q.Question])
+		if a == "" {
+			return nil, errors.New("answer every question")
+		}
+		if len(a) > maxAnswer {
+			return nil, errors.New("an answer is too long")
+		}
+		out[q.Question] = a
+	}
+	return out, nil
 }
 
 type run struct {
@@ -150,9 +200,6 @@ func (b *Broker) Pending(projectID string) []Request {
 	return out
 }
 
-// Decide answers a request: "allow", "always" (allow this tool from now on:
-// for the whole project when Saved is set, otherwise for the rest of the todo)
-// or "deny".
 // Get returns the pending request id.
 func (b *Broker) Get(id string) (Request, bool) {
 	b.mu.Lock()
@@ -164,12 +211,35 @@ func (b *Broker) Get(id string) (Request, bool) {
 	return p.req, true
 }
 
+// Decide answers a request: "allow", "always" (allow this tool from now on:
+// for the whole project when Saved is set, otherwise for the rest of the todo)
+// or "deny". An AskTool request can't be allowed this way: see DecideAnswers.
 func (b *Broker) Decide(id, decision, message string) error {
+	return b.DecideAnswers(id, decision, message, nil)
+}
+
+// DecideAnswers is Decide with the user's answers to an AskTool request,
+// keyed by question text: "allow" with an answer to each question (they
+// reach Claude in the tool's input), or "deny". Answers to any other
+// tool's request are ignored.
+func (b *Broker) DecideAnswers(id, decision, message string, given map[string]string) error {
 	b.mu.Lock()
 	p, ok := b.pending[id]
 	if !ok {
 		b.mu.Unlock()
 		return ErrNotFound
+	}
+	var answers map[string]string
+	if p.req.Tool == AskTool && decision != "deny" {
+		if decision != "allow" {
+			b.mu.Unlock()
+			return errors.New("a question is answered or declined, not always allowed")
+		}
+		var err error
+		if answers, err = checkAnswers(p.req.Input, given); err != nil {
+			b.mu.Unlock()
+			return err
+		}
 	}
 	always := decision == "always"
 	switch decision {
@@ -184,7 +254,7 @@ func (b *Broker) Decide(id, decision, message string) error {
 		b.mu.Unlock()
 		return errors.New("decision must be allow, always or deny")
 	}
-	p.req.Decision, p.req.Message = decision, message
+	p.req.Decision, p.req.Message, p.req.Answers = decision, message, answers
 	delete(b.pending, id)
 	close(p.done)
 	req := p.req
@@ -204,11 +274,12 @@ func (b *Broker) publish(r Request) {
 
 // ask blocks until the request is answered, times out, or ctx ends.
 func (b *Broker) ask(ctx context.Context, rn run, tool string, input json.RawMessage) Request {
-	if b.Saved != nil && b.Saved.ToolAllowed(rn.projectID, tool) {
+	// A question always waits for its answers.
+	if tool != AskTool && b.Saved != nil && b.Saved.ToolAllowed(rn.projectID, tool) {
 		return Request{Tool: tool, Input: input, Decision: "allow"}
 	}
 	b.mu.Lock()
-	if b.always[rn.todoID][tool] {
+	if tool != AskTool && b.always[rn.todoID][tool] {
 		b.mu.Unlock()
 		return Request{Tool: tool, Input: input, Decision: "allow"}
 	}
@@ -295,12 +366,31 @@ func (b *Broker) answer(ctx context.Context, rn run, tool string, input json.Raw
 	}
 	reply := map[string]any{"behavior": "deny", "message": res.Message}
 	if res.Decision == "allow" {
-		reply = map[string]any{"behavior": "allow", "updatedInput": input}
+		reply = map[string]any{"behavior": "allow", "updatedInput": withAnswers(input, res.Answers)}
 	} else if res.Message == "" {
 		reply["message"] = "The user denied this action."
 	}
 	text, _ := json.Marshal(reply)
 	return string(text)
+}
+
+// withAnswers is a question's input with the user's answers merged in, as
+// Claude Code reads them: {"questions": […], "answers": {question: answer}}.
+// Without answers it is input as it is.
+func withAnswers(input json.RawMessage, answers map[string]string) json.RawMessage {
+	if len(answers) == 0 {
+		return input
+	}
+	var in map[string]any
+	if json.Unmarshal(input, &in) != nil || in == nil {
+		in = map[string]any{}
+	}
+	in["answers"] = answers
+	out, err := json.Marshal(in)
+	if err != nil {
+		return input
+	}
+	return out
 }
 
 // ServerConfig is the --mcp-config entry for the permission server at baseURL.

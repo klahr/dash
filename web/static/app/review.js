@@ -4,7 +4,7 @@ import { ask, attempt, toast } from "./dialogs.js";
 import { saveComments, state } from "./state.js";
 import { baseBranch } from "./events.js";
 import { renderBoard, title } from "./branches.js";
-import { describePerm, duration } from "./chatparts.js";
+import { describePerm, duration, isQuestion } from "./chatparts.js";
 import { openDetail, renderActions } from "./detail.js";
 import { renderPane } from "./drawmode.js";
 
@@ -90,6 +90,7 @@ export function renderChecks(t) {
 
 // ------------------------------------------------------------------ permission requests
 function permCard(p, withTodo) {
+  if (isQuestion(p)) return questionCard(p, withTodo);
   const d = describePerm(p);
   const t = state.todos.get(p.todo_id);
   const decide = (decision) => attempt(async () => {
@@ -108,7 +109,82 @@ function permCard(p, withTodo) {
       withTodo && t ? ib({ class: "link", onclick: () => openDetail(t.id) }, "right", "Open task") : null));
 }
 
+// Question cards are kept across renders, so that a choice made in one isn't
+// lost when another request comes or goes: request id and place → card.
+const questionCards = new Map();
+
+// questionCard answers Claude's AskUserQuestion request p: each question
+// with its header, its options (checkboxes when several may be chosen), an
+// Other field for an answer in the user's own words, Submit, and Decline.
+function questionCard(p, withTodo) {
+  const key = `${p.id}:${withTodo ? "board" : "task"}`;
+  if (questionCards.has(key)) return questionCards.get(key);
+  const t = state.todos.get(p.todo_id);
+  const qs = (Array.isArray(p.input?.questions) ? p.input.questions : []).filter((q) => q && typeof q.question === "string");
+  const groups = qs.map((q, qi) => {
+    const type = q.multiSelect ? "checkbox" : "radio", name = `ask-${p.id}-${withTodo ? "b" : "t"}-${qi}`;
+    const otherPick = h("input", { type, name, value: "", "aria-label": "Other" });
+    const other = h("input", { type: "text", class: "ask-other-text", placeholder: "Your own answer", maxLength: 2000, "aria-label": `Other answer: ${q.question}` });
+    other.addEventListener("input", () => { if (other.value.trim()) otherPick.checked = true; });
+    otherPick.addEventListener("change", () => { if (otherPick.checked) other.focus(); });
+    const el = h("fieldset", { class: "choice ask-q" },
+      h("legend", {}, q.header ? h("span", { class: "ask-head" }, q.header) : null, h("span", { class: "ask-text" }, q.question)),
+      q.multiSelect ? h("p", { class: "hint ask-multi" }, "Choose any that apply.") : null,
+      ...(Array.isArray(q.options) ? q.options : []).map((o) => h("label", { class: "radio" },
+        h("input", { type, name, value: String(o?.label ?? "") }),
+        h("span", {}, String(o?.label ?? ""), o?.description ? h("em", {}, o.description) : null))),
+      h("label", { class: "radio ask-other" }, otherPick, h("span", {}, "Other", other)));
+    return { q, el, otherPick, other };
+  });
+  const answers = () => {
+    const out = {};
+    for (const g of groups) {
+      const picked = [...g.el.querySelectorAll("input:checked")].map((i) => i === g.otherPick ? g.other.value.trim() : i.value).filter(Boolean);
+      if (!picked.length) return { missing: g };
+      out[g.q.question] = picked.join(", ");
+    }
+    return { out };
+  };
+  const send = (body, done) => attempt(async () => {
+    buttons.forEach((b) => { b.disabled = true; });
+    try {
+      await api("POST", `/api/permissions/${p.id}`, body);
+    } catch (e) {
+      buttons.forEach((b) => { b.disabled = false; });
+      throw e;
+    }
+    toast(done);
+  })();
+  const submit = ib({ class: "btn allow", type: "submit" }, "check", "Submit");
+  const decline = ib({ class: "btn danger", type: "button", onclick: async () => {
+    const why = await ask({ title: "Decline Claude's question?", body: "Claude carries on without your answer. You can tell it why.", input: true, placeholder: "Why (optional)", ok: "Decline" });
+    if (why === null) return;
+    send({ decision: "deny", message: why || "The user declined to answer." }, "Declined");
+  } }, "x", "Decline");
+  const buttons = [submit, decline];
+  const card = h("form", { class: "perm ask", "aria-label": `Claude asks: ${qs.map((q) => q.question).join(" ")}`, onsubmit: (e) => {
+    e.preventDefault();
+    const a = answers();
+    if (a.missing) {
+      toast(`Answer “${a.missing.q.header || a.missing.q.question}” first`);
+      (a.missing.el.querySelector("input:checked") ? a.missing.other : a.missing.el.querySelector("input"))?.focus();
+      return;
+    }
+    send({ decision: "allow", answers: a.out }, "Answer sent");
+  } },
+    h("p", { class: "perm-q" }, qs.length > 1 ? "Claude has some questions" : "Claude has a question",
+      withTodo && t ? h("span", { class: "todo-ref" }, ` · ${title(t)}`) : null),
+    ...groups.map((g) => g.el),
+    h("div", { class: "perm-actions" }, ...buttons,
+      withTodo && t ? ib({ class: "link", type: "button", onclick: () => openDetail(t.id) }, "right", "Open task") : null));
+  questionCards.set(key, card);
+  return card;
+}
+
 export function renderPerms() {
+  for (const key of questionCards.keys()) {
+    if (!state.perms.some((p) => key.startsWith(`${p.id}:`))) questionCards.delete(key);
+  }
   const banner = $("#perm-banner");
   banner.hidden = !state.perms.length;
   banner.replaceChildren(...state.perms.map((p) => permCard(p, true)));

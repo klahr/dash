@@ -93,6 +93,8 @@ On a live preview, `P` starts drawing (see [Draw](draw.md)).
 | `A` | always allow that tool in the project |
 | `X` | deny                                  |
 
+A question from Claude has no key for an answer: answer it in its card. `X` declines it.
+
 ## Shell
 
 | Key           | Does                       |

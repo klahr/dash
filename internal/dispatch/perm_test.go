@@ -98,7 +98,7 @@ func TestHubRelaysPermissionRequestsOfTasksOnRunners(t *testing.T) {
 	}
 
 	// Answered on the hub: on the runner, over its tunnel.
-	if err := fx.d.DecidePermission(context.Background(), "p1", "allow", ""); err != nil {
+	if err := fx.d.DecidePermission(context.Background(), "p1", "allow", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	calls := fx.fleet.callsTo("laptop")
@@ -113,7 +113,7 @@ func TestHubRelaysPermissionRequestsOfTasksOnRunners(t *testing.T) {
 	if got := fx.d.Permissions(""); len(got) != 0 {
 		t.Fatalf("answered request came back: %+v", got)
 	}
-	if err := fx.d.DecidePermission(context.Background(), "p1", "allow", ""); !errors.Is(err, perm.ErrNotFound) {
+	if err := fx.d.DecidePermission(context.Background(), "p1", "allow", "", nil); !errors.Is(err, perm.ErrNotFound) {
 		t.Fatalf("answering twice: %v", err)
 	}
 

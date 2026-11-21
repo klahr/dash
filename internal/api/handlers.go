@@ -1742,6 +1742,8 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Decision string `json:"decision"` // allow | always | deny
 		Message  string `json:"message"`
+		// Answers answer a question (perm.AskTool): question text → answer.
+		Answers map[string]string `json:"answers"`
 	}
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -1761,7 +1763,7 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
-		if err := s.Dispatch.DecidePermission(ctx, id, req.Decision, req.Message); err != nil {
+		if err := s.Dispatch.DecidePermission(ctx, id, req.Decision, req.Message, req.Answers); err != nil {
 			if errors.Is(err, perm.ErrNotFound) {
 				err = store.ErrNotFound
 			}
@@ -1775,7 +1777,7 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, store.ErrNotFound)
 		return
 	}
-	if err := s.Perms.Decide(id, req.Decision, req.Message); err != nil {
+	if err := s.Perms.DecideAnswers(id, req.Decision, req.Message, req.Answers); err != nil {
 		if errors.Is(err, perm.ErrNotFound) {
 			writeErr(w, store.ErrNotFound)
 			return

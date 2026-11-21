@@ -245,3 +245,111 @@ func TestTokenNeedsOwnerInOrg(t *testing.T) {
 		t.Errorf("run with no org: %d", c)
 	}
 }
+
+// askCall is Claude Code calling AskUserQuestion with two questions.
+func askCall() map[string]any {
+	return map[string]any{"name": ToolName, "arguments": map[string]any{"tool_name": AskTool, "input": map[string]any{
+		"questions": []any{
+			map[string]any{"question": "Which database?", "header": "Database", "multiSelect": false,
+				"options": []any{map[string]any{"label": "Postgres", "description": "SQL"}, map[string]any{"label": "SQLite"}}},
+			map[string]any{"question": "Which tests?", "header": "Tests", "multiSelect": true,
+				"options": []any{map[string]any{"label": "Unit"}, map[string]any{"label": "Browser"}}},
+		},
+	}}}
+}
+
+func TestQuestionAnswersMergedIntoInput(t *testing.T) {
+	b := NewBroker(nopPub{})
+	b.Saved = memAllow{"proj1/" + AskTool: true} // a question still waits for answers
+	srv := httptest.NewServer(http.HandlerFunc(b.ServeMCP))
+	defer srv.Close()
+	token, release := b.Register(owner, "todo1", "proj1")
+	defer release()
+
+	done := make(chan map[string]any)
+	go func() { _, out := rpc(t, srv, token, "tools/call", askCall()); done <- out }()
+	req := waitPending(t, b)
+	if req.Tool != AskTool {
+		t.Fatalf("unexpected request %+v", req)
+	}
+	if qs := Questions(req.Input); len(qs) != 2 || qs[1].Header != "Tests" || !qs[1].MultiSelect || qs[0].Options[0].Label != "Postgres" {
+		t.Fatalf("questions: %+v", qs)
+	}
+	// A plain allow, always, or answers that leave a question out are refused.
+	for _, bad := range []struct {
+		decision string
+		answers  map[string]string
+	}{
+		{"allow", nil},
+		{"always", map[string]string{"Which database?": "SQLite", "Which tests?": "Unit"}},
+		{"allow", map[string]string{"Which database?": "SQLite"}},
+		{"allow", map[string]string{"Which database?": "SQLite", "Which tests?": "   "}},
+	} {
+		if err := b.DecideAnswers(req.ID, bad.decision, "", bad.answers); err == nil {
+			t.Errorf("%s %v: want an error", bad.decision, bad.answers)
+		}
+	}
+	if _, ok := b.Get(req.ID); !ok {
+		t.Fatal("a refused answer should leave the question pending")
+	}
+	answers := map[string]string{"Which database?": "SQLite", "Which tests?": "Unit, my own words", "Not asked": "x"}
+	if err := b.DecideAnswers(req.ID, "allow", "", answers); err != nil {
+		t.Fatal(err)
+	}
+	a := answer(t, <-done)
+	in, _ := a["updatedInput"].(map[string]any)
+	if a["behavior"] != "allow" || in == nil {
+		t.Fatalf("allow: %v", a)
+	}
+	if qs, _ := in["questions"].([]any); len(qs) != 2 {
+		t.Fatalf("the original questions should be kept: %v", in)
+	}
+	want := map[string]any{"Which database?": "SQLite", "Which tests?": "Unit, my own words"}
+	if got, _ := in["answers"].(map[string]any); len(got) != len(want) || got["Which database?"] != want["Which database?"] || got["Which tests?"] != want["Which tests?"] {
+		t.Fatalf("answers: %v", in["answers"])
+	}
+}
+
+func TestQuestionDenyAndTimeoutUnchanged(t *testing.T) {
+	b := NewBroker(nopPub{})
+	srv := httptest.NewServer(http.HandlerFunc(b.ServeMCP))
+	defer srv.Close()
+	token, release := b.Register(owner, "todo1", "proj1")
+	defer release()
+
+	done := make(chan map[string]any)
+	go func() { _, out := rpc(t, srv, token, "tools/call", askCall()); done <- out }()
+	req := waitPending(t, b)
+	if err := b.DecideAnswers(req.ID, "deny", "Pick yourself", map[string]string{"Which database?": "SQLite"}); err != nil {
+		t.Fatal(err)
+	}
+	if a := answer(t, <-done); a["behavior"] != "deny" || a["message"] != "Pick yourself" || a["updatedInput"] != nil {
+		t.Fatalf("deny: %v", a)
+	}
+
+	b.Timeout = 50 * time.Millisecond
+	_, out := rpc(t, srv, token, "tools/call", askCall())
+	if a := answer(t, out); a["behavior"] != "deny" || a["message"] != "Nobody answered the permission request in time." {
+		t.Fatalf("timeout should deny: %v", a)
+	}
+}
+
+// Answers sent with another tool's decision change nothing.
+func TestAnswersIgnoredForOtherTools(t *testing.T) {
+	b := NewBroker(nopPub{})
+	srv := httptest.NewServer(http.HandlerFunc(b.ServeMCP))
+	defer srv.Close()
+	token, release := b.Register(owner, "todo1", "proj1")
+	defer release()
+
+	done := make(chan map[string]any)
+	go func() { _, out := rpc(t, srv, token, "tools/call", call("Bash")); done <- out }()
+	if err := b.DecideAnswers(waitPending(t, b).ID, "allow", "", map[string]string{"x": "y"}); err != nil {
+		t.Fatal(err)
+	}
+	a := answer(t, <-done)
+	in := a["updatedInput"].(map[string]any)
+	if a["behavior"] != "allow" || in["command"] != "npm install" || in["answers"] != nil {
+		t.Fatalf("allow: %v", a)
+	}
+}

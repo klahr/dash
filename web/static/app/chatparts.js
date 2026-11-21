@@ -22,10 +22,17 @@ setInterval(() => {
   }
 }, 1000);
 
+// isQuestion says whether request p is Claude asking the user questions
+// (AskUserQuestion), answered with a question card instead of Allow/Deny.
+export const isQuestion = (p) => p?.tool === "AskUserQuestion";
+// permHead heads a toast or notification about request p.
+export const permHead = (p) => isQuestion(p) ? "Claude has a question" : "Claude needs your approval";
+
 // describePerm says what an approval request p would let Claude do.
 export function describePerm(p) {
   const i = p.input || {};
   switch (p.tool) {
+    case "AskUserQuestion": return { title: "ask you a question", detail: (Array.isArray(i.questions) ? i.questions : []).map((q) => q?.question).filter(Boolean).join("\n") };
     case "Bash": return { title: "run a command", detail: i.command, note: i.description };
     case "Write": case "Edit": case "MultiEdit": case "NotebookEdit": return { title: `edit ${i.file_path || i.notebook_path || "a file"}`, detail: i.file_path };
     case "WebFetch": return { title: "fetch a web page", detail: i.url };
