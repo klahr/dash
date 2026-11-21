@@ -4,7 +4,7 @@ import { api, here, on } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { showView } from "./nav.js";
-import { isHub } from "./projects.js";
+import { isHub, setMenu } from "./projects.js";
 import { servesProject } from "../groups.js";
 import { closeDetail } from "./detail.js";
 import { loadProcs, renderProcs, renderTryButton } from "./try.js";
@@ -268,14 +268,16 @@ $("#quick-actions").addEventListener("click", attempt(async (e) => {
   const spec = e.target.closest("[data-run]")?.dataset.run;
   if (!spec) return; // not a run button
   // Deploy goes to the Deploys page: a deploy is to one of the environments there.
-  if (spec === "task:deploy") { closeDetail(); return showView("deploys"); }
+  // Whatever opens a page (Deploys or Shell) closes the drawer on a phone, to show it.
+  if (spec === "task:deploy") { setMenu(false); closeDetail(); return showView("deploys"); }
   const proc = quickProc(spec);
-  if (!proc?.running) return runPreset(e);
+  if (!proc?.running) { setMenu(false); return runPreset(e); }
   if (spec === "web:run") {
     await api("DELETE", `/api/processes/${proc.id}`);
     toast("Stopping");
     return loadProcs();
   }
+  setMenu(false);
   closeDetail();
   attach(proc);
   showView("run");
