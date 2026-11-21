@@ -15,6 +15,26 @@ reports the same `dash version`; see [Run the hub with Docker](deploy.md#run-the
 The archives also carry the compose setup (`deploy/docker-compose*.yml`,
 `deploy/docker.env.example`, `deploy/caddy/`).
 
+## Install a release
+
+This takes the latest release and checks it. Set `OS` and `ARCH` for your computer, and
+`VERSION` to pin another release:
+
+```sh
+OS=linux ARCH=amd64   # OS: linux or darwin, ARCH: amd64 or arm64
+VERSION=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/klahr/dash/releases/latest)
+VERSION=${VERSION##*/}
+curl -fLO "https://github.com/klahr/dash/releases/download/$VERSION/dash_${VERSION}_${OS}_${ARCH}.tar.gz"
+curl -fLO "https://github.com/klahr/dash/releases/download/$VERSION/checksums.txt"
+sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-missing -c checksums.txt
+mkdir dash && tar -xzf "dash_${VERSION}_${OS}_${ARCH}.tar.gz" -C dash
+cd dash && mkdir bin && mv dash dash-tui dash-mcp bin/
+cp .env.example .env
+```
+
+Then go on with the [Quick start](../README.md#quick-start) from editing `.env`. The terminal
+client is `./bin/dash-tui`.
+
 ## Cut a release
 
 From an up-to-date `main` whose CI is green:

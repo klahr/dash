@@ -3,306 +3,112 @@
 Run Claude on many tasks in parallel, each in its own git worktree. Review the diffs, then
 merge them one at a time.
 
+Dash has two parts:
+
+- **The hub** (`dash`): the dashboard. It signs people in and keeps the board. It runs nothing
+  itself and needs no `claude`, `git` or `gh`.
+- **Runners** (`dash runner`): the computers the work happens on. A runner can be the same
+  computer as the hub.
+
 ## Requirements
 
-- **Go 1.27.4 or newer** (see [`go.mod`](go.mod)), only to build from source
-- **At least one runner.** The hub (`dash`, the dashboard) runs nothing on its own computer: it
-  signs people in and keeps the board, and every task, scan, chat, git command and project
-  command runs on a runner (**`dash runner`**), with its owner's logins. The hub needs **no
-  `claude`, `git` or `gh`** installed and no API key. The runner can be the same computer as the
-  hub ([several computers](docs/several-computers.md)). Each computer that runs `dash runner` needs:
-  - **git** (2.38 or newer to find conflicts between tasks early; see
-    [Merge queue](docs/merge-queue.md#conflicts-found-early));
-  - **[Claude Code](https://claude.com/claude-code)** (`claude`), installed and logged in: run
-    `claude` once in a terminal there and sign in;
-  - or, for projects that pick it, the **[Codex CLI](https://github.com/openai/codex)**
-    (`codex`), installed and signed in ([Codex](docs/codex.md));
-  - optional: **[`gh`](https://cli.github.com)**, logged in, to create GitHub repositories and
-    open pull requests. Without it, GitHub projects merge on the default branch instead of opening
-    pull requests.
+On each runner:
+
+- **git** (2.38 or newer finds conflicts between tasks early).
+- **[Claude Code](https://claude.com/claude-code)**, logged in: run `claude` once and sign in.
+  Or the **[Codex CLI](https://github.com/openai/codex)** for projects that use it
+  ([Codex](docs/codex.md)).
+- Optional: **[`gh`](https://cli.github.com)**, logged in, to open pull requests.
+
+To build from source you need Go (the version in [`go.mod`](go.mod)).
 
 ## Quick start
 
-Download a prebuilt release (Linux and macOS, amd64 and arm64; no Go needed; Windows builds
-are for [runners](docs/several-computers.md#windows-runners)). This takes the latest release;
-set `VERSION` to pin another from the [releases page](https://github.com/klahr/dash/releases):
-
-```sh
-OS=linux ARCH=amd64   # OS: linux or darwin, ARCH: amd64 or arm64
-VERSION=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/klahr/dash/releases/latest)
-VERSION=${VERSION##*/}
-curl -fLO "https://github.com/klahr/dash/releases/download/$VERSION/dash_${VERSION}_${OS}_${ARCH}.tar.gz"
-curl -fLO "https://github.com/klahr/dash/releases/download/$VERSION/checksums.txt"
-sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-missing -c checksums.txt
-mkdir dash && tar -xzf "dash_${VERSION}_${OS}_${ARCH}.tar.gz" -C dash
-cd dash && mkdir bin && mv dash dash-tui dash-mcp bin/
-cp .env.example .env
-```
-
-Or build from source:
+Install a prebuilt release ([Install a release](docs/releases.md#install-a-release)), or build
+from source:
 
 ```sh
 git clone https://github.com/klahr/dash.git
 cd dash
-cp .env.example .env
 go build -o bin/dash ./cmd/dash
+cp .env.example .env
 ```
 
-Either way you end up with `./bin/dash`, which the rest of this README and the docs use.
+Edit `.env`: set `DASH_USERNAME` and a new `DASH_PASSWORD`. They become the first account.
 
-Edit `.env` and set `DASH_USERNAME` and `DASH_PASSWORD` (the example's `admin` / `change-me`
-are placeholders: change the password). On first start they become the first account, and
-Dash refuses to start without them: whoever signs in can have Claude and commands run on the runners.
-The hub keeps no projects on its disk: where projects live is each runner's `-projects` (or
-`DASH_PROJECTS` in the runner's environment; `~/dash-projects` by default).
-
-Run it:
+Start the hub:
 
 ```sh
 ./bin/dash
 ```
 
-Open <http://127.0.0.1:7788> and sign in with the `DASH_USERNAME` and `DASH_PASSWORD` from your
-`.env`. That's the first account; you can invite others to it from the account menu (see
-[Users and organizations](docs/users.md)). Dash listens only on `127.0.0.1:7788` by default; to change that, see `-addr` in
-`./bin/dash -h` (and [Deploy the hub](docs/deploy.md) before exposing it).
+Open <http://127.0.0.1:7788> and sign in.
 
-Then add a runner, the computer the work happens on: the hub runs nothing itself (no Claude, no
-git, no project commands) and keeps no projects on its own disk, and until a runner is online the
-dashboard says so. In the account menu choose **Runners** → **Add a
-runner** and run the command it shows, here or on another computer. On the hub's own computer
-too, the runner keeps its data apart from the hub's (`~/.local/share/dash-runner`):
+Add a runner: in the account menu choose **Runners → Add a runner** and run the command it
+shows, on this computer or another one. It looks like this:
 
 ```sh
 ./bin/dash runner --server http://127.0.0.1:7788 --code XXXX-XXXX
 ```
 
-Projects live on runners. A **runner's own project** is a repository on that runner's disk; a
-**shared project** is a git remote that runs on runner labels, as a GitHub Actions job's `runs-on`
-does: every runner of the org with those labels clones it, and each member's tasks run on their
-own runners there (or on a shared runner with an API key; see
-[Whose work a runner does](docs/several-computers.md#whose-work-a-runner-does))
-(**Add project** on the hub: pick one of your GitHub repositories, create one, or paste a remote
-URL; each runner clones it into its projects folder, or adopts a clone of it already there). Set a
-project's labels in its settings, **Runners**, and a runner's on its page in Runners. See
-[Two kinds of projects](docs/several-computers.md#two-kinds-of-projects) and
-[Runner labels](docs/several-computers.md#runner-labels). A hub that kept projects
-of its own before this: see
-[Moving projects off the hub](docs/several-computers.md#moving-projects-off-the-hub).
+## Use it
 
-Setting up a team (developers and planners)? Follow [Set up a team](docs/team.md).
+1. Click **Add project** and pick a GitHub repository, a remote URL, or **Local only**.
+2. Click **New task** (<kbd>n</kbd>) and say what Claude should do. Click **Queue**.
+3. When the task is in *Review*, read the diff. Click **Rework…** to send it back, or
+   **Approve** to merge it.
 
-Prefer the terminal? There's a terminal client too: `./bin/dash-tui` (it's in the release
-archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
+Queue as many tasks as you like: they run in parallel. See [Tasks](docs/tasks.md) for the
+details: test commands, priorities, follow-up tasks, pacing and pausing.
 
-## Your first task
+## Docs
 
-On a hub, tasks run on runners, and a member's tasks run only on their own runner or a shared
-one. If you have none, add one first in **Runners → Add a runner**, or ask an admin for a shared
-one.
+Setup:
 
-1. **Add a project.** Click **Add project** (every project is on a runner; the hub keeps none,
-   and with several runners you pick one beside the title). Then pick **From GitHub** (your
-   repositories, listed with that runner's `gh`, filterable), **New GitHub repository**, or **From
-   URL**: the runner clones it into its projects folder (or adopts a clone of it already there),
-   and the dialog shows each step until the clone is done. For throwaway work, pick
-   **Local only**: the runner starts a new repository in its projects folder (`git init` and an
-   initial commit), with no remote and no GitHub; deleting that project deletes its folder too.
-   Repositories already on a runner's disk are added with **Add from this runner…** on
-   its page in **Runners**. Only have an idea? Pick **Write a project brief**: Claude interviews
-   you, writes a brief, and Dash starts the project and a goal from it
-   ([Write a project brief](docs/plan-project.md)). A clone that has a favicon gets it as its project icon.
-   A *Test command* (e.g. `go test ./...`) is optional but lets Dash check Claude's work. It
-   runs when Claude finishes, and again in the task's worktree before Dash merges it, unless it
-   already passed on exactly that code. Claude runs it through Dash (the `run_tests` tool), so
-   tests that passed in Claude's session aren't run a second time. A task whose tests fail there goes back to Claude
-   instead of onto the default branch. Make it run what your CI runs (formatting, linters,
-   tests), so a red build never reaches the default branch.
-2. **Add a task.** Click **New task** (or press <kbd>n</kbd>) and write what Claude should do,
-   as you would in a chat; Claude names the task. <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a field
-   for another task (a pasted multi-line text stays one task). **More options…**
-   (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form, with a title, priority, model,
-   dependencies, the task it builds on and attachments. **Priority** is **None**, **High** or
-   **Urgent**: urgent tasks start first, then high ones, then the rest, oldest first (the API
-   takes the same levels; see [Task priority](docs/mcp.md#task-priority)). For a large
-   task, **Split…** there has Claude propose smaller tasks that can each be reviewed and merged on
-   their own; edit, remove or add to them, then save them all, each one waiting for the tasks it
-   builds on.
-3. **Queue it.** Every way of making tasks ends with the same two buttons: **Save draft** keeps
-   it in the *Drafts* column to queue later, **Queue** queues it. In the **New task** sheet,
-   <kbd>Enter</kbd> saves a draft and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac) queues. The task moves to *Queued*, then *Running* as soon as Claude starts on it in
-   its own worktree. Open the card to follow along; if Claude needs permission for something,
-   Dash asks you.
-4. **Review.** When Claude is done the task lands in *Review*. Click **Review** on the card (or
-   open it) and read the diff on the **Changes** tab; **Ask Claude** has Claude review it
-   first. A changed image (PNG, JPEG, GIF or WebP) shows as pictures, before and after,
-   here and in **History**. Not right? Click **Rework…**, say what to change, and it goes back to Claude.
-   **Token use** lists each Claude run on the task: its tokens (and how many were cached),
-   turns and cost.
-   For a small fix, click **Edit** on a changed file instead: saving commits your edit on the
-   task's branch, so approving merges it with the rest.
-5. **Approve.** Click **Approve**. The task goes through *Merging* and ends up in *Merged*, as one
-   squashed commit on the default branch, pushed if you like. In a GitHub project (with pull
-   requests, the default) the review happens on GitHub instead: when Claude finishes, Dash opens
-   a pull request and the task waits in *Review* with it linked. Reviews asking for changes go
-   back to Claude; once it is approved and its checks pass, you merge it, on GitHub or with
-   **Merge pull request** in Dash (Dash never merges one on its own). See [GitHub](docs/github.md).
-
-   A task Claude finishes without changing any files (an answer, an investigation) has nothing to
-   merge. Its card in *Review* says *No changes* and shows Claude's answer. Click **Close** to
-   close it, or **Ask for changes…** to send Claude a message and have it run again. A closed task
-   is in *Merged*, marked *Closed · no changes*, with no commit. To skip Review for these tasks,
-   see [Skip Review for tasks that change no files](docs/boards.md#skip-review-for-tasks-that-change-no-files).
-
-Queue as many tasks as you like: they run in parallel, each in its own worktree.
-
-**Limit a project's tasks at once.** In **Project settings → Commands**, set **Tasks at once**.
-At most that many of the project's tasks run at the same time, on this computer and on its
-runners together. The others stay queued, and say why, until one finishes. A new project
-starts at 5. Clear it for no limit of the project's own. The API field is `max_parallel` (`0` for
-no limit).
-
-**Deploy.** Add an environment, such as `production`, in **Project settings → Deploy**. Its deploy
-command is a bash script, so it can span several lines:
-
-```sh
-set -e
-npm run build
-./deploy.sh "$DASH_ENV"
-```
-
-Then tag a release (**Tag release…** in **History**) and press **Deploy…** on the environment's card
-on the **Deploys** page (`gd`) to pick it. To deploy a commit that isn't tagged, use **Deploy to…**
-on it in **History**. Dash runs the script on a runner, in a checkout of the commit, with the runner's secrets for that environment, and records
-what is live where. A health check and a verify command decide whether a deploy is live;
-**Roll back to <commit>** goes back to the last good deploy, by hand or on its own when the checks
-fail. A failed deploy notifies you and leaves a draft task to fix it. Per environment you set who
-may deploy and who must approve (production: admins), passing tests, a commit live on staging
-first, freeze windows, release tags only, and whether it deploys on its own on each merge or release
-tag; **Promote**
-sends what is live on staging to production with no rebuild, and **History** keeps every settings
-change. History marks the commit each environment runs, and tasks and planning cards say **Live in
-production since …**. The chat deploys too, where any member may (`deploy`, `rollback`, `promote`,
-`list_deploys`), but never approves. See
-[Deploys](docs/deploys.md), and on a hub [Where deploys run](docs/several-computers.md#where-deploys-run).
-
-**Who made a task.** The task's pane says who created it ("Created by Ana", or "Created by Dash"
-for a task Dash made itself). When your organization has more than one member, each card also
-shows its creator's picture or initial, and the filter row above the board has **Mine**: press it
-to show only the tasks you created, and again to show everyone's (or type `:mine`). Your browser
-remembers the choice. A task whose creator has left the organization, or deleted their account,
-shows no creator.
-
-**Goals.** For something bigger than one task, make a [goal](docs/goals.md): a coordinator
-(Claude) plans the tasks, dispatches them, and reviews each one as it enters review, fails or is
-merged, sending work back with notes. It never approves or merges: you do. By default its plan
-waits for you to accept it. Start one with **New goal…** in the task form or the **New task**
-sheet, and follow it on the **Goals** page.
-
-**Follow-up tasks.** To continue where a finished task left off, pick it under **Build on** in the
-full form. The new task's first run continues that task's Claude session (as a fork; the earlier
-session stays as it was), so Claude doesn't explore the code again. The list shows the project's
-recently merged or failed tasks. A task that builds on an unfinished one waits in *Queued* until
-it is merged or failed. The task's detail shows **Builds on #id title**; on a wide screen, change it
-there under **Build on** while the task is a draft, queued or failed. If the earlier session
-isn't on the computer that runs the task (it ran on another runner, or the session was
-deleted), the task starts a fresh session with its full prompt, and its log says so. On a hub,
-Dash sends the task to the runner that ran the earlier one when it can.
-
-The queue pauses when a Claude usage window reaches its limit. To spread
-the week's usage evenly instead, turn on **Follow weekly pace** in the usage sheet (click the usage
-meter): ahead of the pace line no new tasks start until the line catches up, and behind it more run at
-once (one more per 3 hours behind, up to a cap you set, twice the usual by default). Running tasks
-are never stopped.
-
-The setting belongs to a Claude account, since runners logged in to the same account share its
-limits. The hub groups runners by the account email each reports (the Runners page shows it, with
-the plan) and paces each group as one budget, using the freshest usage any of them reported: ahead
-of the line none of them gets new tasks; behind it, the extra tasks are spread over the group's
-runners, up to the boost you pick times their combined usual. The owner of a runner on the account
-or an org admin can change it; the hub keeps it in `pace.json`. A runner that doesn't report an
-account (an older Dash) is paced on its own, and a runner whose hub doesn't pace (an older hub)
-paces itself from its own setting in `usage.json`.
-
-**Start now.** While the queue waits for the pace, each queued card says "Waiting for weekly
-pace", with **Start now** beside it. To run one task anyway, click **Start now** on its card (or
-in the task, or **⋯ → Start now**). It starts as soon as a lane is
-free; pacing goes on for the other tasks. Only the
-pace is skipped: a usage limit, a paused queue, the project's **Tasks at once** and unmerged dependencies still hold it back. The
-task's detail says it starts now, and once it runs, that the run counts toward usage, so the queue
-may wait a little longer afterwards. Start now is used up by that run: later runs (a rework, a
-retry) follow the pace again. The API is `POST /api/todos/{id}/start-now`; a chat can do it with
-`queue_todo` and `start_now: true` (see [MCP](docs/mcp.md#the-chats-task-tools)).
-
-**Pause a project.** To hold all of a project's work, choose **⋯ → Pause this project** in the top bar.
-Its running tasks stop and go back to *Queued*, paused, keeping their worktree and Claude session;
-on a hub, their runners stop them. Its queued tasks are paused too, and no task of the project
-starts, including new ones, until you choose **⋯ → Resume this project** (or **Resume project** in the
-banner above the board). Resuming continues each task in its session. A task you paused on its own
-before stays paused. A task on a runner that can't be reached keeps running, and Dash says so. The
-API is `POST /api/projects/{id}/pause` and `POST /api/projects/{id}/resume`.
-
-**Pause the queue.** Platform admins can stop every project's queue at once: choose **⋯ → Pause
-queue (all projects)**. No new task starts in any project of this Dash; running tasks finish. It
-doesn't stop running work, as **Pause this project** does. Choose **⋯ → Resume queue (all
-projects)** to start again. The queue also pauses by itself when a Claude usage window reaches its
-limit (see **Claude usage**).
-
-## Optional setup
-
-- **Run it as a service** so it starts at boot: [`deploy/dash.service`](deploy/dash.service), explained in
-  [docs/service.md](docs/service.md).
-- **Put it online** over HTTPS, on a VPS behind Caddy or at home through a Cloudflare Tunnel
-  (or privately with Tailscale), to use it from your phone and other computers:
-  [docs/deploy.md](docs/deploy.md). A hub whose work runs on runners also comes as a Docker image
-  with a compose file: [Run the hub with Docker](docs/deploy.md#run-the-hub-with-docker).
-- **Use it from Claude** with the `dash-mcp` MCP server, or as a custom connector in claude.ai
-  and the Claude app: [docs/mcp.md](docs/mcp.md).
-- **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed. Share a project with people's runners and the hub sends its tasks, git and commands there, each on its owner's Claude subscription; everyone's chat, titles, clean-ups and splits run on their own runner too, so the hub runs nothing itself: [docs/several-computers.md](docs/several-computers.md).
-- **Live previews** of each task's app, served on their own subdomains:
-  [docs/previews.md](docs/previews.md).
-
-## Reference
-
-- [Chat](docs/chat.md): the general, project and task chats, and running shell commands from them with `!`
-- [Codex](docs/codex.md): run a project's tasks on OpenAI's Codex CLI instead of Claude Code, picked in **Project settings → Agent**, and what works differently
-- [Goals](docs/goals.md): a coordinator that plans, dispatches and reviews a goal's tasks, within a budget, and never merges
-- [Deploys](docs/deploys.md): environments, deploy records and the Deploys page; health checks, verify commands and rollback; roles, approvals, freezes, promotion and settings history; your scripts deploy, Dash tracks what is live where, and secrets stay on the runners
-- [Write a project brief](docs/plan-project.md): Claude interviews you about an idea, writes a brief, and Dash starts the project and a goal from it; or a feature brief, onto a Planning card
-- [Planning](docs/planning.md): the org's plan for a product owner, cards from Ideas to Done that link to the tasks and goals carrying them out and show their status in plain words; planners see only this
-- [Users and organizations](docs/users.md): accounts, roles (including planners, who use Planning only), invitations, two-factor sign-in
-- [Your data, terms and privacy](docs/privacy.md): download what Dash keeps about you, delete your account, what to publish before strangers sign up (with starter terms and a privacy policy the hub can serve), and what a hub stores
-- [Open signup and email](docs/signup.md): self-service accounts, personal workspaces, password reset (off by default)
-- [Billing](docs/billing.md): per-seat Stripe subscriptions for organizations of two or more (off by default)
-- [Branding and the landing page](docs/branding.md): product name, terms and privacy links, logo, the AGPL source link, an optional landing page
-- [Deploy the hub](docs/deploy.md): Caddy, Docker, Cloudflare Tunnel or Tailscale, org subdomains (`acme.dash.example.com`), and the login on the internet
-- [Live previews](docs/previews.md): preview domain, DNS and certificates, what the proxy does
-- [Draw](docs/draw.md): mark up a preview and send the picture back to Claude
-- [Keyboard](docs/keyboard.md): every shortcut, by area
-- [Scans](docs/scans.md): scheduled read-only reviews that fill a project's Issues
-- [Checklist](docs/checklist.md): tick off, add to and edit the repository's TODO.md (committed straight to the default branch), and move an item onto the board as a task
-- [Wall view](docs/wall.md): a read-only TV dashboard of an organization's work, with a sign-in-free link for the TV
-- [Task boards](docs/boards.md): keep a project's board in Dash or in an external tracker, synced both ways (the backend interface for trackers such as Trello and Jira)
-- [Claude status](docs/claude-status.md): follow status.claude.com with its webhooks, and see Claude's incidents beside the board
-- [Notifications](docs/notifications.md): push notifications to your browser or installed app, even while it's closed, and webhooks that send reviews, failures, merges, approvals, failing builds and runners low on disk space to Slack, ntfy or a signed JSON endpoint
-- [Merge queue](docs/merge-queue.md): how approved tasks land one at a time, and conflicts between running tasks found before they merge
-- [GitHub](docs/github.md): merge locally or review and merge through pull requests, work on another branch and open its pull request, auto-approve, revert, tag releases from History
-- [MCP and the claude.ai connector](docs/mcp.md)
-- [Set up a team](docs/team.md): the hub online, invitations, a runner per developer or a shared API-key runner, projects shared by labels, what planners do, who spent what
-- [Several computers](docs/several-computers.md)
-- [Use Dash from your phone](docs/phone.md)
-- [Links](docs/links.md): every view, task, goal, commit and Planning card has its own address; Back and Forward work, and **Copy link** shares one
+- [Several computers](docs/several-computers.md): runners, shared projects and labels
+- [Set up a team](docs/team.md)
+- [Deploy the hub](docs/deploy.md): HTTPS, Docker, Cloudflare Tunnel or Tailscale
 - [Run as a service](docs/service.md)
-- [Sandbox Claude's runs](docs/sandbox.md): run Claude's tasks and scans in a container or as a user with fewer rights
-- [Releases](docs/releases.md): prebuilt binaries, `dash version`, cutting a release
+- [Users and organizations](docs/users.md)
+- [Sandbox Claude's runs](docs/sandbox.md)
+- [Releases](docs/releases.md)
+
+Using Dash:
+
+- [Tasks](docs/tasks.md)
+- [Goals](docs/goals.md)
+- [Write a project brief](docs/plan-project.md)
+- [Planning](docs/planning.md)
+- [Chat](docs/chat.md)
+- [GitHub](docs/github.md)
+- [Merge queue](docs/merge-queue.md)
+- [Deploys](docs/deploys.md)
+- [Live previews](docs/previews.md) and [Draw](docs/draw.md)
+- [Scans](docs/scans.md)
+- [Checklist](docs/checklist.md)
+- [Task boards](docs/boards.md)
+- [Notifications](docs/notifications.md)
+- [Claude status](docs/claude-status.md)
+- [Codex](docs/codex.md)
+- [MCP and the claude.ai connector](docs/mcp.md)
+- [Keyboard](docs/keyboard.md)
+- [Links](docs/links.md)
+- [Wall view](docs/wall.md)
+- [Use Dash from your phone](docs/phone.md)
+
+Running a public hub:
+
+- [Open signup and email](docs/signup.md)
+- [Billing](docs/billing.md)
+- [Branding and the landing page](docs/branding.md)
+- [Your data, terms and privacy](docs/privacy.md)
 
 All flags: `./bin/dash -h`.
 
 ## Contributing
 
-Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test and
-send a pull request. Contributors sign the [Contributor License Agreement](CLA.md) once, on
-their first pull request; you keep the copyright in your work.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Contributors sign the
+[Contributor License Agreement](CLA.md) once, on their first pull request.
 
 ## License
 

@@ -123,8 +123,8 @@ note. Answer in the goal's chat, or with `message_goal` from Claude (see below).
 
 - **Max tasks** counts the tasks the coordinator created for the goal (deleted ones don't
   count). It can't create or plan more than that.
-- **Weekly share** is a percentage of the weekly usage window (see weekly pacing in the
-  [README](../README.md#your-first-task)). The goal's use is estimated as the window's
+- **Weekly share** is a percentage of the weekly usage window (see
+  [Weekly pace](tasks.md#weekly-pace)). The goal's use is estimated as the window's
   utilization times its tasks' part of the cost of all the org's tasks since the window started.
   Once it reaches the share, the coordinator can't queue or send back tasks, and the goal is out
   of budget. It is only checked while the window is known: on a hub, from a runner that works on the

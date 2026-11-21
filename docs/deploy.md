@@ -49,7 +49,7 @@ pull requests).
 
    Your provider's firewall, if it has one, needs the same ports open.
 3. **Dash.** As an ordinary user (`dash` here; [Run Dash as a service](service.md) shows how
-   to make one), unpack the release in `~/dash` (see the [README](../README.md#quick-start)) and
+   to make one), unpack the release in `~/dash` (see [Install a release](releases.md#install-a-release)) and
    run it as a [service](service.md). In its env file, `~/.config/dash/env`, set the public
    address besides `DASH_USERNAME` and `DASH_PASSWORD` (16 or more random characters, e.g.
    `openssl rand -base64 24`: an internet-facing hub refuses `change-me`):

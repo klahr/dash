@@ -39,7 +39,7 @@ it:
   `~/dash-projects/default/my-app`).
 - Tasks and chat messages record who created them (`created_by`). The board shows the creator
   on each card and in the task's pane, and **Mine** filters the board to your own tasks (see
-  [Your first task](../README.md#your-first-task)).
+  [Who made a task](tasks.md#who-made-a-task)).
 
 Runners belong to the org of the person who registered them: every member sees the org's
 runners and can register their own (see [several computers](several-computers.md)). What

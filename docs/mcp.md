@@ -152,7 +152,7 @@ The chat stops and reruns tasks only when you ask it to:
   an open pull request can't start over.
 - With `start_now: true`, `queue_todo` also takes a task that is already queued, and starts it
   now even though the queue waits for the weekly pace, like **Start now** on the task (see
-  [Your first task](../README.md#your-first-task)). Other tasks keep following the pace;
+  [Start now](tasks.md#start-now)). Other tasks keep following the pace;
   a usage limit, a paused queue, unmerged dependencies or no free lane still hold the task back.
   For a project on runners, the hub sends it to a runner that waits only for the pace.
   `dash-mcp` and the connector's `queue_todo` take `start_now` too.
