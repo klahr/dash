@@ -79,6 +79,9 @@ func TestBrowserNavigation(t *testing.T) {
 	b.waitJS("what it removed", `/Removed |No leftover worktrees/.test(document.querySelector("#toasts").textContent)`)
 	b.waitJS("enabled again, the sheet still open", `!document.querySelector("#settings-cleanup").disabled && document.querySelector("#settings-sheet").open`)
 	b.until("close the settings", `!document.querySelector("#settings-sheet").open`, chromedp.KeyEvent(kb.Escape))
+	// The router drops the sheet from the URL a turn later: the reload below
+	// would open it again over the phone's page.
+	b.waitJS("the URL without the sheet", `!new URLSearchParams(location.search).has("sheet")`)
 	b.waitJS("Push isn't in the top bar", `!document.querySelector(".topbar #push-main")`)
 	b.waitJS("the live dot says so", `document.querySelector("#live-label").offsetWidth > 0 && document.querySelector("#live-label").textContent === "Live"`)
 
