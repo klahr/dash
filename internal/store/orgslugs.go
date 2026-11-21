@@ -170,20 +170,46 @@ func (a *Accounts) Org(id int64) (Org, error) {
 // slug redirects to the org for SlugRedirectTTL and is held for it; an org
 // may take back its own old slug.
 func (a *Accounts) SetOrgSlug(actor, orgID int64, slug string, now time.Time) (Org, error) {
+	return a.setOrgSlug(orgID, slug, now, func(tx *sql.Tx) (Org, error) {
+		m, err := membership(tx, actor, orgID)
+		if err != nil {
+			return Org{}, err
+		}
+		if m.Role != RoleOwner {
+			return Org{}, ErrForbidden
+		}
+		return m.Org, nil
+	})
+}
+
+// AdminSetOrgSlug is SetOrgSlug for a platform admin, who needn't be a
+// member.
+func (a *Accounts) AdminSetOrgSlug(orgID int64, slug string, now time.Time) (Org, error) {
+	return a.setOrgSlug(orgID, slug, now, func(tx *sql.Tx) (Org, error) { return orgIn(tx, orgID) })
+}
+
+// orgIn is the org with id, in tx (ErrNotFound).
+func orgIn(tx *sql.Tx, id int64) (Org, error) {
+	o, err := scanOrg(tx.QueryRow(orgCols+" WHERE o.id = ?", id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return o, ErrNotFound
+	}
+	return o, err
+}
+
+// setOrgSlug renames orgID's slug once allowed, which returns the org,
+// says the caller may.
+func (a *Accounts) setOrgSlug(orgID int64, slug string, now time.Time, allowed func(*sql.Tx) (Org, error)) (Org, error) {
 	slug, err := a.checkSlug(slug)
 	if err != nil {
 		return Org{}, err
 	}
 	var o Org
 	err = inTx(a.db, func(tx *sql.Tx) error {
-		m, err := membership(tx, actor, orgID)
-		if err != nil {
+		var err error
+		if o, err = allowed(tx); err != nil {
 			return err
 		}
-		if m.Role != RoleOwner {
-			return ErrForbidden
-		}
-		o = m.Org
 		if o.Slug == slug {
 			return nil
 		}
@@ -272,23 +298,38 @@ func (a *Accounts) SlugRedirects(orgID int64, now time.Time) (map[string]time.Ti
 // SetOrgName renames orgID, if actor is one of its owners or admins. The
 // slug (and so the org's address and folder) stays: see SetOrgSlug.
 func (a *Accounts) SetOrgName(actor, orgID int64, name string) (Org, error) {
+	return a.setOrgName(orgID, name, func(tx *sql.Tx) (Org, error) {
+		m, err := membership(tx, actor, orgID)
+		if err != nil {
+			return Org{}, err
+		}
+		if !m.Role.AtLeast(RoleAdmin) {
+			return Org{}, ErrForbidden
+		}
+		return m.Org, nil
+	})
+}
+
+// AdminSetOrgName is SetOrgName for a platform admin, who needn't be a
+// member.
+func (a *Accounts) AdminSetOrgName(orgID int64, name string) (Org, error) {
+	return a.setOrgName(orgID, name, func(tx *sql.Tx) (Org, error) { return orgIn(tx, orgID) })
+}
+
+func (a *Accounts) setOrgName(orgID int64, name string, allowed func(*sql.Tx) (Org, error)) (Org, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 100 {
 		return Org{}, ErrBadOrgName
 	}
 	var o Org
 	err := inTx(a.db, func(tx *sql.Tx) error {
-		m, err := membership(tx, actor, orgID)
-		if err != nil {
+		var err error
+		if o, err = allowed(tx); err != nil {
 			return err
-		}
-		if !m.Role.AtLeast(RoleAdmin) {
-			return ErrForbidden
 		}
 		if _, err := tx.Exec("UPDATE organizations SET name = ? WHERE id = ?", name, orgID); err != nil {
 			return err
 		}
-		o = m.Org
 		o.Name = name
 		return nil
 	})

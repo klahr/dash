@@ -98,7 +98,8 @@ last platform admin can't be deleted either.
 
 ## Delete someone else's account
 
-Platform admins see **Delete account** beside each member in **Organization**. It does what
+Platform admins see **Delete account** beside each member in **Organization**, and in
+**Admin → Users** for every account (see [Admin](users.md#admin)). It does what
 deleting your own account does, with the same checks. The API:
 
 ```sh

@@ -20,7 +20,8 @@ import (
 //	POST   /api/orgs/{oid}/sso/domains {domain, password}
 //	POST   /api/orgs/{oid}/sso/domains/{domain}/check  admins: verify a claim by its DNS TXT record
 //	DELETE /api/orgs/{oid}/sso/domains/{domain} {password} (verified: owners)
-//	POST   /api/orgs/{oid}/members/{uid}/sign-out {password}  admins: end a member's sessions in the org
+//	POST   /api/orgs/{oid}/members/{uid}/sign-out {password}  admins: end a member's sessions and tokens in the org
+//	                                               (everywhere, for an account whose every org they manage)
 //	GET    /api/account/google                     the user's linked Google account
 //	DELETE /api/account/google {password}          unlink it (not if it's their only way in)
 //	GET    /api/admin/sso                          platform admins: the instance's client, domains waiting
@@ -518,13 +519,22 @@ func (a *Auth) signOutMember(w http.ResponseWriter, r *http.Request, id *Identit
 		accountError(w, err)
 		return
 	}
-	n, err := a.acc.SignOutMember(uid, m.ID)
+	// An account whose every org the caller manages is signed out
+	// everywhere; any other, in this org: its sessions working here and
+	// its API tokens and connected apps acting here.
+	if a.acc.MemberAccess(id.User.ID, id.User.PlatformAdmin, m.ID, uid) == nil {
+		a.signOutEverywhere(w, r, id, uid, m.ID)
+		return
+	}
+	n, toks, err := a.acc.SignOutMemberTokens(uid, m.ID)
 	if err != nil {
 		accountError(w, err)
 		return
 	}
-	a.audit(r, store.AuthEvent{OrgID: m.ID, UserID: uid, Actor: id.User.ID, Kind: "member.signed_out", Detail: plural(n, "session")})
-	writeJSON(w, http.StatusOK, map[string]int{"sessions": n})
+	a.revoked(toks)
+	a.audit(r, store.AuthEvent{OrgID: m.ID, UserID: uid, Actor: id.User.ID, Kind: "member.signed_out",
+		Detail: plural(n, "session") + ", " + plural(len(toks), "token")})
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": n, "tokens": len(toks), "everywhere": false})
 }
 
 func plural(n int, what string) string {

@@ -576,6 +576,12 @@ func (a *Auth) attempt(ip, login, password string) (store.User, error) {
 		}
 		return store.User{}, errUnverified
 	}
+	if disabled, err := a.acc.Disabled(u.ID); err != nil || disabled {
+		if err != nil {
+			return store.User{}, err
+		}
+		return store.User{}, store.ErrAccountDisabled
+	}
 	return u, nil
 }
 
@@ -723,6 +729,9 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, errUnverified):
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "unverified"})
+		return
+	case errors.Is(err, store.ErrAccountDisabled):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "disabled"})
 		return
 	case err != nil:
 		slog.Error("login", "err", err)

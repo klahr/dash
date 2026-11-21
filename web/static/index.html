@@ -200,6 +200,7 @@
               <button id="account-open" type="button" data-icon="user">Account</button>
               <button id="org-open" type="button" data-icon="users">Organization</button>
               <button id="runners-open" type="button" data-icon="computer" hidden>Runners</button>
+              <button id="admin-open" type="button" data-icon="lock" hidden>Admin</button>
               <button id="logout" type="button" data-icon="logout">Sign out</button>
               <span class="foot-version" title="Dash version">{{DASH_RELEASE}}</span>
               <!--DASH_FOOTER-->
@@ -1685,6 +1686,49 @@
       <footer class="sheet-actions">
         <button class="btn" id="org-new" type="button" data-icon="plus" hidden>New organization…</button>
       </footer>
+    </div>
+  </dialog>
+
+  <!-- Admin: platform admins manage every account and organization on this Dash.
+       Each section is a list, with the chosen one's detail in a pane beside it
+       (full screen on a phone, with Back; Esc closes it). app/admin.js fills it. -->
+  <dialog class="sheet rail-sheet" id="admin-sheet" aria-labelledby="admin-title">
+    <div class="rail-body">
+      <form method="dialog" class="sheet-head"><h2 id="admin-title" tabindex="-1" autofocus>Admin</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></form>
+      <div class="rail-layout">
+        <nav class="rail-nav" aria-label="Admin sections">
+          <div class="rail-group"><span class="rail-head">This Dash</span>
+            <button type="button" class="rail-item" data-rail="users">Users</button>
+            <button type="button" class="rail-item" data-rail="orgs">Organizations</button>
+          </div>
+        </nav>
+        <div class="rail-main">
+          <section class="rail-section" data-section="users">
+            <div class="admin-split" id="admin-users">
+              <div class="admin-list">
+                <div class="admin-search">
+                  <input type="search" id="admin-users-q" placeholder="Search by name or email" autocomplete="off" spellcheck="false" aria-label="Search users by name or email">
+                </div>
+                <p class="hint admin-count" id="admin-users-count" aria-live="polite"></p>
+                <ul class="admin-rows" id="admin-users-list"></ul>
+              </div>
+              <div class="admin-detail" id="admin-user-detail" role="region" aria-label="User" hidden></div>
+            </div>
+          </section>
+          <section class="rail-section" data-section="orgs">
+            <div class="admin-split" id="admin-orgs">
+              <div class="admin-list">
+                <div class="admin-search">
+                  <input type="search" id="admin-orgs-q" placeholder="Search by name or address" autocomplete="off" spellcheck="false" aria-label="Search organizations">
+                </div>
+                <p class="hint admin-count" id="admin-orgs-count" aria-live="polite"></p>
+                <ul class="admin-rows" id="admin-orgs-list"></ul>
+              </div>
+              <div class="admin-detail" id="admin-org-detail" role="region" aria-label="Organization" hidden></div>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   </dialog>
 

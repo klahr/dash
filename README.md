@@ -69,7 +69,7 @@ Setup:
 - [Set up a team](docs/team.md)
 - [Deploy the hub](docs/deploy.md): HTTPS, Docker, Cloudflare Tunnel or Tailscale
 - [Run as a service](docs/service.md)
-- [Users and organizations](docs/users.md)
+- [Users and organizations](docs/users.md): roles, two-factor sign-in, the Admin sheet
 - [Sandbox Claude's runs](docs/sandbox.md)
 - [Releases](docs/releases.md)
 

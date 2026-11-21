@@ -233,7 +233,7 @@ func (a *Accounts) AuthenticateHash(hash string, now time.Time, kinds ...TokenKi
 			m.role, t.expires_at, `+strings.TrimPrefix(tokenCols, "SELECT ")+`
 			JOIN users u ON u.id = t.user_id
 			JOIN org_memberships m ON m.user_id = t.user_id AND m.org_id = t.org_id
-			WHERE t.token_hash = ?`, hash),
+			WHERE t.token_hash = ? AND `+enabled("u.id"), hash),
 		[]any{&s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP, &s.User.Avatar, &required, &orgRequires, &changed, &role, &expires}})
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -516,12 +516,12 @@ func (a *Accounts) RefreshGrant(refresh, clientID string, accessTTL, refreshTTL 
 	err := inTx(a.db, func(tx *sql.Tx) error {
 		var id, created, changed int64
 		var scopes string
-		var member bool
+		var member, disabled bool
 		err := tx.QueryRow(`SELECT t.id, t.scopes, t.created_at, u.password_changed_at,
-				EXISTS (SELECT 1 FROM org_memberships m WHERE m.user_id = t.user_id AND m.org_id = t.org_id)
+				EXISTS (SELECT 1 FROM org_memberships m WHERE m.user_id = t.user_id AND m.org_id = t.org_id), NOT `+enabled("u.id")+`
 			FROM tokens t JOIN users u ON u.id = t.user_id
 			WHERE t.kind = 'oauth' AND t.refresh_hash = ? AND t.oauth_client_id = ? AND t.refresh_expires_at > ?`,
-			old, clientID, now.Unix()).Scan(&id, &scopes, &created, &changed, &member)
+			old, clientID, now.Unix()).Scan(&id, &scopes, &created, &changed, &member, &disabled)
 		if errors.Is(err, sql.ErrNoRows) {
 			invalid = true
 			_, err := tx.Exec("DELETE FROM tokens WHERE kind = 'oauth' AND previous_refresh_hash = ? AND oauth_client_id = ?", old, clientID)
@@ -529,6 +529,10 @@ func (a *Accounts) RefreshGrant(refresh, clientID string, accessTTL, refreshTTL 
 		}
 		if err != nil {
 			return err
+		}
+		if disabled { // refused while disabled, kept for when it's enabled again
+			invalid = true
+			return nil
 		}
 		if !member || changed > created {
 			invalid = true

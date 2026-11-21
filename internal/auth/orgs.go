@@ -38,6 +38,7 @@ type Mux interface {
 //	DELETE /api/orgs/{oid}/tokens/{id} {password} admins: revoke one
 //	GET    /api/account/export, DELETE /api/account   the user's own data (see erasure.go)
 //	PUT    /api/account/avatar, …                profile pictures (see avatar.go)
+//	GET    /api/admin/users, /api/admin/orgs, …  platform admins: every account and org (see admin.go)
 //	GET    /go/{slug}                            with org subdomains: hand the browser to the org's (see orghosts.go)
 //
 // two-factor sign-in (see twoFactorRoutes), and signup and password reset
@@ -73,6 +74,7 @@ func (a *Auth) Routes(mux Mux) {
 	a.ssoRoutes(mux)
 	a.erasureRoutes(mux)
 	a.avatarRoutes(mux)
+	a.adminRoutes(mux)
 	if a.Domains != nil {
 		mux.HandleFunc("GET /go/{slug}", a.goOrg)
 	}
@@ -116,8 +118,11 @@ func accountError(w http.ResponseWriter, err error) {
 		errors.Is(err, store.ErrPersonalOrg), errors.Is(err, store.ErrSlugTaken),
 		errors.Is(err, store.ErrIdentityTaken), errors.Is(err, store.ErrIdentityLinked), errors.Is(err, store.ErrNoPassword),
 		errors.Is(err, store.ErrDomainTaken), errors.Is(err, store.ErrAccountInUse), errors.Is(err, store.ErrEnvAccount),
-		errors.Is(err, store.ErrLastAdmin):
+		errors.Is(err, store.ErrLastAdmin), errors.Is(err, store.ErrEnvPassword), errors.Is(err, store.ErrSSOOnly),
+		errors.Is(err, store.ErrAlreadyMember), errors.Is(err, store.ErrOrgInUse), errors.Is(err, store.ErrUnverified):
 		code = http.StatusConflict
+	case errors.Is(err, store.ErrAccountDisabled):
+		code = http.StatusForbidden
 	case errors.Is(err, store.ErrBadRole), errors.Is(err, store.ErrBadEmail), errors.Is(err, store.ErrBadUsername),
 		errors.Is(err, store.ErrWeakPassword), errors.Is(err, store.ErrBadOrgName), errors.Is(err, errBadBody),
 		errors.Is(err, store.ErrNoOrg), errors.Is(err, store.ErrBadScopes), errors.Is(err, store.ErrBadTokenName),
@@ -300,6 +305,13 @@ func (a *Auth) members(w http.ResponseWriter, r *http.Request, id *Identity) {
 		if resp["invitations"], err = a.acc.Invitations(oid); err != nil {
 			accountError(w, err)
 			return
+		}
+		// What they may do with each member's account (admin.go).
+		if id.Token == nil {
+			if resp["accounts"], err = a.acc.MemberAccessAll(id.User.ID, id.User.PlatformAdmin, members); err != nil {
+				accountError(w, err)
+				return
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)

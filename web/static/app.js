@@ -43,6 +43,7 @@ import "./app/prefs.js";
 import "./app/labelpicker.js";
 import "./app/runners.js";
 import "./app/account.js";
+import "./app/admin.js";
 import "./app/myaccount.js";
 import "./app/glide.js";
 import "./app/avatar.js";

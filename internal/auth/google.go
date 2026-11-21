@@ -427,6 +427,10 @@ func (a *Auth) googleSignIn(w http.ResponseWriter, r *http.Request, f *oidcFlow,
 	if u.ID == 0 {
 		return // answered: the link needs the password
 	}
+	if disabled, err := a.acc.Disabled(u.ID); err != nil || disabled {
+		a.flowFailed(w, r, f, &cl, failFlow("account_disabled", "user %d", u.ID))
+		return
+	}
 	// The org it signs in to: the one asked for, else the one just joined.
 	org := f.Org
 	if org == 0 && joined != nil {
@@ -851,6 +855,7 @@ var flowMessages = map[string]string{
 	"identity_taken":        "That Google account is linked to another account here.",
 	"already_linked":        "Your account is linked to a Google account already. Unlink it first.",
 	"failed":                "Signing in with Google failed. Try again.",
+	"account_disabled":      "This account is disabled. Ask an administrator of this Dash.",
 }
 
 // flowFailed logs and audits why f failed, and answers.

@@ -486,13 +486,29 @@ func (a *Accounts) CreateSessionVia(key string, uid, org int64, family, method s
 	if method != "" {
 		meth = method
 	}
-	_, err := a.db.Exec(`INSERT INTO sessions (key, user_id, active_org_id, family, created_at, expires_at, method, auth_at)
-		VALUES (?1, ?2, COALESCE((SELECT org_id FROM org_memberships WHERE user_id = ?2 AND org_id = ?3),
-			(SELECT org_id FROM org_memberships WHERE user_id = ?2 ORDER BY created_at, org_id LIMIT 1)), ?4, ?5, ?6,
-			COALESCE(?7, (SELECT method FROM sessions WHERE family = ?4 AND user_id = ?2 ORDER BY created_at LIMIT 1), 'password'),
-			CASE WHEN ?7 IS NULL THEN COALESCE((SELECT MIN(auth_at) FROM sessions WHERE family = ?4 AND user_id = ?2 AND auth_at > 0), ?5) ELSE ?5 END)`,
-		key, uid, org, fam, now.Unix(), expires.Unix(), meth)
-	return err
+	// A disabled account gets no session (ErrAccountDisabled), however it
+	// signed in.
+	return inTx(a.db, func(tx *sql.Tx) error {
+		res, err := tx.Exec(`INSERT INTO sessions (key, user_id, active_org_id, family, created_at, expires_at, method, auth_at)
+			SELECT ?1, ?2, COALESCE((SELECT org_id FROM org_memberships WHERE user_id = ?2 AND org_id = ?3),
+				(SELECT org_id FROM org_memberships WHERE user_id = ?2 ORDER BY created_at, org_id LIMIT 1)), ?4, ?5, ?6,
+				COALESCE(?7, (SELECT method FROM sessions WHERE family = ?4 AND user_id = ?2 ORDER BY created_at LIMIT 1), 'password'),
+				CASE WHEN ?7 IS NULL THEN COALESCE((SELECT MIN(auth_at) FROM sessions WHERE family = ?4 AND user_id = ?2 AND auth_at > 0), ?5) ELSE ?5 END
+			WHERE EXISTS (SELECT 1 FROM users WHERE id = ?2) AND `+enabled("?2"),
+			key, uid, org, fam, now.Unix(), expires.Unix(), meth)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrAccountDisabled
+		}
+		if method == "" {
+			return nil // another host of a sign-in already counted
+		}
+		_, err = tx.Exec(`INSERT INTO user_status (user_id, last_login_at) VALUES (?, ?)
+			ON CONFLICT (user_id) DO UPDATE SET last_login_at = excluded.last_login_at`, uid, now.Unix())
+		return err
+	})
 }
 
 // Session returns the session stored under key, checking the user's
@@ -511,7 +527,7 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = s.user_id AND m.org_id = s.active_org_id
 		LEFT JOIN organizations o ON o.id = m.org_id
-		WHERE s.key = ?`, key).Scan(&s.User.ID, &s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP, &s.User.Avatar,
+		WHERE s.key = ? AND `+enabled("u.id"), key).Scan(&s.User.ID, &s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP, &s.User.Avatar,
 		&expires, &active, &orgID, &name, &slug, &folder, &require2FA, &personal, &role, &family, &s.Method, &authAt, &required)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
@@ -683,16 +699,18 @@ func (a *Accounts) Members(orgID int64) ([]Member, error) {
 	return out, rows.Err()
 }
 
-// changeMember checks that actor may change target's membership of orgID
+// changeMemberAs checks that actor may change target's membership of orgID
 // from its current role to role ("" = remove), in tx. Members may remove
 // themselves; otherwise it takes an admin, and only owners touch owners.
 // The last owner can't be demoted or removed.
-func changeMember(tx *sql.Tx, actor, orgID, target int64, role Role) error {
+// A platform admin (platform) needn't be a member: only the last owner
+// rule applies.
+func changeMemberAs(tx *sql.Tx, actor int64, platform bool, orgID, target int64, role Role) error {
 	cur, err := membership(tx, target, orgID)
 	if err != nil {
 		return err
 	}
-	if !(actor == target && role == "") { // leaving needs no role
+	if !platform && !(actor == target && role == "") { // leaving needs no role
 		mine, err := membership(tx, actor, orgID)
 		if err != nil {
 			return err
@@ -715,11 +733,15 @@ func changeMember(tx *sql.Tx, actor, orgID, target int64, role Role) error {
 
 // SetRole changes target's role in orgID, as actor.
 func (a *Accounts) SetRole(actor, orgID, target int64, role Role) error {
+	return a.setRole(actor, false, orgID, target, role)
+}
+
+func (a *Accounts) setRole(actor int64, platform bool, orgID, target int64, role Role) error {
 	if !role.Valid() {
 		return ErrBadRole
 	}
 	return inTx(a.db, func(tx *sql.Tx) error {
-		if err := changeMember(tx, actor, orgID, target, role); err != nil {
+		if err := changeMemberAs(tx, actor, platform, orgID, target, role); err != nil {
 			return err
 		}
 		_, err := tx.Exec("UPDATE org_memberships SET role = ? WHERE user_id = ? AND org_id = ?", role, target, orgID)
@@ -734,6 +756,10 @@ func (a *Accounts) SetRole(actor, orgID, target int64, role Role) error {
 // (see orphanedQueued); Dash's own tasks that were theirs stay queued, for the next member
 // (DashWorkFor).
 func (a *Accounts) RemoveMember(actor, orgID, target int64) error {
+	return a.removeMember(actor, false, orgID, target)
+}
+
+func (a *Accounts) removeMember(actor int64, platform bool, orgID, target int64) error {
 	a.s.mu.Lock()
 	defer a.s.mu.Unlock()
 	orphans := a.s.orphanedQueuedLocked(orgID, target)
@@ -743,7 +769,7 @@ func (a *Accounts) RemoveMember(actor, orgID, target int64) error {
 				return err
 			}
 		}
-		if err := changeMember(tx, actor, orgID, target, ""); err != nil {
+		if err := changeMemberAs(tx, actor, platform, orgID, target, ""); err != nil {
 			return err
 		}
 		if _, err := tx.Exec("DELETE FROM org_memberships WHERE user_id = ? AND org_id = ?", target, orgID); err != nil {

@@ -231,6 +231,10 @@ func (a *Auth) loginTOTP(w http.ResponseWriter, r *http.Request) {
 		method = store.MethodPassword
 	}
 	if err := a.startSessionVia(w, r, t.user, t.org, newFamily(), method); err != nil {
+		if errors.Is(err, store.ErrAccountDisabled) { // disabled since the password
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "disabled"})
+			return
+		}
 		slog.Error("create session", "err", err)
 		writeError(w, http.StatusInternalServerError, "sign-in failed")
 		return

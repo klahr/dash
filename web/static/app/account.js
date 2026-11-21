@@ -11,6 +11,7 @@ import { avatar, showOwnAvatar } from "./avatar.js";
 import { accountHooks, askPassword } from "./myaccount.js";
 import { loadOrgSection } from "./accountsheet.js";
 import { renderTeamSetup } from "./teamsetup.js";
+import { EVENT_TEXT, resetPassword, showAdminEntry, signOutEverywhere, turnOff2FA } from "./admin.js";
 
 // Your own account's sections (two-factor, Google, your data) are in
 // myaccount.js, shared with a planner's Planning page.
@@ -46,6 +47,7 @@ export async function loadMe() {
   // The queue pause is the whole Dash's, for platform admins.
   const admin = !!me.user?.is_platform_admin;
   $("#pm-queue").hidden = !admin;
+  showAdminEntry(); // account menu → Admin: every account and org (admin.js)
   // Following Claude's status page is set up by platform admins, in Organization → This Dash.
   $("#org-rail-dash").hidden = $("#claude-status-admin").hidden = !admin;
   if (!me.org) {
@@ -148,13 +150,7 @@ async function renderOrg() {
       h("span", { class: "runner-name" }, m.username, self ? h("span", { class: "hint" }, " (you)") : null),
       h("span", { class: "item-sub hint" }, m.email || "", manage || org.org.require_2fa ? h("span", { class: `tfa-tag${m.totp_enabled ? " on" : ""}`, title: m.totp_enabled ? "Signs in with two factors" : "No two-factor sign-in yet" }, m.totp_enabled ? "2FA" : "no 2FA") : null, runnerTag(m)),
       canEdit ? roleSelect(m) : h("span", { class: "org-role-tag" }, ROLE_LABEL[m.role]),
-      (canEdit && !self) ? h("button", { class: "btn small", type: "button", title: `End ${m.username}'s sessions in ${org.org.name}`, onclick: attempt(async () => {
-        const pw = await askPassword(`Sign ${m.username} out everywhere?`,
-          `Their sessions in ${org.org.name} end at once; they can sign in again. To keep someone out, remove them (and in Google Workspace).`);
-        if (pw == null) return;
-        const r = await api("POST", `/api/orgs/${org.org.id}/members/${m.id}/sign-out`, { password: pw }, "");
-        toast(`${m.username} signed out (${plural(r.sessions, "session")})`, { tone: "ok" });
-      }) }, "Sign out") : null,
+      (canEdit && !self) ? memberAccountActions(org, m) : null,
       (canEdit || self) ? h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
         const pw = await askPassword(self ? `Leave ${org.org.name}?` : `Remove ${m.username}?`,
           self ? "You lose access at once, and your queued tasks here go back to Drafts. Someone has to invite you again to come back."
@@ -194,6 +190,28 @@ async function renderOrg() {
   return renderTeamSetup(org, mine);
 }
 
+// memberAccountActions are an owner's or admin's buttons for helping a
+// member sign in: reset their password, turn off their two-factor sign-in,
+// sign them out. The server says which accounts they may (org.accounts):
+// only those whose every organization they manage, never a platform admin's
+// or an owner's (for admins). Sign out works on any member they may edit: it
+// ends their sessions and tokens in this org, or everywhere when allowed.
+function memberAccountActions(org, m) {
+  const acc = org.accounts?.[m.id] || { can: false, has_password: true };
+  const base = `/api/orgs/${org.org.id}/members/${m.id}`;
+  const why = acc.can ? null : `${m.username}: ${acc.why || "not allowed"}`;
+  const btn = (label, title, fn, { always = false } = {}) => h("button", {
+    class: "btn small", type: "button", disabled: !acc.can && !always, title: (!acc.can && !always) ? why : title,
+    onclick: attempt(async () => { if (await fn()) await renderOrg(); }),
+  }, label);
+  return h("span", { class: "member-actions" },
+    acc.has_password ? btn("Reset password…", `Make a one-time link for ${m.username} to choose a new password`, () => resetPassword(base, m)) : null,
+    m.totp_enabled ? btn("Turn off 2FA…", `For ${m.username} if they lost their phone and recovery codes`, () => turnOff2FA(base, m)) : null,
+    btn("Sign out…", acc.can ? `End ${m.username}'s sessions, API tokens and connected apps everywhere` : `End ${m.username}'s sessions, API tokens and connected apps in ${org.org.name}`,
+      () => signOutEverywhere(base, m, acc.can ? "everywhere" : `of ${org.org.name}`).then(() => false), { always: true }),
+    !acc.can && acc.why ? h("span", { class: "hint member-why" }, acc.why.replace(/^./, (c) => c.toUpperCase())) : null);
+}
+
 // ---- Google sign-in for the org (owners and admins)
 const SSO_EVENTS = {
   "signin.google": "signed in with Google", "signin.google.failed": "Google sign-in failed", "signin.google.2fa": "signed in with Google, code next",
@@ -201,6 +219,7 @@ const SSO_EVENTS = {
   "member.joined.domain": "joined by domain", "member.joined.invitation": "joined by invitation", "member.signed_out": "signed out by an admin", "token.revoked": "token revoked by an admin",
   "sso.settings": "settings changed", "sso.domain.added": "domain added", "sso.domain.removed": "domain removed",
   "sso.domain.verified": "domain verified", "sso.test.ok": "test passed", "sso.test.failed": "test failed",
+  ...EVENT_TEXT, // what admins did to members' accounts (admin.js)
 };
 
 async function renderOrgSSO(o, mine) {

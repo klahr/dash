@@ -98,13 +98,76 @@ Because records aren't separated by org yet, the requirement applies to anyone w
 to such an org, whichever org they're working in. Members can't turn it off while an org
 of theirs requires it, and the member list shows who has it.
 
-**Locked out?** Someone who lost both their phone and their recovery codes needs the
-server's operator, who runs, on the server:
+**Locked out?** Someone who lost both their phone and their recovery codes asks an owner or
+admin of their org to turn it off (see
+[Helping a member who can't sign in](#helping-a-member-who-cant-sign-in)), or a platform admin
+(see [Admin](#admin)). Without either, the server's operator runs, on the server:
 
     dash reset-2fa [-data <dir>] <username or email>
 
 That turns it off for the account (it works while Dash runs). If an org requires it,
 they set it up again at their next sign-in.
+
+## Helping a member who can't sign in
+
+Owners and admins help members of their org from **Organization → Members**. Each member has:
+
+- **Reset password…**: Dash makes a one-time link for them to choose a new password. If Dash
+  sends [email](signup.md#email-smtp), it emails them the link. You also see the link once,
+  with **Copy**, to hand over another way. It works once, for an hour, like a "Forgot
+  password?" link. Using it signs them out everywhere. Tick **Also sign them out now** to end
+  their sessions at once. Accounts that sign in only with Google have no password, so they
+  have no **Reset password…**.
+- **Turn off 2FA…**: for a member who lost their phone and their recovery codes. They sign in
+  with their password alone until they turn it on again. An org that requires it asks them at
+  their next sign-in. Dash emails them that it was turned off.
+- **Sign out…**: ends their sessions and stops their API tokens and connected apps. Their
+  runners carry on.
+
+Each asks for your password. Nobody types a new password for someone else.
+
+Dash checks who may, on the server:
+
+- You can act on an account only if **every** org it belongs to is one where you are an owner or
+  admin. Otherwise an admin of one org could take over an account that is also in another.
+  The buttons are then off, with the reason: "Also a member of another organization: ask a
+  platform admin". **Sign out…** still works, for this org only: it ends their sessions and
+  tokens here.
+- Not on a platform admin (unless you are one), and not on yourself: use **Account** for your
+  own account.
+- Admins can't act on owners. Owners can act on admins and members.
+
+Each action goes in the org's sign-in log (**Organization → Sign-in → Recent sign-in activity**)
+and the server log, with who did it, to whom and when.
+
+## Admin
+
+Platform admins have **Admin** in the account menu: every account and every org on this Dash.
+
+**Users** lists every account, with the total at the top, and a search by name or email. Each
+row shows the account's orgs and role in each, whether it is a platform admin, has two-factor
+sign-in, has a password or signs in only with Google, when it was made and its last sign-in.
+Pick one to open it in a pane beside the list (full screen on a phone, with **Back**; `Esc`
+closes it). There you can:
+
+- **Reset password…**, **Turn off two-factor…** and **Sign out everywhere…**, as in
+  [Helping a member who can't sign in](#helping-a-member-who-cant-sign-in), for any account.
+- **Disable…**: they are signed out at once and can't sign in, and their tokens and runners
+  stop working, until you **Enable…** it again. Nothing is deleted.
+- **Make platform admin…** or **Remove platform admin…**. Dash always keeps one platform admin
+  who isn't disabled: it refuses to remove or disable the last one, you included.
+- Add them to an org with a role, change their role, or take them out of an org. An org always
+  keeps an owner.
+- **Delete account…** (see [Your data](privacy.md)).
+
+**Organizations** lists every org, with its members, projects and when it was made. Open one
+to rename it, change its address (its slug), manage its members, or delete it. To delete an
+org, type its name to confirm. That ends its members' access to it and deletes its
+invitations, chats, planning boards, sign-in settings, the tokens that act in it and its
+sign-in log. Its members' accounts stay. An org with projects or a subscription can't be
+deleted until they are gone, and neither can the org Dash keeps records without an org in.
+
+Every change asks for your password, and goes in the sign-in log and the server log.
 
 ## Invitations
 
@@ -339,7 +402,9 @@ they made stays theirs: queued again, it needs a shared runner. Dash's own tasks
 in other states stay as they are.
 
 To delete an account altogether, see [Your data](privacy.md): everyone can delete their own in
-**Account → Your data**, and platform admins can delete someone else's from the members list.
+**Account → Your data**, and platform admins can delete someone else's from the members list or
+in **Admin → Users**. To keep someone out without deleting anything, a platform admin disables
+the account in **Admin → Users**.
 
 ## API
 
@@ -372,11 +437,19 @@ To delete an account altogether, see [Your data](privacy.md): everyone can delet
 | `GET /api/orgs/{id}/sso`, `PATCH … {client_id, client_secret, auto_join, join_role, require_google, google_2fa, password}` | an org's Google sign-in settings |
 | `POST /api/orgs/{id}/sso/domains {domain, password}`, `DELETE …/{domain}` | its Workspace domains |
 | `POST /api/orgs/{id}/sso/domains/{domain}/check`  | admins: verify a domain by its DNS TXT record |
-| `POST /api/orgs/{id}/members/{uid}/sign-out {password}` | admins: end a member's sessions in the org |
+| `POST /api/orgs/{id}/members/{uid}/sign-out {password}` | admins: end a member's sessions and tokens in the org (everywhere, for an account they may manage) |
+| `POST /api/orgs/{id}/members/{uid}/password-reset {password, sign_out}` | admins: a one-time reset link (`path`, `url`), emailed if Dash sends email |
+| `DELETE /api/orgs/{id}/members/{uid}/2fa {password}` | admins: turn off a member's two-factor sign-in |
 | `GET /api/account/google`, `DELETE … {password}`  | your linked Google account; unlink        |
 | `GET /api/admin/sso`, `PUT /api/admin/sso/google`, `POST /api/admin/sso/domains/verify` | platform admins: the instance's client, approving domains |
 | `GET /api/account/export`, `DELETE /api/account {password}` | your data as JSON; delete your account ([privacy.md](privacy.md)) |
 | `DELETE /api/admin/users/{uid} {password}`        | platform admins: delete someone's account |
+| `GET /api/admin/users?q=`, `GET /api/admin/users/{uid}` | platform admins: every account (`total`, `matched`), one with its sign-in log |
+| `POST /api/admin/users/{uid}/password-reset {password, sign_out}`, `DELETE …/2fa {password}`, `POST …/sign-out {password}` | platform admins: help someone sign in |
+| `PUT /api/admin/users/{uid}/disabled {disabled, password}`, `PUT …/platform-admin {platform_admin, password}` | platform admins: disable or enable; make or remove a platform admin |
+| `PUT /api/admin/users/{uid}/orgs/{oid} {role, password}`, `DELETE … {password}` | platform admins: add to an org or change the role; take out |
+| `GET /api/admin/orgs?q=`, `GET /api/admin/orgs/{oid}` | platform admins: every org; one with its members |
+| `PATCH /api/admin/orgs/{oid} {name, slug, password}`, `DELETE … {name, password}` | platform admins: rename, change the address, delete |
 | `PUT /api/account/avatar` (the image as the body), `DELETE …` | set or remove your profile picture |
 | `GET /api/users/{uid}/avatar`                     | a picture: yours, or a member's of your org. `avatar` in `/api/me` and the members list is its version (`0`: none) |
 
