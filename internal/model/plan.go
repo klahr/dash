@@ -262,9 +262,6 @@ const (
 	MaxPlanQuestions = 6 // per round
 )
 
-// NewPlanTopics are the topics of a new project plan, all open.
-func NewPlanTopics() []PlanTopic { return PlanKinds[PlanProject].NewTopics() }
-
 // NewTopics are the topics of a new plan of kind k, all open.
 func (k PlanKind) NewTopics() []PlanTopic {
 	out := slices.Clone(k.Topics)
@@ -300,11 +297,6 @@ func CleanPlanDraft(p *Plan) error {
 		return fmt.Errorf("unknown step %q", p.Step)
 	}
 	return nil
-}
-
-// CleanPlanTurn is CleanTurn of a project plan.
-func CleanPlanTurn(t PlanTurn, prev []PlanTopic) (PlanTurn, error) {
-	return PlanKinds[PlanProject].CleanTurn(t, prev)
 }
 
 // CleanTurn keeps an interviewer's answer within what a plan of kind k

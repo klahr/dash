@@ -15,13 +15,10 @@ import (
 // The planner's interviewer: Claude asks about an idea for a project (or a
 // feature of one), a few questions at a time, and writes the brief as the
 // answers come in. Each round is one call without tools: the plan so far in
-// (PlanInput; a feature's with its project's files, PlanContext), JSON out
+// (PlanInputWith; a feature's with its project's files, PlanContext), JSON out
 // (ParsePlanTurn). The system prompt is the plan's kind's (PlanSystemFor).
 // The hub keeps the plan; the call runs on the user's runner like the
 // other short calls.
-
-// PlanSystem is a project interviewer's system prompt.
-var PlanSystem = PlanSystemFor(model.PlanKinds[model.PlanProject])
 
 // planSystem is the interviewer's system prompt, the same for every kind
 // of brief but for the parts in {{…}}: model.PlanKind's.
@@ -64,7 +61,7 @@ func PlanSystemFor(k model.PlanKind) string {
 // MaxPlanInput is how much of a plan Plan reads, in bytes.
 const MaxPlanInput = 80000
 
-// planRounds is how many of the latest rounds PlanInput sends in full; the
+// planRounds is how many of the latest rounds PlanInputWith sends in full; the
 // brief carries what earlier ones settled.
 const planRounds = 8
 
@@ -81,7 +78,7 @@ type PlanContext struct {
 	More int `json:"more_files,omitempty"`
 }
 
-// How much of a project PlanInput sends, in bytes: each file, the tree,
+// How much of a project PlanInputWith sends, in bytes: each file, the tree,
 // and all of it together (less when the plan itself is large).
 const (
 	planClaudeMD = 12000
@@ -131,13 +128,10 @@ func cutText(s string, n int) string {
 	return strings.ToValidUTF8(s, "") + more
 }
 
-// PlanInput writes a plan for the interviewer: what to do, then the plan
-// so far as JSON (the idea, the brief, the topics and the latest rounds
-// with their answers). It is PlanInputWith without a project.
-func PlanInput(p model.Plan) string { return PlanInputWith(p, nil) }
-
-// PlanInputWith is PlanInput with a feature plan's project (pc; nil: none)
-// in the JSON, cut to what fits in MaxPlanInput beside the plan.
+// PlanInputWith writes a plan for the interviewer: what to do, then the
+// plan so far as JSON (the idea, the brief, the topics and the latest
+// rounds with their answers) with a feature plan's project (pc; nil: none),
+// cut to what fits in MaxPlanInput beside the plan.
 func PlanInputWith(p model.Plan, pc *PlanContext) string {
 	type answer struct {
 		Text    string `json:"text,omitempty"`
@@ -201,7 +195,7 @@ func PlanInputWith(p model.Plan, pc *PlanContext) string {
 }
 
 // Plan runs one round of the interview of a plan of kind (model.PlanKinds;
-// "" is a project's): input is PlanInput's, and the reply is the
+// "" is a project's): input is PlanInputWith's, and the reply is the
 // interviewer's JSON (see ParsePlanTurn).
 func (t Titler) Plan(ctx context.Context, kind, input string) (string, error) {
 	if len(input) > MaxPlanInput {

@@ -47,8 +47,8 @@ The ids of the questions are short and new in each round (for example "r2q1"). T
 // A project's prompt is the one from before kinds; a feature's has its own
 // topics, outline and words, and the same rules and JSON.
 func TestPlanSystemPerKind(t *testing.T) {
-	if PlanSystem != planSystemBeforeKinds {
-		t.Errorf("the project prompt changed:\n%s", PlanSystem)
+	if p := PlanSystemFor(model.PlanKinds[model.PlanProject]); p != planSystemBeforeKinds {
+		t.Errorf("the project prompt changed:\n%s", p)
 	}
 	f := PlanSystemFor(model.PlanKinds[model.PlanFeature])
 	for _, want := range []string{"feature of an existing software project", "CLAUDE.md, README and file tree",

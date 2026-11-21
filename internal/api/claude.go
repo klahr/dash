@@ -44,7 +44,7 @@ type SmallClaude interface {
 	Group(ctx context.Context, issues string) ([]agent.IssueGroup, error)
 	Suggest(ctx context.Context, transcript string) (string, error)
 	// Plan runs one round of the interview of a plan of kind
-	// (model.PlanKinds; agent.PlanInput in, the interviewer's JSON out).
+	// (model.PlanKinds; agent.PlanInputWith in, the interviewer's JSON out).
 	Plan(ctx context.Context, kind, input string) (string, error)
 }
 

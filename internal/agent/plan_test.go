@@ -23,8 +23,8 @@ func TestParsePlanTurn(t *testing.T) {
 // The interviewer gets the idea, the brief and the latest rounds with
 // their answers, and is told whether to start or go on.
 func TestPlanInput(t *testing.T) {
-	p := model.Plan{Idea: "A recipe box", Name: "Recipes", Topics: model.NewPlanTopics()}
-	if in := PlanInput(p); !strings.HasPrefix(in, "Start the interview") || !strings.Contains(in, `"idea": "A recipe box"`) {
+	p := model.Plan{Idea: "A recipe box", Name: "Recipes", Topics: model.PlanKinds[model.PlanProject].NewTopics()}
+	if in := PlanInputWith(p, nil); !strings.HasPrefix(in, "Start the interview") || !strings.Contains(in, `"idea": "A recipe box"`) {
 		t.Errorf("first:\n%s", in)
 	}
 	for i := range planRounds + 2 {
@@ -34,7 +34,7 @@ func TestPlanInput(t *testing.T) {
 	last.Answers = []model.PlanAnswer{{Question: last.Questions[0].ID, Text: "Me", Default: true}}
 	last.Message = "and fast"
 	p.Brief = "# Recipes"
-	in := PlanInput(p)
+	in := PlanInputWith(p, nil)
 	for _, want := range []string{"Update the brief", `"accepted_default": true`, `"person_also_said": "and fast"`, `"current_brief": "# Recipes"`} {
 		if !strings.Contains(in, want) {
 			t.Errorf("lacks %q:\n%s", want, in)
@@ -43,7 +43,7 @@ func TestPlanInput(t *testing.T) {
 	if strings.Contains(in, `"qa"`) || strings.Count(in, `"Q?"`) != planRounds {
 		t.Errorf("sent more than the latest %d rounds:\n%s", planRounds, in)
 	}
-	if !strings.Contains(PlanSystem, "users, features, data, stack, auth, deploy, scope") {
+	if !strings.Contains(PlanSystemFor(model.PlanKinds[model.PlanProject]), "users, features, data, stack, auth, deploy, scope") {
 		t.Error("the system prompt doesn't name the topic ids")
 	}
 }
