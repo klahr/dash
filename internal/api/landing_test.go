@@ -48,7 +48,8 @@ func TestLandingOn(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, want := range []string{
-		"<title>Acme Agents: ", "no open ports", `id="goals"`, "€8 per seat / month", "AGPL",
+		"<title>Acme Agents: ", "no open ports", `id="how"`, `href="#how"`, `id="faq"`, "Without Acme Agents",
+		"€8 per seat / month", "AGPL",
 		`href="` + branding.DefaultSourceURL + `"`, "Source code on GitHub",
 		`href="https://acme.example/terms"`, `href="https://acme.example/privacy"`, `href="/login.html"`,
 	} {
@@ -56,8 +57,8 @@ func TestLandingOn(t *testing.T) {
 			t.Errorf("landing page lacks %q", want)
 		}
 	}
-	// Signup is off here: no Sign up button.
-	if strings.Contains(body, "#signup") {
+	// Signup is off here: no Start free button, Log in instead.
+	if strings.Contains(body, "#signup") || strings.Contains(body, "Start free") {
 		t.Error("landing page offers signup while it's closed")
 	}
 	// Nothing from other sites: no fonts, scripts or trackers.

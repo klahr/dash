@@ -51,12 +51,14 @@ instead of being sent to the sign-in page. Signed-in people go straight to the b
 before; every other page still asks for a session. Self-hosters who leave it off go
 straight to the sign-in page.
 
-It says what Dash is and how a task goes from queued to merged, with screenshots of the
-board, a task in review, the **Goals** page, the phone layout and the wall view; what goals
-are; how runners work (your machine, your Claude subscription, no open ports, on Linux, macOS
-and Windows), what else is included, the pricing, and that the software is free to host
-yourself under the AGPL, with a link to `DASH_SOURCE_URL`. Its buttons are **Log in**, and **Sign up** when
-[open signup](signup.md) is on (it opens the sign-in page's signup form).
+It leads with what Dash gets you (many tasks running in parallel while you review), then
+compares working with and without it, shows how a task goes from queued to merged, where the
+time comes back, what keeps it safe, and what teams get. It has screenshots of the board, a
+task in review, the **Goals** page, the phone layout and the wall view. Then come the pricing,
+that the software is free to host yourself under the AGPL (with a link to `DASH_SOURCE_URL`),
+a short FAQ and the runner install command. Its buttons are **Log in**, and **Start free** when
+[open signup](signup.md) is on (it opens the sign-in page's signup form). Without open
+signup, the page's main button is **Log in**.
 
 The pricing shows individuals (and organizations with one member) as free, and teams of two or
 more as per seat, as [billing](billing.md) charges them: with `DASH_TEAM_PRICE` that

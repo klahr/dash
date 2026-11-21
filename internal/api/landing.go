@@ -24,7 +24,7 @@ var (
 type landingData struct {
 	branding.Config
 	Logo        string
-	Signup      bool // open signup: show Sign up
+	Signup      bool // open signup: show Start free (the signup form)
 	Origin      string
 	SourceLabel string
 	Footer      template.HTML
