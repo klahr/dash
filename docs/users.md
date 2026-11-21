@@ -173,7 +173,7 @@ A planner's role is per org: someone can be a planner in one org and a member in
 
 Don't mix these up:
 
-- **Planning**: the org's board of cards, from Ideas to Done. Everyone uses it.
+- **Planning**: the org's boards of cards, from Ideas to Done. Everyone uses it.
 - **Planner**: the role of someone who uses Planning (and, with a runner of their own, the chat
   and feature briefs).
 - **Write a project brief** (in **+ Add project**): Claude interviews a developer about an idea

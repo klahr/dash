@@ -85,6 +85,10 @@ var plannerRoutes = map[string]bool{
 	"GET /api/planning/projects":                       true,
 	"GET /api/planning/projects/{pid}/icon":            true,
 	"GET /api/planning/people":                         true,
+	"GET /api/planning/boards":                         true,
+	"POST /api/planning/boards":                        true,
+	"PATCH /api/planning/boards/{bid}":                 true,
+	"DELETE /api/planning/boards/{bid}":                true,
 
 	// Their own runners (and no one else's: see sees), which run only their
 	// general chat and feature brief interviews with their own Claude login

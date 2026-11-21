@@ -16,6 +16,10 @@ import { extOf, isImage, sizeText } from "./lightbox.js";
 // A card opens in a pane beside the board (full screen with Back on a
 // phone; Esc closes), as History's commit pane does.
 //
+// An org has several boards of cards (one per product or team, say): the
+// board shown is picked above the columns when there is more than one, and
+// added, renamed, reordered and deleted in the Boards sheet (boardsSheet).
+//
 // One module for both places Planning shows: the app's Planning view
 // (members, admins, owners; index.html) and planning.html, the page a
 // planner lands on. It uses only dom, api, dialogs, store, viewport, glide,
@@ -34,6 +38,7 @@ const COLUMN_TITLE = Object.fromEntries(COLUMNS.map((c) => [c.key, c.title]));
 const PRIORITY = { high: "High", medium: "Medium", low: "Low" };
 const call = (method, path, body) => api(method, path, body, "");
 const cardAPI = (id = "", rest = "") => `/api/planning/cards${id ? `/${encodeURIComponent(id)}` : ""}${rest}`;
+const boardAPI = (id = "") => `/api/planning/boards${id ? `/${encodeURIComponent(id)}` : ""}`;
 // fileURL is a card's file, through the card (a planner can't read uploads).
 const fileURL = (c, f) => cardAPI(c.id, `/files/${encodeURIComponent(f.id)}/${encodeURIComponent(f.name)}`);
 
@@ -44,6 +49,8 @@ const pl = {
   cards: [],
   projects: [],
   people: [], // the org's members a card may be assigned to
+  boards: [], // the org's boards, in their order, with how many cards each has
+  board: store.get("dash.planning.board", ""), // the board shown ("": the default one)
   filter: store.get("dash.planning.project", ""),
   // The board's other filters: only the cards with all of tags, with
   // target ("" any), and (mine) with the signed-in user among their members.
@@ -73,6 +80,14 @@ function savedTags() {
 }
 
 const byId = (id) => pl.cards.find((c) => c.id === id);
+const defaultBoard = () => pl.boards.find((b) => b.default);
+// boardShown is the id of the board shown ("" until the boards are in).
+const boardShown = () => pl.board || defaultBoard()?.id || "";
+// saveBoard makes id the board shown, for next time too ("": the default).
+function saveBoard(id) {
+  pl.board = id && id !== defaultBoard()?.id ? id : "";
+  store.set("dash.planning.board", pl.board);
+}
 const sameTag = (a, b) => a.toLowerCase() === b.toLowerCase();
 const tagged = (c, tag) => (c.tags || []).some((t) => sameTag(t, tag));
 const tagPicked = (tag) => pl.tags.some((t) => sameTag(t, tag));
@@ -131,7 +146,10 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
           onchange: (e) => { const [kind, v] = [e.target.value.slice(0, 1), e.target.value.slice(2)]; e.target.value = ""; if (kind === "t") pickTag(v, true); else if (kind === "m") pickTarget(v); } }),
         h("span", { class: "pl-tag-filter", id: "pl-tag-filter", hidden: true }),
         h("span", { class: "cl-state", id: "pl-state", "aria-live": "polite" }),
+        ib({ type: "button", class: "btn small pl-boards-btn", id: "pl-boards-btn", title: "Add, rename, reorder and delete boards", onclick: attempt(boardsSheet) }, "plan", "Boards…"),
         ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to Planning", onclick: () => openComposer("ideas") }, "plus", "New card")),
+      // The boards, when there is more than one: a click shows one.
+      h("div", { class: "pl-boards", id: "pl-boards", role: "tablist", "aria-label": "Boards", hidden: true, onkeydown: boardTabsKey }),
       h("p", { class: "hint pl-intro", id: "pl-intro", hidden: true },
         "The plan: cards move from Ideas to Done. Start a card to make a task or a goal for a developer's project; its status follows the work."),
       // The task board's layout (style.css: .lanes, .board, .col): on a
@@ -169,12 +187,28 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
   renderFilter();
 }
 
-// loadPlanning reads the cards (of the project picked, or all) and the
-// projects, and shows them.
+// loadPlanning reads the boards, the cards of the board shown (of the
+// project picked, or all) and the projects, and shows them. A board that
+// is gone (deleted elsewhere) gives way to the default one.
 export async function loadPlanning() {
   if (!pl.root) return;
-  const q = pl.filter ? `?project=${encodeURIComponent(pl.filter)}` : "";
-  const [cards, projects, people] = await Promise.all([call("GET", cardAPI() + q), call("GET", "/api/planning/projects"), call("GET", "/api/planning/people")]);
+  const want = pl.board;
+  const q = new URLSearchParams();
+  if (want) q.set("board", want);
+  if (pl.filter) q.set("project", pl.filter);
+  const qs = q.toString() ? `?${q}` : "";
+  const [cards, projects, people, boards] = await Promise.all([
+    call("GET", cardAPI() + qs).catch((e) => { if (e.status === 404 && want) return null; throw e; }),
+    call("GET", "/api/planning/projects"), call("GET", "/api/planning/people"), call("GET", boardAPI())]);
+  if (pl.board !== want) return; // another board was picked meanwhile: its load shows it
+  pl.boards = boards;
+  if (!cards) {
+    saveBoard("");
+    changed("replace");
+    if (pl.open && pl.detail?.board_id === want) closeCard();
+    return loadPlanning();
+  }
+  saveBoard(want); // the default board's id is ""
   pl.cards = cards;
   pl.projects = projects;
   pl.people = people;
@@ -184,6 +218,7 @@ export async function loadPlanning() {
   }
   pl.loaded = true;
   renderFilter();
+  renderBoards();
   renderBoard();
   if (pl.open) {
     const c = byId(pl.open);
@@ -304,6 +339,106 @@ function renderFilter() {
     icon, h("span", { class: "pl-filter-name" }, name), id === pl.filter ? ico("check") : null);
   fill(list, option("", ico("repo"), "All projects"), ...pl.projects.map((p) => option(p.id, planningIcon(p), p.name)));
   $("#pl-filter-wrap").hidden = pl.projects.length < 2 && !pl.filter;
+}
+
+// ---- the boards: a tab for each above the columns, when there is more
+// than one. Arrows, Home and End move between them, as between tabs.
+
+function renderBoards() {
+  const el = $("#pl-boards");
+  if (!el) return;
+  const many = pl.boards.length > 1;
+  el.hidden = !many;
+  const on = boardShown();
+  fill(el, ...(!many ? [] : pl.boards.map((b) => h("button", {
+    type: "button", role: "tab", class: "pl-board-tab", "data-board": b.id, "aria-selected": String(b.id === on), tabindex: b.id === on ? "0" : "-1",
+    title: `Show the cards of ${b.name}`, onclick: () => pickBoard(b.id),
+  }, h("span", { class: "pl-board-name" }, b.name), h("span", { class: "n", "aria-label": `${b.cards} card${b.cards === 1 ? "" : "s"}` }, String(b.cards))))));
+}
+
+function boardTabsKey(e) {
+  const tabs = $$(".pl-board-tab", e.currentTarget);
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  const t = tabs[Math.max(0, Math.min(tabs.length - 1, to))];
+  t.focus();
+  pickBoard(t.dataset.board);
+}
+
+// pickBoard shows board id (its cards; the filters stay). A card of another
+// board that is open closes.
+export function pickBoard(id) {
+  const was = boardShown();
+  saveBoard(id);
+  if (boardShown() === was) return;
+  if (pl.open && pl.detail?.board_id && pl.detail.board_id !== boardShown()) closeCard();
+  changed("replace");
+  renderBoards();
+  loadPlanning().catch(fail);
+}
+
+// boardsSheet adds, renames, reorders and deletes the org's boards. Deleting
+// one moves its cards to the default board, after a confirm.
+async function boardsSheet() {
+  if (!pl.boards.length) await loadPlanning();
+  const list = h("ol", { class: "pl-board-list", "aria-label": "Boards" });
+  const name = h("input", { class: "pl-board-new", maxlength: 60, autocomplete: "off", placeholder: "A product or a team", "aria-label": "New board's name",
+    onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } } });
+  // act runs a change, then shows the boards as they are now, with the focus
+  // back on what had it (focus: [board id, control]).
+  const act = async (fn, focus) => {
+    try { await fn(); } catch (e) { fail(e); }
+    await loadPlanning().catch(fail);
+    render(focus);
+  };
+  const add = () => {
+    const n = name.value.trim();
+    if (!n) { name.focus(); return; }
+    act(async () => {
+      const b = await call("POST", boardAPI(), { name: n });
+      name.value = "";
+      toast(`Board “${b.name}” added`);
+    }, null).then(() => name.focus());
+  };
+  const render = (focus) => {
+    const def = defaultBoard();
+    fill(list, ...pl.boards.map((b, i) => h("li", { class: "pl-board-row", "data-board": b.id },
+      h("input", { class: "pl-board-name-edit", value: b.name, maxlength: 60, autocomplete: "off", "aria-label": `Name of the board ${b.name}`, "data-act": "name",
+        onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } },
+        onchange: (e) => { const v = e.target.value.trim(); if (v && v !== b.name) act(() => call("PATCH", boardAPI(b.id), { name: v }), null); else e.target.value = b.name; } }),
+      h("span", { class: "pl-board-meta" },
+        b.default ? h("span", { class: "pl-chip pl-board-default", title: "Cards given no board go here, and a deleted board's cards move here" }, "Default") : null,
+        h("span", { class: "hint" }, `${b.cards} card${b.cards === 1 ? "" : "s"}`)),
+      ib({ type: "button", class: "icon-btn small", "aria-label": `Move ${b.name} up`, title: "Move up", disabled: i === 0, "data-act": "up",
+        onclick: () => act(() => call("PATCH", boardAPI(b.id), { position: i - 1 }), [b.id, i - 1 === 0 ? "down" : "up"]) }, "up"),
+      ib({ type: "button", class: "icon-btn small", "aria-label": `Move ${b.name} down`, title: "Move down", disabled: i === pl.boards.length - 1, "data-act": "down",
+        onclick: () => act(() => call("PATCH", boardAPI(b.id), { position: i + 1 }), [b.id, i + 1 === pl.boards.length - 1 ? "up" : "down"]) }, "down"),
+      b.default ? h("span", { class: "pl-board-keep", "aria-hidden": "true" }) : ib({ type: "button", class: "icon-btn small", "aria-label": `Delete ${b.name}`, title: "Delete…", "data-act": "delete",
+        onclick: async () => {
+          const n = b.cards;
+          const ok = await ask({ title: `Delete the board ${b.name}?`, ok: "Delete", danger: true,
+            body: n ? `Its ${n} card${n === 1 ? "" : "s"} move${n === 1 ? "s" : ""} to ${def?.name || "the default board"}.` : "It has no cards." });
+          if (!ok) return;
+          if (b.id === boardShown()) pickBoard("");
+          await act(() => call("DELETE", boardAPI(b.id)), null);
+          toast(`Board “${b.name}” deleted`);
+          name.focus();
+        } }, "trash"))));
+    if (focus) $(`.pl-board-row[data-board="${focus[0]}"] [data-act="${focus[1]}"]`, list)?.focus();
+  };
+  render(null);
+  const { closed } = openSheet({ title: "Boards", cls: "pl-sheet pl-boards-sheet",
+    body: [
+      h("p", { class: "hint" }, "One board for each product or team, say. Their names show above the columns when there is more than one."),
+      list,
+      h("div", { class: "pl-board-add" }, name, ib({ type: "button", class: "btn small", onclick: add }, "plus", "Add board")),
+    ],
+    footer: ib({ class: "btn primary", value: "cancel" }, "check", "Done") });
+  name.focus();
+  await closed;
 }
 
 // ---- the board
@@ -837,7 +972,7 @@ function saveComposer(next) {
   c.li.setAttribute("aria-busy", "true");
   c.busy = (async () => {
     try {
-      const card = await call("POST", cardAPI(), { title, description, column: c.col, project: pl.filter || undefined, ...newCardFilters() });
+      const card = await call("POST", cardAPI(), { title, description, column: c.col, project: pl.filter || undefined, board: boardShown() || undefined, ...newCardFilters() });
       if (!byId(card.id)) pl.cards.push(card);
       if (next && pl.composer === c) {
         c.ta.value = "";
@@ -891,6 +1026,15 @@ async function loadCard(id) {
     if (pl.open !== id) return;
     pl.detail = c;
     pl.error = "";
+    // A card opens on its board (a link to it, a card it depends on).
+    if (c.board_id && !pl.boards.length) pl.boards = await call("GET", boardAPI());
+    if (pl.open !== id) return;
+    if (c.board_id && c.board_id !== boardShown()) {
+      saveBoard(c.board_id);
+      changed("replace");
+      renderBoards();
+      loadPlanning().catch(fail);
+    }
     const i = pl.cards.findIndex((x) => x.id === id);
     if (i >= 0) pl.cards[i] = { ...c, discussion: undefined };
   } catch (e) {
@@ -920,16 +1064,19 @@ function newCardFilters() {
   return { tags: pl.tags.length ? pl.tags : undefined, target: pl.target || undefined, members: pl.mine && me ? [me] : undefined };
 }
 
-// planningFilters are the project, tags, target and Mine Planning shows the
-// cards of ("", [] and false: all).
-export const planningFilters = () => ({ project: pl.filter, tags: pl.tags, target: pl.target, mine: pl.mine });
-// setPlanningFilters shows the cards of project, with all of tags, of target
-// and (mine) of the user (a link's: router.js).
-export function setPlanningFilters(project, tags = [], target = "", mine = false) {
-  const same = project === pl.filter && target === pl.target && mine === pl.mine &&
+// planningFilters are the board, project, tags, target and Mine Planning
+// shows the cards of ("": the default board; "", [] and false: all).
+export const planningFilters = () => ({ board: pl.board, project: pl.filter, tags: pl.tags, target: pl.target, mine: pl.mine });
+// setPlanningFilters shows the cards of board ("": the default one), of
+// project, with all of tags, of target and (mine) of the user (a link's:
+// router.js, planning-page.js).
+export function setPlanningFilters(project, tags = [], target = "", mine = false, board = "") {
+  const same = project === pl.filter && target === pl.target && mine === pl.mine && board === pl.board &&
     tags.length === pl.tags.length && tags.every((t, i) => t === pl.tags[i]);
   if (same) return;
-  const reload = project !== pl.filter;
+  const reload = project !== pl.filter || board !== pl.board;
+  if (board !== pl.board && pl.open && pl.detail?.board_id && pl.detail.board_id !== (board || defaultBoard()?.id)) closeCard();
+  saveBoard(board);
   pl.filter = project;
   pl.tags = tags;
   pl.target = target;
@@ -941,6 +1088,7 @@ export function setPlanningFilters(project, tags = [], target = "", mine = false
   store.setFlag("dash.planning.mine", mine);
   if (!pl.root) return;
   renderFilter();
+  renderBoards();
   if (reload) { pl.loaded = false; if (!pl.hooks.visible || pl.hooks.visible()) loadPlanning().catch(fail); }
   else renderBoard();
 }
@@ -1010,6 +1158,18 @@ async function keepMine(key, theirs) {
       ib({ class: "btn primary", value: "keep" }, "check", "Keep mine"),
     ] });
   return (await closed) === "keep";
+}
+
+// moveToBoard moves card c to another board, to the end of its column
+// there. It stays open; the board shown loses it.
+async function moveToBoard(c, board) {
+  const v = await call("PATCH", cardAPI(c.id), { board });
+  if (pl.open === c.id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }
+  pl.cards = pl.cards.filter((x) => x.id !== c.id);
+  if (v.board_id === boardShown()) pl.cards.push(v);
+  renderBoard();
+  toast(`Moved to ${v.board_name || "another board"}`);
+  loadPlanning().catch(() => {});
 }
 
 // ---- files: attached with the Files section's button, pasted into the
@@ -1203,6 +1363,7 @@ function renderCard() {
 
   const sel = (opts, value, onchange, label) => h("select", { "aria-label": label, onchange }, ...opts.map(([v, t]) => h("option", { value: v, selected: v === value }, t)));
   const facts = h("div", { class: "pl-fields" },
+    pl.boards.length > 1 ? field("Board", sel(pl.boards.map((b) => [b.id, b.name]), c.board_id, (e) => moveToBoard(c, e.target.value).catch(fail), "Board")) : null,
     field("Column", sel(COLUMNS.map((x) => [x.key, x.title]), c.column, (e) => moveCard(c.id, e.target.value, 1 << 20).catch(fail), "Column")),
     field("Priority", sel([["", "None"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]], c.priority || "", (e) => patchCard({ priority: e.target.value })().catch(fail), "Priority")),
     field("Target", h("input", { value: c.target || "", placeholder: "1.4, or a date", maxlength: 60, autocomplete: "off",
@@ -1314,7 +1475,7 @@ function cardRow(d, remove) {
     h("span", { class: "pl-link-kind", title: "Card" }, ico("plan")),
     h("span", { class: "pl-link-main" },
       h("button", { type: "button", class: "link pl-link-title", title: "Open the card", onclick: () => openCard(d.id).catch(fail) }, d.title),
-      h("span", { class: "pl-link-sub" }, COLUMN_TITLE[d.column] || d.column)),
+      h("span", { class: "pl-link-sub" }, [COLUMN_TITLE[d.column] || d.column, d.board && pl.boards.length > 1 && d.board !== pl.detail?.board_name ? `on ${d.board}` : ""].filter(Boolean).join(" · "))),
     h("span", { class: `pl-state t-${d.done ? "done" : "idle"}` }, d.done ? "Done" : "Not done yet"),
     remove ? ib({ type: "button", class: "icon-btn small", "aria-label": `Remove ${d.title}`, title: "No longer depends on it",
       onclick: attempt((e) => busy(e.currentTarget, remove)) }, "x") : null);
@@ -1337,11 +1498,12 @@ function depsSection(c) {
   ];
 }
 
-// depSheet lists the org's cards to add one this card depends on. Those it
-// depends on already, and those that depend on it (by way of others too),
-// can't be picked.
+// depSheet lists the org's cards, of every board, to add one this card
+// depends on. Those it depends on already, and those that depend on it (by
+// way of others too), can't be picked.
 async function depSheet(c) {
-  const cards = await call("GET", cardAPI());
+  const cards = await call("GET", cardAPI("", "?board=all"));
+  const many = new Set(cards.map((x) => x.board_id)).size > 1;
   const byID = new Map(cards.map((x) => [x.id, x]));
   const has = new Set((c.deps || []).map((d) => d.id));
   // waits reports whether card x depends, by way of others too, on c.
@@ -1362,7 +1524,7 @@ async function depSheet(c) {
         h("button", { type: "button", class: "pl-pick-item", disabled: !!why, onclick: (e) => { picked = x; e.currentTarget.closest("dialog").close("ok"); } },
           ico(has.has(x.id) ? "check" : "plan"),
           h("span", { class: "pl-link-main" }, h("span", { class: "pl-link-title" }, x.title),
-            h("span", { class: "pl-link-sub" }, [COLUMN_TITLE[x.column], x.project_name, why].filter(Boolean).join(" · ")))));
+            h("span", { class: "pl-link-sub" }, [many ? x.board_name : "", COLUMN_TITLE[x.column], x.project_name, why].filter(Boolean).join(" · ")))));
     }) : [h("li", { class: "hint" }, cards.length > 1 ? "No card matches." : "There are no other cards yet.")]));
   };
   q.addEventListener("input", render);
@@ -1492,7 +1654,8 @@ async function linkExistingSheet(c) {
 // linkToCard links a task or goal to a card, from the task's or goal's
 // detail: it lists the org's cards, those linked already marked.
 export async function linkToCard(kind, id) {
-  const [cards, linked] = await Promise.all([call("GET", cardAPI()), call("GET", `/api/planning/linked/${kind}/${encodeURIComponent(id)}`)]);
+  const [cards, linked] = await Promise.all([call("GET", cardAPI("", "?board=all")), call("GET", `/api/planning/linked/${kind}/${encodeURIComponent(id)}`)]);
+  const many = new Set(cards.map((c) => c.board_id)).size > 1;
   const on = new Set(linked.map((c) => c.id));
   const q = h("input", { type: "search", placeholder: "Filter cards", "aria-label": "Filter", autocomplete: "off" });
   const list = h("ul", { class: "pl-pick" });
@@ -1504,7 +1667,7 @@ export async function linkToCard(kind, id) {
       h("button", { type: "button", class: "pl-pick-item", disabled: on.has(c.id), onclick: (e) => { picked = c; e.currentTarget.closest("dialog").close("ok"); } },
         ico(on.has(c.id) ? "check" : "plan"),
         h("span", { class: "pl-link-main" }, h("span", { class: "pl-link-title" }, c.title),
-          h("span", { class: "pl-link-sub" }, [COLUMN_TITLE[c.column], c.project_name, on.has(c.id) ? "linked" : ""].filter(Boolean).join(" · "))))))
+          h("span", { class: "pl-link-sub" }, [many ? c.board_name : "", COLUMN_TITLE[c.column], c.project_name, on.has(c.id) ? "linked" : ""].filter(Boolean).join(" · "))))))
       : [h("li", { class: "hint" }, cards.length ? "No card matches." : "There are no cards yet: add them on the Planning page.")]));
   };
   q.addEventListener("input", render);

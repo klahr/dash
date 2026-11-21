@@ -26,6 +26,8 @@ type CardRow struct {
 	Priority string `json:"priority,omitempty"`
 	Target   string `json:"target,omitempty"`
 	Project  string `json:"project,omitempty"`
+	// Board is the name of the planning board the card is on.
+	Board string `json:"board,omitempty"`
 	// Members are the usernames of the people on the card.
 	Members []string `json:"members,omitempty"`
 	// Owner is the username of the member who owns the card ("": nobody).
@@ -41,12 +43,13 @@ type CardRow struct {
 	Waiting   int      `json:"waiting,omitempty"`
 }
 
-// NewCard is a card to add. Project is a project name or id ("" for none).
+// NewCard is a card to add. Project is a project name or id ("" for none),
+// Board a planning board's name or id ("" for the default board).
 // DependsOn are ids of cards to be done before it.
 type NewCard struct {
-	Title, Description, Project, Column, Priority, Target string
-	Tags                                                  []string
-	DependsOn                                             []string
+	Title, Description, Project, Board, Column, Priority, Target string
+	Tags                                                         []string
+	DependsOn                                                    []string
 }
 
 // CardDetail is one card with what list_cards leaves out: its description,
@@ -77,12 +80,14 @@ type CardNote struct {
 }
 
 // CardUpdate changes a card; nil fields stay as they are. Column moves it
-// (to the end of that column, or to Position: 0 is the top).
+// (to the end of that column, or to Position: 0 is the top); Board moves it
+// to another planning board (its name or id; "" the default board), to the
+// end of its column there.
 type CardUpdate struct {
-	Title, Description, Priority, Target *string
-	Tags, DependsOn                      *[]string
-	Column                               *string
-	Position                             *int
+	Title, Description, Priority, Target, Board *string
+	Tags, DependsOn                             *[]string
+	Column                                      *string
+	Position                                    *int
 }
 
 // CardStarted is a card that start_card made work for: the new task's or
@@ -96,8 +101,10 @@ type CardStarted struct {
 // CardBoard is a Board with the org's plan: Tools then has the planning tools
 // (see PlanningTools).
 type CardBoard interface {
-	// Cards lists the org's cards, of one project (projectID) or all ("").
-	Cards(projectID string) ([]CardRow, error)
+	// Cards lists the cards of one of the org's planning boards (its name
+	// or id; "" the default board, "all" every board), of one project
+	// (projectID) or all ("").
+	Cards(board, projectID string) ([]CardRow, error)
 	// Card is one card, with its description, work and comments.
 	Card(id string) (CardDetail, error)
 	CreateCard(c NewCard) (CardRow, error)
@@ -157,11 +164,13 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 	pProject, project := projectParam(o)
 	pProject.Required = false
 	pProject.Desc = "Only this project's cards (name or id); default every project's."
+	pBoard := Param{"board", "string", "The planning board (its name or id); default the org's default board. all lists every board's cards.", false}
 	return []Tool{
 		{"list_cards", "List the cards of the org's plan (the Planning page): what a product owner wants built, by column " +
 			"(ideas, planned, in_progress, done), with each card's priority, target, members, owner, tags, the cards it depends on " +
-			"(depends_on; waiting counts those not done yet) and the status of the tasks and goals linked to it.",
-			[]Param{pProject, {"column", "string", "Only this column: ideas, planned, in_progress or done.", false},
+			"(depends_on; waiting counts those not done yet) and the status of the tasks and goals linked to it. " +
+			"An org may have several boards (one per product or team): each card names its board.",
+			[]Param{pBoard, pProject, {"column", "string", "Only this column: ideas, planned, in_progress or done.", false},
 				{"tag", "string", "Only the cards with this tag (any case).", false}},
 			func(a Args) (any, error) {
 				pid := ""
@@ -172,7 +181,7 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 					}
 					pid = p.ID
 				}
-				cs, err := cb.Cards(pid)
+				cs, err := cb.Cards(a.Str("board"), pid)
 				if err != nil {
 					return nil, err
 				}
@@ -203,6 +212,7 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 				{"title", "string", "What to build, in a few words.", true},
 				{"description", "string", "What it is, who it's for and how you'll know it's done (markdown).", false},
 				{"project", "string", "The project it's for (name or id); none if left out.", false},
+				{"board", "string", "The planning board to put it on (its name or id); default the org's default board.", false},
 				{"column", "string", "ideas (the default), planned, in_progress or done.", false},
 				{"priority", "string", "high, medium or low; none if left out.", false},
 				{"target", "string", "When it should ship: a version like 1.4, or a date.", false},
@@ -213,8 +223,11 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 				if strings.TrimSpace(a.Str("title")) == "" {
 					return nil, errors.New("title is required")
 				}
+				if a.Str("board") == boardsAll {
+					return nil, errors.New("put a card on one board: give its name or id")
+				}
 				return cb.CreateCard(NewCard{Title: a.Str("title"), Description: a.Str("description"), Project: a.Str("project"),
-					Column: a.Str("column"), Priority: a.Str("priority"), Target: a.Str("target"), Tags: a.List("tags"),
+					Board: a.Str("board"), Column: a.Str("column"), Priority: a.Str("priority"), Target: a.Str("target"), Tags: a.List("tags"),
 					DependsOn: a.List("depends_on")})
 			}},
 		{"update_card", "Change a card of the plan, or move it to another column; only the given fields change. " +
@@ -228,6 +241,7 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 				{"depends_on", "array", "Ids of the cards to be done before this one; replaces the list, an empty array clears it.", false},
 				{"column", "string", "Move it to this column: ideas, planned, in_progress or done.", false},
 				{"position", "integer", "Where in the column to put it, from 0 (the top); default the end. Needs column.", false},
+				{"board", "string", "Move it to this planning board (its name or id), to the end of its column there.", false},
 			},
 			func(a Args) (any, error) {
 				if a.Str("card") == "" {
@@ -235,12 +249,15 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 				}
 				u := CardUpdate{Title: a.OptStr("title"), Description: a.OptStr("description"), Priority: a.OptStr("priority"),
 					Target: a.OptStr("target"), Tags: a.OptList("tags"), DependsOn: a.OptList("depends_on"), Column: a.OptStr("column"),
-					Position: a.OptNum("position")}
+					Position: a.OptNum("position"), Board: a.OptStr("board")}
 				if u.Position != nil && u.Column == nil {
 					return nil, errors.New("position needs column")
 				}
-				if u.Title == nil && u.Description == nil && u.Priority == nil && u.Target == nil && u.Tags == nil && u.DependsOn == nil && u.Column == nil {
-					return nil, errors.New("nothing to change: pass title, description, priority, target, tags, depends_on or column")
+				if u.Board != nil && *u.Board == boardsAll {
+					return nil, errors.New("move a card to one board: give its name or id")
+				}
+				if u.Title == nil && u.Description == nil && u.Priority == nil && u.Target == nil && u.Tags == nil && u.DependsOn == nil && u.Column == nil && u.Board == nil {
+					return nil, errors.New("nothing to change: pass title, description, priority, target, tags, depends_on, column or board")
 				}
 				return cb.UpdateCard(a.Str("card"), u)
 			}},
@@ -307,6 +324,9 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 	}
 }
 
+// boardsAll, as list_cards' board, is every board.
+const boardsAll = "all"
+
 // ---- the fleet's plan ----
 
 // planBoard is the computer that keeps the org's plan: the first reachable
@@ -325,12 +345,12 @@ func (f Fleet) planBoard() (CardBoard, error) {
 	return nil, errors.New("this Dash has no plan")
 }
 
-func (f Fleet) Cards(projectID string) ([]CardRow, error) {
+func (f Fleet) Cards(board, projectID string) ([]CardRow, error) {
 	cb, err := f.planBoard()
 	if err != nil {
 		return nil, err
 	}
-	return cb.Cards(projectID)
+	return cb.Cards(board, projectID)
 }
 
 func (f Fleet) Card(id string) (CardDetail, error) {
@@ -399,6 +419,7 @@ type restCard struct {
 	Priority    string   `json:"priority"`
 	Target      string   `json:"target"`
 	ProjectName string   `json:"project_name"`
+	BoardName   string   `json:"board_name"`
 	Tags        []string `json:"tags"`
 	Owner       int64    `json:"owner"`
 	People      []struct {
@@ -434,7 +455,7 @@ type restCard struct {
 
 func (c restCard) row() CardRow {
 	r := CardRow{ID: c.ID, Title: c.Title, Column: c.Column, Priority: c.Priority, Target: c.Target, Project: c.ProjectName,
-		Tags: c.Tags, Status: c.Status.Text, Progress: c.Status.Progress, Links: len(c.Links), Waiting: c.Waiting}
+		Board: c.BoardName, Tags: c.Tags, Status: c.Status.Text, Progress: c.Status.Progress, Links: len(c.Links), Waiting: c.Waiting}
 	for _, p := range c.People {
 		r.Members = append(r.Members, p.Username)
 		if p.ID != 0 && p.ID == c.Owner {
@@ -465,10 +486,17 @@ func (c RESTComputer) cardPath(id string, rest ...string) string {
 	return c.Prefix + "/api/planning/cards/" + url.PathEscape(id) + strings.Join(rest, "")
 }
 
-func (c RESTComputer) Cards(projectID string) ([]CardRow, error) {
-	path := c.Prefix + "/api/planning/cards"
+func (c RESTComputer) Cards(board, projectID string) ([]CardRow, error) {
+	q := url.Values{}
+	if board != "" {
+		q.Set("board", board)
+	}
 	if projectID != "" {
-		path += "?project=" + url.QueryEscape(projectID)
+		q.Set("project", projectID)
+	}
+	path := c.Prefix + "/api/planning/cards"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
 	}
 	var cs []restCard
 	if err := c.API.Call("GET", path, nil, &cs); err != nil {
@@ -498,6 +526,9 @@ func (c RESTComputer) CreateCard(nc NewCard) (CardRow, error) {
 	if nc.Column != "" {
 		body["column"] = nc.Column
 	}
+	if nc.Board != "" {
+		body["board"] = nc.Board
+	}
 	if len(nc.DependsOn) > 0 {
 		body["depends_on"] = nc.DependsOn
 	}
@@ -510,7 +541,7 @@ func (c RESTComputer) CreateCard(nc NewCard) (CardRow, error) {
 
 func (c RESTComputer) UpdateCard(id string, u CardUpdate) (CardRow, error) {
 	changes := map[string]any{}
-	for k, v := range map[string]*string{"title": u.Title, "description": u.Description, "priority": u.Priority, "target": u.Target} {
+	for k, v := range map[string]*string{"title": u.Title, "description": u.Description, "priority": u.Priority, "target": u.Target, "board": u.Board} {
 		if v != nil {
 			changes[k] = *v
 		}

@@ -484,7 +484,7 @@ func TestPlanningCardTags(t *testing.T) {
 	}
 	decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Untagged"}`))
 
-	rows, err := board{s.as(ownerCaller(t, s))}.Cards("")
+	rows, err := board{s.as(ownerCaller(t, s))}.Cards("", "")
 	if err != nil {
 		t.Fatal(err)
 	}

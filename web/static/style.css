@@ -3558,6 +3558,30 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-filter-list [role=option] .pl-filter-name { flex: 1; }
 .pl-filter-list [role=option] > .ico:last-child:not(:first-child) { color: var(--accent); }
 .pl-intro { margin: 0; padding: 0 var(--pad-x) 12px; }
+/* The boards, above the columns when there is more than one: a tab each,
+   with its count; a strip that scrolls sideways on a phone. */
+.pl-boards { display: flex; gap: 4px; padding: 0 var(--pad-x) 10px; overflow-x: auto; scrollbar-width: none; }
+.pl-boards[hidden] { display: none; }
+.pl-board-tab {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 34px; padding: 0 12px;
+  border: 1px solid transparent; border-radius: var(--r-s); color: var(--muted); font-weight: 600; white-space: nowrap;
+}
+.pl-board-tab:hover { color: var(--text); background: var(--raised); }
+.pl-board-tab[aria-selected="true"] { color: var(--text); background: var(--surface); border-color: var(--line); }
+.pl-board-tab .n { color: var(--faint); font-weight: 500; font-size: var(--fs-s); }
+.pl-board-name { max-width: 16em; overflow: hidden; text-overflow: ellipsis; }
+.pl-boards-btn { min-height: 32px; }
+/* The Boards sheet: a row for each board (its name to edit, up, down,
+   delete), and a box to add one. */
+.pl-board-list { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 6px; }
+.pl-board-row { display: flex; align-items: center; gap: 4px; }
+.pl-board-row .pl-board-name-edit { flex: 1; min-width: 0; }
+.pl-board-meta { display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; white-space: nowrap; }
+.pl-board-meta .hint { margin: 0; }
+.pl-board-keep { flex: none; width: 44px; }
+.pl-board-add { display: flex; gap: 6px; margin-bottom: 4px; }
+.pl-board-add input { flex: 1; min-width: 0; }
+@media (max-width: 600px) { .pl-board-meta .hint { display: none; } }
 .pl-board { padding-bottom: 24px; }
 .pl-board .col-body { padding-bottom: 24px; }
 /* On a phone the board fills the screen down to the nav, as the task

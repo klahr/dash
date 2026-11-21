@@ -50,10 +50,11 @@ document.addEventListener("dash:route", (e) => {
 
 // current is the route of what the page shows now.
 function current() {
-  const r = { view: state.view, task: null, goal: null, sha: null, issue: null, deploy: null, card: null, plProject: "", plTags: [], plTarget: "", plMine: false, sheet: null, section: null };
+  const r = { view: state.view, task: null, goal: null, sha: null, issue: null, deploy: null, card: null, plBoard: "", plProject: "", plTags: [], plTarget: "", plMine: false, sheet: null, section: null };
   if (state.view === "planning") {
     r.card = cardId();
     const f = planningFilters();
+    r.plBoard = f.board;
     r.plProject = f.project;
     r.plTags = f.tags;
     r.plTarget = f.target;
@@ -177,7 +178,7 @@ async function apply(r, { startup = false, settle = !startup } = {}) {
     let view = r.view;
     if (r.task && !startup && state.view !== "planning") view = state.view;
     if (view && view !== state.view) showView(view, { now: true });
-    if (view === "planning") setPlanningFilters(r.plProject || "", r.plTags || [], r.plTarget || "", !!r.plMine);
+    if (view === "planning") setPlanningFilters(r.plProject || "", r.plTags || [], r.plTarget || "", !!r.plMine, r.plBoard || "");
 
     if (r.task) {
       if (state.detail !== r.task) {

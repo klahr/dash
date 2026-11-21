@@ -143,12 +143,12 @@ func (o *OrgStore) emitCard(id string, deleted bool) {
 // The card's owner (model.Card.Owner) is kept in planning_cards.assignee,
 // the column a card's one assignee had before it had members (migration
 // 0031): NULL is nobody, and a deleted account leaves its cards without one.
-const cardColumns = "c.id, c.org_id, c.project_id, c.title, c.description, c.col, c.position, c.priority, c.target, COALESCE(c.assignee, 0), COALESCE(c.created_by, 0), c.created_at, c.updated_at"
+const cardColumns = "c.id, c.org_id, COALESCE((SELECT cb.board_id FROM planning_card_boards cb WHERE cb.card_id = c.id), ''), c.project_id, c.title, c.description, c.col, c.position, c.priority, c.target, COALESCE(c.assignee, 0), COALESCE(c.created_by, 0), c.created_at, c.updated_at"
 
 func scanCard(sc scanner) (model.Card, error) {
 	c := model.Card{Members: []int64{}, DependsOn: []string{}, Tags: []string{}, Files: []model.CardFile{}}
 	var created, updated int64
-	err := sc.Scan(&c.ID, &c.OrgID, &c.ProjectID, &c.Title, &c.Description, &c.Column, &c.Position, &c.Priority, &c.Target, &c.Owner, &c.CreatedBy, &created, &updated)
+	err := sc.Scan(&c.ID, &c.OrgID, &c.BoardID, &c.ProjectID, &c.Title, &c.Description, &c.Column, &c.Position, &c.Priority, &c.Target, &c.Owner, &c.CreatedBy, &created, &updated)
 	c.CreatedAt, c.UpdatedAt = time.Unix(created, 0).UTC(), time.Unix(updated, 0).UTC()
 	return c, err
 }
@@ -213,14 +213,25 @@ func setTags(tx *sql.Tx, cardID string, tags []string) error {
 // errNoOrg: planning is an org's, and this view has none.
 var errNoOrg = errors.New("planning belongs to an organization")
 
-// ListCards returns the org's cards, of one project (projectID) or of all
-// ("" ), by column and position.
+// ListCards returns the org's cards on all its boards, of one project
+// (projectID) or of all (""), by column and position.
 func (o *OrgStore) ListCards(projectID string) ([]model.Card, error) {
+	return o.BoardCards("", projectID)
+}
+
+// BoardCards returns the cards of one of the org's boards (its id; "": of
+// every board), of one project (projectID) or of all (""), by column and
+// position.
+func (o *OrgStore) BoardCards(boardID, projectID string) ([]model.Card, error) {
 	if o.org == 0 {
 		return nil, errNoOrg
 	}
 	q := "SELECT " + cardColumns + " FROM planning_cards c WHERE c.org_id = ?"
 	args := []any{o.org}
+	if boardID != "" {
+		q += " AND c." + onBoard
+		args = append(args, boardID)
+	}
 	if projectID != "" {
 		q += " AND c.project_id = ?"
 		args = append(args, projectID)
@@ -443,7 +454,8 @@ func setDeps(tx *sql.Tx, cardID string, deps []string, now time.Time) error {
 	return nil
 }
 
-// CreateCard adds a card at the end of its column. c must be cleaned
+// CreateCard adds a card at the end of its column on its board (c.BoardID,
+// one of the org's; "": the default board). c must be cleaned
 // (model.CleanCard) by the caller; the creator is the view's user.
 func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 	if o.org == 0 {
@@ -469,13 +481,19 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 	c.UpdatedAt = c.CreatedAt
 	o.s.mu.Lock()
 	err := inTx(o.s.db, func(tx *sql.Tx) error {
-		if err := tx.QueryRow("SELECT COALESCE(MAX(position) + 1, 0) FROM planning_cards WHERE org_id = ? AND col = ?", o.org, c.Column).Scan(&c.Position); err != nil {
+		if err := o.cardBoard(tx, &c.BoardID); err != nil {
+			return err
+		}
+		if err := tx.QueryRow("SELECT COALESCE(MAX(position) + 1, 0) FROM planning_cards WHERE org_id = ? AND "+onBoard+" AND col = ?", o.org, c.BoardID, c.Column).Scan(&c.Position); err != nil {
 			return err
 		}
 		_, err := tx.Exec(`INSERT INTO planning_cards (id, org_id, project_id, title, description, col, position, priority, target, assignee, created_by, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, 0), NULLIF(?, 0), ?, ?)`,
 			c.ID, c.OrgID, c.ProjectID, c.Title, c.Description, c.Column, c.Position, c.Priority, c.Target, c.Owner, c.CreatedBy, c.CreatedAt.Unix(), c.UpdatedAt.Unix())
 		if err != nil {
+			return err
+		}
+		if err := setBoard(tx, c.ID, c.BoardID); err != nil {
 			return err
 		}
 		if err := o.checkDeps(tx, c.ID, c.DependsOn); err != nil {
@@ -499,7 +517,9 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 
 // UpdateCard applies fn to the card and stores its title, description,
 // project, priority, target, members, owner, dependencies and tags (fn must leave
-// it clean). Its column and position change with MoveCard only.
+// it clean), and its board: a card fn puts on another of the org's boards
+// ("": the default one) goes to the end of its column there. Its column and
+// position change with MoveCard only.
 func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card, error) {
 	var c model.Card
 	o.s.mu.Lock()
@@ -508,11 +528,19 @@ func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card
 		if c, err = getCard(tx, o.org, id); err != nil {
 			return err
 		}
-		col, pos, members := c.Column, c.Position, c.Members
+		col, pos, members, board := c.Column, c.Position, c.Members, c.BoardID
 		if err := fn(&c); err != nil {
 			return err
 		}
 		c.Column, c.Position = col, pos
+		if err := o.cardBoard(tx, &c.BoardID); err != nil {
+			return err
+		}
+		if c.BoardID != board {
+			if err := o.changeBoard(tx, &c, board); err != nil {
+				return err
+			}
+		}
 		if err := o.cardProject(c.ProjectID); err != nil {
 			return err
 		}
@@ -546,9 +574,9 @@ func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card
 	return c, nil
 }
 
-// MoveCard puts the card in column col at position (0 is the top; past the
-// end is the end), and renumbers the cards of the columns it left and
-// joined.
+// MoveCard puts the card in column col of its board at position (0 is the
+// top; past the end is the end), and renumbers the cards of the columns it
+// left and joined.
 func (o *OrgStore) MoveCard(id string, col model.CardColumn, position int) (model.Card, error) {
 	var c model.Card
 	if !col.Valid() {
@@ -562,7 +590,7 @@ func (o *OrgStore) MoveCard(id string, col model.CardColumn, position int) (mode
 		}
 		from := c.Column
 		ids := func(col model.CardColumn) ([]string, error) {
-			return queryAll(tx, scanOne[string], "SELECT id FROM planning_cards WHERE org_id = ? AND col = ? AND id != ? ORDER BY position, created_at, id", o.org, col, id)
+			return queryAll(tx, scanOne[string], "SELECT id FROM planning_cards WHERE org_id = ? AND "+onBoard+" AND col = ? AND id != ? ORDER BY position, created_at, id", o.org, c.BoardID, col, id)
 		}
 		dest, err := ids(col)
 		if err != nil {
@@ -618,7 +646,7 @@ func (o *OrgStore) DeleteCard(id string) error {
 		if _, err := tx.Exec("DELETE FROM planning_cards WHERE id = ?", id); err != nil {
 			return err
 		}
-		_, err = tx.Exec("UPDATE planning_cards SET position = position - 1 WHERE org_id = ? AND col = ? AND position > ?", o.org, c.Column, c.Position)
+		_, err = tx.Exec("UPDATE planning_cards SET position = position - 1 WHERE org_id = ? AND "+onBoard+" AND col = ? AND position > ?", o.org, c.BoardID, c.Column, c.Position)
 		return err
 	})
 	o.s.mu.Unlock()
@@ -631,6 +659,36 @@ func (o *OrgStore) DeleteCard(id string) error {
 		o.emitCard(x, false)
 	}
 	return nil
+}
+
+// cardBoard checks that *board is one of the org's boards, by id; "" is
+// made the default board's id.
+func (o *OrgStore) cardBoard(tx execQuerier, board *string) error {
+	if *board == "" {
+		id, err := defaultPlanningBoard(tx, o.org)
+		*board = id
+		return err
+	}
+	_, err := o.planningBoardByID(tx, *board)
+	return err
+}
+
+// changeBoard moves card c from board from to the end of its column on
+// c.BoardID, and closes the gap it leaves on from.
+func (o *OrgStore) changeBoard(tx *sql.Tx, c *model.Card, from string) error {
+	old := c.Position
+	if err := tx.QueryRow("SELECT COALESCE(MAX(position) + 1, 0) FROM planning_cards WHERE org_id = ? AND "+onBoard+" AND col = ?", o.org, c.BoardID, c.Column).Scan(&c.Position); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE planning_cards SET position = ? WHERE id = ?", c.Position, c.ID); err != nil {
+		return err
+	}
+	if err := setBoard(tx, c.ID, c.BoardID); err != nil {
+		return err
+	}
+	_, err := tx.Exec("UPDATE planning_cards SET position = position - 1 WHERE org_id = ? AND "+onBoard+" AND col = ? AND position > ?",
+		o.org, from, c.Column, old)
+	return err
 }
 
 // ErrTooManyFiles: a card has at most model.MaxCardFiles files.

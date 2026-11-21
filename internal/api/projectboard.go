@@ -253,11 +253,11 @@ func (pb projectBoard) MessageGoal(id, text string) (mcptools.GoalView, error) {
 // The planning tools in a project's run: the cards of its project, and
 // links from those (or cards of no project) to its own tasks and goals.
 
-func (pb projectBoard) Cards(projectID string) ([]mcptools.CardRow, error) {
+func (pb projectBoard) Cards(boardRef, projectID string) ([]mcptools.CardRow, error) {
 	if err := pb.check(projectID); err != nil {
 		return nil, err
 	}
-	return pb.b.Cards(pb.project)
+	return pb.b.Cards(boardRef, pb.project)
 }
 
 func (pb projectBoard) CreateCard(nc mcptools.NewCard) (mcptools.CardRow, error) {

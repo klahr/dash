@@ -331,3 +331,88 @@ func TestBrowserPlanningTags(t *testing.T) {
 	b.waitJS("the tags fit", `(() => { const f = document.querySelector("#card-detail .pl-tags-field"); const r = f?.getBoundingClientRect(); const i = f?.querySelector(".pl-tag-input")?.getBoundingClientRect();
 		return r && i && r.width > 0 && r.right <= innerWidth && i.right <= innerWidth && i.width > 60; })()`)
 }
+
+// An org's boards show above the columns when there is more than one; a
+// click shows one, and the board shown is in the address. A new card goes on
+// it; an open card moves to another board; a card's link opens its board.
+// The Boards sheet adds, renames, reorders and deletes boards (a deleted
+// board's cards move to the default one, after a confirm). On a phone the
+// boards are a strip across the top.
+func TestBrowserPlanningBoards(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	var mobile struct{ ID string }
+	h.api.must("POST", "/api/planning/boards", map[string]any{"name": "Mobile"}, http.StatusCreated, &mobile)
+	var onMain, onMobile struct{ ID string }
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Web checkout"}, http.StatusCreated, &onMain)
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Push alerts", "board": mobile.ID}, http.StatusCreated, &onMobile)
+	cardOf := func(id string) string { return fmt.Sprintf(`#view-planning .pl-card[data-id=%q]`, id) }
+	titles := func(board string) []string {
+		var cs []struct{ Title string }
+		h.api.must("GET", "/api/planning/cards?board="+board, nil, http.StatusOK, &cs)
+		var out []string
+		for _, c := range cs {
+			out = append(out, c.Title)
+		}
+		return out
+	}
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open Planning", `document.querySelector("#view-planning.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
+	b.waitJS("a tab for each board, the default one shown", `(() => { const t = [...document.querySelectorAll("#pl-boards .pl-board-tab")]; return !document.querySelector("#pl-boards").hidden && t.length === 2 && t[0].getAttribute("aria-selected") === "true" && t[0].querySelector(".pl-board-name").textContent === "Main"; })()`)
+	b.waitJS("only the default board's cards", fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardOf(onMain.ID), cardOf(onMobile.ID)))
+	b.until("show Mobile", fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardOf(onMobile.ID), cardOf(onMain.ID)),
+		chromedp.Click(chromedp.CSS(fmt.Sprintf(`#pl-boards .pl-board-tab[data-board=%q]`, mobile.ID))))
+	b.waitJS("the board in the address", fmt.Sprintf(`location.pathname === "/planning" && new URLSearchParams(location.search).get("board") === %q`, mobile.ID))
+
+	// A new card goes on the board shown.
+	const box = `#view-planning .col[data-col=ideas] .pl-composer textarea`
+	b.until("Add card", fmt.Sprintf(`document.activeElement === document.querySelector(%q)`, box),
+		chromedp.Click(chromedp.CSS(`#view-planning .pl-add[data-col=ideas]`)))
+	b.do("type a card", chromedp.SendKeys(box, "Offline mode"), chromedp.KeyEvent(kb.Enter))
+	b.waitJS("the card on the board", `[...document.querySelectorAll("#view-planning .pl-card .todo-title")].some((x) => x.textContent === "Offline mode")`)
+	b.do("close the new card", chromedp.KeyEvent(kb.Escape))
+	if got := titles(mobile.ID); len(got) != 2 || got[1] != "Offline mode" {
+		t.Fatalf("Mobile's cards: %v", got)
+	}
+
+	// An open card moves to another board, and leaves the one shown.
+	b.until("open Push alerts", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-body select[aria-label=Board]")`,
+		chromedp.Click(chromedp.CSS(cardOf(onMobile.ID)+" .pl-open")))
+	b.run("move it to Main", `(() => { const s = document.querySelector("#pd-body select[aria-label=Board]"); s.value = s.options[0].value; s.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`)
+	b.waitJS("gone from Mobile", fmt.Sprintf(`!document.querySelector(%q)`, cardOf(onMobile.ID)))
+	if got := titles(""); len(got) != 2 || got[1] != "Push alerts" {
+		t.Fatalf("Main's cards after the move: %v", got)
+	}
+
+	// A card's link opens its board.
+	b.do("open a card's link", chromedp.Navigate(h.base+"/planning/cards/"+onMain.ID+"?board="+mobile.ID))
+	b.waitJS("the card open, on its board", fmt.Sprintf(`!document.querySelector("#card-detail").hidden && document.querySelector("#pl-boards .pl-board-tab[aria-selected=true]")?.dataset.board !== %q && !!document.querySelector(%q)`, mobile.ID, cardOf(onMain.ID)))
+	b.waitJS("its board in the address", `!new URLSearchParams(location.search).get("board")`)
+	b.do("close the card", chromedp.KeyEvent(kb.Escape))
+
+	// The Boards sheet.
+	b.until("open Boards", `!!document.querySelector("dialog.pl-boards-sheet[open] .pl-board-row")`,
+		chromedp.Click(chromedp.CSS(`#pl-boards-btn`)))
+	b.do("add Web", chromedp.SendKeys(`dialog.pl-boards-sheet .pl-board-new`, "Web"), chromedp.KeyEvent(kb.Enter))
+	b.waitJS("Web added, last", `[...document.querySelectorAll("dialog.pl-boards-sheet .pl-board-name-edit")].map((x) => x.value).join() === "Main,Mobile,Web" && document.querySelectorAll("#pl-boards .pl-board-tab").length === 3`)
+	b.run("rename Web", `(() => { const i = document.querySelectorAll("dialog.pl-boards-sheet .pl-board-name-edit")[2]; i.value = "Website"; i.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`)
+	b.waitJS("renamed", `[...document.querySelectorAll("#pl-boards .pl-board-name")].map((x) => x.textContent).join() === "Main,Mobile,Website"`)
+	b.until("move Website up", `[...document.querySelectorAll("dialog.pl-boards-sheet .pl-board-name-edit")].map((x) => x.value).join() === "Main,Website,Mobile"`,
+		chromedp.Click(chromedp.CSS(`dialog.pl-boards-sheet .pl-board-row:last-child [data-act=up]`)))
+	b.waitJS("the default board has no Delete", `!document.querySelector("dialog.pl-boards-sheet .pl-board-row:first-child [data-act=delete]")`)
+	b.until("delete Mobile asks first", `document.querySelector("#ask-sheet")?.open && document.querySelector("#ask-body").textContent.includes("to Main")`,
+		chromedp.Click(chromedp.CSS(fmt.Sprintf(`dialog.pl-boards-sheet .pl-board-row[data-board=%q] [data-act=delete]`, mobile.ID))))
+	b.until("deleted", `[...document.querySelectorAll("dialog.pl-boards-sheet .pl-board-name-edit")].map((x) => x.value).join() === "Main,Website"`,
+		chromedp.Click(chromedp.CSS(`#ask-ok`)))
+	if got := titles(""); len(got) != 3 || got[2] != "Offline mode" {
+		t.Fatalf("Main's cards after deleting Mobile: %v", got)
+	}
+	b.do("close Boards", chromedp.KeyEvent(kb.Escape))
+
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("the boards across the top, above the lanes", `(() => { const s = document.querySelector("#pl-boards"), l = document.querySelector("#view-planning .pl-lanes"); return s.offsetWidth > 0 && s.getBoundingClientRect().bottom <= l.getBoundingClientRect().top + 1 && s.scrollWidth >= s.clientWidth; })()`)
+}

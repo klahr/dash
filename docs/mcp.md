@@ -252,16 +252,19 @@ before it uses the others.
 `dash-mcp`, the connector and the chats' `dash_board` work on the org's [plan](planning.md), as
 you would on the **Planning** page:
 
-- `list_cards(project?, column?, tag?)`: the cards with their column, priority, target, members,
-  owner, tags, the cards they depend on and the status of their linked work. In a project chat, that
-  project's cards.
+- `list_cards(board?, project?, column?, tag?)`: the cards of a board with their board, column,
+  priority, target, members, owner, tags, the cards they depend on and the status of their linked
+  work. `board` is a board's name or id; left out, the default board; `all` lists every board's
+  cards. In a project chat, that project's cards.
 - `get_card(card)`: one card, with its description, the cards that depend on it, its linked tasks
   and goals with their state, and its comments.
-- `create_card(title, description?, project?, column?, priority?, target?, tags?, depends_on?)`:
-  add a card. `depends_on` takes the ids of cards to be done first. It starts no work.
-- `update_card(card, title?, description?, priority?, target?, tags?, depends_on?, column?, position?)`:
+- `create_card(title, description?, project?, board?, column?, priority?, target?, tags?, depends_on?)`:
+  add a card, on `board` (left out, the default board). `depends_on` takes the ids of cards to be
+  done first, on any board. It starts no work.
+- `update_card(card, title?, description?, priority?, target?, tags?, depends_on?, column?, position?, board?)`:
   only the given ones change. `column` moves the card, to the end of the column or to `position`
-  (0 is the top). `tags` and `depends_on` replace the lists; `[]` clears them.
+  (0 is the top). `board` moves it to another board, to the end of its column there. `tags` and
+  `depends_on` replace the lists; `[]` clears them.
 - `comment_card(card, text)`: comment on a card, as you.
 - `start_card(card, kind?, project?)`: what **Start…** does. `kind` is `task` (the default,
   queued now) or `goal`; `project` defaults to the card's. It answers the card and the new work's

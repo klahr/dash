@@ -64,11 +64,41 @@ const (
 	MaxCardFiles       = 30
 )
 
+// CardBoard is one of an org's planning boards (one per product or team,
+// say): its cards in the fixed columns. Position orders the org's boards,
+// from 0. Every org has one default board, which can't be deleted: a card
+// given no board goes on it, and the cards of a board that is deleted move
+// to it.
+type CardBoard struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Position  int       `json:"position"`
+	Default   bool      `json:"default"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// MaxCardBoardName is how long a planning board's name may be.
+const MaxCardBoardName = 60
+
+// CleanCardBoardName trims a board's name and checks it.
+func CleanCardBoardName(name string) (string, error) {
+	name = strings.Join(strings.Fields(name), " ")
+	switch {
+	case name == "":
+		return "", errors.New("a board needs a name")
+	case len(name) > MaxCardBoardName:
+		return "", fmt.Errorf("the board's name is longer than %d characters", MaxCardBoardName)
+	}
+	return name, nil
+}
+
 // Card is one item of the plan. ProjectID is "" for a card of no project in
-// particular. Position orders a column's cards, from 0.
+// particular. BoardID is the org's board it is on. Position orders a
+// column's cards on its board, from 0.
 type Card struct {
 	ID          string     `json:"id"`
 	OrgID       int64      `json:"-"`
+	BoardID     string     `json:"board_id"`
 	ProjectID   string     `json:"project_id"`
 	Title       string     `json:"title"`
 	Description string     `json:"description"` // markdown

@@ -1,6 +1,6 @@
 # Planning
 
-**Planning** is the org's plan, for a product owner: a board of cards, each something to build.
+**Planning** is the org's plan, for a product owner: boards of cards, each something to build.
 Cards link to the tasks and goals that carry them out, and show how that work is going in
 plain words. Planning is kept in Dash's database, not in a repository or `TODO.md`, and
 belongs to the org.
@@ -10,13 +10,30 @@ project's sections (or `gp`). On a phone it is a tab in the bottom bar. A
 [planner](users.md#planners) lands on it when they sign in. Their sidebar has **Planning**,
 **Chat** and their account.
 
+## Boards
+
+An org can have several boards, for example one for each product or team. Every org has a
+default board; the cards made before there were boards are on it.
+
+- With more than one board, their names show above the columns. Click one to show its cards.
+  On a phone they are a strip across the top.
+- **Boards…** at the top adds, renames, reorders and deletes boards. Type a name and press
+  `Enter` (or **Add board**). Edit a name in its box. The arrows move a board up or down.
+- Deleting a board moves its cards to the end of the default board's columns. Dash asks first.
+  The default board can't be deleted; it can be renamed and moved.
+- The board shown is in the page's address, so a link opens the same board. A card's link
+  opens its board.
+- The filters (project, **Mine**, tags, target) work within the board shown.
+
+Anyone in the org, planners too, can manage the boards.
+
 ## Cards
 
-The board has four columns: **Ideas → Planned → In progress → Done**. The columns are fixed.
+A board has four columns: **Ideas → Planned → In progress → Done**. The columns are fixed.
 It looks like a project's **Board**: on a phone, tap a column's name at the top to show it.
 
 - **Add card** at the bottom of a column adds a new card there; **New card** at the top adds
-  one to **Ideas**. Type on the card what should be built: the first line is the title, the
+  one to **Ideas**. A new card goes on the board shown. Type on the card what should be built: the first line is the title, the
   lines after it the description. `Enter` adds it and starts the next one, `Shift+Enter`
   starts a new line, `Esc` cancels. Clicking elsewhere adds it, if you typed something.
 - Drag a card to another column, or up and down its own. A gap opens where it would land,
@@ -40,6 +57,8 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
 `Esc` closes it. A card has:
 
 - a title: **Rename**
+- **Board**, with more than one board: pick another to move the card there, to the end of its
+  column. It leaves the board shown.
 - **Priority** (high, medium, low or none) and **Target**: free text, such as a version
   (`1.4`), a milestone or a date. Give cards of one milestone the same target, and filter by it.
 - **Members**: the people in the org on the card, any number. Pick one from the list to add
@@ -64,7 +83,7 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   description or a comment, or drop files on the open card, or on a card on the board. Anyone in
   the org, planners too, can attach and remove files. A card with a picture shows the first one
   across its top on the board, and how many files it has by a paper clip.
-- **Depends on**: the cards that must be done before this one. **Add a card…** picks one;
+- **Depends on**: the cards that must be done before this one, on any board. **Add a card…** picks one;
   **×** takes it off. A card can't depend on itself, or on a card that already depends on it.
   **Needed by** lists the cards that depend on this one. Click a card in either list to open it.
 - **Delete card…**: the card's creator, its owner or an admin can delete a card. Before it
@@ -234,10 +253,14 @@ when linked work moves on.
 The chats, `dash-mcp` and the claude.ai connector have tools for the plan (see
 [MCP](mcp.md#planning)). They are for members: a planner can't use the MCP tools.
 
-- `list_cards`: the cards, with their column, priority, target, members, owner, tags, dependencies and status
+- `list_cards`: a board's cards, with their board, column, priority, target, members, owner, tags,
+  dependencies and status
 - `get_card`: one card, with its description, linked work and comments
-- `create_card`: add a card, and the cards it depends on
-- `update_card`: change a card, or move it to another column
+- `create_card`: add a card to a board, and the cards it depends on
+- `update_card`: change a card, or move it to another column or board
+
+`list_cards`, `create_card` and `update_card` take a `board`: its name or id. Left out, it is
+the default board.
 - `comment_card`: comment on a card
 - `start_card`: start a task or a goal for a card, as **Start…** does
 - `link_card`: link a task or goal to a card
@@ -247,12 +270,13 @@ A project's chat reaches that project's cards and cards of no project.
 ## API
 
 Planning is under `/api/planning/`. Column names match in any case. Adding or changing a card refuses a field it doesn't take, with `400`.
+A `board` is a board's id or its name, in any case. Left out, it is the default board.
 
 | Call                                                  | What it does                                     |
 |-------------------------------------------------------|--------------------------------------------------|
-| `GET /api/planning/cards?project=<id>`                | the cards, with status and linked work           |
-| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority` (`high`, `medium`, `low`, or `none`), `target`, `members` (user ids; `[]` is nobody), `owner` (a user id, who joins the members if they aren't one; `0` is nobody), `depends_on` (card ids; `[]` is none), `tags` (up to 20; `[]` is none) |
-| `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments). A card has `deps` and `needed_by` (id, title, column, done), `waiting`: its dependencies not done yet, and `version`. Send `version` with `PATCH` to get `409` instead of overwriting a change someone made since; a move or a file doesn't change it. `PATCH` takes the fields `POST` takes but `column`: move a card with `…/move` |
+| `GET /api/planning/cards?board=<board>&project=<id>`  | a board's cards (`board=all`: every board's), with status and linked work |
+| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `board`, `column`, `priority` (`high`, `medium`, `low`, or `none`), `target`, `members` (user ids; `[]` is nobody), `owner` (a user id, who joins the members if they aren't one; `0` is nobody), `depends_on` (card ids; `[]` is none), `tags` (up to 20; `[]` is none) |
+| `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments). A card has `deps` and `needed_by` (id, title, column, done), `waiting`: its dependencies not done yet, and `version`. Send `version` with `PATCH` to get `409` instead of overwriting a change someone made since; a move or a file doesn't change it. `PATCH` takes the fields `POST` takes but `column`: move a card with `…/move`. A new `board` moves it to the end of its column there. A card has `board_id` and `board_name`; `deps` and `needed_by` name each card's `board` |
 | `POST /api/planning/cards/{id}/move`                  | `column` and `position` (0 is the top)           |
 | `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
 | `DELETE /api/planning/cards/{id}/comments/{comment}`  | delete a comment                                 |
@@ -267,6 +291,9 @@ Planning is under `/api/planning/`. Column names match in any case. Adding or ch
 | `DELETE /api/planning/cards/{id}/links/{kind}/{work}` | unlink (members)                                 |
 | `GET /api/planning/work?project=<id>`                 | tasks and goals to link (members)                |
 | `GET /api/planning/linked/{kind}/{work}`              | the cards a task or goal is linked to (members)  |
+| `GET`, `POST /api/planning/boards`                    | the org's boards in their order, each with `id`, `name`, `position`, `default` and `cards` (how many); add one: `name` |
+| `PATCH /api/planning/boards/{board}`                  | `name` renames it; `position` moves it (0 is the first) |
+| `DELETE /api/planning/boards/{board}`                 | delete it; its cards move to the default board, which can't be deleted |
 
 ## Not yet
 

@@ -59,6 +59,11 @@ func (s *Server) planningRoutes(mux routeMux) {
 	mux.HandleFunc("POST /api/planning/cards/{cid}/links", s.linkCard)
 	mux.HandleFunc("DELETE /api/planning/cards/{cid}/links/{kind}/{wid}", s.unlinkCard)
 	mux.HandleFunc("GET /api/planning/linked/{kind}/{wid}", s.linkedCards)
+	// The org's boards of cards (planningboards.go).
+	mux.HandleFunc("GET /api/planning/boards", s.planningBoards)
+	mux.HandleFunc("POST /api/planning/boards", s.createPlanningBoard)
+	mux.HandleFunc("PATCH /api/planning/boards/{bid}", s.updatePlanningBoard)
+	mux.HandleFunc("DELETE /api/planning/boards/{bid}", s.deletePlanningBoard)
 }
 
 // cardStatus is what a card's linked work adds up to, in an owner's words.
@@ -119,6 +124,8 @@ type cardView struct {
 	// have the edit refused (409) if someone changed the card meanwhile.
 	Version     string `json:"version"`
 	ProjectName string `json:"project_name,omitempty"`
+	// BoardName is the name of the board it is on (model.Card.BoardID).
+	BoardName string `json:"board_name,omitempty"`
 	// People are the card's members (model.Card.Members, the same order)
 	// with their usernames and pictures, to show their faces on the card.
 	People []cardPerson `json:"people"`
@@ -135,16 +142,18 @@ type cardView struct {
 }
 
 // cardRef is another card, as a card that depends on it (or that it
-// depends on) names it: done when it is in the Done column.
+// depends on) names it: done when it is in the Done column. Dependencies
+// may cross boards: Board is the name of the board it is on.
 type cardRef struct {
 	ID     string           `json:"id"`
 	Title  string           `json:"title"`
 	Column model.CardColumn `json:"column"`
 	Done   bool             `json:"done"`
+	Board  string           `json:"board,omitempty"`
 }
 
-func refOf(c model.Card) cardRef {
-	return cardRef{ID: c.ID, Title: c.Title, Column: c.Column, Done: c.Column == model.CardDone}
+func (w *planningWork) refOf(c model.Card) cardRef {
+	return cardRef{ID: c.ID, Title: c.Title, Column: c.Column, Done: c.Column == model.CardDone, Board: w.boards[c.BoardID]}
 }
 
 // cardPerson is one of a card's members: their user id, username and
@@ -168,12 +177,18 @@ type planningWork struct {
 	goalWork map[string][]model.Todo // goal id → its tasks
 	people   map[int64]store.Member  // the org's members, by user id
 	live     map[string]projectLive  // project id → what is live where, read when needed
+	boards   map[string]string       // the org's planning boards' names, by id
 }
 
 func (sv *service) planningWork(ctx context.Context) *planningWork {
 	w := &planningWork{sv: sv, ctx: ctx, projects: map[string]model.Project{}, todos: map[string]model.Todo{},
 		goals: map[string]model.Goal{}, goalWork: map[string][]model.Todo{}, people: map[int64]store.Member{},
-		live: map[string]projectLive{}}
+		live: map[string]projectLive{}, boards: map[string]string{}}
+	if bs, err := sv.data.PlanningBoards(); err == nil {
+		for _, b := range bs {
+			w.boards[b.ID] = b.Name
+		}
+	}
 	if ms, err := sv.s.Store.Accounts().Members(sv.c.Org); err == nil {
 		for _, m := range ms {
 			w.people[m.ID] = m
@@ -385,16 +400,16 @@ func (w *planningWork) views(cards, all []model.Card, links map[string][]model.C
 	for _, c := range all {
 		byID[c.ID] = c
 		for _, d := range c.DependsOn {
-			neededBy[d] = append(neededBy[d], refOf(c))
+			neededBy[d] = append(neededBy[d], w.refOf(c))
 		}
 	}
 	out := make([]cardView, 0, len(cards))
 	for _, c := range cards {
-		v := cardView{Card: c, Version: c.Version(), ProjectName: w.projects[c.ProjectID].Name, Links: []linkView{}, Comments: comments[c.ID],
+		v := cardView{Card: c, Version: c.Version(), ProjectName: w.projects[c.ProjectID].Name, BoardName: w.boards[c.BoardID], Links: []linkView{}, Comments: comments[c.ID],
 			Deps: []cardRef{}, NeededBy: []cardRef{}}
 		for _, id := range c.DependsOn {
 			if d, ok := byID[id]; ok {
-				r := refOf(d)
+				r := w.refOf(d)
 				v.Deps = append(v.Deps, r)
 				if !r.Done {
 					v.Waiting++
@@ -621,13 +636,15 @@ func (sv *service) cardView(ctx context.Context, id string) (cardView, error) {
 	return vs[0], nil
 }
 
-// listCards handles GET /api/planning/cards[?project=<id>].
+// listCards handles GET /api/planning/cards[?board=<board>][&project=<id>]:
+// the cards of a board (its id or name; left out, the default board; all:
+// every board's).
 func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
 		return
 	}
-	cards, err := sv.data.ListCards(r.URL.Query().Get("project"))
+	cards, err := sv.boardCards(r.URL.Query().Get("board"), r.URL.Query().Get("project"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -640,9 +657,29 @@ func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, vs)
 }
 
+// boardCards are the cards of board (its id or name, "" the default board,
+// "all" every board's), of project ("": all).
+func (sv *service) boardCards(board, project string) ([]model.Card, error) {
+	id := ""
+	if board != boardsAll {
+		b, err := sv.data.PlanningBoard(board)
+		if err != nil {
+			return nil, err
+		}
+		id = b.ID
+	}
+	return sv.data.BoardCards(id, project)
+}
+
+// boardsAll, as a board, is every board's cards.
+const boardsAll = "all"
+
 // cardRequest is what POST /api/planning/cards and PATCH …/{cid} take;
 // nil fields stay as they are.
 type cardRequest struct {
+	// Board is the board the card is on: its id or name ("": the default
+	// board). Changing it moves the card to the end of its column there.
+	Board       *string `json:"board"`
 	Title       *string `json:"title"`
 	Description *string `json:"description"`
 	Project     *string `json:"project"`
@@ -720,6 +757,11 @@ func (sv *service) createCard(req cardRequest) (model.Card, error) {
 	if err := req.apply(&c); err != nil {
 		return c, err
 	}
+	board, err := sv.cardBoard(req)
+	if err != nil {
+		return c, err
+	}
+	c.BoardID = board
 	if c.ProjectID != "" {
 		p, err := sv.data.GetProject(c.ProjectID)
 		if err != nil {
@@ -727,11 +769,24 @@ func (sv *service) createCard(req cardRequest) (model.Card, error) {
 		}
 		c.ProjectID = p.ID
 	}
-	c, err := sv.data.CreateCard(c)
+	c, err = sv.data.CreateCard(c)
 	if err == nil {
 		sv.membersAdded(c, nil)
 	}
 	return c, err
+}
+
+// cardBoard is the id of the board req names (its id or name; "" the
+// default board), or "" when it names none.
+func (sv *service) cardBoard(req cardRequest) (string, error) {
+	if req.Board == nil {
+		return "", nil
+	}
+	b, err := sv.data.PlanningBoard(*req.Board)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	return b.ID, nil
 }
 
 func (s *Server) getCard(w http.ResponseWriter, r *http.Request) {
@@ -779,6 +834,10 @@ func (sv *service) updateCard(id string, req cardRequest) error {
 	}
 	// Asked here, not in UpdateCard's transaction, which would wait on it.
 	admin := (req.Owner != nil || req.Members != nil) && sv.s.orgAdmin(sv.c)
+	board, err := sv.cardBoard(req)
+	if err != nil {
+		return err
+	}
 	var before []int64
 	c, err := sv.data.UpdateCard(id, func(c *model.Card) error {
 		if req.Version != nil && *req.Version != c.Version() {
@@ -788,6 +847,9 @@ func (sv *service) updateCard(id string, req cardRequest) error {
 		old := *c
 		if err := req.apply(c); err != nil {
 			return err
+		}
+		if board != "" {
+			c.BoardID = board
 		}
 		// The owner may delete the card, so only those who may already
 		// (its creator, its owner, an admin) may change who owns it.
@@ -1549,7 +1611,7 @@ func (s *Server) linkedCards(w http.ResponseWriter, r *http.Request) {
 
 func cardRow(v cardView) mcptools.CardRow {
 	r := mcptools.CardRow{ID: v.ID, Title: v.Title, Column: string(v.Column), Priority: v.Priority, Target: v.Target,
-		Project: v.ProjectName, Members: usernames(v.People), Tags: v.Tags, Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links),
+		Project: v.ProjectName, Board: v.BoardName, Members: usernames(v.People), Tags: v.Tags, Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links),
 		Waiting: v.Waiting}
 	for _, p := range v.People {
 		if p.ID == v.Owner {
@@ -1570,8 +1632,8 @@ func usernames(ps []cardPerson) []string {
 	return out
 }
 
-func (b board) Cards(projectID string) ([]mcptools.CardRow, error) {
-	cards, err := b.sv.data.ListCards(projectID)
+func (b board) Cards(boardRef, projectID string) ([]mcptools.CardRow, error) {
+	cards, err := b.sv.boardCards(boardRef, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -1593,6 +1655,9 @@ func (b board) CreateCard(nc mcptools.NewCard) (mcptools.CardRow, error) {
 	}
 	if nc.Column != "" {
 		req.Column = &nc.Column
+	}
+	if nc.Board != "" {
+		req.Board = &nc.Board
 	}
 	if nc.Project != "" {
 		p, err := b.Project(nc.Project)
@@ -1652,8 +1717,8 @@ func (b board) UpdateCard(id string, u mcptools.CardUpdate) (mcptools.CardRow, e
 		}
 		return mcptools.CardRow{}, err
 	}
-	req := cardRequest{Title: u.Title, Description: u.Description, Priority: u.Priority, Target: u.Target, Tags: u.Tags, DependsOn: u.DependsOn}
-	if req.Title != nil || req.Description != nil || req.Priority != nil || req.Target != nil || req.Tags != nil || req.DependsOn != nil {
+	req := cardRequest{Title: u.Title, Description: u.Description, Priority: u.Priority, Target: u.Target, Tags: u.Tags, DependsOn: u.DependsOn, Board: u.Board}
+	if req.Title != nil || req.Description != nil || req.Priority != nil || req.Target != nil || req.Tags != nil || req.DependsOn != nil || req.Board != nil {
 		if err := b.sv.updateCard(id, req); err != nil {
 			return mcptools.CardRow{}, err
 		}

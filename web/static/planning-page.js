@@ -15,7 +15,7 @@ import { attempt, fail, toast } from "./app/dialogs.js";
 import * as store from "./app/store.js";
 import { state } from "./app/state.js";
 import { desktop, wsURL } from "./app/viewport.js";
-import { cardError, cardId, claudeChanged, closeCard, loadPlanning, mountPlanning, onPlanningEvent, openCard } from "./app/planning.js";
+import { cardError, cardId, claudeChanged, closeCard, loadPlanning, mountPlanning, onPlanningEvent, openCard, pickBoard, planningFilters, setPlanningFilters } from "./app/planning.js";
 import { askAbout, chatShown, claudeNeeded, loadClaude, onClaudeChange, openRunners } from "./app/plannerclaude.js";
 import { openFeatureBrief } from "./app/planner.js";
 import { accountSection, openAccount } from "./app/accountsheet.js";
@@ -24,11 +24,14 @@ import { showOwnAvatar } from "./app/avatar.js";
 import { accountHooks } from "./app/myaccount.js";
 
 const me = await api("GET", "/api/me", null, "");
-// The card a link opens (/planning/cards/{id} sends a planner here, ?card=<id>).
+// The card a link opens (/planning/cards/{id} sends a planner here, ?card=<id>),
+// and the board shown (?board=<id>; left out, the default one).
 const linkedCard = new URLSearchParams(location.search).get("card");
+const linkedBoard = new URLSearchParams(location.search).get("board") || "";
 if (me.org?.role !== "planner") {
   store.set("dash.view", "planning");
-  location.replace(linkedCard ? `/planning/cards/${encodeURIComponent(linkedCard)}` : "/planning");
+  const board = linkedBoard ? `?board=${encodeURIComponent(linkedBoard)}` : "";
+  location.replace((linkedCard ? `/planning/cards/${encodeURIComponent(linkedCard)}` : "/planning") + board);
 } else {
   start();
 }
@@ -63,7 +66,10 @@ function start() {
   });
   onClaudeChange(claudeChanged);
   loadClaude().catch(fail);
-  loadPlanning().catch(fail);
+  // A link's board; without one, the board shown last.
+  const f = planningFilters();
+  if (linkedBoard && linkedBoard !== f.board) setPlanningFilters(f.project, f.tags, f.target, f.mine, linkedBoard);
+  else loadPlanning().catch(fail);
   connect();
   followCards();
   notifications();
@@ -148,8 +154,14 @@ function notifications() {
 
 // followCards keeps ?card=<id> in the URL on the card open, so Back closes
 // it (a phone's too) and a reload opens it again; it opens the linked card.
+// The board shown is in it too (?board=<id>), so a link opens that board.
 function followCards() {
-  const url = (id) => "/planning.html" + (id ? `?card=${encodeURIComponent(id)}` : "");
+  const url = (id) => {
+    const q = new URLSearchParams();
+    if (id) q.set("card", id);
+    if (planningFilters().board) q.set("board", planningFilters().board);
+    return "/planning.html" + (q.toString() ? `?${q}` : "");
+  };
   history.replaceState({ dash: 1 }, "", url(""));
   let applying = false;
   const show = async (id) => {
@@ -170,7 +182,11 @@ function followCards() {
     else if (cardId() && !history.state?.back) history.pushState({ dash: 1, back: location.pathname + location.search }, "", want);
     else history.replaceState(history.state, "", want);
   }));
-  window.addEventListener("popstate", () => show(new URLSearchParams(location.search).get("card")).catch(fail));
+  window.addEventListener("popstate", () => {
+    const q = new URLSearchParams(location.search);
+    pickBoard(q.get("board") || "");
+    show(q.get("card")).catch(fail);
+  });
   if (linkedCard) {
     show(linkedCard).then(() => {
       if (cardId()) history.pushState({ dash: 1, back: url("") }, "", url(cardId()));
