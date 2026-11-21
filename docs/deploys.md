@@ -114,7 +114,11 @@ screen with **Back** on a phone; `Esc` closes it, `j`/`k` step through the list)
   **Rolled back** when a rollback replaces it;
 - how its checks went;
 - the tasks and Planning cards it shipped: those the commits since the previous deploy name;
-- its log, with secrets masked.
+- its log, with secrets masked. While it runs, the log's heading says how long it has left, such
+  as "about 3m left". The estimate is the median time the environment's last 10 successful
+  deploys of the same kind took to go live. Promotions and rollbacks skip the build, so they are
+  timed apart. With no successful deploy yet, there is no estimate. Past the usual time, it says
+  "taking longer than usual".
 
 **Stop** stops a running deploy where it runs. **Cancel** takes a queued one off the queue.
 You may stop or cancel your own deploys, and others' where you may deploy.

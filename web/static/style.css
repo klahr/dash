@@ -3496,6 +3496,8 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .deploy-check-name { font-weight: 600; }
 .deploy-check .hint { flex-basis: 100%; overflow-wrap: anywhere; }
 .env-rollback { display: flex; }
+.deploy-eta { font-weight: 400; color: var(--muted); }
+.deploy-eta.over { color: var(--running); }
 .deploy-log { margin: 0; max-height: 60vh; overflow: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--bg); font: var(--fs-xs)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Project settings → Deploy: an environment per card. */
 .env-edit-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 12px; }

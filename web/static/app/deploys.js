@@ -12,6 +12,7 @@ import { changed, linkTo } from "./routes.js";
 import { openRelease } from "./releases.js";
 import { releaseFields, releaseWarnings } from "./releaseform.js";
 import { refreshGraph } from "./history.js";
+import { estimate, etaText } from "../deployeta.js";
 
 // ------------------------------------------------------------------ deploys
 // The Deploys page: one card per environment of the project (what is live
@@ -637,6 +638,19 @@ function renderDeploy() {
   log.textContent = d.log || (d.status === "queued" ? "Waiting for its turn…" : d.status === "awaiting_approval" ? "Waiting for an approval…"
     : ACTIVE.includes(d.status) ? "Starting…" : "No output.");
   if (atEnd) log.scrollTop = log.scrollHeight;
+  renderEta(d);
+}
+
+// While it runs, the Log heading says how long it has left, from the median
+// time the environment's earlier successful deploys took to go live.
+function renderEta(d) {
+  const el = $("#dd-eta");
+  const e = estimate(d, dp.list, Date.now());
+  el.hidden = !e;
+  if (!e) return;
+  el.textContent = `· ${etaText(e)}`;
+  el.classList.toggle("over", e.over);
+  el.title = `Elapsed ${took(d)}; deploys to ${d.environment} usually take ${duration(e.typical)} (median of the last ${plural(e.n, "successful deploy")})`;
 }
 
 // The phases: when it entered each status, and how long each took.
