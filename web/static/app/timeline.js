@@ -3,7 +3,7 @@ import { $, clockTime, entering, h, ib, plural, timeLocale } from "./dom.js";
 import { attempt, copy } from "./dialogs.js";
 import { state } from "./state.js";
 import { duration } from "./activity.js";
-import { toolCall, toolResult, toolSettled } from "./chatparts.js";
+import { placeToolCall, toolCall, toolResult, toolSettled } from "./chatparts.js";
 import { goalHue, goalName } from "./goals.js";
 import { linkedTask, taskLink, title } from "./branches.js";
 
@@ -172,13 +172,19 @@ function workerNode(parent, e) {
       cur.reply.innerHTML = renderMarkdown(cur.seg);
       break;
     case "tool_use": {
-      // Later text goes below the tool call, in a reply of its own.
+      // Later text goes below the tool call, in a reply of its own. An empty
+      // reply stays below it, so calls in a row share one line (see
+      // placeToolCall), live or rebuilt from the saved events alike.
       const t = toolCall(e.tool, e.input || {}, Date.parse(e.at) || Date.now());
       worker.tools.set(e.id, t);
-      cur.el.append(enter(t.el));
-      cur.reply = h("div", { class: "reply" });
-      cur.el.append(cur.reply);
-      cur.seg = "";
+      if (cur.seg) {
+        const next = h("div", { class: "reply" });
+        cur.reply.after(next);
+        cur.reply = next;
+        cur.seg = "";
+      }
+      const el = placeToolCall(t, cur.reply);
+      if (el) enter(el);
       break;
     }
     case "result":

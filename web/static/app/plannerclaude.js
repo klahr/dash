@@ -12,7 +12,7 @@ import { ask, attempt, fail, railOf, toast } from "./dialogs.js";
 import { copyBlock, installCmd, installCmdWin, psq, shq } from "./install.js";
 import { wsURL } from "./viewport.js";
 import { renderMarkdown } from "../editor.js";
-import { chatPermCard, permDecided, toolCall, toolResult, toolSettled } from "./chatparts.js";
+import { chatPermCard, permDecided, placeToolCall, toolCall, toolResult, toolSettled } from "./chatparts.js";
 
 const call = (method, path, body) => api(method, path, body, "");
 // onPage: this is planning.html. The app (app.js) imports this module too,
@@ -243,7 +243,8 @@ function delta(d) {
     case "tool_use": {
       const t = toolCall(d.tool, d.input);
       cur.tools.set(d.id, t);
-      cur.reply.before(entering(t.el));
+      const el = placeToolCall(t, cur.reply);
+      if (el) entering(el);
       break;
     }
     case "tool_result": {

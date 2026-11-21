@@ -8,7 +8,7 @@ import { attachBox, attachThumb } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { showView } from "./nav.js";
 import { projectKey } from "./events.js";
-import { chatPermCard, duration, permDecided, toolCall, toolResult, toolSettled } from "./chatparts.js";
+import { chatPermCard, duration, permDecided, placeToolCall, toolCall, toolResult, toolSettled } from "./chatparts.js";
 import { closeDetail } from "./detail.js";
 import { canRework, reworkLabel, reworkTodo, takeReviewNext } from "./drawmode.js";
 import { loadTodoChat, renderChatBadge, renderChatDots, renderChatPane, viewingChat } from "./chatpane.js";
@@ -554,19 +554,18 @@ function chatStreamHandler(c) {
         break;
       case "tool_use": {
         // Later text goes below the tool call, in a reply of its own. A reply
-        // still empty moves below it instead, so consecutive tool calls share
-        // one "Thinking…" at the end rather than one after each call.
-        const t = toolCall(d.tool, d.input), { el } = t;
+        // still empty stays below it, so consecutive tool calls share one
+        // line (see placeToolCall) and one "Thinking…" at the end.
+        const t = toolCall(d.tool, d.input);
         cur.tools.set(d.id, t);
         if (cur.seg) {
-          cur.reply.after(el);
-          cur.reply = h("div", { class: "reply" });
-          el.after(cur.reply);
+          const next = h("div", { class: "reply" });
+          cur.reply.after(next);
+          cur.reply = next;
           cur.seg = "";
-        } else {
-          cur.reply.before(el);
         }
-        entering(el);
+        const el = placeToolCall(t, cur.reply);
+        if (el) entering(el);
         break;
       }
       case "tool_result": {

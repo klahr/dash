@@ -583,18 +583,29 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .msg .tool summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; padding: 5px 10px; color: var(--muted); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .msg .tool summary b { color: var(--text); font-weight: 600; }
 .msg .tool summary::before { content: "▸"; flex: none; color: var(--faint); }
-.msg .tool[open] summary::before { content: "▾"; }
+.msg .tool[open] > summary::before { content: "▾"; }
 .msg .tool summary::-webkit-details-marker { display: none; }
 .msg .tool .tool-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .msg .tool .tool-time { margin-left: auto; flex: none; color: var(--faint); font-variant-numeric: tabular-nums; }
 .msg .tool.running { border-color: color-mix(in srgb, var(--running) 45%, var(--line)); }
-.msg .tool.running .tool-time { color: var(--running); }
-.msg .tool.error summary { color: var(--failed); }
+.msg .tool.running > summary .tool-time { color: var(--running); }
+.msg .tool.error > summary { color: var(--failed); }
 .msg .tool .tool-mark { flex: none; width: 14px; text-align: center; font-weight: 700; line-height: 1; color: var(--merged); }
 .msg .tool .tool-mark.bad { color: var(--failed); }
 .msg .tool .tool-mark.cut { color: var(--muted); font-weight: 400; }
 .msg .tool pre { margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); font: var(--fs-xs)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
 .msg .tool .tool-out { color: var(--code-text); background: var(--bg); }
+/* Tool calls in a row as one line (toolGroup in chatparts.js): the call
+   running, how many came before it, and the calls themselves when opened,
+   a failed one marked in red. */
+.msg .tool-group .tool-more, .msg .tool-group .tool-failed { flex: none; }
+.msg .tool-group .tool-failed { color: var(--failed); font-weight: 600; }
+.msg .tool-group .tool-failed:empty { display: none; }
+.msg .tool-list { padding: 6px; border-top: 1px solid var(--line); background: var(--bg); }
+.msg .tool-list > .tool { margin: 0 0 6px; }
+.msg .tool-list > .tool:last-child { margin-bottom: 0; }
+.msg .tool-list > .tool.error { border-color: color-mix(in srgb, var(--failed) 55%, var(--line)); border-left: 3px solid var(--failed); }
+.msg .tool[open] > .tool-list { animation: enter-card .16s ease-out; }
 .msg .perm { margin: 0 0 10px; }
 /* A task Claude made in a project chat: Queue, Open and Discard while it's a draft. */
 .chat-task { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--r-s); background: var(--surface); font-size: var(--fs-s); }
