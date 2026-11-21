@@ -172,9 +172,7 @@ const log = () => $("#pl-chat-log");
 
 // loadChat reads the saved conversation and shows it.
 export async function loadChat() {
-  const r = await fetch("/api/chat");
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `chat: ${r.status}`);
-  ch.history = await r.json() || [];
+  ch.history = (await call("GET", "/api/chat")) || [];
   ch.loaded = true;
   renderChat();
 }
