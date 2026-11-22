@@ -5,6 +5,7 @@ import { state } from "./state.js";
 import { isTyping } from "./vim.js";
 import { renderBoard, title } from "./branches.js";
 import { openDetail } from "./detail.js";
+import { goalHue } from "./goals.js";
 
 // ------------------------------------------------------------------ tags
 // Tasks carry short tags. A draft made from a reported issue (a scan's
@@ -25,6 +26,13 @@ export function worstSeverity(t) {
 
 // reportCount is how many times t's issues were reported, all together.
 export const reportCount = (t) => (t.finding?.issues || []).reduce((n, i) => n + Math.max(i.reports || 0, 1), 0);
+
+// tagLook is a tag chip's colour: a severity's own colour, or else a hue
+// from the tag's name, the same for the same name (in any case) everywhere.
+function tagLook(x) {
+  const k = x.toLowerCase();
+  return SEVERITIES.includes(k) ? { cls: ` sev sev-${k}`, style: null } : { cls: " hued", style: `--tag-h: ${goalHue(k)}` };
+}
 
 const hasTag = (t, tag) => (t.tags || []).some((x) => x.toLowerCase() === tag.toLowerCase());
 const fromScan = (t) => (t.tags || []).some((x) => x.toLowerCase().startsWith("scan:"));
@@ -80,7 +88,8 @@ export function renderTagFilter() {
     }, ico("bug"), `From scans (${quiet})`));
   }
   if (boardFilter.tag) {
-    kids.push(h("button", { type: "button", class: "filter-chip tag-active", "aria-pressed": "true", title: `Show every task again, not only those tagged ${boardFilter.tag}`, onclick: () => setTagFilter("") },
+    const look = tagLook(boardFilter.tag);
+    kids.push(h("button", { type: "button", class: `filter-chip tag-active${look.style ? " hued" : ""}`, style: look.style, "aria-pressed": "true", title: `Show every task again, not only those tagged ${boardFilter.tag}`, onclick: () => setTagFilter("") },
       `Tag: ${boardFilter.tag}`, h("span", { class: "x", "aria-hidden": "true" }, "×")));
   } else if (counts.size) {
     const list = [...counts.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
@@ -103,10 +112,10 @@ export function tagRow(t) {
   if (!tags.length && !sev) return null;
   const shown = tags.slice(0, 5);
   const chip = (x) => {
-    const s = SEVERITIES.includes(x.toLowerCase()) ? x.toLowerCase() : "";
+    const look = tagLook(x);
     return h("button", {
-      type: "button", class: `tag-chip${s ? ` sev sev-${s}` : ""}${boardFilter.tag.toLowerCase() === x.toLowerCase() ? " on" : ""}`,
-      title: boardFilter.tag.toLowerCase() === x.toLowerCase() ? "Show every task again" : `Show only tasks tagged ${x}`,
+      type: "button", class: `tag-chip${look.cls}${boardFilter.tag.toLowerCase() === x.toLowerCase() ? " on" : ""}`,
+      style: look.style, title: boardFilter.tag.toLowerCase() === x.toLowerCase() ? "Show every task again" : `Show only tasks tagged ${x}`,
       onpointerdown: (e) => e.stopPropagation(),
       onclick: (e) => { e.stopPropagation(); setTagFilter(x); },
     }, x);
@@ -212,8 +221,8 @@ export function renderDetailTags(t) {
     tagInput.addEventListener("blur", () => { if (tagInput.value.trim()) add(); });
   }
   const chips = (t.tags || []).map((x) => {
-    const s = SEVERITIES.includes(x.toLowerCase()) ? ` sev sev-${x.toLowerCase()}` : "";
-    return h("span", { class: `tag-chip editable${s}` }, x,
+    const look = tagLook(x);
+    return h("span", { class: `tag-chip editable${look.cls}`, style: look.style }, x,
       h("button", { type: "button", class: "tag-x", "aria-label": `Remove tag ${x}`, title: `Remove ${x}`,
         onclick: attempt(() => saveTags(t, t.tags.filter((y) => y !== x))) }, "×"));
   });

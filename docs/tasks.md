@@ -47,7 +47,8 @@ model, dependencies, the task it builds on and attachments.
 ## Tags
 
 A task can have tags: short labels such as `backend` or `docs`. They show as chips on the card
-and in the task. Edit them under **Tags** in the task. A task has at most 20 tags, each at most
+and in the task, each in a colour of its own: the same tag has the same colour everywhere, and
+severity tags (`critical`, `high`, …) have their severity's colour. Edit them under **Tags** in the task. A task has at most 20 tags, each at most
 40 characters. Click a tag on a card to show only tasks with that tag; remove the filter with
 its chip above the board.
 

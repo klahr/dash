@@ -3061,7 +3061,12 @@ button.tag-chip:hover { color: var(--text); border-color: var(--faint); }
 .tag-chip.sev { width: auto; padding: 0 7px; font-size: var(--fs-3xs); border-color: currentColor; }
 .tag-chip.sev-critical { color: var(--bg); background: var(--failed); border-color: var(--failed); }
 button.tag-chip.sev:hover { border-color: currentColor; filter: brightness(1.15); }
+/* Each other tag has a colour of its own (--tag-h, a hue from its name, app/tags.js), as goal chips do. */
+.hued { --tag: hsl(var(--tag-h, 230) 80% 74%); }
+.tag-chip.hued { color: var(--tag); border-color: color-mix(in srgb, var(--tag) 45%, transparent); background: color-mix(in srgb, var(--tag) 10%, transparent); }
+button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); background: color-mix(in srgb, var(--tag) 18%, transparent); }
 .tag-chip.on { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.tag-chip.hued.on { color: var(--tag); border-color: var(--tag); background: color-mix(in srgb, var(--tag) 24%, transparent); }
 .reports-tag { font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 @media (pointer: coarse) { .tag-chip { min-height: 26px; } }
 .detail-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
@@ -3091,6 +3096,7 @@ button.tag-chip.sev:hover { border-color: currentColor; filter: brightness(1.15)
 .filter-chip .ico { width: 14px; height: 14px; }
 .filter-chip:hover { color: var(--text); border-color: var(--faint); }
 .filter-chip[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.filter-chip[aria-pressed="true"].hued { color: var(--tag); border-color: var(--tag); background: color-mix(in srgb, var(--tag) 14%, transparent); }
 .filter-chip .x { font-size: 15px; line-height: 1; }
 .tag-filter-pick { min-height: 26px; max-width: 14rem; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted); font: inherit; font-size: var(--fs-xs); }
 @media (pointer: coarse) { .filter-chip, .tag-filter-pick { min-height: 32px; } }

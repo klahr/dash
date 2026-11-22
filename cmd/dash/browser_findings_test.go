@@ -46,13 +46,14 @@ func TestBrowserFindingDrafts(t *testing.T) {
 		const c = document.querySelector(%q);
 		const tags = [...c.querySelectorAll(".todo-tags .tag-chip")].map((e) => e.textContent);
 		return c.querySelector(".reports-tag")?.textContent === "×2" && tags.includes("security") && tags.includes("high") && tags.includes("scan:security") &&
-			c.querySelector(".tag-chip.sev-high") !== null;
+			c.querySelector(".tag-chip.sev-high") !== null &&
+			[...c.querySelectorAll(".tag-chip.hued")].some((e) => e.textContent === "security" && e.style.getPropertyValue("--tag-h") !== "");
 	})()`, cardSel(high)))
 	b.until("show the scans' drafts", fmt.Sprintf(`!!document.querySelector(%q) && !!document.querySelector(%q) && document.querySelector("#tag-filter .scan-filter").getAttribute("aria-pressed") === "true"`, cardSel(low1), cardSel(low2)),
 		chromedp.Click(chromedp.CSS(`#tag-filter .scan-filter`)))
 
 	// A tag on a card filters the Board by it.
-	b.until("filter by backend", fmt.Sprintf(`!document.querySelector(%q) && !!document.querySelector(%q) && /Tag: backend/.test(document.querySelector("#tag-filter .tag-active")?.textContent)`, cardSel(high), cardSel(plain.ID)),
+	b.until("filter by backend", fmt.Sprintf(`!document.querySelector(%q) && !!document.querySelector(%q) && /Tag: backend/.test(document.querySelector("#tag-filter .tag-active.hued")?.textContent)`, cardSel(high), cardSel(plain.ID)),
 		chromedp.Click(chromedp.CSS(cardSel(plain.ID)+` .todo-tags .tag-chip`)))
 	b.until("clear the tag filter", fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector("#tag-filter .tag-active")`, cardSel(high)),
 		chromedp.Click(chromedp.CSS(`#tag-filter .tag-active`)))
