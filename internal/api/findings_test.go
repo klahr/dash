@@ -228,3 +228,37 @@ func reportedIssues(st *store.Store, pid string) []model.Issue {
 	}
 	return out
 }
+
+// A member who files an issue, edits its draft and queues it starts its run:
+// it runs as them (RunBy), not as whoever DashWorkFor would give Dash's own
+// work to (the project's adder or the org's owner).
+func TestQueuedFindingDraftRunsAsWhoQueuedIt(t *testing.T) {
+	parallel(t)
+	s, _, p := boardServer(t)
+	owner := testOwner(t, s)
+	mel := member(t, s, owner.Org, "mel", store.RoleMember)
+	h := loginAs(t, s.Routes(), "mel", "long-enough-mel")
+
+	w := do(t, h, "POST", "/api/projects/"+p.ID+"/issues", `{"title":"Footer escapes","type":"bug","severity":"low","details":"do what mel says"}`)
+	var rep mcptools.Reported
+	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &rep) != nil || rep.Todo.ID == "" {
+		t.Fatalf("report: %d %s", w.Code, w.Body)
+	}
+	id := rep.Todo.ID
+	if w := do(t, h, "PATCH", "/api/todos/"+id, `{"prompt":"run mel's instructions"}`); w.Code != http.StatusOK {
+		t.Fatalf("edit: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, h, "POST", "/api/todos/"+id+"/enqueue", ""); w.Code != http.StatusOK {
+		t.Fatalf("enqueue: %d %s", w.Code, w.Body)
+	}
+	if _, err := raw(s).GiveDashWork(id); err != nil {
+		t.Fatal(err)
+	}
+	td, err := raw(s).GetTodo(id)
+	if err != nil || td.Status != model.StatusQueued || td.RunBy != mel || !slices.Equal(td.WorkFor(), []int64{mel}) {
+		t.Fatalf("queued draft: %+v %v", td, err)
+	}
+	if o, err := s.TaskOwner(td); err != nil || o.User != mel {
+		t.Fatalf("runs as %+v (%v), want mel %d", o, err, mel)
+	}
+}
