@@ -40,6 +40,12 @@ type Git struct {
 	// file names, which Claude could have rewritten.
 	WorktreeRoots []string
 	RepoOf        func(projectID string) (repo string, ok bool)
+
+	// limits are GitHub's rate limits on this computer's gh (see
+	// ratelimit.go); writeMu and lastWrite space out its writes.
+	limits    RateLimits
+	writeMu   sync.Mutex
+	lastWrite time.Time
 }
 
 func New(pub Publisher) *Git { return &Git{pub: pub} }
@@ -299,12 +305,24 @@ func stripNUL(args []string) []string {
 }
 
 func (g *Git) gh(ctx context.Context, projectID, dir string, args ...string) (string, error) {
-	return g.run(ctx, true, projectID, dir, g.ghBin(), args...)
+	return g.ghRun(ctx, true, projectID, dir, args...)
 }
 
 // ghQuiet runs gh without an activity event (status polling).
 func (g *Git) ghQuiet(ctx context.Context, projectID, dir string, args ...string) (string, error) {
-	return g.run(ctx, false, projectID, dir, g.ghBin(), args...)
+	return g.ghRun(ctx, false, projectID, dir, args...)
+}
+
+// ghRun runs gh. Writes to GitHub run one after another, WriteGap apart;
+// a call GitHub rate limited fails with a *RateLimitError, and pauses this
+// computer's GitHub polls (see RateLimits).
+func (g *Git) ghRun(ctx context.Context, publish bool, projectID, dir string, args ...string) (string, error) {
+	if isWrite(args) {
+		defer g.spaceWrites(ctx)()
+	}
+	started := g.limits.now()
+	out, err := g.run(ctx, publish, projectID, dir, g.ghBin(), args...)
+	return out, g.noteRateLimit(ctx, started, err)
 }
 
 // HasGh reports whether the GitHub CLI is installed here: without it Dash

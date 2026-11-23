@@ -1104,6 +1104,12 @@ func (s *Server) hubGitHub(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var out dispatch.GitHubAnswer
 	var err error
+	if rl := s.Git.RateLimit(); rl != nil && req.Op != dispatch.GitHubRerun && req.Op != dispatch.GitHubFailedLog {
+		// The hub's build polls wait out this computer's rate limit (it
+		// reads it from the answer); a re-run a person asked for tries.
+		writeErr(w, rl)
+		return
+	}
 	switch req.Op {
 	case dispatch.GitHubRuns:
 		out.Runs, err = s.Git.Runs(ctx, p.ID, p.Path, req.Ref, limit)

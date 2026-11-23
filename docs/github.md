@@ -191,6 +191,44 @@ When a build fails, Dash queues a task asking Claude to fix it ("Fix failing bui
 made by Dash. On a hub it runs on the runners of a member: who turned that setting on, else who
 added the project, else the org's owner ([whose work a runner does](several-computers.md#whose-work-a-runner-does)).
 
+## Rate limits
+
+Dash calls GitHub with `gh`. On a hub, each runner calls it with its own `gh` login. Dash polls:
+
+- **Builds**: every minute for a project with a task running, in review or merging, a release
+  building, or a build running. Every 5 minutes for an idle project.
+- **Pull requests**: every minute for a project with an open pull request. Pull requests of failed
+  tasks are followed every 10 minutes.
+
+Each project's polls have a little random delay added, so after a restart they don't all call
+GitHub at once. Writes (opening, commenting on or merging a pull request) from one computer run one
+after another, a second apart.
+
+When GitHub rate limits `gh`, Dash pauses these polls on that computer until the limit ends:
+
+- A **secondary** limit (too many calls or writes close together): GitHub's wait time, else a minute.
+- A **primary** limit (the hourly one): until it resets, as `gh api rate_limit` says, else an hour.
+- When GitHub limits again right after a pause, the pause doubles each time, up to 15 minutes.
+
+The sidebar then says **GitHub rate limit (secondary): paused until 14:05**. Hover it for GitHub's
+message, and click it for the builds. Dash logs each limit once. Things you do still try once:
+opening, merging or approving a pull request, or re-running a build. If GitHub limits that too, the
+task stays in review with GitHub's message and the time the pause ends. Approve it again after that.
+
+To see how much of the hourly limit a computer has used, run this where Dash (or the runner) runs:
+
+```sh
+gh api rate_limit --jq '.resources | {core, graphql}'
+```
+
+A limit "for" an IP address instead of a user ID means `gh` isn't logged in on that computer.
+Without a login GitHub allows only 60 calls an hour. The notice says so, and names the runner on a
+hub. Log in on that computer:
+
+```sh
+gh auth login
+```
+
 ## Tag a release
 
 In **History** (the commit graph of the branch tasks land on), click a commit (or move to it with

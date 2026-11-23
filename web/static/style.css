@@ -2827,6 +2827,9 @@ a.claude-incident-name:hover { text-decoration: underline; }
 /* ---- origin ahead/behind (background fetch) ---- */
 .remote-pill { --c: var(--running); }
 .remote-pill.remote-error { --c: var(--muted); color: var(--muted); font-weight: 400; }
+/* ---- GitHub rate limit: polls paused ---- */
+.github-limit-pill { order: 5; margin-top: 8px; --c: var(--running); white-space: normal; text-align: left; padding-block: 4px; }
+.ci-limit { color: var(--running); }
 /* ---- checkouts left behind origin (another runner pushed) ---- */
 .checkouts { display: flex; flex-direction: column; gap: 6px; }
 .checkout-behind { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border: 1px solid var(--line); border-radius: var(--r-m); font-size: var(--fs-s); }

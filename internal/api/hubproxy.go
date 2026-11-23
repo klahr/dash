@@ -822,6 +822,11 @@ func (g RunnerGitHub) call(ctx context.Context, projectID string, req dispatch.G
 		return out, err
 	}
 	err = s.Dispatch.GitHub(ctx, run.ID, p.ID, req, &out)
+	if rl, ok := gitops.AsRateLimit(err); ok {
+		// GitHub rate limits the runner's gh: the build watcher pauses.
+		rl.Machine = run.Name
+		return out, rl
+	}
 	return out, err
 }
 

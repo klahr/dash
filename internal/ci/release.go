@@ -44,7 +44,13 @@ func CommitState(runs []gitops.Run, sha string) string {
 // CommitRuns lists the workflow runs of a commit: from GitHub when it
 // answers, else from the default branch's runs last seen.
 func (w *Watcher) CommitRuns(ctx context.Context, p model.Project, sha string) (string, []gitops.Run) {
-	runs, err := w.Git.RunsForCommit(ctx, p.ID, p.Path, sha, 30)
+	var runs []gitops.Run
+	var err error
+	if rl := w.limit(p.ID); rl != nil {
+		err = rl // while rate limited, from the runs last seen
+	} else {
+		runs, err = w.Git.RunsForCommit(ctx, p.ID, p.Path, sha, 30)
+	}
 	if err != nil {
 		runs = nil
 		for _, r := range w.Status(p.ID).Runs {

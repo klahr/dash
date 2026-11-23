@@ -22,6 +22,7 @@ func TestMain(m *testing.M) {
 	passhash.UseCheapParamsInTests()
 	store.UseMigratedTemplateInTests()
 	gitops.AllowLocalRemotes = true
+	gitops.WriteGap = 0 // the fake gh's writes needn't be spaced out
 	os.Exit(testgit.Run(m))
 }
 

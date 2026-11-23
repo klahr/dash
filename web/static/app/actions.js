@@ -1,4 +1,4 @@
-import { $, h, ib } from "./dom.js";
+import { $, clockTime, h, ib } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, busy, toast } from "./dialogs.js";
 import { projectFirst, state } from "./state.js";
@@ -86,8 +86,32 @@ export function releaseNews(prev, rel) {
 export const ciBuilding = h("button", { type: "button", class: "side-ci-build", "aria-haspopup": "dialog", hidden: true });
 ciBuilding.addEventListener("click", attempt(openCI));
 
+// While GitHub rate limits the gh that reads the builds, Dash pauses its
+// polls: the sidebar says so and until when, with GitHub's message on hover.
+const limitText = (rl) => `GitHub rate limit (${rl.kind}): paused until ${clockTime(rl.until)}`;
+const limitHelp = (rl) => rl.no_login
+  ? `gh isn't logged in on ${rl.machine ? `the runner ${rl.machine}` : "the Dash computer"}, so GitHub limits it by IP address. Run gh auth login there to fix it.`
+  : "";
+let limitTimer = 0;
+function renderLimit(st) {
+  clearTimeout(limitTimer);
+  const rl = st?.rate_limit;
+  const left = rl ? new Date(rl.until) - Date.now() : 0;
+  const pill = $("#github-limit-pill"), note = $("#ci-limit");
+  pill.hidden = note.hidden = !(left > 0);
+  if (left <= 0) return;
+  const help = limitHelp(rl);
+  pill.textContent = limitText(rl) + (rl.no_login ? " (gh isn't logged in)" : "");
+  pill.title = [`GitHub: ${rl.message}`, help].filter(Boolean).join("\n\n");
+  note.replaceChildren(`${limitText(rl)}. Dash checks the builds again then. `, help);
+  note.title = `GitHub: ${rl.message}`;
+  limitTimer = setTimeout(() => renderLimit(state.ci), Math.min(left + 1000, 2 ** 31 - 1));
+}
+$("#github-limit-pill").addEventListener("click", attempt(() => openCI()));
+
 export function renderCI() {
   const st = state.ci;
+  renderLimit(st);
   const rel = st?.release;
   // The project has builds to show: the sidebar's Builds action opens them,
   // saying how the latest went (a running one is also the ring on the project's row).

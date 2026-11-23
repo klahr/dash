@@ -176,6 +176,8 @@
           <button class="quick-btn" id="pm-builds" type="button" data-icon="checks" aria-haspopup="dialog" hidden><span>Builds</span></button>
         </div>
         <button class="usage-pill remote-pill" id="remote-pill" type="button" hidden title="The default branch compared with origin's"></button>
+        <!-- GitHub rate limits the gh that reads this project's builds: Dash pauses its polls (app/actions.js). -->
+        <button class="usage-pill github-limit-pill" id="github-limit-pill" type="button" aria-haspopup="dialog" hidden></button>
         <div class="checkouts" id="checkouts" role="group" hidden aria-label="Checkouts behind origin"></div>
         <!-- The org's runners, each with its tasks running of its slots (hub only).
              Its head folds the list to one line, to leave the room to the projects. -->
@@ -1042,6 +1044,7 @@
     <form method="dialog">
       <header class="sheet-head"><h2 id="ci-title" tabindex="-1" autofocus>Builds</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="ci-summary"></p>
+      <p class="hint ci-limit" id="ci-limit" hidden></p>
       <div class="ci-release" id="ci-release" hidden></div>
       <ul class="runs" id="ci-runs"></ul>
       <footer class="sheet-actions">

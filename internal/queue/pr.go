@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"regexp"
 	"slices"
 	"strings"
@@ -189,6 +190,9 @@ func (m *MergeQueue) followNow(ctx context.Context, id string) {
 // ghMessage is what gh said about a failure: its output (GitHub's message)
 // rather than the command line.
 func ghMessage(err error) string {
+	if rl, ok := gitops.AsRateLimit(err); ok {
+		return rl.Error() // the limit, until when, and GitHub's message
+	}
 	var ce *gitops.CmdError
 	if errors.As(err, &ce) {
 		if msg := strings.TrimSpace(ce.Output); msg != "" {
@@ -207,13 +211,26 @@ func (e *prError) Unwrap() error { return e.error }
 // schedulePRPolls queues, on the worker of every project with an open pull
 // request, a poll of that project's pull requests (unless one is queued
 // already), so a merged one lands after the project's merges in hand and a
-// slow project never delays the others.
+// slow project never delays the others. Each is queued after a random
+// delay of up to a quarter of PRPoll, so that the projects' polls don't
+// call GitHub all at once. While GitHub rate limits this computer's gh,
+// there is no poll.
 func (m *MergeQueue) schedulePRPolls() {
+	if m.Git.RateLimit() != nil {
+		return
+	}
 	seen := map[string]bool{}
 	for _, t := range m.openPRs() {
 		if pid := t.ProjectID; !seen[pid] {
 			seen[pid] = true
-			m.later(pid, func(l *lane) *atomic.Bool { return &l.polling }, func(c context.Context) { m.pollOpenPRs(c, pid, true) })
+			poll := func() {
+				m.later(pid, func(l *lane) *atomic.Bool { return &l.polling }, func(c context.Context) { m.pollOpenPRs(c, pid, true) })
+			}
+			if d := m.PRPoll / 4; d > 0 {
+				time.AfterFunc(rand.N(d), poll)
+			} else {
+				poll()
+			}
 		}
 	}
 }
@@ -277,6 +294,9 @@ func (m *MergeQueue) pollOpenPRs(ctx context.Context, projectID string, spaceFai
 		g.todos = append(g.todos, t)
 	}
 	for _, pid := range order {
+		if m.Git.RateLimit() != nil {
+			return // GitHub rate limits gh: the next poll after the pause follows them
+		}
 		g := groups[pid]
 		numbers := make([]int, len(g.todos))
 		for i, t := range g.todos {
@@ -287,6 +307,9 @@ func (m *MergeQueue) pollOpenPRs(ctx context.Context, projectID string, spaceFai
 			p := g.project.For(t)
 			st, ok := sts[t.PR.Number]
 			if !ok {
+				if m.Git.RateLimit() != nil {
+					return
+				}
 				var err error
 				if st, err = m.Git.PRStatus(ctx, p.ID, p.Path, t.PR.Number); err != nil {
 					slog.Warn("pull request status", "todo", t.ID, "pr", t.PR.Number, "err", err)

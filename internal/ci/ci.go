@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"slices"
 	"strings"
 	"sync"
@@ -43,6 +44,10 @@ type Status struct {
 	Checked   time.Time    `json:"checked"`
 	// Release is the release tag Dash pushed last and how its build went.
 	Release *Release `json:"release,omitempty"`
+	// RateLimit is set while GitHub rate limits the gh that reads the
+	// builds: polls are paused until it ends, and State and Runs are the
+	// last ones seen.
+	RateLimit *gitops.RateLimitError `json:"rate_limit,omitempty"`
 }
 
 // GitHub is how a Watcher reads GitHub Actions: gh in the project's
@@ -64,35 +69,160 @@ type Watcher struct {
 	Git   GitHub
 	Pub   Publisher
 	Kick  func()        // wake the todo engine after queueing a fix
-	Every time.Duration // poll interval
+	Every time.Duration // poll interval of a project with work going on
+	// IdleEvery is the poll interval of an idle project: no task running,
+	// in review or merging, no release or build running (default 5×Every).
+	IdleEvery time.Duration
 	// AnyRemote also polls projects whose remote isn't on github.com (tests).
 	AnyRemote bool
+	// Now and Rand (a random duration below d) are for tests.
+	Now  func() time.Time
+	Rand func(d time.Duration) time.Duration
 
 	mu       sync.Mutex
 	status   map[string]Status
 	busy     map[string]bool
 	releases map[string]Release // project ID → the release being followed (saved in Store too)
+	polls    map[string]*pollTimes
+}
+
+// pollTimes is when a project's timed poll is due.
+type pollTimes struct {
+	last   time.Time     // the last timed poll; zero before the first
+	first  time.Time     // when the first is due
+	jitter time.Duration // added to its interval, so the projects' polls don't line up
 }
 
 func (w *Watcher) Run(ctx context.Context) {
-	if w.Every <= 0 {
-		w.Every = time.Minute
-	}
-	tick := time.NewTicker(w.Every)
+	// Look every few seconds for projects due: each has its own time.
+	tick := time.NewTicker(max(w.every()/12, 10*time.Millisecond))
 	defer tick.Stop()
 	w.Resume()
 	for {
-		for _, p := range w.Store.ListProjects() {
-			if w.watched(p) {
-				_, _ = w.Refresh(ctx, p.ID)
-			}
-		}
+		w.pollDue(ctx)
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
 		}
 	}
+}
+
+func (w *Watcher) every() time.Duration {
+	if w.Every <= 0 {
+		return time.Minute
+	}
+	return w.Every
+}
+
+func (w *Watcher) idleEvery() time.Duration {
+	if w.IdleEvery <= 0 {
+		return 5 * w.every()
+	}
+	return w.IdleEvery
+}
+
+func (w *Watcher) now() time.Time {
+	if w.Now != nil {
+		return w.Now()
+	}
+	return time.Now()
+}
+
+func (w *Watcher) rand(d time.Duration) time.Duration {
+	if d <= 0 {
+		return 0
+	}
+	if w.Rand != nil {
+		return w.Rand(d)
+	}
+	return rand.N(d)
+}
+
+// pollDue refreshes the watched projects whose poll is due (see due).
+func (w *Watcher) pollDue(ctx context.Context) {
+	now := w.now()
+	for _, p := range w.Store.ListProjects() {
+		if w.watched(p) && w.due(p, now) && ctx.Err() == nil {
+			_, _ = w.Refresh(ctx, p.ID)
+		}
+	}
+}
+
+// due reports whether project p's timed poll is due at now, and if so
+// counts it done. A project is polled every Every while it has work going
+// on (see active), else every IdleEvery; each project's interval has its
+// own bit of jitter added, and after a start the first polls are spread
+// over a quarter of Every (at most 15 seconds), so that many projects
+// don't all call GitHub in the same second.
+func (w *Watcher) due(p model.Project, now time.Time) bool {
+	w.mu.Lock()
+	if w.polls == nil {
+		w.polls = map[string]*pollTimes{}
+	}
+	pt := w.polls[p.ID]
+	every, idle := w.every(), w.idleEvery()
+	if pt == nil {
+		pt = &pollTimes{jitter: w.rand(every / 10), first: now.Add(w.rand(min(every/4, 15*time.Second)))}
+		w.polls[p.ID] = pt
+	}
+	last, first, jitter := pt.last, pt.first, pt.jitter
+	w.mu.Unlock()
+	switch {
+	case last.IsZero():
+		if now.Before(first) {
+			return false
+		}
+	case now.Before(last.Add(every + jitter)):
+		return false
+	case now.Before(last.Add(idle+jitter)) && !w.active(p):
+		return false
+	}
+	w.mu.Lock()
+	pt.last = now
+	w.mu.Unlock()
+	return true
+}
+
+// active reports whether project p has work going on that a build may
+// follow: a task running, in review or merging, a release building, or a
+// build running on its default branch.
+func (w *Watcher) active(p model.Project) bool {
+	if st := w.Status(p.ID); st.State == Running || (st.Release != nil && st.Release.State == ReleaseBuilding) {
+		return true
+	}
+	return len(w.Store.ListTodos(p.ID, model.StatusInProgress, model.StatusReview, model.StatusMerging)) > 0
+}
+
+// rateLimited is a GitHub whose rate limits are this computer's (a
+// *gitops.Git): it says when its gh is paused.
+type rateLimited interface {
+	RateLimit() *gitops.RateLimitError
+}
+
+// limit is the GitHub rate limit project projectID's builds are paused
+// for, or nil: this computer's gh's, or, on a hub, the one the project's
+// runner answered last.
+func (w *Watcher) limit(projectID string) *gitops.RateLimitError {
+	if g, ok := w.Git.(rateLimited); ok {
+		return g.RateLimit()
+	}
+	w.mu.Lock()
+	rl := w.status[projectID].RateLimit
+	w.mu.Unlock()
+	if rl != nil && w.now().Before(rl.Until) {
+		return rl
+	}
+	return nil
+}
+
+// paused shows that project projectID's builds aren't read while rate
+// limit rl lasts: its status keeps what was last seen.
+func (w *Watcher) paused(projectID string, rl *gitops.RateLimitError) Status {
+	st := w.Status(projectID)
+	st.ProjectID, st.RateLimit, st.Error = projectID, rl, ""
+	w.set(st)
+	return st
 }
 
 func (w *Watcher) watched(p model.Project) bool {
@@ -129,9 +259,24 @@ func (w *Watcher) Refresh(ctx context.Context, projectID string) (Status, error)
 		w.set(st)
 		return st, nil
 	}
+	// While GitHub rate limits the gh that reads the builds, it isn't asked.
+	if rl := w.limit(p.ID); rl != nil {
+		return w.paused(p.ID, rl), nil
+	}
 	w.findReleases(ctx, p)
 	st := Status{ProjectID: p.ID, Branch: p.DefaultBranch, Checked: time.Now(), Release: w.refreshRelease(ctx, p)}
+	if rl := w.limit(p.ID); rl != nil {
+		return w.paused(p.ID, rl), nil // limited while reading the releases
+	}
 	runs, err := w.branchRuns(ctx, p)
+	if rl, ok := gitops.AsRateLimit(err); ok {
+		if _, local := w.Git.(rateLimited); !local && w.limit(p.ID) == nil {
+			// On a hub: the runner logged it; say it here once too.
+			slog.Warn("GitHub rate limit: pausing build polls", "project", p.Name, "runner", rl.Machine,
+				"kind", rl.Kind, "until", rl.Until.Format(time.DateTime), "message", rl.Message)
+		}
+		return w.paused(p.ID, rl), nil
+	}
 	if err != nil {
 		st.State, st.Runs, st.Error = Unknown, []gitops.Run{}, briefErr(err)
 		w.set(st)
@@ -456,12 +601,21 @@ func (w *Watcher) set(st Status) {
 	w.status[st.ProjectID] = st
 	w.mu.Unlock()
 	if had && prev.State == st.State && prev.SHA == st.SHA && prev.TodoID == st.TodoID && prev.Error == st.Error &&
-		len(prev.Runs) == len(st.Runs) && (len(st.Runs) == 0 || prev.Runs[0] == st.Runs[0]) && sameRelease(prev.Release, st.Release) {
+		len(prev.Runs) == len(st.Runs) && (len(st.Runs) == 0 || prev.Runs[0] == st.Runs[0]) && sameRelease(prev.Release, st.Release) &&
+		sameLimit(prev.RateLimit, st.RateLimit) {
 		return
 	}
 	if w.Pub != nil {
 		w.Pub.Publish(model.Event{Type: model.EvCI, ProjectID: st.ProjectID, Data: st, Time: time.Now()})
 	}
+}
+
+// sameLimit reports whether a and b are the same rate limit notice.
+func sameLimit(a, b *gitops.RateLimitError) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Kind == b.Kind && a.Until.Equal(b.Until) && a.Machine == b.Machine && a.NoLogin == b.NoLogin && a.Message == b.Message
 }
 
 // fence wraps text in a code fence longer than any backtick run inside it,
