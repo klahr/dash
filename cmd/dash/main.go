@@ -155,7 +155,7 @@ var runnerFlags = []string{"projects", "parallel", "claude", "claude-args", "cod
 // runner with an -addr of its own serves pages with sign-in, so the
 // sign-in, proxy and branding flags stay.)
 var hubOnlyFlags = []string{"signup", "smtp-host", "smtp-port", "smtp-user", "smtp-from",
-	"stripe-secret-key", "stripe-webhook-secret", "stripe-price", "billing-trial-days", "billing-grace",
+	"stripe-secret-key", "stripe-webhook-secret", "stripe-price", "stripe-individual-price", "billing-trial-days", "billing-grace",
 	"org-domain", "org-reserved", "runner-grace"}
 
 // printFlags is fs.PrintDefaults without the flags hide picks.
@@ -291,7 +291,7 @@ func configureBilling(acc *store.Accounts, cfg billing.Config) *billing.Service 
 	}
 	b := billing.New(acc, &billing.HTTPStripe{Key: cfg.SecretKey}, cfg)
 	slog.Info("billing on: orgs with two or more members need a subscription", "trial_days", cfg.TrialDays,
-		"grace", b.Grace(), "webhook", strings.TrimRight(cfg.PublicURL, "/")+"/api/billing/webhook")
+		"grace", b.Grace(), "individual_price", cfg.IndividualPriceID != "", "webhook", strings.TrimRight(cfg.PublicURL, "/")+"/api/billing/webhook")
 	return b
 }
 

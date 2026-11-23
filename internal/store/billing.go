@@ -30,6 +30,10 @@ type OrgBilling struct {
 	FreeNote    string    // why, for admins
 	FreeSetBy   string    // the admin's username
 	FreeSetAt   time.Time
+
+	// Individuals (migrations/0043_billing_individual.sql, a table of its own).
+	PriceID     string    // the subscription's price; "" = none yet
+	ChoseFreeAt time.Time // when an individual chose "I can't pay right now"; zero: not chosen
 }
 
 const orgBillingCols = `SELECT org_id, customer_id, subscription_id, subscription_item_id, status, quantity,
@@ -52,18 +56,22 @@ func zeroOrUnix(t time.Time) int64 {
 
 func orgBilling(q querier, org int64) (OrgBilling, error) {
 	b := OrgBilling{OrgID: org}
-	var period, trial, unpaid, freeUntil, freeSetAt int64
+	var period, trial, unpaid, freeUntil, freeSetAt, choseFree int64
 	err := q.QueryRow(orgBillingCols+" WHERE org_id = ?", org).Scan(&b.OrgID, &b.CustomerID, &b.SubscriptionID, &b.ItemID,
 		&b.Status, &b.Quantity, &period, &trial, &b.CancelAtPeriodEnd, &b.TrialUsed, &unpaid, &b.EventAt,
 		&b.FreeForever, &freeUntil, &b.FreeNote, &b.FreeSetBy, &freeSetAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return OrgBilling{OrgID: org}, nil
-	}
-	if err != nil {
+		b = OrgBilling{OrgID: org}
+	} else if err != nil {
 		return b, err
 	}
 	b.PeriodEnd, b.TrialEnd, b.UnpaidSince = unixOrZero(period), unixOrZero(trial), unixOrZero(unpaid)
 	b.FreeUntil, b.FreeSetAt = unixOrZero(freeUntil), unixOrZero(freeSetAt)
+	err = q.QueryRow("SELECT price_id, chose_free_at FROM org_billing_individual WHERE org_id = ?", org).Scan(&b.PriceID, &choseFree)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return b, err
+	}
+	b.ChoseFreeAt = unixOrZero(choseFree)
 	return b, nil
 }
 
@@ -105,6 +113,12 @@ func (a *Accounts) UpdateOrgBilling(org int64, fn func(*OrgBilling) error) (OrgB
 			org, b.CustomerID, b.SubscriptionID, b.ItemID, b.Status, b.Quantity, zeroOrUnix(b.PeriodEnd), zeroOrUnix(b.TrialEnd),
 			b.CancelAtPeriodEnd, b.TrialUsed, zeroOrUnix(b.UnpaidSince), b.EventAt,
 			b.FreeForever, zeroOrUnix(b.FreeUntil), b.FreeNote, b.FreeSetBy, zeroOrUnix(b.FreeSetAt), time.Now().Unix())
+		if err != nil || b.PriceID == cur.PriceID && b.ChoseFreeAt.Equal(cur.ChoseFreeAt) {
+			return err
+		}
+		_, err = tx.Exec(`INSERT INTO org_billing_individual (org_id, price_id, chose_free_at) VALUES (?, ?, ?)
+			ON CONFLICT (org_id) DO UPDATE SET price_id = excluded.price_id, chose_free_at = excluded.chose_free_at`,
+			org, b.PriceID, zeroOrUnix(b.ChoseFreeAt))
 		return err
 	})
 	return b, err

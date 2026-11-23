@@ -17,7 +17,7 @@ import { closeDetail } from "./detail.js";
 import { syncPrefs } from "./prefs.js";
 import { loadRunners, openRunners, renderSideRunners, startRunner } from "./runners.js";
 import { loadMe, openOrg, renameOrg, sendInvite, setOrgName, setRequire2FA } from "./account.js";
-import { loadBilling, newOrg } from "./billing.js";
+import { askToPay, loadBilling, newOrg } from "./billing.js";
 import { createToken } from "./tokens.js";
 import { openAccount } from "./accountsheet.js";
 import { notifyOn, renderTitle } from "./notifications.js";
@@ -1019,7 +1019,7 @@ loadMe().then(() => {
   // The org's people, for who created each task (none without an org).
   if (state.me?.org) loadPeople().catch(() => {});
   return loadBilling();
-}).catch(() => {});
+}).then(askToPay).catch(() => {});
 loadRunners().catch(() => {});
 $("#account-open").addEventListener("click", attempt(() => openAccount()));
 $("#org-open").addEventListener("click", attempt(openOrg));

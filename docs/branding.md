@@ -23,6 +23,7 @@ footer.
 | `DASH_LOGO`           | `-logo`          | an image file on the server (SVG, PNG, WebP, …) shown instead of Dash's mark next to the name |
 | `DASH_LANDING`        | `-landing`       | `1` shows the landing page at `/` to visitors who aren't signed in (off by default) |
 | `DASH_TEAM_PRICE`     | `-team-price`    | the team plan's price on the landing page, exactly as shown, e.g. `€8 per seat / month` |
+| `DASH_INDIVIDUAL_PRICE` | `-individual-price` | the individual price on the landing page and in **Organization → Billing**, exactly as shown, e.g. `€5 / month` |
 | `DASH_PRICING_URL`    | `-pricing-url`   | where the landing page's **see pricing** links to when there's no price  |
 
 URLs must be `http(s)://…` and the contact a bare address (`help@example.com`). Dash
@@ -60,10 +61,16 @@ a short FAQ and the runner install command. Its buttons are **Log in**, and **St
 [open signup](signup.md) is on (it opens the sign-in page's signup form). Without open
 signup, the page's main button is **Log in**.
 
-The pricing shows individuals (and organizations with one member) as free, and teams of two or
-more as per seat, as [billing](billing.md) charges them: with `DASH_TEAM_PRICE` that
-string, otherwise "see pricing", linked to `DASH_PRICING_URL` (or to the contact address,
-or plain text if neither is set). Dash doesn't bill anyone; these are words on a page.
+The pricing shows individuals (and organizations with one member) and teams of two or more,
+as [billing](billing.md) charges them:
+
+- **Individuals**: with `DASH_INDIVIDUAL_PRICE`, that string and "Can't pay? Use it free, no
+  questions asked." Without it, **Free**. Set it when you set `STRIPE_INDIVIDUAL_PRICE_ID`
+  (see [Individuals](billing.md#individuals)), and leave it unset when you don't.
+- **Teams**: per seat. With `DASH_TEAM_PRICE`, that string. Otherwise "see pricing", linked to
+  `DASH_PRICING_URL` (or to the contact address, or plain text if neither is set).
+
+Dash doesn't bill anyone from these; they are words on a page.
 
 The page is one HTML file built into the binary, with its styles inline: no JavaScript,
 web fonts or anything else from other sites, and it fits a phone's screen. Its screenshots
@@ -79,6 +86,7 @@ A hosted Dash, with [open signup](signup.md):
     DASH_BRAND_NAME="Example Agents"
     DASH_LANDING=1
     DASH_TEAM_PRICE="€8 per seat / month"
+    DASH_INDIVIDUAL_PRICE="€5 / month"
     DASH_TERMS_URL=https://example.com/terms
     DASH_PRIVACY_URL=https://example.com/privacy
     DASH_CONTACT_EMAIL=help@example.com

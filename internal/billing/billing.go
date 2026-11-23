@@ -7,6 +7,10 @@
 // more members needs an active or trialing subscription, whose quantity is
 // its member count. Without one, after a grace period, its board becomes
 // read-only and its tasks don't start. Nothing is ever deleted.
+//
+// With an individual price set, individuals (a personal workspace or a
+// one-member org) are asked to pay, at a single price, but never made to:
+// "I can't pay right now" keeps them free, and nothing is ever locked.
 package billing
 
 import (
@@ -35,6 +39,8 @@ var (
 	ErrSubscribed = errors.New("this organization already has a subscription: manage it in the billing portal")
 	// ErrNoCustomer: the org has never subscribed, so there's no portal yet.
 	ErrNoCustomer = errors.New("this organization has no billing account yet: subscribe first")
+	// ErrNotIndividual: only individuals choose to use Dash for free.
+	ErrNotIndividual = errors.New("only a personal workspace or a one-member organization can choose to use Dash for free")
 )
 
 // Config is Stripe's side of billing.
@@ -42,15 +48,21 @@ type Config struct {
 	SecretKey     string // STRIPE_SECRET_KEY
 	WebhookSecret string // STRIPE_WEBHOOK_SECRET
 	PriceID       string // STRIPE_PRICE_ID: a recurring per-seat price
-	TrialDays     int    // a first subscription's trial; 0 = none
-	Grace         time.Duration
-	PublicURL     string // where Checkout and the portal send people back to
+	// IndividualPriceID (STRIPE_INDIVIDUAL_PRICE_ID, optional): a recurring
+	// price individuals are asked, not made, to pay. "": individuals are free.
+	IndividualPriceID string
+	// IndividualPrice is that price as shown (DASH_INDIVIDUAL_PRICE), e.g.
+	// "€5 / month" (optional: Checkout shows the amount anyway).
+	IndividualPrice string
+	TrialDays       int // a first subscription's trial; 0 = none
+	Grace           time.Duration
+	PublicURL       string // where Checkout and the portal send people back to
 }
 
 // Configured reports whether any of Stripe's settings are present: if none
 // are, billing is simply off.
 func (c Config) Configured() bool {
-	return c.SecretKey != "" || c.WebhookSecret != "" || c.PriceID != ""
+	return c.SecretKey != "" || c.WebhookSecret != "" || c.PriceID != "" || c.IndividualPriceID != ""
 }
 
 // Check says what is missing or wrong for billing to work.
@@ -79,6 +91,12 @@ func (c Config) Check() error {
 	}
 	if !strings.HasPrefix(c.PriceID, "price_") {
 		return errors.New("STRIPE_PRICE_ID should be a price id (price_…), not a product id")
+	}
+	if c.IndividualPriceID != "" && !strings.HasPrefix(c.IndividualPriceID, "price_") {
+		return errors.New("STRIPE_INDIVIDUAL_PRICE_ID should be a price id (price_…), not a product id")
+	}
+	if c.IndividualPriceID != "" && c.IndividualPriceID == c.PriceID {
+		return errors.New("STRIPE_INDIVIDUAL_PRICE_ID should be another price than STRIPE_PRICE_ID")
 	}
 	if c.TrialDays < 0 || c.TrialDays > 730 {
 		return errors.New("the trial is 0 to 730 days")
@@ -154,6 +172,19 @@ type State struct {
 	// HasAccount: there's a Stripe customer, so the portal works.
 	HasAccount bool `json:"has_account"`
 	TrialDays  int  `json:"trial_days,omitempty"` // the trial Checkout offers
+
+	// Individual: the org is an individual's (a personal workspace or one
+	// member) and the instance has an individual price: it is asked to pay,
+	// never made to. Free stays true and Required false.
+	Individual      bool   `json:"individual,omitempty"`
+	IndividualPrice string `json:"individual_price,omitempty"` // the price as shown, if set
+	// Ask: an individual that has never subscribed nor chosen to use Dash
+	// for free: offer Subscribe and "I can't pay right now".
+	Ask bool `json:"ask,omitempty"`
+	// ChoseFree: they clicked "I can't pay right now".
+	ChoseFree bool `json:"chose_free,omitempty"`
+	// Plan is what the live subscription is on: "individual" or "team".
+	Plan string `json:"plan,omitempty"`
 }
 
 func timePtr(t time.Time) *time.Time {
@@ -168,6 +199,11 @@ func timePtr(t time.Time) *time.Time {
 func (s *Service) exempt(org int64) bool {
 	d, err := s.acc.DefaultOrg()
 	return err == nil && d.ID == org
+}
+
+// individualPrice reports whether price is the instance's individual price.
+func (s *Service) individualPrice(price string) bool {
+	return s.cfg.IndividualPriceID != "" && price == s.cfg.IndividualPriceID
 }
 
 // freeByOverride reports whether a platform admin's override makes b's org
@@ -204,6 +240,18 @@ func (s *Service) State(org int64) (State, error) {
 	}
 	if live(b.Status) {
 		st.Seats = b.Quantity
+		st.Plan = "team"
+		if s.individualPrice(b.PriceID) {
+			st.Plan = "individual"
+		}
+	}
+	// Individuals are asked to pay, never made to: this touches nothing
+	// below (Free stays, so Required stays false).
+	if s.cfg.IndividualPriceID != "" && (personal || members < 2) && !s.exempt(org) && !override {
+		st.Individual, st.IndividualPrice = true, s.cfg.IndividualPrice
+		st.ChoseFree = !b.ChoseFreeAt.IsZero()
+		// Having subscribed once (even if since cancelled) is an answer too.
+		st.Ask = !st.ChoseFree && b.SubscriptionID == ""
 	}
 	if !b.TrialUsed {
 		st.TrialDays = s.cfg.TrialDays
@@ -306,7 +354,9 @@ func (s *Service) MembersChanged(org int64) {
 }
 
 // SyncSeats sets the quantity of org's live subscription to its member
-// count (at least 1), with proration.
+// count (at least 1), with proration. An individual subscription isn't
+// seat-synced: it stays at one while the org has one member, and moves to
+// the per-seat price, with a seat per member, once it has two or more.
 func (s *Service) SyncSeats(ctx context.Context, org int64) error {
 	if s == nil {
 		return nil
@@ -320,10 +370,17 @@ func (s *Service) SyncSeats(ctx context.Context, org int64) error {
 		return err
 	}
 	n = max(n, 1)
-	if n == b.Quantity {
+	price := "" // keep it
+	if s.individualPrice(b.PriceID) {
+		if n < 2 {
+			return nil
+		}
+		price = s.cfg.PriceID // a team now: per seat
+	}
+	if n == b.Quantity && price == "" {
 		return nil
 	}
-	sub, err := s.stripe.UpdateQuantity(ctx, b.SubscriptionID, b.ItemID, n)
+	sub, err := s.stripe.UpdateItem(ctx, b.SubscriptionID, b.ItemID, price, n)
 	if err != nil {
 		return err
 	}
@@ -335,10 +392,13 @@ func (s *Service) SyncSeats(ctx context.Context, org int64) error {
 		if sub.ItemID != "" {
 			x.ItemID = sub.ItemID
 		}
+		if price != "" {
+			x.PriceID = price
+		}
 		return nil
 	})
 	if err == nil {
-		slog.Info("billing: seats updated", "org", org, "seats", n)
+		slog.Info("billing: seats updated", "org", org, "seats", n, "to_team_price", price != "")
 	}
 	return err
 }
@@ -376,29 +436,26 @@ func (s *Service) customer(ctx context.Context, org int64) (string, error) {
 }
 
 // Checkout opens a Stripe Checkout session that subscribes org, with its
-// members as seats, and returns its URL.
+// members as seats, and returns its URL. An individual subscribes at the
+// individual price instead: one, with no trial.
 func (s *Service) Checkout(ctx context.Context, org int64) (string, error) {
-	b, err := s.acc.OrgBilling(org)
+	st, err := s.State(org)
 	if err != nil {
 		return "", err
 	}
-	if live(b.Status) {
+	if !st.CanSubscribe {
 		return "", ErrSubscribed
-	}
-	n, err := s.acc.ForOrg(org).MemberCount()
-	if err != nil {
-		return "", err
 	}
 	cust, err := s.customer(ctx, org)
 	if err != nil {
 		return "", err
 	}
-	trial := s.cfg.TrialDays
-	if b.TrialUsed {
-		trial = 0
+	price, n, trial := s.cfg.PriceID, max(st.Members, 1), st.TrialDays
+	if st.Individual {
+		price, n, trial = s.cfg.IndividualPriceID, 1, 0
 	}
 	return s.stripe.CreateCheckoutSession(ctx, CheckoutParams{
-		OrgID: org, Customer: cust, Price: s.cfg.PriceID, Quantity: max(n, 1), TrialDays: trial,
+		OrgID: org, Customer: cust, Price: price, Quantity: n, TrialDays: trial,
 		SuccessURL: s.cfg.PublicURL + "/?billing=done",
 		CancelURL:  s.cfg.PublicURL + "/?billing=canceled",
 	})
@@ -415,6 +472,30 @@ func (s *Service) Portal(ctx context.Context, org int64) (string, error) {
 		return "", ErrNoCustomer
 	}
 	return s.stripe.CreatePortalSession(ctx, b.CustomerID, s.cfg.PublicURL+"/?billing=portal")
+}
+
+// ChooseFree records that an individual can't pay right now: Dash stops
+// asking them, and they keep using it for free. They can subscribe later.
+func (s *Service) ChooseFree(org int64) (State, error) {
+	st, err := s.State(org)
+	if err != nil {
+		return st, err
+	}
+	if !st.Individual {
+		return st, ErrNotIndividual
+	}
+	if !st.ChoseFree {
+		if _, err := s.acc.UpdateOrgBilling(org, func(x *store.OrgBilling) error {
+			if x.ChoseFreeAt.IsZero() {
+				x.ChoseFreeAt = s.now().UTC().Truncate(time.Second)
+			}
+			return nil
+		}); err != nil {
+			return st, err
+		}
+		slog.Info("billing: individual chose to use Dash for free", "org", org)
+	}
+	return s.State(org)
 }
 
 // ErrFreeOverride is a free override that can't be set as asked.

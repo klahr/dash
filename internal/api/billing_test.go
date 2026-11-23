@@ -29,7 +29,7 @@ func (stripeStub) CreatePortalSession(context.Context, string, string) (string, 
 func (stripeStub) GetSubscription(context.Context, string) (billing.Subscription, error) {
 	return billing.Subscription{}, nil
 }
-func (stripeStub) UpdateQuantity(context.Context, string, string, int) (billing.Subscription, error) {
+func (stripeStub) UpdateItem(context.Context, string, string, string, int) (billing.Subscription, error) {
 	return billing.Subscription{}, nil
 }
 

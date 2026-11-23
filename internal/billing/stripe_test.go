@@ -71,12 +71,18 @@ func TestHTTPStripeRequests(t *testing.T) {
 	if _, err := st.CreatePortalSession(ctx, "cus_1", "https://dash.example/"); err != nil {
 		t.Fatal(err)
 	}
-	sub, err := st.UpdateQuantity(ctx, "sub_1", "", 4) // no item on record: looked up first
+	sub, err := st.UpdateItem(ctx, "sub_1", "", "", 4) // no item on record: looked up first
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f := got["POST /v1/subscriptions/sub_1"]; f.Get("items[0][id]") != "si_1" || f.Get("items[0][quantity]") != "4" || f.Get("proration_behavior") != "create_prorations" {
+	if f := got["POST /v1/subscriptions/sub_1"]; f.Get("items[0][id]") != "si_1" || f.Get("items[0][quantity]") != "4" || f.Get("proration_behavior") != "create_prorations" || f.Has("items[0][price]") {
 		t.Errorf("update form: %v", f)
+	}
+	if _, err := st.UpdateItem(ctx, "sub_1", "si_1", "price_seat", 2); err != nil {
+		t.Fatal(err)
+	}
+	if f := got["POST /v1/subscriptions/sub_1"]; f.Get("items[0][price]") != "price_seat" || f.Get("items[0][quantity]") != "2" {
+		t.Errorf("price change form: %v", f)
 	}
 	if sub.Customer != "cus_1" || sub.OrgID != 5 || sub.PeriodEnd != 1800000000 || sub.Quantity != 4 || sub.ItemID != "si_1" || sub.TrialEnd != 0 {
 		t.Errorf("parsed subscription: %+v", sub)

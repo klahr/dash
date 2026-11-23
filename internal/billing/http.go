@@ -25,6 +25,7 @@ type Mux interface {
 //	GET  /api/orgs/{oid}/billing            the org's billing state (members)
 //	POST /api/orgs/{oid}/billing/checkout   {url}: Stripe Checkout (owners)
 //	POST /api/orgs/{oid}/billing/portal     {url}: the customer portal (owners)
+//	POST /api/orgs/{oid}/billing/free       an individual can't pay right now (owners): the state
 //	POST /api/billing/webhook               Stripe's events (signed; no session)
 //
 //	GET    /api/admin/orgs/{oid}/billing    platform admins: the org's free override and state
@@ -36,6 +37,7 @@ func (s *Service) Routes(mux Mux) {
 	mux.Handle("GET /api/orgs/{oid}/billing", auth.RequireSession(http.HandlerFunc(s.state)))
 	mux.Handle("POST /api/orgs/{oid}/billing/checkout", auth.RequireSession(s.ownerOnly(s.checkout)))
 	mux.Handle("POST /api/orgs/{oid}/billing/portal", auth.RequireSession(s.ownerOnly(s.portal)))
+	mux.Handle("POST /api/orgs/{oid}/billing/free", auth.RequireSession(s.ownerOnly(s.chooseFree)))
 	mux.Handle("GET /api/admin/orgs/{oid}/billing", auth.RequireSession(s.adminOnly(s.getOverride)))
 	mux.Handle("PUT /api/admin/orgs/{oid}/billing", auth.RequireSession(s.adminOnly(s.putOverride)))
 	mux.Handle("DELETE /api/admin/orgs/{oid}/billing", auth.RequireSession(s.adminOnly(s.deleteOverride)))
@@ -119,6 +121,22 @@ func (s *Service) checkout(w http.ResponseWriter, r *http.Request, m store.Membe
 func (s *Service) portal(w http.ResponseWriter, r *http.Request, m store.Membership) {
 	url, err := s.Portal(r.Context(), m.ID)
 	s.answerURL(w, m, url, err)
+}
+
+func (s *Service) chooseFree(w http.ResponseWriter, r *http.Request, m store.Membership) {
+	st, err := s.ChooseFree(m.ID)
+	switch {
+	case errors.Is(err, ErrNotIndividual):
+		writeError(w, http.StatusConflict, err.Error())
+	case err != nil:
+		slog.Error("billing: choose free", "org", m.ID, "err", err)
+		writeError(w, http.StatusInternalServerError, "something went wrong")
+	default:
+		writeJSON(w, http.StatusOK, struct {
+			State
+			CanManage bool `json:"can_manage"`
+		}{st, true})
+	}
 }
 
 func (s *Service) answerURL(w http.ResponseWriter, m store.Membership, url string, err error) {

@@ -64,7 +64,7 @@ func (f *fakeStripe) GetSubscription(_ context.Context, id string) (Subscription
 	return s, nil
 }
 
-func (f *fakeStripe) UpdateQuantity(_ context.Context, sub, item string, q int) (Subscription, error) {
+func (f *fakeStripe) UpdateItem(_ context.Context, sub, item, price string, q int) (Subscription, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail != nil {
@@ -75,6 +75,10 @@ func (f *fakeStripe) UpdateQuantity(_ context.Context, sub, item string, q int) 
 		return s, errors.New("no such subscription")
 	}
 	s.Quantity = q
+	if price != "" {
+		s.Price = price
+		f.updates = append(f.updates, fmt.Sprintf("%s:%s", sub, price))
+	}
 	f.subs[sub] = s
 	f.updates = append(f.updates, fmt.Sprintf("%s=%d", sub, q))
 	return s, nil

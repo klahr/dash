@@ -104,7 +104,7 @@ type options struct {
 	smtpPort                         int
 	smtpUser, smtpFrom               string
 	stripeKey, stripeWebhook         string
-	stripePrice                      string
+	stripePrice, stripeIndividual    string
 	trialDays                        int
 	billingGrace                     time.Duration
 	brandName, sourceURL             string
@@ -113,6 +113,7 @@ type options struct {
 	contactEmail, logo               string
 	landing                          bool
 	teamPrice, pricingURL            string
+	individualPrice                  string
 	runnerGrace                      time.Duration
 	removed, ignored                 []string // removed flags, and a runner's flags given to the hub
 	hubServer, regCode               string   // runner
@@ -199,6 +200,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.StringVar(&o.stripeKey, "stripe-secret-key", "", "Stripe secret key: turns on per-seat billing of orgs with two or more members (see docs/billing.md; or $STRIPE_SECRET_KEY)")
 	f.StringVar(&o.stripeWebhook, "stripe-webhook-secret", "", "signing secret of the Stripe webhook endpoint /api/billing/webhook (or $STRIPE_WEBHOOK_SECRET)")
 	f.StringVar(&o.stripePrice, "stripe-price", "", "Stripe price id (price_…) of the recurring per-seat price (or $STRIPE_PRICE_ID)")
+	f.StringVar(&o.stripeIndividual, "stripe-individual-price", "", "Stripe price id (price_…) of a recurring price individuals are asked, not made, to pay; unset: individuals are free (or $STRIPE_INDIVIDUAL_PRICE_ID)")
 	f.IntVar(&o.trialDays, "billing-trial-days", -1, fmt.Sprintf("trial of an org's first subscription, in days; 0 = none (default $DASH_BILLING_TRIAL_DAYS, else %d)", billing.DefaultTrialDays))
 	f.DurationVar(&o.billingGrace, "billing-grace", 0, fmt.Sprintf("how long an org may need a subscription it doesn't have before its board becomes read-only (default $DASH_BILLING_GRACE, else %s)", billing.DefaultGrace))
 	f.StringVar(&o.brandName, "brand-name", "", "product name in page titles, the sign-in pages and emails (default \"Dash\"; or $DASH_BRAND_NAME; see docs/branding.md)")
@@ -211,6 +213,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.StringVar(&o.logo, "logo", "", "image file shown instead of Dash's mark on the pages (or $DASH_LOGO)")
 	f.BoolVar(&o.landing, "landing", false, "show a landing page at / to visitors who aren't signed in, instead of the sign-in page (or DASH_LANDING=1)")
 	f.StringVar(&o.teamPrice, "team-price", "", "the team plan's price on the landing page, as shown, e.g. \"€8 per seat / month\" (or $DASH_TEAM_PRICE)")
+	f.StringVar(&o.individualPrice, "individual-price", "", "the individual price on the landing page and in Billing, as shown, e.g. \"€5 / month\" (or $DASH_INDIVIDUAL_PRICE)")
 	f.StringVar(&o.pricingURL, "pricing-url", "", "where the landing page's \"see pricing\" links to when -team-price isn't set (or $DASH_PRICING_URL)")
 	// Removed flags, still accepted so an old start command keeps working.
 	for _, name := range removedFlags {
@@ -709,7 +712,8 @@ func (a *app) buildServices() {
 			TermsFile: envOr(o.termsFile, "DASH_TERMS_FILE"), PrivacyFile: envOr(o.privacyFile, "DASH_PRIVACY_FILE"),
 			Contact: envOr(o.contactEmail, "DASH_CONTACT_EMAIL"), Logo: envOr(o.logo, "DASH_LOGO"),
 			Landing: o.landing || envBool("DASH_LANDING"), TeamPrice: envOr(o.teamPrice, "DASH_TEAM_PRICE"),
-			PricingURL: envOr(o.pricingURL, "DASH_PRICING_URL"),
+			IndividualPrice: envOr(o.individualPrice, "DASH_INDIVIDUAL_PRICE"),
+			PricingURL:      envOr(o.pricingURL, "DASH_PRICING_URL"),
 		}.WithDefaults(),
 	}
 }
@@ -766,12 +770,14 @@ func (a *app) configureServer() {
 func (a *app) setupHub() {
 	o, st, events, ctx, apiSrv, authn, todos := a.o, a.st, a.events, a.ctx, a.apiSrv, a.authn, a.todos
 	apiSrv.Billing = configureBilling(st.Accounts(), billing.Config{
-		SecretKey:     envOr(o.stripeKey, "STRIPE_SECRET_KEY"),
-		WebhookSecret: envOr(o.stripeWebhook, "STRIPE_WEBHOOK_SECRET"),
-		PriceID:       envOr(o.stripePrice, "STRIPE_PRICE_ID"),
-		TrialDays:     o.trialDays,
-		Grace:         o.billingGrace,
-		PublicURL:     o.publicURL,
+		SecretKey:         envOr(o.stripeKey, "STRIPE_SECRET_KEY"),
+		WebhookSecret:     envOr(o.stripeWebhook, "STRIPE_WEBHOOK_SECRET"),
+		PriceID:           envOr(o.stripePrice, "STRIPE_PRICE_ID"),
+		IndividualPriceID: envOr(o.stripeIndividual, "STRIPE_INDIVIDUAL_PRICE_ID"),
+		IndividualPrice:   apiSrv.Brand.IndividualPrice,
+		TrialDays:         o.trialDays,
+		Grace:             o.billingGrace,
+		PublicURL:         o.publicURL,
 	})
 	if b := apiSrv.Billing; b != nil {
 		authn.OnMembersChanged, authn.InviteNotice = b.MembersChanged, b.InviteNotice

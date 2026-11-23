@@ -1,6 +1,6 @@
 import { $, dateText, fill, h, plural } from "./dom.js";
 import { api } from "./api.js";
-import { ask, attempt, toast } from "./dialogs.js";
+import { ask, attempt, openSheet, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { switchOrg } from "./myaccount.js";
 
@@ -8,6 +8,9 @@ import { switchOrg } from "./myaccount.js";
 // Only when the hub has Stripe configured: an org with two or more members
 // needs a subscription, billed per member. Owners subscribe in Stripe
 // Checkout and manage the card, invoices and cancelling in Stripe's portal.
+// With an individual price, individuals (a personal workspace, or one
+// member) are asked to pay but never made to: "I can't pay right now" keeps
+// them free, and nothing is ever locked.
 export async function loadBilling() {
   const org = state.me?.org;
   if (!org) return null;
@@ -29,13 +32,59 @@ async function openBillingPortal() {
   location.href = r.url;
 }
 
+// chooseFree: an individual can't pay right now. One click, no reason: Dash
+// stops asking, and they keep using it for free.
+async function chooseFree() {
+  const b = await api("POST", `/api/orgs/${state.me.org.id}/billing/free`);
+  state.billing = b;
+  if (!$("#org-billing").hidden) renderOrgBilling(b);
+  toast("Thanks for trying Dash. Use it free for as long as you need.", { tone: "ok" });
+}
+
 function billingButtons(b) {
   if (!b?.can_manage) return [];
+  const individual = !!b.individual;
   return [
-    b.can_subscribe && !freeText(b) ? h("button", { class: "btn small primary", type: "button", onclick: attempt(startCheckout) },
-      b.trial_days ? `Start ${b.trial_days}-day trial` : "Subscribe") : null,
+    b.can_subscribe && (individual || !freeText(b)) ? h("button", { class: "btn small primary", type: "button", onclick: attempt(startCheckout) },
+      individual || !b.trial_days ? "Subscribe" : `Start ${b.trial_days}-day trial`) : null,
+    individual && b.ask ? h("button", { class: "btn small", type: "button", onclick: attempt(chooseFree) }, "I can't pay right now") : null,
     b.has_account ? h("button", { class: "btn small", type: "button", onclick: attempt(openBillingPortal) }, "Manage billing") : null,
   ].filter(Boolean);
+}
+
+// individualPrice is "Dash is €5 / month for individuals", or less without
+// the price's text.
+const individualPrice = (b) => b.individual_price ? `Dash is ${b.individual_price} for individuals.` : "Dash is paid for by the people who use it.";
+
+// askToPay asks an individual who hasn't answered yet to pay, at most once a
+// day in this browser, when the app opens. It asks, it doesn't block:
+// closing it changes nothing, and only "I can't pay right now" (or
+// subscribing) stops it coming back.
+export function askToPay(b) {
+  // Not straight back from Stripe: its webhook may still be on its way.
+  if (!b?.enabled || !b.ask || !b.can_manage || backFromStripe) return;
+  const key = `dash.billing.asked.${state.me.org.id}`;
+  let last = 0;
+  try { last = Number(localStorage.getItem(key)) || 0; } catch { /* private mode: ask */ }
+  if (Date.now() - last < 864e5) return;
+  try { localStorage.setItem(key, String(Date.now())); } catch { /* ignore */ }
+  let picked = "";
+  const { closed } = openSheet({
+    title: "Support Dash?",
+    body: [
+      h("p", {}, `${individualPrice(b)} If you can, subscribe: it keeps Dash going.`),
+      h("p", { class: "hint" }, "Can't pay right now? Use it free, no questions asked: nothing is locked, and you can subscribe later in Organization → Billing."),
+    ],
+    footer: [
+      h("button", { class: "btn", value: "free" }, "I can't pay right now"),
+      h("button", { class: "btn primary", value: "subscribe" }, "Subscribe"),
+    ],
+    onClose: (v) => { picked = v; },
+  });
+  closed.then(() => {
+    if (picked === "subscribe") attempt(startCheckout)();
+    else if (picked === "free") attempt(chooseFree)();
+  });
 }
 
 function renderBillingBanner() {
@@ -78,7 +127,22 @@ export function renderOrgBilling(b) {
   if (admin) renderFreeOverride($("#org-billing-admin")).catch((err) => toast(err.message, true));
 }
 
+// individualLines: the Billing section of an individual's workspace.
+function individualLines(b) {
+  if (b.plan === "individual" || b.seats) {
+    const line = b.status === "past_due" || b.status === "unpaid" ? "The last payment failed. Update the card in the billing portal." :
+      `Subscribed${b.plan === "individual" ? "" : ` · ${plural(b.seats, "seat")}`}${b.period_end ? ` · ${b.cancel_at_period_end ? "ends" : "renews"} ${dateText(b.period_end)}` : ""}`;
+    return [line, "Thanks for paying for Dash. Manage or cancel it in the billing portal: if you cancel, you keep using Dash for free."];
+  }
+  const lines = [b.chose_free ? "Free, as you asked." : "Free for now."];
+  lines.push(b.chose_free ? `${individualPrice(b)} Subscribe whenever you can: nothing changes until then.` :
+    `${individualPrice(b)} If you can, subscribe. If you can't, use it free: nothing is locked.`);
+  lines.push("Inviting a second member makes this a team, billed per member.");
+  return lines;
+}
+
 function ownerBillingLines(b, free) {
+  if (b.individual && !free) return individualLines(b);
   const lines = [];
   if (free) {
     lines.push(`${free}: a platform admin waived the subscription for this organization, whatever its members.`);
@@ -188,9 +252,11 @@ export async function offerSubscription(notice) {
 }
 
 // Back from Stripe Checkout or the portal.
+let backFromStripe = false;
 {
   const q = new URLSearchParams(location.search);
   const back = q.get("billing");
+  backFromStripe = !!back;
   if (back) {
     q.delete("billing");
     history.replaceState(null, "", location.pathname + (q.size ? `?${q}` : "") + location.hash);

@@ -34,14 +34,17 @@ type Config struct {
 	// TermsURL and PrivacyURL elsewhere (optional).
 	TermsFile, PrivacyFile string
 
-	Landing    bool   // show the landing page at / to visitors who aren't signed in
-	TeamPrice  string // the team plan's price as shown, e.g. "€8 per seat / month" (optional)
-	PricingURL string // where "see pricing" links to (optional)
+	Landing   bool   // show the landing page at / to visitors who aren't signed in
+	TeamPrice string // the team plan's price as shown, e.g. "€8 per seat / month" (optional)
+	// IndividualPrice is the individual price as shown, e.g. "€5 / month"
+	// (optional): without it the landing page says individuals are free.
+	IndividualPrice string
+	PricingURL      string // where "see pricing" links to (optional)
 }
 
 // WithDefaults fills in what's empty and trims the rest.
 func (c Config) WithDefaults() Config {
-	for _, p := range []*string{&c.Name, &c.SourceURL, &c.TermsURL, &c.PrivacyURL, &c.TermsFile, &c.PrivacyFile, &c.Contact, &c.Logo, &c.TeamPrice, &c.PricingURL} {
+	for _, p := range []*string{&c.Name, &c.SourceURL, &c.TermsURL, &c.PrivacyURL, &c.TermsFile, &c.PrivacyFile, &c.Contact, &c.Logo, &c.TeamPrice, &c.IndividualPrice, &c.PricingURL} {
 		*p = strings.TrimSpace(*p)
 	}
 	if c.TermsFile != "" && c.TermsURL == "" {

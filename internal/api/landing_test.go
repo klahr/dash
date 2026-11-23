@@ -37,6 +37,24 @@ func TestLandingOffByDefault(t *testing.T) {
 	}
 }
 
+// Individuals: free without an individual price; with one, the price and
+// the free way out.
+func TestLandingIndividualPrice(t *testing.T) {
+	parallel(t)
+
+	_, h := brandedServer(t, branding.Config{Landing: true})
+	body := get(t, h, "/").Body.String()
+	if !strings.Contains(body, `<div class="price">Free</div>`) || strings.Contains(body, "Use it free") {
+		t.Error("without an individual price, individuals aren't shown as free")
+	}
+	_, h = brandedServer(t, branding.Config{Landing: true, IndividualPrice: " €5 / month "})
+	body = get(t, h, "/").Body.String()
+	if !strings.Contains(body, `<div class="price">€5 / month</div>`) || !strings.Contains(body, "Use it free, no questions asked") ||
+		strings.Contains(body, `<div class="price">Free</div>`) {
+		t.Error("the individual price isn't on the landing page, with the free way out")
+	}
+}
+
 func TestLandingOn(t *testing.T) {
 	parallel(t)
 

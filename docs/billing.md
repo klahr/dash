@@ -7,7 +7,10 @@ limits, no billing page and no banners, and behaves exactly as before.
 ## The rule
 
 - A **personal workspace** (see [signup](signup.md#personal-workspaces)), and any
-  organization with **one member**, is free, forever.
+  organization with **one member**, is an **individual**. Individuals are free by default.
+  With an individual price set, they are asked to pay, and anyone who can't clicks
+  **I can't pay right now** and keeps using Dash for free (see [Individuals](#individuals)).
+  Nothing is ever locked for an individual.
 - An organization with **two or more members** needs an **active or trialing**
   subscription. Its quantity is the number of members ("seats"); pending invitations don't
   count.
@@ -15,8 +18,9 @@ limits, no billing page and no banners, and behaves exactly as before.
 - A platform admin can make any organization free, forever or until a date (see
   [Free organizations](#free-organizations)).
 
-Prices and currencies live in Stripe, not in Dash: Dash only knows the id of a recurring
-per-seat price, and Stripe's Checkout and invoices show the amount.
+Prices and currencies live in Stripe, not in Dash: Dash only knows the ids of a recurring
+per-seat price (and, if you want, an individual price), and Stripe's Checkout and invoices
+show the amount.
 
 ## Setting it up
 
@@ -44,6 +48,7 @@ per-seat price, and Stripe's Checkout and invoices show the amount.
 | `STRIPE_SECRET_KEY`       | `-stripe-secret-key`     | the secret key (`sk_…`, or a restricted key `rk_…`)          |
 | `STRIPE_WEBHOOK_SECRET`   | `-stripe-webhook-secret` | the webhook endpoint's signing secret (`whsec_…`)           |
 | `STRIPE_PRICE_ID`         | `-stripe-price`          | the per-seat recurring price (`price_…`)                    |
+| `STRIPE_INDIVIDUAL_PRICE_ID` | `-stripe-individual-price` | optional: the individual recurring price (`price_…`), see [Individuals](#individuals) |
 | `DASH_BILLING_TRIAL_DAYS` | `-billing-trial-days`    | trial of an org's first subscription, in days (default 14; 0 = none) |
 | `DASH_BILLING_GRACE`      | `-billing-grace`         | how long an org may go unpaid before its board becomes read-only (default `72h`) |
 | `DASH_PUBLIC_URL`         | `-public-url`            | where Stripe sends people back to after Checkout and the portal (required) |
@@ -72,6 +77,51 @@ Use test-mode keys (`sk_test_…`) and the Stripe CLI to try it out:
 - A **banner** on the board when an organization needs a subscription: until when it can keep
   working, or that the board is read-only. Owners get the buttons; other members are asked to
   talk to an owner.
+
+## Individuals
+
+Without `STRIPE_INDIVIDUAL_PRICE_ID`, individuals are free and never asked to pay.
+
+With it, individuals are **paid by default, free on request**:
+
+- An individual that has never subscribed and hasn't said it can't pay is **asked**: in
+  **Organization → Billing**, and in a prompt when the owner opens the app (at most once a
+  day in a browser). Both offer **Subscribe** (Stripe Checkout, one at the individual price,
+  no trial) and **I can't pay right now**.
+- **I can't pay right now** is one click and needs no reason. Dash remembers it for the
+  workspace and stops asking. **Subscribe** stays in **Organization → Billing** for when they
+  can.
+- Asking never blocks. Closing the prompt changes nothing, and it comes back another day.
+  Individuals have no grace period, no read-only board and no limits, whether they pay or not.
+- A subscribed individual sees **Subscribed** in **Organization → Billing**, and **Manage
+  billing** opens the customer portal to change the card or cancel. The subscription stays at
+  one: it doesn't follow the members.
+- After cancelling, they are free again and aren't asked afresh: anyone who has subscribed
+  once has answered.
+- The instance's **Default** organization, and an organization a platform admin made free,
+  are never asked.
+
+When an individual's organization **grows to two or more members**, the team rule applies:
+
+- A live individual subscription moves to the per-seat price, with a seat per member
+  (prorated, like any seat change). Nothing for the owner to do.
+- An organization that chose free, or never answered, needs a team subscription like any
+  other, after the usual grace period. Inviting the second member offers the trial.
+
+To set it up:
+
+1. In Stripe, add a second **recurring price** (per month or year, not per unit) to the
+   product, for individuals. Note its id, `price_…`.
+2. Set `STRIPE_INDIVIDUAL_PRICE_ID` to it, and `DASH_INDIVIDUAL_PRICE` to the price as it
+   should read, e.g. `€5 / month` (see [branding](branding.md)). Restart.
+
+   ```sh
+   STRIPE_INDIVIDUAL_PRICE_ID=price_...
+   DASH_INDIVIDUAL_PRICE="€5 / month"
+   ```
+
+Dash refuses an individual price that isn't a `price_…` id, or is the per-seat price, and
+logs `billing stays off` with the reason.
 
 ## Free organizations
 
@@ -111,6 +161,9 @@ arrives.
 An organization that goes back to one member is free again, but its subscription isn't
 cancelled automatically (it is billed for one seat): the owner cancels it in the portal.
 
+An [individual](#individuals) subscription isn't seat-synced: it stays at one while the
+organization has one member, and moves to the per-seat price once it has two.
+
 ## When an organization doesn't pay
 
 An organization needs a subscription from the moment it has two members, and it has a grace
@@ -146,14 +199,16 @@ Stripe account can sell other things too.
 For each organization Dash keeps, in SQLite (`org_billing`): the Stripe customer and
 subscription ids, the subscription's status, seats, period and trial end, whether it cancels
 at the period end, whether the org has had its trial, since when it has been unpaid, and a
-platform admin's free override.
+platform admin's free override. In `org_billing_individual` it keeps the subscription's
+price and when an individual chose **I can't pay right now**.
 
 ## API
 
 | Method and path                              | Who            | What                                     |
 |----------------------------------------------|----------------|------------------------------------------|
-| `GET /api/orgs/{id}/billing`                 | members        | the state: `enabled`, `free`, `free_forever`, `free_until`, `required`, `status`, `read_only`, `grace_until`, `seats`, `period_end`, `trial_end`, `can_subscribe`, `can_manage`, … |
-| `POST /api/orgs/{id}/billing/checkout`       | owners         | `{url}` of a Stripe Checkout session     |
+| `GET /api/orgs/{id}/billing`                 | members        | the state: `enabled`, `free`, `free_forever`, `free_until`, `required`, `status`, `read_only`, `grace_until`, `seats`, `period_end`, `trial_end`, `can_subscribe`, `can_manage`, and for individuals `individual`, `individual_price`, `ask`, `chose_free`, `plan`, … |
+| `POST /api/orgs/{id}/billing/checkout`       | owners         | `{url}` of a Stripe Checkout session (an individual's is at the individual price) |
+| `POST /api/orgs/{id}/billing/free`           | owners         | an individual can't pay right now: stop asking; answers the state (`409` for a team) |
 | `POST /api/orgs/{id}/billing/portal`         | owners         | `{url}` of a customer portal session     |
 | `POST /api/billing/webhook`                  | Stripe         | events, signed                           |
 | `GET /api/admin/orgs/{id}/billing`           | platform admins | the override (`free_forever`, `free_until`, `note`, `set_by`, `set_at`, `active`) and the `state` |

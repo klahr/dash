@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d131d">
 <meta name="color-scheme" content="dark">
-<meta name="description" content="Queue tasks, let Claude Code work on them in parallel on your own computers, review the diffs and merge. Free for one person.">
+<meta name="description" content="Queue tasks, let Claude Code work on them in parallel on your own computers, review the diffs and merge. {{if .IndividualPrice}}{{.IndividualPrice}} for one person, free if you can&#39;t pay.{{else}}Free for one person.{{end}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <title>{{.Name}}: run ten Claude Code agents at once</title>
@@ -111,6 +111,7 @@ pre .p{color:var(--merged);user-select:none}
 .plan h3{margin:0;font-size:15px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .price{font-size:34px;font-weight:750;letter-spacing:-.02em;margin:10px 0 18px}
 .price.text{font-size:20px;font-weight:650}
+.price-note{margin:-10px 0 18px;color:var(--muted);font-size:14px}
 .plan ul{margin:0;padding:0;list-style:none;display:grid;gap:10px;color:var(--muted)}
 .plan li{position:relative;padding-left:24px}
 .plan li::before{content:"";position:absolute;left:3px;top:6px;width:5px;height:9px;border:solid var(--accent);border-width:0 2px 2px 0;transform:rotate(45deg)}
@@ -202,7 +203,7 @@ pre .p{color:var(--merged);user-select:none}
         {{if .Signup}}<a class="btn primary lg" href="/login.html#signup">Start free</a>{{else}}<a class="btn primary lg" href="/login.html">Log in</a>{{end}}
         <a class="btn lg" href="#how">See how it works</a>
       </div>
-      <p class="fine">Free for one person. Your machines, your Claude subscription, no open ports.</p>
+      <p class="fine">{{if .IndividualPrice}}{{.IndividualPrice}} for one person, free if you can&#39;t pay.{{else}}Free for one person.{{end}} Your machines, your Claude subscription, no open ports.</p>
       <ul class="lanes" aria-label="Where a task goes">
         <li style="--c:var(--faint)">draft</li><li style="--c:var(--accent)">queued</li><li style="--c:var(--running)">running</li><li style="--c:var(--review)">review</li><li style="--c:var(--merged)">merged</li>
       </ul>
@@ -310,7 +311,8 @@ pre .p{color:var(--merged);user-select:none}
       <div class="plans">
         <div class="plan">
           <h3>Individuals</h3>
-          <div class="price">Free</div>
+          {{if .IndividualPrice}}<div class="price">{{.IndividualPrice}}</div>
+          <p class="price-note">Can&#39;t pay? Use it free, no questions asked.</p>{{else}}<div class="price">Free</div>{{end}}
           <ul><li>Your own workspace, or an organization with one member</li><li>Unlimited projects, tasks and goals</li><li>Runners on your own computers</li></ul>
         </div>
         <div class="plan team">

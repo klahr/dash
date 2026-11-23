@@ -208,7 +208,12 @@ func (s *Service) apply(ctx context.Context, org int64, sub Subscription, create
 		b.SubscriptionID, b.Status, b.ItemID, b.Quantity = sub.ID, sub.Status, sub.ItemID, sub.Quantity
 		b.PeriodEnd, b.TrialEnd = unix(sub.PeriodEnd), unix(sub.TrialEnd)
 		b.CancelAtPeriodEnd = sub.CancelAtPeriodEnd
-		b.TrialUsed = true // one trial per org
+		if sub.Price != "" {
+			b.PriceID = sub.Price
+		}
+		if !s.individualPrice(sub.Price) {
+			b.TrialUsed = true // one trial per org (individuals get none)
+		}
 		b.EventAt = max(b.EventAt, created)
 		return nil
 	})

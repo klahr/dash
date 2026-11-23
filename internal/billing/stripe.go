@@ -19,8 +19,9 @@ type Stripe interface {
 	CreateCheckoutSession(ctx context.Context, p CheckoutParams) (url string, err error)
 	CreatePortalSession(ctx context.Context, customer, returnURL string) (url string, err error)
 	GetSubscription(ctx context.Context, id string) (Subscription, error)
-	// UpdateQuantity sets the seats of a subscription's item, prorated.
-	UpdateQuantity(ctx context.Context, subscription, item string, quantity int) (Subscription, error)
+	// UpdateItem sets the seats of a subscription's item, prorated, and
+	// its price too unless price is "".
+	UpdateItem(ctx context.Context, subscription, item, price string, quantity int) (Subscription, error)
 }
 
 // CustomerParams describe a new Stripe customer: one per org.
@@ -227,7 +228,7 @@ func (h *HTTPStripe) GetSubscription(ctx context.Context, id string) (Subscripti
 	return s, err
 }
 
-func (h *HTTPStripe) UpdateQuantity(ctx context.Context, subscription, item string, quantity int) (Subscription, error) {
+func (h *HTTPStripe) UpdateItem(ctx context.Context, subscription, item, price string, quantity int) (Subscription, error) {
 	if item == "" {
 		cur, err := h.GetSubscription(ctx, subscription)
 		if err != nil {
@@ -238,6 +239,9 @@ func (h *HTTPStripe) UpdateQuantity(ctx context.Context, subscription, item stri
 	f := url.Values{}
 	f.Set("items[0][id]", item)
 	f.Set("items[0][quantity]", strconv.Itoa(quantity))
+	if price != "" {
+		f.Set("items[0][price]", price)
+	}
 	f.Set("proration_behavior", "create_prorations")
 	var s Subscription
 	err := h.call(ctx, http.MethodPost, "/v1/subscriptions/"+url.PathEscape(subscription), f, &s)
