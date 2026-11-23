@@ -59,7 +59,8 @@ terminal.
 - **Run** runs on the runner you used last, or on the only runner that can run it. With no such
   runner yet, it opens the list.
 - **▾** lists the project's runners, connected or not. Those that can't run it are greyed out;
-  hover one to see why. **Pick a commit…** at the end opens the commit picker.
+  hover one to see why. **Pick a commit…** below them opens the commit picker, and **Configure…**,
+  last, opens **Project settings → Commands**, where **Preview tasks in** and the preview command are.
 - Dash remembers the runner you picked, per project, in this browser.
 - With no runner at all, **Run** is greyed out and says why.
 

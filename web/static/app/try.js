@@ -123,7 +123,8 @@ async function runOn(runner) {
 }
 
 // runMenu drops down the project's runners (those that can't run it greyed,
-// saying why), then "Pick a commit…".
+// saying why), then "Pick a commit…" and "Configure…" (Project settings →
+// Commands, where the preview kind and command are).
 function runMenu() {
   const cands = tryState.candidates.length ? tryState.candidates : tryState.runners.map((r) => ({ ...r, online: true }));
   const ok = new Set(tryState.runners.map((r) => r.id));
@@ -135,7 +136,10 @@ function runMenu() {
       { disabled: !can, note: !r.online ? "offline" : can ? "online" : "can't run it", title: why }];
   });
   if (!rows.length) rows.push(["computer", "No runner", () => {}, { disabled: true, title: tryState.disabled }]);
-  return popMenu($("#run-pick"), [rows, [["log", "Pick a commit…", () => { tryState.runner ||= runRunner(); return pickCommit(); }]]], { heading: "Run on" });
+  const p = state.project;
+  const configure = async () => { const { goTo } = await import("./teamsetup.js"); await goTo("settings", "commands", p); };
+  return popMenu($("#run-pick"), [rows, [["log", "Pick a commit…", () => { tryState.runner ||= runRunner(); return pickCommit(); }]],
+    [["settings", "Configure…", configure]]], { heading: "Run on" });
 }
 
 async function clickRun() {
@@ -195,6 +199,8 @@ export async function enterTry() {
 
 export function leaveTry() {
   disconnectTry();
+  // Left before enterTry started a Run (Back undid the switch): it won't start, so the button is Run again.
+  if (tryState.pending) { tryState.pending = null; tryState.stopAsked = false; renderRun(); }
 }
 
 async function startTry({ ref = tryState.session?.ref || "", runner = tryState.runner } = {}) {

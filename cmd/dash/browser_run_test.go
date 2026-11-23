@@ -41,15 +41,25 @@ func TestBrowserRunButton(t *testing.T) {
 		})()`)
 		b.run(size.name+": remember Run's width", `window.runWidth = document.querySelector("#run-main").offsetWidth; true`)
 
-		// ▾: the runners, online, then Pick a commit…; arrows move, Esc closes it back on ▾.
+		// ▾: the runners, online, then Pick a commit…, then Configure… last; arrows move, Esc closes it back on ▾.
 		b.until(size.name+": open the list", `!!document.querySelector(".pop-menu")`, chromedp.Click(chromedp.ID("run-pick")))
-		b.waitJS(size.name+": laptop online, then Pick a commit…", `(() => {
+		b.waitJS(size.name+": laptop online, then Pick a commit…, then Configure…", `(() => {
 			const rows = [...document.querySelectorAll(".pop-menu button")];
-			return rows.length === 2 && rows[0].textContent.includes("laptop") && rows[0].textContent.includes("online") && !rows[0].disabled
-				&& rows[1].textContent.includes("Pick a commit") && document.activeElement === rows[0];
+			return rows.length === 3 && rows[0].textContent.includes("laptop") && rows[0].textContent.includes("online") && !rows[0].disabled
+				&& rows[1].textContent.includes("Pick a commit") && rows[2].textContent.includes("Configure…")
+				&& rows[2].previousElementSibling?.matches("hr.menu-sep") && document.activeElement === rows[0];
 		})()`)
 		b.until(size.name+": ArrowDown", `document.activeElement?.textContent.includes("Pick a commit")`, chromedp.KeyEvent(kb.ArrowDown))
 		b.until(size.name+": Esc", `!document.querySelector(".pop-menu") && document.activeElement?.id === "run-pick"`, chromedp.KeyEvent(kb.Escape))
+
+		// Configure…: the arrows reach it, Enter opens Project settings → Commands; then back.
+		b.until(size.name+": open the list again", `!!document.querySelector(".pop-menu")`, chromedp.Click(chromedp.ID("run-pick")))
+		b.until(size.name+": ArrowUp to Configure…", `document.activeElement?.textContent.includes("Configure…")`, chromedp.KeyEvent(kb.ArrowUp))
+		b.until(size.name+": Enter", `document.querySelector("#settings-sheet").open`, chromedp.KeyEvent(kb.Enter))
+		b.waitJS(size.name+": at Commands", `document.querySelector('#settings-sheet .rail-section[data-section="commands"]').classList.contains("current")
+			&& new URLSearchParams(location.search).get("section") === "commands" && !document.querySelector(".pop-menu")`)
+		b.until(size.name+": close the settings", `!document.querySelector("#settings-sheet").open`, chromedp.KeyEvent(kb.Escape))
+		b.waitJS(size.name+": the sheet gone from the address", `!new URLSearchParams(location.search).has("sheet")`)
 
 		// ▶ Run: Terminate, as wide, with the commit and runner beside it, and the terminal open.
 		b.until(size.name+": Run", `document.querySelector("#run-main").classList.contains("stop")`, chromedp.Click(chromedp.ID("run-main")))

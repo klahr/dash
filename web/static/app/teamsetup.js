@@ -17,7 +17,7 @@ import { servesProject } from "../groups.js";
 
 // goTo shows a place: a section of the Organization sheet, Runners, or a
 // project's settings at a section (p: the project; the open one without).
-async function goTo(sheet, section, p = state.project) {
+export async function goTo(sheet, section, p = state.project) {
   if (sheet === "org") { railOf("org-sheet").show(section); return; }
   if (sheet === "settings" && !p) throw new Error("Add a project first.");
   if (p) {
