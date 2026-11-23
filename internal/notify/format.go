@@ -64,6 +64,15 @@ type CardRef struct {
 type ProjectRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Icon and Color are how Dash shows the project (model.Project's):
+	// pushed notifications show them; webhooks don't get them.
+	Icon  string `json:"-"`
+	Color string `json:"-"`
+}
+
+// projectRef is p as a notification names it.
+func projectRef(p model.Project) ProjectRef {
+	return ProjectRef{ID: p.ID, Name: p.Name, Icon: p.Icon, Color: p.Color}
 }
 
 type TaskRef struct {

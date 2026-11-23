@@ -114,7 +114,7 @@ func (n *Notifier) cardNotification(c model.Card, head, message string) Notifica
 		Card: &CardRef{ID: c.ID, Title: c.Title, URL: n.cardURL(c.ProjectID, c.ID)}, Message: message, head: head}
 	if c.ProjectID != "" {
 		if p, err := n.Store.GetProject(c.ProjectID); err == nil {
-			note.Project = ProjectRef{ID: p.ID, Name: p.Name}
+			note.Project = projectRef(p)
 		}
 	}
 	return note

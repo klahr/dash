@@ -222,7 +222,8 @@ func TestPushDelivery(t *testing.T) {
 	status(fs, n, model.StatusReview, "")
 	g := <-ch
 	if g.payload.Type != model.NotifyReview || g.payload.Title != "Ready for review: Checkout" || g.payload.Body != "Shop" ||
-		g.payload.URL != "/p/p1/tasks/t1" || g.payload.Tag != "dash-t1" || len(g.payload.Actions) != 0 {
+		g.payload.URL != "/p/p1/tasks/t1" || g.payload.Tag != "dash-t1" || len(g.payload.Actions) != 0 ||
+		g.payload.Icon != "" || g.payload.Initial != "S" {
 		t.Fatalf("payload %+v", g.payload)
 	}
 	if g.hdr.Get("Content-Encoding") != "aes128gcm" || g.hdr.Get("TTL") != "86400" || g.hdr.Get("Urgency") != "normal" {
@@ -274,11 +275,41 @@ func TestPushDelivery(t *testing.T) {
 	if err := n.TestPush(context.Background(), ps.subs[0]); err == nil {
 		t.Fatal("no error for a gone subscription")
 	}
-	if g = <-ch; g.payload.Type != model.NotifyTest || g.payload.URL != "/" {
+	if g = <-ch; g.payload.Type != model.NotifyTest || g.payload.URL != "/" || g.payload.Icon != "" || g.payload.Initial != "" {
 		t.Fatalf("test payload %+v", g.payload)
 	}
 	if len(ps.deleted) != 1 || ps.deleted[0] != "ps1" {
 		t.Fatalf("deleted %v", ps.deleted)
+	}
+}
+
+// A pushed notification shows its project's icon, or its initial on its
+// color; news about no project (a runner's disk) shows Dash's own icon.
+func TestPushPayloadIcon(t *testing.T) {
+	task := &TaskRef{ID: "t1", Title: "Checkout"}
+	for _, c := range []struct {
+		name                 string
+		n                    Notification
+		icon, initial, color string
+	}{
+		{"image", Notification{Type: model.NotifyReview, Task: task,
+			Project: projectRef(model.Project{ID: "p1", Name: "Shop", Icon: "u1/logo.png", Color: "#336699"})},
+			"/api/uploads/u1/logo.png", "S", "#336699"},
+		{"initial", Notification{Type: model.NotifyReview, Task: task,
+			Project: projectRef(model.Project{ID: "p1", Name: "ärende", Color: "#336699"})}, "", "Ä", "#336699"},
+		{"disk", Notification{Type: model.NotifyDisk, Runner: &RunnerRef{ID: "r1", Name: "mac"},
+			Project: projectRef(model.Project{ID: "p1", Name: "Shop", Icon: "u1/logo.png"})}, "", "", ""},
+		{"test", Notification{Type: model.NotifyTest, Project: ProjectRef{Name: "Dash"}}, "", "", ""},
+	} {
+		p := pushPayload(c.n, nil)
+		if p.Icon != c.icon || p.Initial != c.initial || p.Color != c.color {
+			t.Errorf("%s: icon %q initial %q color %q", c.name, p.Icon, p.Initial, p.Color)
+		}
+	}
+	// Webhooks don't get them.
+	b, _ := json.Marshal(projectRef(model.Project{ID: "p1", Name: "Shop", Icon: "u1/logo.png", Color: "#336699"}))
+	if string(b) != `{"id":"p1","name":"Shop"}` {
+		t.Errorf("webhook project = %s", b)
 	}
 }
 

@@ -85,6 +85,10 @@ also pushes these to the browser, so they arrive while Dash is closed. Choose wh
 - a scan or Claude adds a draft for a new problem (off until you tick it)
 - you're mentioned or added to a [Planning card](#planning-cards), or its work needs a planner
 
+A notification about a project shows the project's icon, and its name on the first line under
+the title (unless the title already names it). A project with no image shows its initial on its
+color. A runner's disk and **Send a test** show Dash's own icon.
+
 Tapping a notification opens the task (for a new problem, its draft), the goal on the **Goals**
 page, the deploy on the **Deploys** page, or the card on **Planning**. **Send a test**, under the switch, pushes one right away.
 On an iPhone or iPad, add Dash to the home screen first ([phone.md](phone.md)) and turn

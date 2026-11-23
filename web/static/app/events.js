@@ -356,14 +356,14 @@ function elsewhere(ev, m) {
     seen.set(key, ev.data.status);
     if (!prev || prev === ev.data.status) return;
     const go = p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.todo_id); } } : null;
-    if (ev.data.status === "review") { toast(`${title(ev.data)} · ${where}`, { tone: "review", head: "Ready for review", action: go }); notify("Ready for review", ev.data, where, false, "task.review"); speakStatus("Ready for review", ev.data, where); }
-    if (ev.data.status === "failed") { notify("Failed", ev.data, `${where}: ${ev.data.error || ""}`, false, "task.failed"); speakStatus("Task failed", ev.data, where); }
+    if (ev.data.status === "review") { toast(`${title(ev.data)} · ${where}`, { tone: "review", head: "Ready for review", action: go }); notify("Ready for review", ev.data, "", false, "task.review", p || null, where); speakStatus("Ready for review", ev.data, where); }
+    if (ev.data.status === "failed") { notify("Failed", ev.data, ev.data.error, false, "task.failed", p || null, where); speakStatus("Task failed", ev.data, where); }
   }
   if (ev.type === "scan.run" && ev.data.trigger !== "manual") scanFinished(ev.data, p, where);
   if (ev.type === "goal.updated") goalElsewhere(ev.data, p, m, where);
   if (ev.type === "permission.updated" && !ev.data.decision) {
     toast(`${permLine(ev.data)} · ${where}`, { tone: "approval", head: permHead(ev.data), action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
-    notify(permNote(ev.data), { title: where, prompt: "" }, describePerm(ev.data).detail, false, "permission.needed");
+    notify(permNote(ev.data), { title: where, prompt: "" }, describePerm(ev.data).detail, false, "permission.needed", p || null, where);
     speakApproval(ev.data, where);
   }
 }
@@ -381,7 +381,7 @@ function goalElsewhere(g, p, m, where) {
   if (!head) return;
   const go = p ? { label: "Go", run: async () => { await selectProject(p); await showGoal(g.id); } } : null;
   toast(`${g.title} · ${where}`, { tone: status === "out_of_budget" || status === "blocked" ? "error" : status === "done" ? "ok" : "review", head, icon: "target", action: go });
-  notifyGoal(head, g, where, p);
+  notifyGoal(head, g, "", p || null, where);
 }
 
 export function projectKey(p) { return p ? `${p.machine}/${p.id}` : ""; }

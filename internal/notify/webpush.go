@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/klahr/dash/internal/applink"
 	"github.com/klahr/dash/internal/metrics"
@@ -347,6 +348,12 @@ type PushPayload struct {
 	Tag     string            `json:"tag"`
 	URL     string            `json:"url"`
 	Actions []PushAction      `json:"actions,omitempty"`
+	// Icon is the project's image (a path on Dash, which needs the
+	// session); without one the service worker draws Initial on Color, as
+	// the sidebar does. All empty for news about no project: Dash's icon.
+	Icon    string `json:"icon,omitempty"`
+	Initial string `json:"initial,omitempty"`
+	Color   string `json:"color,omitempty"`
 }
 
 // pushPayload is how n shows on a phone or desktop. tag matches the one the
@@ -367,6 +374,13 @@ func pushPayload(n Notification, actions []PushAction) PushPayload {
 	}
 	if pid != "" {
 		p.URL = applink.Project(pid)
+		if n.Project.Icon != "" {
+			p.Icon = "/api/uploads/" + n.Project.Icon
+		}
+		if r, _ := utf8.DecodeRuneInString(n.Project.Name); r != utf8.RuneError {
+			p.Initial = strings.ToUpper(string(r))
+		}
+		p.Color = n.Project.Color
 	}
 	switch {
 	case n.Type == model.NotifyCard && n.Card != nil:

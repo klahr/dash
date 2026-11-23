@@ -306,7 +306,7 @@ func (n *Notifier) runnerDisk(ctx context.Context, ev model.Event) {
 		Runner: &RunnerRef{ID: rd.RunnerID, Name: rd.RunnerName}, Message: rd.Message}
 	if len(rd.Projects) > 0 {
 		if p, err := n.Store.GetProject(rd.Projects[0]); err == nil {
-			note.Project = ProjectRef{ID: p.ID, Name: p.Name}
+			note.Project = projectRef(p)
 		}
 	}
 	n.pushOrg(ctx, note, rd.OrgID)
@@ -622,7 +622,7 @@ func (n *Notifier) build(kind model.NotifyEvent, projectID, todoID string) (Noti
 	if err != nil {
 		return note, false
 	}
-	note.Project = ProjectRef{ID: p.ID, Name: p.Name}
+	note.Project = projectRef(p)
 	return note, true
 }
 

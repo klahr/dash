@@ -50,13 +50,62 @@ self.addEventListener("push", (e) => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     if (p.type !== "webhook.test" && wins.some((c) => c.visibilityState === "visible" && c.focused)) return;
     const actions = (p.actions || []).slice(0, 2).map((a) => ({ action: a.action, title: a.title }));
+    const icon = await projectIcon(p.icon || "", p.initial || "", p.color || "").catch(() => DASH_ICON);
     await self.registration.showNotification(p.title || "Dash", {
-      body: p.body || "", tag: p.tag || undefined, renotify: !!p.tag, icon: "/img/icon-192.png", badge: "/img/icon-192.png",
+      body: p.body || "", tag: p.tag || undefined, renotify: !!p.tag, icon, badge: DASH_ICON,
       requireInteraction: p.type === "permission.needed", actions,
       data: { url: p.url || "/", actions: p.actions || [] },
     });
   })());
 });
+
+// A pushed notification about a project shows its icon, as a PNG (many
+// platforms don't show an SVG): its image (src, which needs the session the
+// fetch sends), else its initial on its color, as the sidebar has it; Dash's
+// own icon when neither can be drawn. The page draws its own alike
+// (app/notifications.js). A worker can't decode an SVG: those get the initial.
+const DASH_ICON = "/img/icon-192.png", ICON_PX = 192;
+const icons = new Map(); // what an icon is drawn from → a promise of its data: URL
+function projectIcon(src, initial, color) {
+  if ((!src && !initial) || typeof OffscreenCanvas === "undefined") return Promise.resolve(DASH_ICON);
+  const key = `${src}|${initial}|${color}`;
+  if (!icons.has(key)) icons.set(key, drawIcon(src, initial, color).catch(() => DASH_ICON));
+  return icons.get(key);
+}
+async function drawIcon(src, initial, color) {
+  const c = new OffscreenCanvas(ICON_PX, ICON_PX);
+  const g = c.getContext("2d");
+  if (g.roundRect) { g.beginPath(); g.roundRect(0, 0, ICON_PX, ICON_PX, ICON_PX * 0.2); g.clip(); }
+  let drawn = false;
+  if (src) {
+    try {
+      const res = await fetch(src, { credentials: "same-origin" });
+      if (!res.ok) throw new Error(res.statusText);
+      const img = await createImageBitmap(await res.blob());
+      const s = Math.max(ICON_PX / img.width, ICON_PX / img.height);
+      g.drawImage(img, (ICON_PX - img.width * s) / 2, (ICON_PX - img.height * s) / 2, img.width * s, img.height * s);
+      drawn = true;
+    } catch { /* gone, or an SVG: the initial */ }
+  }
+  if (!drawn) {
+    if (!initial) return DASH_ICON;
+    const bg = /^#[0-9a-f]{6}$/i.test(color) ? color : "#6b7280";
+    const n = parseInt(bg.slice(1), 16);
+    const light = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 160;
+    g.fillStyle = bg;
+    g.fillRect(0, 0, ICON_PX, ICON_PX);
+    g.fillStyle = light ? "#1f2328" : "#ffffff";
+    g.font = `700 ${Math.round(ICON_PX * 0.56)}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+    g.textAlign = "center";
+    const m = g.measureText(initial);
+    g.fillText(initial, ICON_PX / 2, ICON_PX / 2 + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2);
+  }
+  // A worker has no object URLs a notification could show: a data: URL.
+  const bytes = new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:image/png;base64,${btoa(bin)}`;
+}
 
 self.addEventListener("notificationclick", (e) => {
   const n = e.notification;
