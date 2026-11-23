@@ -1957,7 +1957,10 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 
 /* Resting the mouse on a board card (desktop) shows a widened copy of it,
    fixed over the card and its neighbours, with the whole sub line. Its height is
-   capped and a long one scrolls (app/hovercard.js: hoverCard). */
+   capped and a long one scrolls (app/hovercard.js: hoverCard). It opens only
+   when the pointer rests on a card, not on the card's controls or pick box and
+   not while drafts are picked; moving onto another card closes it, even where
+   it covers that card, so selecting cards isn't blocked. */
 .todo-float {
   position: fixed; z-index: 34; overflow-y: auto; overscroll-behavior: contain;
   background: var(--raised); border-radius: var(--r-m);
