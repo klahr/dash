@@ -40,10 +40,12 @@ import { loadPeople } from "./people.js";
 import { isStarred, loadStars, othersOpen, setOthersOpen, setStar, starsOn } from "./stars.js";
 
 // ------------------------------------------------------------------ projects
+let starsLoading = null; // the first loadStars, shared by the page's first loads
 export async function loadProjects() {
   if (!state.machines) state.machines = await api("GET", "/api/machines");
-  const first = !state.projectsLoaded;
-  // The stars come with the first list, so it doesn't jump once drawn.
+  // The stars come with the first list, so it doesn't jump once drawn
+  // (fetched once: the page's first loads overlap).
+  if (!state.projectsLoaded) starsLoading ||= loadStars();
   const [lists] = await Promise.all([Promise.all(state.machines.map(async (m) => {
     if (!m.ok) return [];
     try {
@@ -53,8 +55,12 @@ export async function loadProjects() {
       m.error = e.message;
       return [];
     }
-  })), first && loadStars()]);
+  })), starsLoading]);
   state.projects = lists.flat();
+  // Decided after the wait: on page load connectAll and the live socket's
+  // open both load the projects, and only the one done first is the first
+  // (it starts the router; a second start would close the linked task).
+  const first = !state.projectsLoaded;
   state.projectsLoaded = true;
   const saved = store.get("dash.project");
   // The first time, the project the page's URL names wins (routes.js); the
