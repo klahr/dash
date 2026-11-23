@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/klahr/dash/internal/runnerctl"
 )
@@ -17,13 +18,20 @@ func (s *Server) hubURL(r *http.Request) (string, error) {
 	return runnerctl.HubURL(r, s.PublicURL, s.Auth.Secure(r), s.Auth.TrustProxy)
 }
 
-// previewOrigin is where a browser signs in to todoID's preview: its org's
-// subdomain (only that org's members may open it). "" without org
-// subdomains, or for a todo that isn't known here.
-func (s *Server) previewOrigin(todoID string) string {
+// previewOrigin is where a browser signs in to the preview with host
+// label: its task's org's subdomain (only that org's members may open it).
+// A runner's preview (<task>-<runner>) is the hub's task's it reported, if
+// any. "" without org subdomains, or for a task that isn't known here.
+func (s *Server) previewOrigin(label string) string {
 	d := s.Auth.Domains
 	if d == nil || s.Store == nil {
 		return ""
+	}
+	todoID := label
+	if htid, ok := s.hubPreviewTask(label); ok {
+		todoID = htid
+	} else if id, _, ok := strings.Cut(label, "-"); ok {
+		todoID = id
 	}
 	org, ok := s.Store.TodoOrg(todoID)
 	if !ok {

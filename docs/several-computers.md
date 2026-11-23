@@ -439,10 +439,11 @@ key ([Whose work a runner does](#whose-work-a-runner-does)). From then on:
   Tasks with a pull request already open are followed until it is merged or closed, whatever the
   mode.
 - Review happens on the hub as usual: the diff, the log and the timeline come from the runner,
-  and **Run tests again** runs them on the task's runner, in its worktree there. Attachments and
-  editor changes can't be sent to runners yet, and live previews are on the runner's own
-  dashboard. A terminal in the task's worktree opens from the hub for the runner's owner (see
-  below).
+  and **Run tests again** runs them on the task's runner, in its worktree there. **Preview** and
+  **Draw** work on the hub too: the preview runs on the task's runner (see [Previews](#previews)).
+  **Rework…** sends its attachments, such as a Draw picture, to the runner with the notes. Editor
+  changes can't be sent to runners yet. A terminal in the task's worktree opens from the hub for
+  the runner's owner (see below).
 
 ### Runner labels
 
@@ -1056,7 +1057,14 @@ and they continue. A runner that is restarted resumes its tasks, as Dash always 
 
 [Live previews](previews.md) run on the computer that has the project, and the hub serves them,
 at `https://<task>-<runner>.<preview domain>/` (so only the hub needs `-preview-domain`, DNS and
-a certificate). The runner keeps a second connection to the hub just for preview traffic, so a
+a certificate).
+
+A hub's task previews on the runner that ran it, since its worktree is only there. **Preview** on
+the hub starts it there, and the pane, **Open**, **Copy link** and **Draw** use the hub's address
+for it. **Previews (n)** and the board list them like any other. If that runner is offline, the
+hub says so; no other runner can preview the task. The runner previews a task only for a member
+it works for (its owner, or anyone when it is shared), and opens a terminal preview only for its
+owner. The runner keeps a second connection to the hub just for preview traffic, so a
 heavy page load or a busy hot-reload socket doesn't slow its tasks down, and the hub opens at most
 32 connections to a runner's previews at a time. The runner forwards only to the servers of
 previews it started itself; the hub can't ask it for any other port.

@@ -20,9 +20,8 @@ it is empty. `./.dash-bin` (git ignores it) is on `PATH` and in `$DASH_BIN`, so 
 
 leaves you at a prompt where `tool` is the task's build. Such a project needs no `run_command`.
 The preview is live at once, has no URL, and is attached to over the WebSocket in its
-`terminal_url` (`/ws/todos/<task>/preview`, the same protocol as other terminals; under
-`/peer/<runner>/` for a runner's tasks, which open it only for the
-runner's owner). It stops like a web preview, with keystrokes counting as traffic. If the command
+`terminal_url` (`/ws/todos/<task>/preview`, the same protocol as other terminals). For a hub's
+task the hub passes it through to the task's runner, which opens it only for the runner's owner. It stops like a web preview, with keystrokes counting as traffic. If the command
 fails or the shell exits, it shows as crashed; `GET /api/todos/<task>/preview/log?lines=N` returns
 its last lines as plain text, for **Rework**.
 
@@ -146,6 +145,7 @@ previews need a domain.
   nonce (or `'self'`), `data:`/`blob:` images and same-origin fetches, and loses Trusted Types.
   Compressed pages are passed on uncompressed. A CSP set in a `<meta>` tag isn't changed, so such
   a page may refuse to be drawn.
-- With [several computers](several-computers.md), a preview runs on the runner that has the
-  project and the hub serves it, through the runner's connection, at
-  `<task>-<runner>.<preview domain>`; set `-preview-domain` on the hub only.
+- With [several computers](several-computers.md), a hub's task previews on the runner that ran it,
+  and the hub serves it, through the runner's connection, at
+  `<task>-<runner>.<preview domain>`; set `-preview-domain` on the hub only. See
+  [Previews](several-computers.md#previews).

@@ -56,6 +56,9 @@ type Reporter struct {
 	// Perms lists the permission requests waiting on the runner (its
 	// perm.Broker's Pending); those of the hub's tasks go in every report.
 	Perms func() []perm.Request
+	// Previews lists the runner's live previews (preview.Manager.List;
+	// optional): those of the hub's tasks go in every report.
+	Previews func() []model.Preview
 
 	once sync.Once
 	wake chan struct{}
@@ -150,12 +153,12 @@ func (r *Reporter) Observe(ev model.Event) {
 		r.observeOutput(ev)
 	case model.EvProcUpdated:
 		r.observeProc(ev)
-	case model.EvPermission:
+	case model.EvPermission, model.EvPreview:
 		if ev.TodoID == "" || r.Store == nil {
 			return
 		}
 		if t, err := r.Store.GetTodo(ev.TodoID); err == nil && t.HubTodoID != "" {
-			r.Nudge() // the hub's board shows it, or stops showing it
+			r.Nudge() // the hub's board shows it (a request, a preview), or stops showing it
 		}
 	}
 }
@@ -288,6 +291,10 @@ func (r *Reporter) Build(now time.Time) Report {
 	if r.Perms != nil {
 		rep.Permissions = hubPermissions(r.Perms(), todos)
 	}
+	if r.Previews != nil {
+		pv := hubPreviews(r.Previews(), todos)
+		rep.Previews = &pv
+	}
 	for _, t := range todos {
 		if t.HubTodoID == "" {
 			continue
@@ -303,6 +310,24 @@ func (r *Reporter) Build(now time.Time) Report {
 		rep.Tasks = append(rep.Tasks, s)
 	}
 	return rep
+}
+
+// hubPreviews are the previews of list that are of the hub's tasks (in
+// todos), with the hub's task ids.
+func hubPreviews(list []model.Preview, todos []model.Todo) []PreviewState {
+	hub := map[string]string{}
+	for _, t := range todos {
+		if t.HubTodoID != "" {
+			hub[t.ID] = t.HubTodoID
+		}
+	}
+	out := []PreviewState{}
+	for _, p := range list {
+		if htid := hub[p.TodoID]; htid != "" {
+			out = append(out, PreviewState{HubTodoID: htid, Preview: p})
+		}
+	}
+	return out
 }
 
 // Bounds on the permission requests in a report, which the hub takes up to

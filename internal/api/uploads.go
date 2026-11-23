@@ -69,12 +69,19 @@ func (sv *service) receiveUpload(w http.ResponseWriter, r *http.Request) (model.
 // saveUpload stores body as a new upload of the caller's org, named name
 // (already clean, of type typ).
 func (sv *service) saveUpload(name, typ string, body io.Reader) (model.Attachment, error) {
+	return sv.saveUploadAs(store.NewID(), name, typ, body)
+}
+
+// saveUploadAs is saveUpload under the id given, which no upload has yet.
+func (sv *service) saveUploadAs(id, name, typ string, body io.Reader) (model.Attachment, error) {
 	if sv.s.UploadRoot == "" {
 		return model.Attachment{}, errors.New("this Dash has no uploads directory")
 	}
-	id := store.NewID()
+	if err := os.MkdirAll(sv.s.UploadRoot, 0o700); err != nil {
+		return model.Attachment{}, err
+	}
 	dir := filepath.Join(sv.s.UploadRoot, id)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.Mkdir(dir, 0o700); err != nil {
 		return model.Attachment{}, err
 	}
 	if err := os.WriteFile(filepath.Join(dir, uploadOrgFile), []byte(strconv.FormatInt(sv.c.Org, 10)), 0o600); err != nil {
@@ -218,4 +225,58 @@ func cleanUploadName(name, contentType string) string {
 		return "file"
 	}
 	return name
+}
+
+// hubUpload handles PUT /api/hub/uploads/{id} on a runner: the hub sends
+// one of a task's attachments before the task (dispatch.UploadPath), kept
+// here under the hub's id. Sending it again changes nothing.
+func (s *Server) hubUpload(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.fromHub(w, r)
+	if !ok {
+		return
+	}
+	id := r.PathValue("id")
+	name := cleanUploadName(r.URL.Query().Get("name"), "")
+	typ, ok := uploadTypes[strings.ToLower(filepath.Ext(name))]
+	if !uploadIDRe.MatchString(id) || !ok {
+		writeErr(w, fmt.Errorf("%w: not an attachment Dash takes", errBadRequest))
+		return
+	}
+	if a, err := sv.findUpload(id); err == nil {
+		if a.Name != name {
+			writeErr(w, fmt.Errorf("%w: another file has the id %s here", errConflict, id))
+			return
+		}
+		writeJSON(w, http.StatusOK, a) // sent before
+		return
+	}
+	a, err := sv.saveUploadAs(id, name, typ, http.MaxBytesReader(w, r.Body, maxUpload))
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		err = fmt.Errorf("%w: files can be at most %d MB", errBadRequest, maxUpload>>20)
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, a)
+}
+
+// hubAttachments are this runner's copies of a hub's task's attachments
+// (dispatch.Task.Attachments, sent before with hubUpload), and fix, which
+// names them in place of the hub's paths in the task's notes.
+func (sv *service) hubAttachments(hub []model.Attachment) (atts []model.Attachment, fix func(string) string, err error) {
+	var pairs []string
+	for _, h := range hub {
+		a, err := sv.findUpload(h.ID)
+		if err != nil || a.Name != cleanUploadName(h.Name, "") {
+			return nil, nil, fmt.Errorf("%w: the attached file %s wasn't sent first", errBadRequest, h.Name)
+		}
+		atts = append(atts, a)
+		if h.Path != "" && h.Path != a.Path {
+			pairs = append(pairs, h.Path, a.Path)
+		}
+	}
+	rp := strings.NewReplacer(pairs...)
+	return atts, rp.Replace, nil
 }

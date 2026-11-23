@@ -51,6 +51,7 @@ func (s *Server) hubTaskRoutes(mux routeMux) {
 	mux.HandleFunc("DELETE /api/hub/projects/{hpid}", s.hubUnlink)
 	mux.HandleFunc("POST "+dispatch.OriginMovedPath, s.hubOriginMoved)
 	mux.HandleFunc("POST /api/hub/tasks", s.hubTask)
+	mux.HandleFunc("PUT "+dispatch.UploadPath, s.hubUpload)
 	mux.HandleFunc("DELETE /api/hub/tasks/{htid}", s.hubTaskAction("delete"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/approve", s.hubTaskAction("approve"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/cancel", s.hubTaskAction("cancel"))
@@ -763,6 +764,17 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Its files came first (hubUpload): the notes name this runner's copies.
+	atts, fix, err := sv.hubAttachments(req.Attachments)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	notes := make([]string, len(req.Feedback))
+	for i, f := range req.Feedback {
+		notes[i] = fix(f)
+	}
+	req.Feedback = notes
 	if cur, ok := sv.hubTodo(req.HubTodoID); ok && (req.Fresh || cur.ProjectID != p.ID) {
 		// Start over: the old copy goes, with its worktree.
 		if err := sv.removeTodo(r.Context(), cur.ID); err != nil {
@@ -787,6 +799,11 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 			if n := len(req.Feedback); n > x.HubNotes {
 				x.Feedback = append(x.Feedback, req.Feedback[x.HubNotes:]...)
 				x.HubNotes = n
+			}
+			for _, a := range atts {
+				if !slices.ContainsFunc(x.Attachments, func(b model.Attachment) bool { return b.ID == a.ID }) {
+					x.Attachments = append(x.Attachments, a)
+				}
 			}
 			switch x.Status {
 			case model.StatusReview, model.StatusFailed, model.StatusDraft:
@@ -822,7 +839,8 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 	t, err := sv.data.CreateQueuedTodo(model.Todo{
 		ProjectID: p.ID, Title: req.Title, Prompt: req.Prompt, Model: req.Model, Feedback: req.Feedback,
 		HubTodoID: req.HubTodoID, HubNotes: len(req.Feedback), StartNow: req.StartNow, BuildsOn: buildsOn,
-		SharedWork: shared,
+		SharedWork:  shared,
+		Attachments: atts,
 	})
 	if err != nil {
 		writeErr(w, err)

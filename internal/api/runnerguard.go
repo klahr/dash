@@ -94,6 +94,7 @@ func init() {
 		// The hub's projects linked to this runner and their tasks; checked
 		// in hubtasks.go.
 		"PUT /api/hub/projects/{hpid}", "DELETE /api/hub/projects/{hpid}", "POST /api/hub/tasks",
+		"PUT " + dispatch.UploadPath,       // a task's attached files, before the task
 		"POST " + dispatch.OriginMovedPath, // another runner pushed: fetch, and follow in a clean checkout
 		"DELETE /api/hub/tasks/{htid}", "POST /api/hub/tasks/{htid}/approve", "POST /api/hub/tasks/{htid}/cancel",
 		"POST /api/hub/tasks/{htid}/revert", "POST /api/hub/tasks/{htid}/test", "POST /api/hub/tasks/{htid}/open",

@@ -367,10 +367,11 @@ func TestProjectsRunOnLabels(t *testing.T) {
 	if json.Unmarshal(w.Body.Bytes(), &p) != nil || w.Code != http.StatusOK || !p.UsesPR() {
 		t.Errorf("pull requests again on runners: %d %s", w.Code, w.Body)
 	}
-	// Attachments can't follow a task to a runner.
+	// Editor changes can't follow a task to a runner (attachments do:
+	// dispatch.Task.Attachments).
 	if _, err := (&service{s: f.s, c: ownerCaller(t, f.s), data: raw(f.s).ForOrg(f.web.OrgID)}).addTodo(model.Todo{
-		ProjectID: f.web.ID, Prompt: "x", Attachments: []model.Attachment{{ID: "a"}}}, false); err == nil {
-		t.Error("a task with attachments was added to a project on runners")
+		ProjectID: f.web.ID, Prompt: "x", Edits: []model.FileEdit{{Path: "a.txt", Content: "z"}}}, false); err == nil {
+		t.Error("a task with editor changes was added to a project on runners")
 	}
 
 	// A project without a remote can't run on runners.

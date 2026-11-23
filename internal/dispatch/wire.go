@@ -25,6 +25,8 @@ package dispatch
 
 import (
 	"encoding/json"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/klahr/dash/internal/claudecli"
@@ -139,6 +141,11 @@ type Task struct {
 	// Feedback is all of the hub's notes for Claude (rework requests); the
 	// runner adds those it doesn't have yet.
 	Feedback []string `json:"feedback,omitempty"`
+	// Attachments are the task's files (its own and its rework notes', such
+	// as a Draw picture), each sent first to UploadPath under the same id.
+	// Path is where the hub keeps it, as the prompt and notes name it: the
+	// runner names its own copy there instead.
+	Attachments []model.Attachment `json:"attachments,omitempty"`
 	// Fresh starts the task over; otherwise a task the runner already has
 	// (sent back for rework, or interrupted) continues in its worktree and
 	// Claude session.
@@ -165,6 +172,17 @@ type Task struct {
 	// (model.Todo.SharedWork); an older hub, which doesn't say, counts as
 	// someone else.
 	For []int64 `json:"for,omitempty"`
+}
+
+// UploadPath is PUT on a runner: the hub sends one of a task's attachments
+// (Task.Attachments), its bytes as the body and its name in ?name=, before
+// the task. The runner keeps it under the hub's id {id}; sending it again
+// changes nothing.
+const UploadPath = "/api/hub/uploads/{id}"
+
+// UploadPathFor is UploadPath for the attachment id named name.
+func UploadPathFor(id, name string) string {
+	return strings.Replace(UploadPath, "{id}", url.PathEscape(id), 1) + "?name=" + url.QueryEscape(name)
 }
 
 // Accepted is the runner's answer to Task.
@@ -225,6 +243,17 @@ type Report struct {
 	// (none: none waits). The hub shows them on its board and answers them
 	// with PermissionPath.
 	Permissions []Permission `json:"permissions,omitempty"`
+	// Previews are the runner's live previews of the hub's tasks, all of
+	// them every time (none: none runs). Nil from a runner older than this
+	// field: the hub keeps what it had.
+	Previews *[]PreviewState `json:"previews,omitempty"`
+}
+
+// PreviewState is a runner's live preview of one of the hub's tasks: the
+// runner's model.Preview, with its own ids, and the hub's id of the task.
+type PreviewState struct {
+	HubTodoID string        `json:"hub_todo_id"`
+	Preview   model.Preview `json:"preview"`
 }
 
 // Permission is a permission request of one of the hub's tasks, pending on

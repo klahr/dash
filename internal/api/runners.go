@@ -581,22 +581,15 @@ func (sv *service) fetchFromRunner(ctx context.Context, t model.Todo, what strin
 	return d.Fetch(cctx, t, what)
 }
 
-// sendable refuses files for a task on the hub: they would be on the hub,
-// out of the runners' reach.
-func (sv *service) sendable(projectID string, files bool) error {
-	if !files {
+// sendable refuses a hub's task editor changes (model.Todo.Edits): they
+// would be on the hub, out of the runners' reach. Attachments go to the
+// runner with the task (dispatch.Task.Attachments).
+func (sv *service) sendable(projectID string, edits bool) error {
+	if !edits {
 		return nil
 	}
 	if _, err := sv.data.GetProject(projectID); err == nil && sv.s.hub() {
-		return fmt.Errorf("%w: attachments and editor changes can't be sent to runners; describe them in the instructions instead", errBadRequest)
-	}
-	return nil
-}
-
-// notOnRunner refuses what only works for a task whose files are here.
-func notOnRunner(t model.Todo) error {
-	if t.OnRunner() {
-		return fmt.Errorf("%w: this task's worktree is on its runner, not on the hub", errBadRequest)
+		return fmt.Errorf("%w: editor changes can't be sent to runners; describe them in the instructions instead", errBadRequest)
 	}
 	return nil
 }

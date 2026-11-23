@@ -1360,15 +1360,18 @@ func (h *Hub) dialErr(name string, err error) error {
 }
 
 // Call makes a request to runner id over its tunnel: in is sent as JSON
-// (unless nil) and the JSON answer decoded into out (unless nil; a
-// *[]byte gets the raw body).
+// (unless nil; an io.Reader is sent as it is, a file) and the JSON answer
+// decoded into out (unless nil; a *[]byte gets the raw body).
 func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) error {
 	name, err := h.target(id)
 	if err != nil {
 		return err
 	}
 	var body io.Reader
-	if in != nil {
+	ctype := "application/json"
+	if r, ok := in.(io.Reader); ok {
+		body, ctype = r, "application/octet-stream"
+	} else if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
 			return err
@@ -1380,7 +1383,7 @@ func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) er
 		return err
 	}
 	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", ctype)
 	}
 	if uid, ok := userFrom(ctx); ok {
 		req.Header.Set(UserHeader, strconv.FormatInt(uid, 10))

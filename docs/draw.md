@@ -16,7 +16,8 @@ a resting palm is ignored), and **Add to rework notes** opens the rework sheet. 
 the clipboard.
 
 Drawing needs a [preview domain](previews.md#setting-up-a-preview-domain), since the picture is
-taken through the proxy (see [what the proxy does](previews.md#what-the-proxy-does)).
+taken through the proxy (see [what the proxy does](previews.md#what-the-proxy-does)). On a hub,
+Draw works the same, and the picture goes to the task's runner with the rework notes.
 
 The picture is the page's own rendering of itself, which can be wrong for WebGL, video or unusual
 CSS. On desktop Chrome and Edge, **Exact** (<kbd>X</kbd>) in draw mode takes it from the screen

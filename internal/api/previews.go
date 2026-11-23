@@ -18,8 +18,12 @@ var errNoPreviews = errors.New("previews are not available")
 
 // startPreview runs the todo's project run_command in its worktree (or, for
 // a terminal preview, its preview_command in a terminal there), or returns
-// the preview already running.
+// the preview already running. On a hub it runs on the task's runner.
 func (s *Server) startPreview(w http.ResponseWriter, r *http.Request) {
+	if s.hub() {
+		s.previewOnRunner(w, r, "/preview")
+		return
+	}
 	sv, ok := s.service(w, r)
 	if !ok {
 		return
@@ -29,9 +33,6 @@ func (s *Server) startPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := sv.data.GetTodo(r.PathValue("tid"))
-	if err == nil {
-		err = notOnRunner(t)
-	}
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -51,6 +52,10 @@ func (s *Server) startPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stopPreview(w http.ResponseWriter, r *http.Request) {
+	if s.hub() {
+		s.previewOnRunner(w, r, "/preview")
+		return
+	}
 	sv, ok := s.service(w, r)
 	if !ok {
 		return
@@ -73,8 +78,13 @@ func (s *Server) stopPreview(w http.ResponseWriter, r *http.Request) {
 // previewLog returns the end of the preview's output, e.g. to send it back
 // to Claude when it crashed: a web preview's server log as written, or a
 // terminal preview's last lines as plain text (?lines=N, default
-// preview.DefaultLogLines, at most maxPreviewLogLines).
+// preview.DefaultLogLines, at most maxPreviewLogLines). On a hub it comes
+// from the task's runner.
 func (s *Server) previewLog(w http.ResponseWriter, r *http.Request) {
+	if s.hub() {
+		s.previewOnRunner(w, r, "/preview/log")
+		return
+	}
 	sv, ok := s.service(w, r)
 	if !ok {
 		return
@@ -114,7 +124,7 @@ func (s *Server) listPreviews(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if s.Previews == nil {
+	if s.Previews == nil && !s.hub() {
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
@@ -122,8 +132,12 @@ func (s *Server) listPreviews(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sv.previews())
 }
 
-// previews are the running previews of the caller's org's tasks.
+// previews are the running previews of the caller's org's tasks: on a hub,
+// those on its runners.
 func (sv *service) previews() []model.Preview {
+	if sv.s.hub() {
+		return sv.hubPreviews()
+	}
 	out := []model.Preview{}
 	for _, pv := range sv.s.Previews.List() {
 		if sv.data.OwnsProject(pv.ProjectID) {
@@ -140,7 +154,9 @@ func (s *Server) stopPreviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := 0
-	if s.Previews != nil {
+	if s.hub() {
+		n = sv.stopHubPreviews(r)
+	} else if s.Previews != nil {
 		for _, pv := range sv.previews() {
 			if s.Previews.Stop(pv.TodoID, "stopped") == nil {
 				n++
@@ -164,6 +180,15 @@ func (s *Server) openPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Previews.SetOrigin(r)
+	// A hub's task: its preview is on its runner, served here as
+	// <remote id>-<runner>, for the task's org.
+	if s.hub() {
+		if label, ok := s.hubPreviewLabel(c, tid); ok {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Redirect(w, r, s.Previews.AuthURL(label, r.URL.Query().Get("next")), http.StatusFound)
+			return
+		}
+	}
 	// Only the task's own org gets signed in to its preview; a runner's
 	// previews (<task>-<runner>) belong to the whole Dash, like the runner.
 	if s.Previews.IsRemote(tid) {

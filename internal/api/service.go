@@ -217,7 +217,7 @@ func (sv *service) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
 	if t.RunOn, err = sv.runOn(t, t.RunOn); err != nil {
 		return t, err
 	}
-	if err := sv.sendable(t.ProjectID, len(t.Attachments) > 0 || len(t.Edits) > 0); err != nil {
+	if err := sv.sendable(t.ProjectID, len(t.Edits) > 0); err != nil {
 		return t, err
 	}
 	t, err = sv.data.CreateTodo(t)
@@ -701,11 +701,6 @@ func (sv *service) runTests(ctx context.Context, t model.Todo, shared bool) erro
 // rework sends a reviewed (or failed) todo back to the queue with feedback;
 // the next run reuses its worktree so Claude builds on its changes.
 func (sv *service) rework(id, feedback string, atts []model.Attachment) (model.Todo, error) {
-	if cur, err := sv.data.GetTodo(id); err == nil {
-		if err := sv.sendable(cur.ProjectID, len(atts) > 0); err != nil {
-			return cur, err
-		}
-	}
 	t, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		fb := strings.TrimSpace(feedback)
 		if len(atts) > 0 {

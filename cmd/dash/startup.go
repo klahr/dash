@@ -891,6 +891,7 @@ func (a *app) setupHub() {
 		todos.Kick()
 	}
 	runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
+	d.OnPreviews = apiSrv.RunnerPreviews // its tasks' previews on runners, as the runners report them
 	// "Follow weekly pace" is each Claude account's: the hub paces the
 	// runners on one account as one budget, and tells each how.
 	d.Pacer = &dispatch.Pacer{Runners: runners.ListBare}
@@ -1024,6 +1025,9 @@ func (a *app) setupRunner() {
 		}
 	}
 	merges.Remote.Pub = &teePublisher{Publisher: events, also: reporter.Observe}
+	// The hub's board and Previews sheet show the previews of its tasks.
+	a.previews.Pub = &teePublisher{Publisher: events, also: reporter.Observe}
+	reporter.Previews = a.previews.List
 	reporter.Checkouts = func() []dispatch.CheckoutState {
 		var out []dispatch.CheckoutState
 		for _, rs := range merges.Remote.Behind() {

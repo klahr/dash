@@ -1125,8 +1125,12 @@ func (s *Server) procWS(w http.ResponseWriter, r *http.Request) {
 // previewTerminalWS handles GET /ws/todos/{tid}/preview: it attaches to the
 // task's terminal preview, with procWS's protocol. Typing keeps the preview
 // from being stopped as idle. A runner's task is reached the same way under
-// /peer/{runner}/.
+// /peer/{runner}/; a hub's task's, here (previewTerminalOnRunner).
 func (s *Server) previewTerminalWS(w http.ResponseWriter, r *http.Request) {
+	if s.hub() {
+		s.previewTerminalOnRunner(w, r)
+		return
+	}
 	sv, ok := s.service(w, r)
 	if !ok {
 		return

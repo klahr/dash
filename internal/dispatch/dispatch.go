@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -61,6 +62,9 @@ type Dispatcher struct {
 	// Pacer paces the runners per Claude account (optional: without it,
 	// each runner paces itself, as its own setting says).
 	Pacer *Pacer
+	// OnPreviews takes a runner's report of its live previews of the hub's
+	// tasks, all of them (optional; see Report.Previews).
+	OnPreviews func(r tunnel.Runner, previews []PreviewState)
 
 	mu     sync.Mutex
 	timers map[string]*time.Timer // runner id → its offline grace
@@ -201,14 +205,50 @@ func (d *Dispatcher) claimedLoads() map[string]int {
 	return load
 }
 
+// sendFiles sends t's attachments to runner r (UploadPath), to go with
+// the task (Task.Attachments). A file gone from the hub is left out, as are
+// all of them for a runner too old to take them; the task's log says so.
+func (d *Dispatcher) sendFiles(ctx context.Context, t model.Todo, r tunnel.Runner) ([]model.Attachment, error) {
+	var out []model.Attachment
+	for _, a := range t.Attachments {
+		f, err := os.Open(a.Path)
+		if err != nil {
+			d.note(t, "⚠ the attached file "+a.Name+" is gone from the hub: it isn't sent to "+r.Name)
+			continue
+		}
+		err = d.Fleet.Call(ctx, r.ID, http.MethodPut, UploadPathFor(a.ID, a.Name), f, nil)
+		f.Close()
+		var ce *tunnel.CallError
+		if errors.As(err, &ce) && ce.Status == http.StatusForbidden && strings.Contains(ce.Msg, "doesn't offer this") {
+			d.note(t, "⚠ "+r.Name+" is too old to take attached files: update it (the task goes without them)")
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("sending %s: %w", a.Name, err)
+		}
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+func (d *Dispatcher) note(t model.Todo, line string) {
+	if d.Note != nil {
+		d.Note(t, line)
+	}
+}
+
 // send hands t to runner r, picked for it: it links p there, then sends
 // the task.
 func (d *Dispatcher) send(ctx context.Context, p model.Project, t model.Todo, r tunnel.Runner, parent *model.Todo) (runnerID, remoteID string, err error) {
 	if err := d.link(ctx, r, p); err != nil {
 		return "", "", &WaitError{Reason: "waiting for a runner: " + err.Error()}
 	}
+	files, err := d.sendFiles(ctx, t, r)
+	if err != nil {
+		return "", "", &WaitError{Reason: "waiting for a runner: " + err.Error()}
+	}
 	ds := r.Disk
-	task := Task{HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Model: t.Model, Feedback: t.Feedback,
+	task := Task{Attachments: files, HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Model: t.Model, Feedback: t.Feedback,
 		Fresh: t.Runner != r.ID, Disk: &ds, StartNow: t.StartNow, Rejoin: t.Rejoin && t.Runner == r.ID, TakesDone: true,
 		For: t.WorkFor()}
 	if parent != nil {
@@ -538,6 +578,9 @@ func (d *Dispatcher) Report(id string, body []byte) error {
 		d.procsChanged(r, pid)
 	}
 	d.setPermissions(r, rep.Permissions)
+	if rep.Previews != nil && d.OnPreviews != nil {
+		d.OnPreviews(r, *rep.Previews)
+	}
 	if fresh, ok := d.Fleet.Get(id); ok {
 		if rep.Disk != nil {
 			d.checkDisk(fresh)

@@ -189,14 +189,10 @@ func (m *Manager) dashOrigin() string {
 }
 
 // originFor is the Dash origin label's preview belongs with: OriginFor's
-// for its todo when set, else dashOrigin.
+// when set, else dashOrigin.
 func (m *Manager) originFor(label string) string {
 	if m.OriginFor != nil {
-		id := label
-		if _, todoID, ok := m.remoteLabel(label); ok {
-			id = todoID
-		}
-		if o := m.OriginFor(id); o != "" {
+		if o := m.OriginFor(label); o != "" {
 			return o
 		}
 	}

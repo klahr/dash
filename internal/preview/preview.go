@@ -79,10 +79,11 @@ type Manager struct {
 	// Secure reports whether a request reached Dash over HTTPS.
 	Secure    func(*http.Request) bool
 	IdleAfter time.Duration
-	// OriginFor, if set, is the Dash origin a todo's preview signs in at
-	// and may be captured from (with org subdomains, the todo's org's);
-	// "" falls back to Dash's origin as last seen.
-	OriginFor func(todoID string) string
+	// OriginFor, if set, is the Dash origin the preview with host label
+	// (a todo id, or <todo>-<runner> for a runner's) signs in at and may be
+	// captured from (with org subdomains, the todo's org's); "" falls back
+	// to Dash's origin as last seen.
+	OriginFor func(label string) string
 	// PublicURL, if set (-public-url), is Dash's own origin; otherwise it is
 	// learnt from the UI's requests, on hosts the preview domain is under.
 	PublicURL string

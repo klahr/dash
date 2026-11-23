@@ -187,6 +187,8 @@ type Server struct {
 	generalTurns map[string]int // general chat turns running, by "<org>:<user>"
 	projectTurns map[string]int // project chat turns running, by "<org>:<user>:<project>"
 
+	runnerPv runnerPreviews // the hub's tasks' previews on runners (hubpreviews.go)
+
 	muxOnce sync.Once
 
 	// goalEngine runs the goals' coordinators (goalcoord.go), made once.

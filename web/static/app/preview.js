@@ -27,7 +27,8 @@ export const previewOf = (id) => state.previews.get(pvKey(state.project?.machine
 // A CLI project (preview_kind "terminal") previews in a terminal and needs no run_command.
 const termProject = () => state.project?.preview_kind === "terminal";
 export const isTermPreview = (p) => (p ? p.kind === "terminal" : termProject());
-export const canPreview = (t) => t?.status === "review" && !!t.worktree && !t.runner && (termProject() || !!state.project?.run_command);
+// A hub's task previews on its runner, where its worktree is; the hub serves the page.
+export const canPreview = (t) => t?.status === "review" && !!t.worktree && (termProject() || !!state.project?.run_command);
 export const PV_LABEL = { starting: "Starting…", live: "Live", crashed: "Crashed" };
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s) => s.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-_]|\r(?!\n)/g, "");
@@ -245,7 +246,7 @@ export function renderPreview() {
   $("#pv-frame").style.setProperty("--pv-w", pv.width === "full" ? "100%" : `${pv.width}px`);
   $("#pv-frame").classList.toggle("full", pv.width === "full");
   const target = p ? previewTarget(p) : null;
-  $("#pv-open").disabled = $("#pv-copy").disabled = !p;
+  $("#pv-open").disabled = $("#pv-copy").disabled = !(p?.url || p?.local_url);
   $("#pv-qr").hidden = !p?.url;
   $("#pv-reload").disabled = !(st === "live" && target?.src);
   const drawable = st === "live" && !!target?.src && !!p.url;
@@ -282,8 +283,10 @@ export function renderPreview() {
       break;
     case "live": // no preview domain, and not on Dash's own computer
       status.replaceChildren(h("strong", {}, "This device can't open the preview"),
-        h("p", { class: "hint" }, "Dash has no preview domain set up (-preview-domain, see docs/previews.md), so the server is only reachable on the computer running Dash: ",
-          h("a", { href: p.local_url, target: "_blank", rel: "noopener" }, p.local_url)));
+        p.local_url
+          ? h("p", { class: "hint" }, "Dash has no preview domain set up (-preview-domain, see docs/previews.md), so the server is only reachable on the computer running Dash: ",
+            h("a", { href: p.local_url, target: "_blank", rel: "noopener" }, p.local_url))
+          : h("p", { class: "hint" }, "Dash has no preview domain set up (-preview-domain, see docs/previews.md), so it can't serve the preview from the task's runner."));
       break;
     default:
       fill(status, h("strong", {}, "The preview isn't running"),
@@ -377,8 +380,8 @@ $$(".pv-widths button").forEach((b) => b.addEventListener("click", () => {
   renderPreview();
 }));
 $("#pv-reload").addEventListener("click", reloadPreview);
-$("#pv-open").addEventListener("click", () => { const p = previewOf(pv.todo); if (p) window.open(p.url || p.local_url, "_blank", "noopener"); });
-$("#pv-copy").addEventListener("click", attempt(async () => { const p = previewOf(pv.todo); if (p) await copy(p.url || p.local_url, "Preview link copied"); }));
+$("#pv-open").addEventListener("click", () => { const p = previewOf(pv.todo); if (p?.url || p?.local_url) window.open(p.url || p.local_url, "_blank", "noopener"); });
+$("#pv-copy").addEventListener("click", attempt(async () => { const p = previewOf(pv.todo); if (p?.url || p?.local_url) await copy(p.url || p.local_url, "Preview link copied"); }));
 $("#pv-qr").addEventListener("click", () => { const p = previewOf(pv.todo); if (p?.url) openQR(p.url, p.prefix); });
 $("#pv-stop").addEventListener("click", attempt(() => stopPreview()));
 $("#pv-close").addEventListener("click", hidePreview);
@@ -405,7 +408,7 @@ $("#pv-fab").addEventListener("click", attempt(async (e) => {
   if (canRework(t) && term && p?.state === "live") rework.push(["redo", pvTerm?.hasSelection() ? "Rework with the selection…" : "Rework with transcript…", () => sendBackWithTranscript(t)]);
   if (canRework(t)) rework.push(["redo", "Rework…", () => (p?.state === "crashed" ? sendBackWithLog(t) : reworkTodo(t).then((sent) => sent && hidePreview()))]);
   if (p) {
-    if (!term) link.push(["external", "Open in a new tab", () => window.open(p.url || p.local_url, "_blank", "noopener")]);
+    if (!term && (p.url || p.local_url)) link.push(["external", "Open in a new tab", () => window.open(p.url || p.local_url, "_blank", "noopener")]);
     if (!term && p.url) link.push(["link", "Copy link", () => copy(p.url, "Preview link copied")]);
     stop.push(["stop", "Stop the preview", () => stopPreview(t.id)]);
   }
