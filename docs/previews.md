@@ -63,6 +63,13 @@ terminal.
 - Dash remembers the runner you picked, per project, in this browser.
 - With no runner at all, **Run** is greyed out and says why.
 
+A web project with a run command has the same button: **Run** runs the command, as **Run** on the
+Shell page does, and is **Stop** while the server runs.
+
+A project with nothing to run (a web project with no run command) still shows **Run**, greyed out.
+Hover it to see why. Click it, or **▾** then **Configure…**, to open **Project settings → Commands**
+and set the command.
+
 While it starts or runs, the button is a red **Terminate** (■), with the commit and the runner beside
 it (`abc1234 on laptop`): click those to open the terminal. **Terminate** stops the run at once, with
 no question. When the run stops by itself (idle for 30 minutes, the command exits, the runner goes

@@ -187,7 +187,7 @@ textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: 
 .project-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-branch { min-width: 0; flex: 0 1000 auto; color: var(--muted); font-family: var(--mono); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Run (app/try.js): a split button, ▶ Run in green or ■ Terminate in red, the same width either way;
-   ▾ picks the runner. While it runs, "abc1234 on laptop" beside it opens the terminal. */
+   greyed (.off) when the project has nothing to run; ▾ picks the runner. While it runs, "abc1234 on laptop" beside it opens the terminal. */
 .run-split { display: flex; align-items: center; gap: 8px; flex: none; min-width: 0; }
 .run-split > button {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px;
@@ -202,6 +202,10 @@ textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: 
 .run-split > button:hover:not(:disabled) { border-color: var(--accent); background: var(--raised); }
 .run-main.stop:hover:not(:disabled) { border-color: var(--failed); }
 .run-split > button:disabled { opacity: .55; cursor: not-allowed; }
+/* Nothing to run: greyed, but aria-disabled, not disabled, so it still opens Configure… and shows why. */
+.run-main.off { color: var(--muted); border-style: dashed; background: transparent; opacity: .7; }
+.run-main.off .ico { color: var(--muted); }
+.run-split > .run-main.off:hover { opacity: 1; border-color: var(--line); background: var(--surface); }
 .run-at { min-width: 0; max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-s); text-decoration: none; }
 .run-at code { font-family: var(--mono); color: var(--text); }
 .run-at:hover { color: var(--text); text-decoration: underline; }

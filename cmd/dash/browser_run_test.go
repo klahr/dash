@@ -12,7 +12,8 @@ import (
 // the runner and opens its terminal, turning into ■ Terminate (the same
 // width, keeping focus) with the commit and runner beside it; Terminate stops
 // it and it is Run again. ▾ lists the runners, then Pick a commit…, and works
-// with the keyboard. On a wide screen and a phone's.
+// with the keyboard. On a wide screen and a phone's. A web project with no
+// run command shows it greyed, and clicking it opens Configure….
 func TestBrowserRunButton(t *testing.T) {
 	endToEnd(t)
 	chrome := needChrome(t)
@@ -21,9 +22,17 @@ func TestBrowserRunButton(t *testing.T) {
 	b := newBrowser(t, chrome)
 	b.signIn(h)
 
-	// Not a CLI project: no Run button.
+	// A web project with no run command: Run shows, greyed and saying why; a click
+	// still opens Project settings → Commands.
 	b.waitJS("the board", `document.querySelector("#project-name")?.textContent === "app"`)
-	b.waitJS("no Run on a web project", `document.querySelector("#run-split").hidden`)
+	b.waitJS("a greyed Run on a web project", `(() => {
+		const m = document.querySelector("#run-main");
+		return !document.querySelector("#run-split").hidden && !m.disabled && m.classList.contains("off")
+			&& m.getAttribute("aria-disabled") === "true" && m.title.startsWith("No run command set");
+	})()`)
+	b.until("click the greyed Run", `document.querySelector("#settings-sheet").open`, chromedp.Click(chromedp.ID("run-main")))
+	b.waitJS("at Commands", `document.querySelector('#settings-sheet .rail-section[data-section="commands"]').classList.contains("current")`)
+	b.until("close the settings", `!document.querySelector("#settings-sheet").open`, chromedp.KeyEvent(kb.Escape))
 	h.api.must("PATCH", "/api/projects/"+pid, map[string]any{"preview_kind": "terminal", "preview_command": "echo run-button-ok; exec sh"}, http.StatusOK, nil)
 
 	for _, size := range []struct {
@@ -36,7 +45,7 @@ func TestBrowserRunButton(t *testing.T) {
 		b.do(size.name+": its screen", size.view, chromedp.Navigate(h.base+"/p/"+pid+"/board"))
 		b.waitJS(size.name+": ▶ Run, ready", `(() => {
 			const m = document.querySelector("#run-main");
-			return !document.querySelector("#run-split").hidden && !m.disabled && !m.classList.contains("stop")
+			return !document.querySelector("#run-split").hidden && !m.disabled && !m.classList.contains("stop") && !m.classList.contains("off")
 				&& m.textContent === "Run" && m.title.includes("laptop") && !document.querySelector("#run-pick").hidden;
 		})()`)
 		b.run(size.name+": remember Run's width", `window.runWidth = document.querySelector("#run-main").offsetWidth; true`)

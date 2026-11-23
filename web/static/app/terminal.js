@@ -340,7 +340,6 @@ function quickProc(spec) {
 }
 
 export function renderQuick() {
-  renderTryButton();
   for (const [sel, verb, generic, noun, key] of [["#quick-server", "Serving", "Run", "server run", "R"], ["#quick-test", "Testing", "Run Tests", "test run", "T"], ["#quick-deploy", "Deploying", "Deploy", "deploy", "D"]]) {
     const btn = $(sel);
     const spec = btn.dataset.run;
@@ -376,6 +375,7 @@ export function renderQuick() {
       : cut ? `Last ${noun} was interrupted by a Dash restart — click to run again`
       : `${done} (${key} on the Shell page)`;
   }
+  renderTryButton(); // after the buttons: the header's Run mirrors #quick-server
 }
 setInterval(() => { if ($(".quick-btn.running")) renderQuick(); }, 1000);
 // The Actions group (and its heading) shows only while one of its buttons does.

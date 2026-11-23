@@ -60,10 +60,13 @@ export function renderTryButton() {
 }
 
 // ---- Run: the header's split button
-// ▶ Run starts the latest commit (an empty ref: the default branch's tip) on
-// the runner used last, or the only one; ▾ lists the project's runners to
-// pick from. While a run starts or goes it is ■ Terminate, with the commit
-// and runner beside it, linking to its terminal.
+// Shown whenever a project is open. A CLI project's ▶ Run starts the latest
+// commit (an empty ref: the default branch's tip) on the runner used last, or
+// the only one; ▾ lists the project's runners to pick from. While a run starts
+// or goes it is ■ Terminate, with the commit and runner beside it, linking to
+// its terminal. A web project with a run command runs (or stops) it as the
+// Shell page's Run does. Any other project has nothing to run: ▶ Run is greyed
+// (aria-disabled, so it still takes clicks) and opens Configure….
 const runKey = (pid) => `dash.run.runner.${pid}`;
 function lastRunner(pid) { try { return localStorage.getItem(runKey(pid)) || ""; } catch { return ""; } }
 function rememberRunner(pid, id) { try { localStorage.setItem(runKey(pid), id); } catch { /* private mode */ } }
@@ -71,6 +74,25 @@ function rememberRunner(pid, id) { try { localStorage.setItem(runKey(pid), id); 
 // running: a run is starting or going (an exited one shows its last screen,
 // but the button is Run again).
 const running = () => !!tryState.starting || !!tryState.pending || tryState.stopAsked || tryState.session?.state === "live";
+
+// webRun: the project runs its run_command in its checkout (the Shell page's Run).
+const webRun = (p = state.project) => !!p && !tryProject(p) && p.preview_kind !== "terminal" && !!p.run_command;
+// The Shell page's Run button, which webRun drives (renderQuick keeps it current).
+const webRunning = () => $("#quick-server").classList.contains("stop");
+
+// noRunWhy says why the project has nothing to run ("" when it has).
+function noRunWhy(p = state.project) {
+  if (!p || tryProject(p) || webRun(p)) return "";
+  if (p.preview_kind === "terminal") return "Run isn't available for a project on another computer's Dash. Configure… opens Project settings → Commands";
+  return "No run command set. Configure it in Project settings → Commands";
+}
+
+async function configureRun() {
+  const p = state.project;
+  if (!p) throw new Error(projectFirst());
+  const { goTo } = await import("./teamsetup.js");
+  await goTo("settings", "commands", p);
+}
 
 // runRunner is the runner ▶ Run uses without asking: the one used last, the
 // default, or the only one that can run it ("" when it must ask).
@@ -85,8 +107,24 @@ function runRunner() {
 function renderRun() {
   const p = state.project, s = tryState.session;
   const wrap = $("#run-split"), main = $("#run-main"), pick = $("#run-pick"), at = $("#run-at");
-  wrap.hidden = !tryProject(p);
+  wrap.hidden = !p;
   if (wrap.hidden) return;
+  const why = noRunWhy(p);
+  main.classList.toggle("off", !!why);
+  if (why) main.setAttribute("aria-disabled", "true"); else main.removeAttribute("aria-disabled");
+  if (!tryProject(p)) {
+    // Nothing to run (greyed, opens Configure…), or the web project's run command.
+    const stop = !why && webRunning();
+    main.classList.toggle("stop", stop);
+    setLabel(main, stop ? "stop" : "play", h("span", { class: "run-main-label" }, stop ? "Stop" : "Run"));
+    main.disabled = false;
+    main.title = why || (stop ? "Stop the server" : `Run ${p.run_command}`);
+    pick.hidden = stop;
+    pick.disabled = false;
+    pick.title = "Configure what Run runs";
+    at.hidden = true;
+    return;
+  }
   const stop = running();
   const none = tryState.loaded && !tryState.runners.length;
   main.classList.toggle("stop", stop);
@@ -126,6 +164,7 @@ async function runOn(runner) {
 // saying why), then "Pick a commit…" and "Configure…" (Project settings →
 // Commands, where the preview kind and command are).
 function runMenu() {
+  if (!tryProject()) return popMenu($("#run-pick"), [[["settings", "Configure…", configureRun]]], { heading: noRunWhy() ? "Nothing to run" : "Run" });
   const cands = tryState.candidates.length ? tryState.candidates : tryState.runners.map((r) => ({ ...r, online: true }));
   const ok = new Set(tryState.runners.map((r) => r.id));
   const last = state.project ? lastRunner(state.project.id) : "";
@@ -136,15 +175,15 @@ function runMenu() {
       { disabled: !can, note: !r.online ? "offline" : can ? "online" : "can't run it", title: why }];
   });
   if (!rows.length) rows.push(["computer", "No runner", () => {}, { disabled: true, title: tryState.disabled }]);
-  const p = state.project;
-  const configure = async () => { const { goTo } = await import("./teamsetup.js"); await goTo("settings", "commands", p); };
   return popMenu($("#run-pick"), [rows, [["log", "Pick a commit…", () => { tryState.runner ||= runRunner(); return pickCommit(); }]],
-    [["settings", "Configure…", configure]]], { heading: "Run on" });
+    [["settings", "Configure…", configureRun]]], { heading: "Run on" });
 }
 
 async function clickRun() {
   const p = state.project;
   if (!p) throw new Error(projectFirst());
+  if (noRunWhy(p)) return configureRun(); // greyed: one click from setting it up
+  if (webRun(p)) return $("#quick-server").click(); // runs it, or stops it while it runs
   if (running()) {
     // Terminate: stop it, or ask startTry to once it has started.
     if (tryState.starting || tryState.pending) { tryState.stopAsked = true; tryState.pending = null; return renderRun(); }
@@ -379,7 +418,7 @@ async function openTryCommits() {
 $("#shell-at-main").addEventListener("click", () => showView("run"));
 $("#run-main").addEventListener("click", attempt(clickRun));
 $("#run-pick").addEventListener("click", attempt(async () => {
-  if (!tryState.loaded) await loadTry();
+  if (tryProject() && !tryState.loaded) await loadTry();
   await runMenu();
 }));
 $("#run-at").addEventListener("click", (e) => {

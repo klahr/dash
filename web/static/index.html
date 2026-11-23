@@ -37,8 +37,11 @@
         </button>
         <div class="foot-menu-list project-picker-list" id="project-picker" role="menu" aria-label="Projects" hidden></div>
       </div>
-      <!-- Run (app/try.js): the latest commit's preview command on a runner, for terminal projects.
-           The main part runs (or, while it runs, terminates); ▾ picks the runner. -->
+      <!-- Run (app/try.js): shown whenever a project is open. A terminal project runs the latest
+           commit's preview command on a runner; a web project runs its run command, as the Shell
+           page's Run does. The main part runs (or, while it runs, terminates); ▾ picks the runner
+           and has Configure…. With nothing to run, the main part is greyed (aria-disabled, so a
+           click still opens Configure… and the tooltip says why). -->
       <div class="run-split" id="run-split" role="group" aria-label="Run the latest commit" hidden>
         <button type="button" class="run-main" id="run-main"><span class="run-main-label">Run</span></button>
         <button type="button" class="run-pick" id="run-pick" aria-label="Pick where to run it" title="Pick where to run it" aria-haspopup="menu" aria-expanded="false" data-icon="down"></button>
