@@ -50,7 +50,7 @@ func TestBrowserSpokenReplies(t *testing.T) {
 	// Turn it on in Account → Spoken replies.
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu summary`)))
 	b.until("open Account", `document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-open`)))
-	b.until("the Spoken replies section", `!document.querySelector(`+jsq(section)+`).hidden`,
+	b.until("the Spoken replies section", `document.querySelector(`+jsq(section)+`).classList.contains("current")`,
 		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=speech]`)))
 	b.waitJS("off, its switches waiting", `!document.querySelector("#prefs-form").speech.checked && document.querySelector("#prefs-form").speechReplies.disabled`)
 	b.waitJS("the online note and the voices", `document.querySelector(`+jsq(section)+`).textContent.includes("online voice service") &&
@@ -83,10 +83,10 @@ func TestBrowserSpokenReplies(t *testing.T) {
 	b.do("a wide screen", chromedp.EmulateViewport(1400, 900))
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu summary`)))
 	b.until("open Account", `document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-open`)))
-	b.until("the Spoken replies section", `!document.querySelector(`+jsq(section)+`).hidden`,
+	b.until("the Spoken replies section", `document.querySelector(`+jsq(section)+`).classList.contains("current")`,
 		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=speech]`)))
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
-	b.waitJS("it fits across", `(() => { const s = document.querySelector(`+jsq(section)+`); return !s.hidden && s.scrollWidth <= s.clientWidth && s.getBoundingClientRect().right <= innerWidth; })()`)
+	b.waitJS("it fits across", `(() => { const s = document.querySelector(`+jsq(section)+`); return s.classList.contains("current") && s.scrollWidth <= s.clientWidth && s.getBoundingClientRect().right <= innerWidth; })()`)
 	b.until("close Account", `!document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
 
 	// Turned off, the buttons go.

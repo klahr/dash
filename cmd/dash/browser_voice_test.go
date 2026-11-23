@@ -35,7 +35,7 @@ func TestBrowserVoiceCommands(t *testing.T) {
 	section := `#account-sheet [data-section=dictation]`
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu summary`)))
 	b.until("open Account", `document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-open`)))
-	b.until("the Dictation section", `!document.querySelector(`+jsq(section)+`).hidden`,
+	b.until("the Dictation section", `document.querySelector(`+jsq(section)+`).classList.contains("current")`,
 		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=dictation]`)))
 	b.until("turn voice commands on", `localStorage.getItem("dash.voice") === "1"`,
 		chromedp.Click(chromedp.CSS(section+` label.toggle:has([name=voice])`)))

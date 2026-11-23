@@ -220,7 +220,7 @@ func TestBrowserDeploys(t *testing.T) {
 	b.do("a desktop's screen", chromedp.EmulateViewport(1600, 1000))
 	b.until("open the environments' settings", `document.querySelector("#settings-sheet").open && document.querySelectorAll("#settings-envs .env-edit").length === 2`,
 		chromedp.Click(chromedp.ID("deploy-settings")))
-	b.waitJS("the Deploy section shown", `!document.querySelector('#settings-sheet .rail-section[data-section="deploy"]').hidden`)
+	b.waitJS("the Deploy section shown", `document.querySelector('#settings-sheet .rail-section[data-section="deploy"]').classList.contains("current")`)
 	b.waitJS("where each deploys", `document.querySelector("#settings-envs .env-hint").textContent.includes("Deploys on")`)
 	b.waitJS("their checks", `[...document.querySelectorAll("#settings-envs .env-checks textarea")].map((e) => e.value).join() === ',test -n "$DASH_COMMIT"'`)
 	b.waitJS("who may deploy", `[...document.querySelectorAll("#settings-envs .env-role-row select")].map((e) => e.value).join() === "admin,admin,admin,member,none,admin"`)

@@ -46,7 +46,7 @@ func TestBrowserDictation(t *testing.T) {
 	// Turn it on in Account → Dictation.
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu summary`)))
 	b.until("open Account", `document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-open`)))
-	b.until("the Dictation section", `!document.querySelector('#account-sheet [data-section=dictation]').hidden`,
+	b.until("the Dictation section", `document.querySelector('#account-sheet [data-section=dictation]').classList.contains("current")`,
 		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=dictation]`)))
 	b.waitJS("the privacy note", `document.querySelector('#account-sheet [data-section=dictation]').textContent.includes("Chrome sends the audio to Google")`)
 	b.until("turn it on", `localStorage.getItem("dash.dictation") === "1"`,
