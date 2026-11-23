@@ -581,6 +581,16 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .code-block:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
 .code-copy:hover { color: var(--text); }
 @media (hover: none) { .code-copy { opacity: 1; } }
+/* An svg block drawn as a picture (see renderMarkdown), its code behind Code. */
+.md-svg { margin: 0 0 12px; }
+:is(.msg .reply, .md) > .md-svg:last-child { margin-bottom: 0; }
+/* A block, so an SVG with only a viewBox (no size of its own) fills the reply's width instead of collapsing. */
+.md-svg-pic { display: block; max-width: 100%; line-height: 0; }
+.md-svg-pic img { display: block; box-sizing: border-box; width: auto; height: auto; max-width: 100%; max-height: min(70vh, 640px); padding: 8px; border: 1px solid var(--line); }
+.md-svg figcaption { margin-top: 2px; }
+.md-svg-code { min-height: 32px; padding: 4px 2px; border: 0; background: none; color: var(--muted); font: inherit; font-size: var(--fs-s); cursor: pointer; }
+.md-svg-code:hover { color: var(--text); }
+.md-svg .code-block { margin-top: 4px; }
 :is(.msg .reply, .md) pre code { background: none; padding: 0; font-size: var(--fs-s); white-space: pre; }
 :is(.msg .reply, .md) blockquote { border-left: 2px solid var(--line); padding-left: 12px; color: var(--muted); }
 :is(.msg .reply, .md) hr { border: 0; border-top: 1px solid var(--line); }
@@ -2711,6 +2721,14 @@ dialog.lightbox::backdrop { background: transparent; }
 .msg-attach { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; white-space: normal; }
 .msg-attach .chip { background: var(--bg); }
 .msg-attach .chip img { width: 72px; height: 54px; }
+/* Images an answer showed (show_image), as big as the reply allows, in their own proportions. */
+.msg-images { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 10px; white-space: normal; }
+.msg-images .chip { max-width: 100%; background: none; }
+.msg-images .chip-link { flex-direction: column; align-items: flex-start; gap: 4px; max-width: 100%; padding: 6px; }
+.msg-images .chip img { display: block; width: auto; height: auto; max-width: 100%; max-height: min(70vh, 640px); object-fit: contain; }
+.msg-images .chip-name { max-width: 100%; color: var(--muted); font-size: var(--fs-xs); }
+/* Images on white: drawings often leave the background transparent and draw in black. */
+:is(.msg-images .chip img, .md-svg-pic img) { background: #fff; border-radius: var(--r-s); }
 .attach-gallery { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .attach-gallery .chip { max-width: 100%; }
 .attach-gallery .chip img { width: 72px; height: 54px; }

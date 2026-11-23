@@ -116,7 +116,7 @@ func (s *Server) toHubBoard(w http.ResponseWriter, r *http.Request, sc mcptools.
 		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
 		return true
 	}
-	if hubTodo != "" && callsTool(body, mcptools.RunTestsTool) {
+	if hubTodo != "" && mcptools.CallsTool(body, mcptools.RunTestsTool) {
 		// The task's worktree is here: its tests run here, not on the hub.
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		s.boardHandler().Serve(w, r, sc)
@@ -140,18 +140,6 @@ func (s *Server) toHubBoard(w http.ResponseWriter, r *http.Request, sc mcptools.
 	w.WriteHeader(res.StatusCode)
 	_, _ = io.Copy(w, res.Body)
 	return true
-}
-
-// callsTool reports whether body, an MCP request, calls the tool name.
-func callsTool(body []byte, name string) bool {
-	var req mcptools.Request
-	if json.Unmarshal(body, &req) != nil || req.Method != "tools/call" {
-		return false
-	}
-	var p struct {
-		Name string `json:"name"`
-	}
-	return json.Unmarshal(req.Params, &p) == nil && p.Name == name
 }
 
 // runnerBoard handles POST /runner/mcp/dash on a hub: the board tool calls

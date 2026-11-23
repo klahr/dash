@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -40,6 +42,7 @@ import (
 //	server → {"kind":"cwd","text":"<dir>"} where the turn runs
 //	server → {"kind":"tool_use","id":"…","tool":"Bash","input":{…}}
 //	server → {"kind":"tool_result","id":"…","text":"<output>","is_error":bool}
+//	           a show_image call's also has "attachment": the image, stored as an upload, which shows in the reply
 //	server → {"kind":"permission","id":"<id>","tool":"Bash","input":{…}} asks to approve a tool call
 //	server → {"kind":"permission_decided","id":"<id>","text":"allow"|"deny"|"timeout"}
 //	server → {"kind":"shell_output","id":"<id>","text":"<output so far>"}
@@ -731,9 +734,12 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 		// The tasks the reply made (create_todo): saved with it, so the
 		// chat shows their cards when it is loaded again.
 		var tasks []model.ChatTask
+		// The images it showed (show_image): stored as uploads here, where
+		// the conversation is kept, and saved with it.
+		var images []model.Attachment
 		started := time.Now() // places the reply right after its question in a task's timeline
 		answered := func() []agent.ChatMessage {
-			return append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started, Usage: usage, Tasks: tasks})
+			return append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started, Usage: usage, Tasks: tasks, Attachments: images})
 		}
 		err := ct.chatter.Stream(ctx, ct.dir, ct.prompt, func(d agent.ChatDelta) {
 			if ctx.Err() != nil {
@@ -751,6 +757,16 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 			if d.Kind == "tool_result" && !d.IsError && d.Task != nil && d.Task.ID != "" {
 				tasks = append(tasks, *d.Task)
 			}
+			if d.Image != nil && !ct.forHub {
+				// A runner running its hub's chat passes the image on: the hub keeps it.
+				if a, err := s.as(c).saveImage(*d.Image); err != nil {
+					slog.Warn("chat image", "err", err)
+				} else {
+					images = append(images, a)
+					d.Attachment = &a
+				}
+				d.Image = nil
+			}
 			if d.Kind == "tool_result" && !d.IsError {
 				if note := agent.ActionNote(tools[d.ID]); note != "" && !slices.Contains(done, note) {
 					done = append(done, note)
@@ -760,7 +776,8 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 			// and so the cards of the tasks it made can note what's done with
 			// them (see chatActionNote). A reply that failed after making a
 			// task is kept too: the draft exists.
-			if !saved && ((d.Kind == "done" && (reply.Len() > 0 || len(tasks) > 0)) || (d.Kind == "error" && len(tasks) > 0)) {
+			kept := len(tasks) > 0 || len(images) > 0
+			if !saved && ((d.Kind == "done" && (reply.Len() > 0 || kept)) || (d.Kind == "error" && kept)) {
 				turn = answered()
 				if err := ct.save(turn); err != nil {
 					slog.Error("save chat", "err", err)
@@ -774,7 +791,7 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 			// Stopped by the user: keep what it said so far, as the client
 			// does, or (with nothing said) take the question back out.
 			switch {
-			case reply.Len() > 0 || len(tasks) > 0:
+			case reply.Len() > 0 || len(tasks) > 0 || len(images) > 0:
 				saveIfNewest(answered())
 			case ct.general && len(history) > 0:
 				saveIfNewest(history[:len(history)-1])
@@ -783,7 +800,7 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 		}
 		if err != nil && ctx.Err() == nil {
 			slog.Warn("chat", "err", err)
-			if !saved && len(tasks) > 0 {
+			if !saved && (len(tasks) > 0 || len(images) > 0) {
 				turn = answered()
 				if err := ct.save(turn); err != nil {
 					slog.Error("save chat", "err", err)
@@ -950,6 +967,17 @@ func (sv *service) chatAttachments(history []agent.ChatMessage) []agent.ChatMess
 	return out
 }
 
+// saveImage stores img, an image the chat showed (show_image), as an
+// upload of the caller's org, for its reply to show.
+func (sv *service) saveImage(img mcptools.Image) (model.Attachment, error) {
+	name := cleanUploadName(img.Name, img.Type)
+	typ, ok := uploadTypes[strings.ToLower(filepath.Ext(name))]
+	if !ok || !strings.HasPrefix(typ, "image/") || len(img.Data) > mcptools.MaxImage {
+		return model.Attachment{}, fmt.Errorf("not an image Dash shows: %s", img.Name)
+	}
+	return sv.saveUpload(name, typ, bytes.NewReader(img.Data))
+}
+
 // authored sets who wrote each user message of msgs, a conversation the
 // client sent in full: messages it already had (prev, as saved) keep their
 // author, and new questions are user's. Claude's answers have none.
@@ -972,7 +1000,15 @@ func authored(prev, msgs []agent.ChatMessage, user int64) []agent.ChatMessage {
 func withAttachments(history []agent.ChatMessage) []agent.ChatMessage {
 	out := append([]agent.ChatMessage(nil), history...)
 	for i, m := range out {
-		if len(m.Attachments) > 0 {
+		switch {
+		case len(m.Attachments) == 0:
+		case m.Role == "assistant": // the images Claude showed (show_image)
+			names := make([]string, len(m.Attachments))
+			for j, a := range m.Attachments {
+				names[j] = a.Name
+			}
+			out[i].Content = strings.TrimSpace(m.Content + "\n\n[Shown to the user: " + strings.Join(names, ", ") + "]")
+		default:
 			out[i].Content = strings.TrimSpace(m.Content + "\n\n" + agent.AttachmentList(m.Attachments))
 		}
 	}

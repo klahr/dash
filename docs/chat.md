@@ -70,6 +70,25 @@ usual placeholder.
 To turn it off, open **Account → Chat** and clear **Suggest what to say next**. It's on by default
 and applies to this browser only. When it's off, no call is made.
 
+## Pictures in the chat
+
+Claude can show you a picture in its reply. Ask it to draw something (a diagram, a sketch, an
+icon) or to show an image it made.
+
+- **A drawing**: Claude writes the SVG in a code block marked `svg`. The reply shows the picture.
+  **Code** under it shows the SVG, with a copy button. While the reply is still coming in, the
+  block shows as code.
+- **An image file**: Claude writes a PNG, JPEG, GIF, WebP or SVG file of at most 10 MB, and calls
+  the `show_image` tool with its path. The image shows under the reply's text and is saved with
+  the conversation. The file is read on the computer the chat runs on (on a hub, your runner),
+  and stored like a file you attach. A read-only chat can't write files, so it can only show
+  images that are already there.
+
+Pictures fit the reply's width and keep their shape. Click one to see it full size.
+
+An SVG never runs in the page: it shows as an image, so scripts in it don't run and links to
+other files don't load.
+
 ## Speak instead of typing
 
 Turn on **Account → Dictation** for a mic button on the message box. See

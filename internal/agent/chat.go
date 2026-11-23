@@ -17,6 +17,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
 
 	"github.com/klahr/dash/internal/localrun"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -44,6 +45,14 @@ type ChatDelta struct {
 	// Task is set on the tool_result of a create_todo call that worked: the
 	// task it made, read from the result.
 	Task *model.ChatTask `json:"task,omitempty"`
+	// Image is set on the tool_result of a show_image call that worked:
+	// the image, read where the chat runs. The Dash that keeps the
+	// conversation stores it as an upload and sends the client Attachment
+	// in its place.
+	Image *mcptools.Image `json:"image,omitempty"`
+	// Attachment is the upload of Image, on the delta the client gets,
+	// which shows it in the reply.
+	Attachment *model.Attachment `json:"attachment,omitempty"`
 }
 
 // Chat answers through the Anthropic Messages API (billed to an API key).
@@ -71,8 +80,13 @@ func NewChat(opts ...option.RequestOption) *Chat {
 
 func (*Chat) defaultSystem() string {
 	return "You are the assistant inside Dash, an AI-native development environment. " +
-		"Answer questions about the user's projects and code concisely."
+		"Answer questions about the user's projects and code concisely. " + svgHint
 }
+
+// svgHint tells the chat how to show a drawing: the chat renders an svg
+// code block as a picture.
+const svgHint = "To show a drawing (a diagram, a sketch, an icon), put its SVG in a ```svg code block in your reply: " +
+	"the chat shows it as a picture, with its code a click away. Give the <svg> a viewBox; scripts and external files in it don't run or load."
 
 // Stream sends the conversation to Claude and calls emit for every delta.
 func (c *Chat) Stream(ctx context.Context, _ string, history []ChatMessage, emit func(ChatDelta)) error {

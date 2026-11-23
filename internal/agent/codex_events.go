@@ -266,7 +266,11 @@ func (t *codexTranslator) item(phase string, it codexItem) []ChatDelta {
 				text = string(it.Result.StructuredContent)
 			}
 		}
-		return append(out, ChatDelta{Kind: "tool_result", ID: it.ID, Text: clipToolOutput(text), IsError: failed})
+		d := ChatDelta{Kind: "tool_result", ID: it.ID, Text: clipToolOutput(text), IsError: failed}
+		if !failed && it.Server == mcptools.ServerName && it.Tool == mcptools.ShowImageTool {
+			d.Image = ShownImage(input)
+		}
+		return append(out, d)
 	case "web_search":
 		if !done {
 			return nil

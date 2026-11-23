@@ -122,6 +122,16 @@ document.addEventListener("click", (e) => {
   copy(code.textContent, "Copied");
 });
 
+// Code under an svg block's picture (see renderMarkdown) shows its source.
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest?.(".md-svg-code");
+  const code = btn?.closest(".md-svg")?.querySelector(".code-block");
+  if (!code) return;
+  code.hidden = !code.hidden;
+  btn.setAttribute("aria-expanded", String(!code.hidden));
+  btn.textContent = code.hidden ? "Code" : "Hide code";
+});
+
 const askAttach = attachBox($("#ask-attach"), $("#ask-input"));
 // ask() shows a confirmation or a text question as a sheet. Resolves to the
 // entered text (or true), or null when cancelled.

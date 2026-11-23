@@ -5,6 +5,7 @@ package mcptools
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -418,12 +419,13 @@ type Options struct {
 
 // Tool names the chat may call; ReadTools never change anything.
 var (
-	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "read_try_terminal", "list_goals", "get_goal", "list_cards", "get_card", "list_deploys"}
+	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "read_try_terminal", "list_goals", "get_goal", "list_cards", "get_card", "list_deploys", ShowImageTool}
 	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "create_release", "delete_todo",
 		"report_issue", "read_try_terminal",
 		"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal", "accept_goal_plan", "reject_goal_plan", "message_goal",
 		"list_cards", "get_card", "create_card", "update_card", "comment_card", "start_card", "link_card",
-		"list_deploys", "deploy", "rollback", "promote"}
+		"list_deploys", "deploy", "rollback", "promote",
+		ShowImageTool}
 	// AskTools are board tools a chat never gets without asking: they publish
 	// something (a release tag pushed to origin, or a deploy).
 	AskTools = []string{"create_release",
@@ -437,8 +439,8 @@ var (
 // queue_todo, stop_todo and restart_todo (when b is a Restarter),
 // update_todo, create_release and delete_todo; the IssueTools; read_try_terminal when
 // b reads Try terminals (TryReader); the goal tools when b manages goals (GoalManager);
-// the planning tools when b has the org's plan (CardBoard); and the deploy
-// tools when b deploys (Deployer).
+// the planning tools when b has the org's plan (CardBoard); the deploy
+// tools when b deploys (Deployer); and show_image.
 func Tools(b Board, o Options) []Tool {
 	tools := append(boardTools(b, o), IssueTools(b, o)...)
 	if tr, ok := b.(TryReader); ok {
@@ -453,7 +455,7 @@ func Tools(b Board, o Options) []Tool {
 	if d, ok := b.(Deployer); ok {
 		tools = append(tools, DeployTools(b, d, o)...)
 	}
-	return tools
+	return append(tools, ShowImage())
 }
 
 // TryOutput is the end of a project's Try terminal and what it runs.
@@ -1210,6 +1212,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.Error(w, "unknown or expired token", http.StatusUnauthorized)
 		return
+	}
+	if sc.Todo == "" {
+		// show_image reads a file on the computer the chat runs on: this
+		// one, also for a run of a hub's chat, whose other calls go to the hub.
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<20))
+		if err != nil {
+			http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		if CallsTool(body, ShowImageTool) {
+			(&Server{Name: ServerName, Tools: []Tool{ShowImage()}}).ServeHTTP(w, r)
+			return
+		}
 	}
 	if h.Hub != nil && h.Hub(w, r, sc) {
 		return

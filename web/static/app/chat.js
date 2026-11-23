@@ -114,8 +114,11 @@ function chatView(c, { log, empty, labels, actions, scroller, merge, tasks }) {
     row?.append(speakButton(content));
     return row;
   };
-  const assistant = c.assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), ...cards(m.tasks), usageLine(m.usage), actionRow(m.content));
   const prefixOf = c.prefixOf = () => c.target().prefix || "";
+  // The images an answer showed (show_image) fit the reply's width; a click opens the lightbox.
+  const images = c.images = (list = []) => h("div", { class: "msg-images", hidden: !list.length }, ...list.map((a) => attachThumb(a, null, prefixOf())));
+  const assistant = c.assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }),
+    m.attachments?.length ? images(m.attachments) : null, ...cards(m.tasks), usageLine(m.usage), actionRow(m.content));
   const user = c.user = (m) => m.action ? actionNote(m) : m.shell ? c.shell.block(m, labels && from("user")).el : h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
     m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
   c.show = (saved) => {
@@ -263,7 +266,7 @@ function chatTurns(c, { stale, onState }) {
     for (const card of c.cards(cur.tasks)) cur.el.append(entering(card));
     const u = stopped ? h("div", { class: "msg-usage" }, "Stopped") : entering(usageLine(cur.usage));
     if (u) cur.el.append(u);
-    const kept = !!cur.content || cur.tasks.length > 0;
+    const kept = !!cur.content || cur.tasks.length > 0 || cur.images.length > 0;
     if (cur.content) {
       const row = c.actionRow(cur.content);
       cur.el.append(entering(row));
@@ -271,7 +274,7 @@ function chatTurns(c, { stale, onState }) {
       if (!stopped && !failed) speakReply(cur.content, row?.querySelector(".speak-btn"));
     }
     if (kept) {
-      c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage && !stopped ? { usage: cur.usage } : {}), ...(cur.tasks.length ? { tasks: cur.tasks } : {}) });
+      c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage && !stopped ? { usage: cur.usage } : {}), ...(cur.tasks.length ? { tasks: cur.tasks } : {}), ...(cur.images.length ? { attachments: cur.images } : {}) });
     } else {
       c.history.pop(); // keep history alternating
     }
@@ -335,7 +338,7 @@ function chatTurns(c, { stale, onState }) {
     const el = entering(h("div", { class: "msg assistant pending" }, c.from("assistant"), thinking, reply));
     c.current ? c.current.el.replaceWith(el) : c.log.append(el);
     c.toEnd(true);
-    c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), tasks: [], target: { prefix, ...fields }, at: new Date().toISOString() };
+    c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), tasks: [], images: [], target: { prefix, ...fields }, at: new Date().toISOString() };
     c.suggest();
     c.busyButton();
     onState();
@@ -655,6 +658,13 @@ function chatStreamHandler(c) {
         // A task create_todo made: its card shows under the answer once the
         // turn ends (settleTurn), when the server has saved it with the task.
         if (t && d.task?.id && !d.is_error && c.tasks) cur.tasks.push(d.task);
+        // An image show_image showed: below the reply's text, as when the chat is loaded again.
+        if (d.attachment?.id && !d.is_error) {
+          cur.images.push(d.attachment);
+          const row = cur.el.querySelector(":scope > .msg-images") || cur.el.appendChild(c.images());
+          row.hidden = false;
+          row.append(entering(attachThumb(d.attachment, null, c.prefixOf())));
+        }
         break;
       }
       case "permission":

@@ -142,7 +142,9 @@ func chatSystem(dir, tools string, board bool) string {
 			"Fix a task's title, prompt, priority or dependencies with update_todo; delete a task (delete_todo) only when the user asks to remove it. " +
 			"queue_todo also retries a failed task. Stop a queued or running task (stop_todo), or stop it, change its prompt and run it again (restart_todo), " +
 			"only when the user explicitly asks to stop, restart or rerun it. " +
-			"When the user decides to build or change something, create a Dash task for it instead of editing code yourself."
+			"When the user decides to build or change something, create a Dash task for it instead of editing code yourself. " +
+			"To show an image file (PNG, JPEG, GIF, WebP or SVG) you made or found, call show_image with its absolute path: " +
+			"it shows in your reply. Don't open images in another viewer: the user may be on another computer."
 	}
 	return s
 }
@@ -242,7 +244,8 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	started := time.Now()
 	think := newThinkClock()
 	var usage *model.ChatUsage
-	tools := map[string]string{} // tool_use id → tool
+	tools := map[string]string{}           // tool_use id → tool
+	inputs := map[string]json.RawMessage{} // tool_use id → input, of show_image calls
 	check := c.CLI.Stream()
 	pumpLines(stdout, func(line string) {
 		check.Line(line) // the chat has no log: the Runners page shows them
@@ -313,11 +316,17 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 				}
 				if b.Type == "tool_use" {
 					tools[b.ID] = b.Name
+					if showImageTool(b.Name) {
+						inputs[b.ID] = b.Input
+					}
 				}
 				// The task create_todo made, read from its whole result
 				// (the chat's copy may be cut short).
 				if b.Type == "tool_result" && !b.IsError && createTodoTool(tools[b.ToolUseID]) {
 					d.Task = CreatedTask(b.resultText())
+				}
+				if b.Type == "tool_result" && !b.IsError && showImageTool(tools[b.ToolUseID]) {
+					d.Image = ShownImage(inputs[b.ToolUseID])
 				}
 				emit(d)
 			}
@@ -432,6 +441,29 @@ func (b contentBlock) resultText() string {
 // "mcp__dash_board__create_todo") is the Dash board's create_todo.
 func createTodoTool(tool string) bool {
 	return tool == "create_todo" || tool == "mcp__"+mcptools.ServerName+"__create_todo"
+}
+
+// showImageTool reports whether tool (as Claude Code names it, e.g.
+// "mcp__dash_board__show_image") is the Dash board's show_image.
+func showImageTool(tool string) bool {
+	return tool == mcptools.ShowImageTool || tool == mcptools.ToolName(mcptools.ServerName, mcptools.ShowImageTool)
+}
+
+// ShownImage is the image a show_image call that worked (with input)
+// showed, read again here, where the chat runs; nil when it can't be read
+// now.
+func ShownImage(input json.RawMessage) *mcptools.Image {
+	var in struct {
+		Path string `json:"path"`
+	}
+	if json.Unmarshal(input, &in) != nil {
+		return nil
+	}
+	img, err := mcptools.ReadImage(in.Path)
+	if err != nil {
+		return nil
+	}
+	return &img
 }
 
 // CreatedTask is the task a create_todo result (the task, as JSON) names,

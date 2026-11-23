@@ -102,7 +102,8 @@ also a queued task, when you ask to start it now despite the weekly pace), `stop
 `clear_priority` to unset it, dependencies, `builds_on`, `run_on` or `tags`; the prompt, `builds_on` and `run_on` only while the task is a draft, queued or failed), `delete_todo` (only
 draft, queued or failed tasks, when you ask to remove one), `create_release`,
 `report_issue` (see [Tags and reported problems](#tags-and-reported-problems)), the
-[goal tools](#goals), the [planning tools](#planning) and the [deploy tools](#deploys). A read-only chat calls them without asking, except `create_release`,
+[goal tools](#goals), the [planning tools](#planning), the [deploy tools](#deploys) and
+`show_image` (see [Pictures in the chat](chat.md#pictures-in-the-chat)). A read-only chat calls them without asking, except `create_release`,
 `deploy`, `rollback` and `promote`, which it can't use; a shell chat asks for the ones that change something. They act as the user chatting,
 in the org they're working in.
 
@@ -117,7 +118,8 @@ token), and the hub decides who it acts as. A task's run acts as the task's owne
 task the hub sent that runner, in that task's project. A chat acts as the runner's owner, in the
 runner's org: a project's chat only in its project, which that runner must work on (have its labels). So tasks and drafts created there show up on the hub's board,
 under the hub's ids. If the hub can't be reached, the tool call fails; it never writes to the
-runner's own database instead.
+runner's own database instead. `show_image` is the exception: it reads its file on the computer
+the chat runs on, and is never passed to the hub.
 
 In a project's chat, a draft Claude makes with `create_todo` shows as a card under its answer
 once the answer ends (also when it fails or you stop it), with three buttons that act right away, without asking Claude:
