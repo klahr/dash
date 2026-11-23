@@ -129,7 +129,7 @@ async function loadOrgTokens() {
   const mine = org?.role;
   area.hidden = !org || org.personal || RANK[mine] < RANK.admin;
   if (area.hidden) return;
-  const list = await api("GET", `/api/orgs/${org.id}/tokens`, null, "");
+  const list = await api("GET", `/api/orgs/${org.id}/tokens`);
   const rows = list.map((t) => h("li", { class: "item-row" },
     h("span", { class: "runner-name" }, t.name, t.kind === "api" ? h("code", { class: "hint" }, ` ${t.prefix}…`) : null),
     h("span", { class: "item-sub hint" }, [
@@ -144,7 +144,7 @@ async function loadOrgTokens() {
         ? "The app is signed out at once and has to be connected again." : "Anything using this token loses access at once.", ok: "Revoke", danger: true })) return;
       const pw = await askPassword(`Revoke ${t.username}'s ${t.name}?`);
       if (pw == null) return;
-      await api("DELETE", `/api/orgs/${org.id}/tokens/${t.id}`, { password: pw }, "");
+      await api("DELETE", `/api/orgs/${org.id}/tokens/${t.id}`, { password: pw });
       toast(`${t.name} revoked`);
       await loadOrgTokens();
     }) }, "Revoke…") : null));

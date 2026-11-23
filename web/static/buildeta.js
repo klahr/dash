@@ -1,9 +1,10 @@
 // How far a running GitHub Actions build has got, from how long the same
 // workflow's earlier successful runs took (the Builds sheet's progress bars).
-// It reads only the run records, so it has no imports and Node tests can load it.
+// It reads only the run records, and imports only eta.js, so Node tests can load it.
+import { SAMPLES, etaText, typicalOf } from "./eta.js";
 
 // The runs an estimate is made from: at most this many, newest first.
-export const BUILD_SAMPLES = 10;
+export const BUILD_SAMPLES = SAMPLES;
 
 // tookMs is how long finished, successful run r took, in ms: from when its
 // latest attempt started until it finished. 0 when it didn't pass or the
@@ -18,19 +19,12 @@ export function tookMs(r) {
 // successful runs of r's workflow in list, with how many it is from:
 // { ms, n }; ms is 0 when there are none.
 export function typicalRun(r, list) {
-  const times = [], seen = new Set();
-  for (const x of list) {
-    if (times.length >= BUILD_SAMPLES) break;
-    if (x.id === r.id || x.workflow !== r.workflow || seen.has(x.id)) continue;
+  const seen = new Set();
+  return typicalOf(list, (x) => {
+    if (x.id === r.id || x.workflow !== r.workflow || seen.has(x.id)) return 0;
     seen.add(x.id);
-    const ms = tookMs(x);
-    if (ms) times.push(ms);
-  }
-  if (!times.length) return { ms: 0, n: 0 };
-  times.sort((a, b) => a - b);
-  const mid = times.length >> 1;
-  const ms = times.length % 2 ? times[mid] : (times[mid - 1] + times[mid]) / 2;
-  return { ms, n: times.length };
+    return tookMs(x);
+  }, BUILD_SAMPLES);
 }
 
 // buildProgress says how far running run r is at now (ms since the epoch),
@@ -51,12 +45,4 @@ export function buildProgress(r, list, now) {
 
 // buildEtaText words a progress: "about 3m left", "under a minute left",
 // "taking longer than usual".
-export function buildEtaText(p) {
-  if (!p) return "";
-  if (p.over) return "taking longer than usual";
-  const min = Math.round(p.left / 60000);
-  if (min < 1) return "under a minute left";
-  if (min < 60) return `about ${min}m left`;
-  const h = Math.floor(min / 60), m = min % 60;
-  return `about ${h}h${m ? ` ${m}m` : ""} left`;
-}
+export const buildEtaText = etaText;

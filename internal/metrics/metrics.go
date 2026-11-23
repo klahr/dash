@@ -10,6 +10,7 @@ package metrics
 import (
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"slices"
@@ -202,7 +203,7 @@ func (c *Counter) write(w io.Writer) {
 		fmt.Fprintf(w, "%s 0\n", c.name) // a counter without labels starts at 0
 		return
 	}
-	for _, k := range sortedKeys(c.vals) {
+	for _, k := range slices.Sorted(maps.Keys(c.vals)) {
 		v := c.vals[k]
 		fmt.Fprintf(w, "%s%s %s\n", c.name, labelSet(c.labels, v.labels), num(v.n))
 	}
@@ -252,7 +253,7 @@ func (h *Histogram) write(w io.Writer) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	names := append(slices.Clone(h.labels), "le")
-	for _, k := range sortedKeys(h.vals) {
+	for _, k := range slices.Sorted(maps.Keys(h.vals)) {
 		hv := h.vals[k]
 		var cum uint64
 		for i, b := range h.buckets {
@@ -329,13 +330,4 @@ func num(f float64) string {
 		return "NaN"
 	}
 	return strconv.FormatFloat(f, 'g', -1, 64)
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	ks := make([]string, 0, len(m))
-	for k := range m {
-		ks = append(ks, k)
-	}
-	sort.Strings(ks)
-	return ks
 }

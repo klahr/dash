@@ -8,6 +8,7 @@ package orgdomain
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"slices"
@@ -146,11 +147,7 @@ func (d *Domain) Reserved(label string) bool { return d.reserved[strings.ToLower
 
 // ReservedList is the reserved labels, sorted.
 func (d *Domain) ReservedList() []string {
-	out := make([]string, 0, len(d.reserved))
-	for r := range d.reserved {
-		out = append(out, r)
-	}
-	slices.Sort(out)
+	out := slices.Sorted(maps.Keys(d.reserved))
 	return out
 }
 

@@ -2,8 +2,9 @@ package release
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -38,11 +39,7 @@ func (w WorkflowTrigger) Matches(tag string) bool {
 // trigger filters tags. Workflows that ignore tag pushes, and files that
 // don't parse, are left out.
 func TagTriggers(files map[string][]byte) []WorkflowTrigger {
-	names := make([]string, 0, len(files))
-	for n := range files {
-		names = append(names, n)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(files))
 	var out []WorkflowTrigger
 	for _, n := range names {
 		if w, ok := tagTrigger(n, files[n]); ok {

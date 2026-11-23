@@ -567,13 +567,8 @@ func runScript(ctx context.Context, dir, script string, env []string, w *job) (*
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = dir, env, w, w
 	localrun.Group(cmd, syscall.SIGTERM, 10*time.Second)
 	err := cmd.Run()
-	code := 0
-	var exit *exec.ExitError
-	switch {
-	case errors.As(err, &exit):
-		code = exit.ExitCode()
-	case err != nil:
-		code = -1
+	code, ok := localrun.ExitStatus(err)
+	if !ok {
 		return &code, fmt.Errorf("run it: %w", err)
 	}
 	return &code, nil

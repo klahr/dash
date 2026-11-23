@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
@@ -151,29 +150,7 @@ func (c *Client) Run(ctx context.Context) error {
 	if maxB <= 0 {
 		maxB = time.Minute
 	}
-	backoff := minB
-	for {
-		start := time.Now()
-		err := c.serveOnce(ctx)
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if errors.Is(err, ErrRevoked) {
-			return err
-		}
-		if time.Since(start) > 30*time.Second {
-			backoff = minB // it was up for a while: this is a fresh outage
-		}
-		// Jitter, so runners don't all knock at once after a hub restart.
-		wait := backoff/2 + rand.N(backoff/2+1)
-		slog.Warn("runner: hub connection lost, retrying", "err", err, "in", wait.Round(time.Millisecond))
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(wait):
-		}
-		backoff = min(backoff*2, maxB)
-	}
+	return reconnect(ctx, "hub", minB, maxB, c.serveOnce, func(err error) bool { return errors.Is(err, ErrRevoked) })
 }
 
 func (c *Client) serveOnce(ctx context.Context) error {

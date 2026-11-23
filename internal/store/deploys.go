@@ -200,21 +200,12 @@ func (s *Store) CardsLinkedTo(todoIDs []string) ([]model.DeployShipped, error) {
 	for _, id := range todoIDs {
 		args = append(args, id)
 	}
-	rows, err := s.db.Query("SELECT DISTINCT c.id, c.title FROM planning_links l JOIN planning_cards c ON c.id = l.card_id"+
-		" WHERE l.kind = ? AND l.work_id IN (?"+strings.Repeat(", ?", len(todoIDs)-1)+") ORDER BY c.title", args...)
-	if err != nil {
-		return out, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var c model.DeployShipped
-		if err := rows.Scan(&c.ID, &c.Title); err != nil {
-			return out, err
-		}
+	return queryAll(s.db, func(sc scanner) (c model.DeployShipped, err error) {
+		err = sc.Scan(&c.ID, &c.Title)
 		c.Kind = model.LinkCard
-		out = append(out, c)
-	}
-	return out, rows.Err()
+		return c, err
+	}, "SELECT DISTINCT c.id, c.title FROM planning_links l JOIN planning_cards c ON c.id = l.card_id"+
+		" WHERE l.kind = ? AND l.work_id IN (?"+strings.Repeat(", ?", len(todoIDs)-1)+") ORDER BY c.title", args...)
 }
 
 func cloneDeploy(d model.Deploy) model.Deploy {

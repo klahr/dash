@@ -190,11 +190,7 @@ func (t *trySessions) set(pid, runner string) {
 func (s *Server) tryCall(ctx context.Context, c Caller, runnerID, method, rest string, in, out any) error {
 	ctx, cancel := context.WithTimeout(tunnel.WithUser(ctx, c.User), 2*time.Minute)
 	defer cancel()
-	err := s.fleet().Call(ctx, runnerID, method, rest, in, out)
-	if errors.Is(err, tunnel.ErrOffline) || errors.Is(err, tunnel.ErrUnknownName) {
-		return errNoRunnerOnline
-	}
-	return err
+	return s.runnerCall(ctx, runnerID, method, rest, in, out)
 }
 
 // session is p's try session as the runner it runs on has it (nil when

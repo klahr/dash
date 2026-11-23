@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -529,12 +530,8 @@ func (w *worker) pollNow() {
 func (w *worker) takeDirty() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	ids := make([]string, 0, len(w.dirty))
-	for id := range w.dirty {
-		ids = append(ids, id)
-	}
+	ids := slices.Sorted(maps.Keys(w.dirty))
 	clear(w.dirty)
-	slices.Sort(ids)
 	return ids
 }
 
@@ -628,11 +625,7 @@ func (w *worker) cycle(ctx context.Context) error {
 		for id := range w.links {
 			ids[id] = true // deleted todos: their cards go too
 		}
-		sorted := make([]string, 0, len(ids))
-		for id := range ids {
-			sorted = append(sorted, id)
-		}
-		slices.Sort(sorted)
+		sorted := slices.Sorted(maps.Keys(ids))
 		for _, id := range sorted {
 			if ctx.Err() != nil {
 				return ctx.Err()

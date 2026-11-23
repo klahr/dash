@@ -22,6 +22,7 @@ import (
 
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 type Publisher interface{ Publish(model.Event) }
@@ -638,7 +639,7 @@ func (g *Git) SyncWithRemote(ctx context.Context, projectID, repo, branch string
 	}
 	if out, err := g.git(ctx, projectID, repo, g.committing(ctx, repo, "rebase", "origin/"+branch)...); err != nil {
 		_, _ = g.git(ctx, projectID, repo, "rebase", "--abort")
-		return &ErrDiverged{Branch: branch, Output: lastLine(out)}
+		return &ErrDiverged{Branch: branch, Output: textutil.LastLine(out)}
 	}
 	return nil
 }
@@ -773,7 +774,7 @@ type ErrDirtyCheckout struct {
 
 func (e *ErrDirtyCheckout) Error() string {
 	if len(e.Files) == 0 {
-		return "can't update " + e.Dir + ": " + lastLine(e.Output)
+		return "can't update " + e.Dir + ": " + textutil.LastLine(e.Output)
 	}
 	return "uncommitted changes to " + strings.Join(e.Files, ", ") + " in " + e.Dir
 }
@@ -855,14 +856,6 @@ func (g *Git) Branches(ctx context.Context, projectID, repo, prefix string) ([]s
 func (g *Git) DeleteBranch(ctx context.Context, projectID, repo, branch string) error {
 	_, err := g.git(ctx, projectID, repo, "branch", "-D", branch)
 	return err
-}
-
-func lastLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
-		return s[i+1:]
-	}
-	return s
 }
 
 // CreateGitHubRepo uses gh to create a remote, set it as origin and push.

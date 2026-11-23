@@ -131,32 +131,21 @@ func (a *Accounts) attachOrgs(users []AdminUser) error {
 		at[u.ID] = i
 	}
 	// Every membership: fewer round trips than one query per account.
-	rows, err := a.db.Query(`SELECT m.user_id, ` + orgFields + `, m.role FROM org_memberships m
+	byUser, err := groupBy(a.db, func(sc scanner) (uid int64, m Membership, err error) {
+		m.Org, err = scanOrg(sc, &m.Role, &uid)
+		return uid, m, err
+	}, `SELECT `+orgFields+`, m.role, m.user_id FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id ORDER BY m.created_at, o.id`)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var uid int64
-		var m Membership
-		if m.Org, err = scanOrg(&prefixRows{rows, []any{&uid}}, &m.Role); err != nil {
-			return err
-		}
+	for uid, ms := range byUser {
 		if i, ok := at[uid]; ok {
-			users[i].Orgs = append(users[i].Orgs, m)
+			users[i].Orgs = append(users[i].Orgs, ms...)
 		}
 	}
-	return rows.Err()
+	return nil
 }
-
-// prefixRows scans leading columns into pre before handing the rest on.
-type prefixRows struct {
-	rows *sql.Rows
-	pre  []any
-}
-
-func (p *prefixRows) Scan(dest ...any) error { return p.rows.Scan(append(p.pre, dest...)...) }
 
 // AdminOrg is an org as platform admins see it.
 type AdminOrg struct {
@@ -221,20 +210,10 @@ func (a *Accounts) rolesOf(uids ...int64) (map[int64][]orgRole, error) {
 	for i, id := range uids {
 		args[i] = id
 	}
-	rows, err := a.db.Query("SELECT user_id, org_id, role FROM org_memberships WHERE user_id IN (?"+strings.Repeat(", ?", len(uids)-1)+")", args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var uid int64
-		var r orgRole
-		if err := rows.Scan(&uid, &r.org, &r.role); err != nil {
-			return nil, err
-		}
-		out[uid] = append(out[uid], r)
-	}
-	return out, rows.Err()
+	return groupBy(a.db, func(sc scanner) (uid int64, r orgRole, err error) {
+		err = sc.Scan(&uid, &r.org, &r.role)
+		return uid, r, err
+	}, "SELECT user_id, org_id, role FROM org_memberships WHERE user_id IN (?"+strings.Repeat(", ?", len(uids)-1)+")", args...)
 }
 
 // manageWhy is why actor (with roles mine, platform admin or not) may not
@@ -589,19 +568,9 @@ func (a *Accounts) DeleteOrg(orgID int64) (DeletedOrg, error) {
 		if len(why) > 0 {
 			return fmt.Errorf("%w: %s", ErrOrgInUse, strings.Join(why, "; "))
 		}
-		rows, err := tx.Query("SELECT user_id FROM org_memberships WHERE org_id = ?", orgID)
-		if err != nil {
+		if d.Members, err = queryAll(tx, scanOne[int64], "SELECT user_id FROM org_memberships WHERE org_id = ?", orgID); err != nil {
 			return err
 		}
-		for rows.Next() {
-			var uid int64
-			if err := rows.Scan(&uid); err != nil {
-				rows.Close()
-				return err
-			}
-			d.Members = append(d.Members, uid)
-		}
-		rows.Close()
 		if d.Tokens, err = queryAll(tx, scanToken, tokenCols+" WHERE t.org_id = ?", orgID); err != nil {
 			return err
 		}

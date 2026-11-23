@@ -432,7 +432,7 @@ async function loadGitHubRepos(refresh = false) {
   ghState.loading = r.id;
   note(`Asking ${r.name}'s gh for your repositories…`, { loading: true });
   try {
-    ghState.cache.set(r.id, await api("GET", `/api/runners/${encodeURIComponent(r.id)}/github-repos`, null, ""));
+    ghState.cache.set(r.id, await api("GET", `/api/runners/${encodeURIComponent(r.id)}/github-repos`));
   } catch (e) {
     if (sheetRunner()?.id === r.id && hubMode() === "gh") note(`Couldn't list your repositories: ${e.message || e}`, { retry: true });
     return;
@@ -509,7 +509,7 @@ export function startAdd(plan = null) {
   if (mode === "local") {
     run.title = `Creating ${run.name}`;
     step(`Creating the repository on ${r.name}`, async (s) => {
-      run.project = await api("POST", `/api/runners/${id}/projects`, { name: run.name, ...commands }, "");
+      run.project = await api("POST", `/api/runners/${id}/projects`, { name: run.name, ...commands });
       s.label = `Created ${run.project.name} on ${r.name}, local only`;
     });
   } else {
@@ -527,7 +527,7 @@ export function startAdd(plan = null) {
       step("Creating GitHub repository", async (s) => {
         // Created already, by a try that failed later on: not again.
         const same = np.created && np.created.runner === want.runner && np.created.name === want.name;
-        const repo = same ? np.created.repo : await api("POST", `/api/runners/${id}/github-repos`, { name: want.name, public: want.public }, "");
+        const repo = same ? np.created.repo : await api("POST", `/api/runners/${id}/github-repos`, { name: want.name, public: want.public });
         np.created = { ...want, repo };
         ghState.cache.delete(r.id);
         run.remote = `https://github.com/${repo.name}.git`;
@@ -548,7 +548,7 @@ export function startAdd(plan = null) {
         s.label = `${r.name} lacks the labels ${run.project.name} runs on: a runner with them clones it when it first gets work`;
         return;
       }
-      const call = api("POST", `/api/runners/${id}/links`, { project_id: run.project.id }, "");
+      const call = api("POST", `/api/runners/${id}/links`, { project_id: run.project.id });
       call.catch(() => {});
       let res;
       try {

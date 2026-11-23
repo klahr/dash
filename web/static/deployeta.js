@@ -1,9 +1,10 @@
 // How long a running deploy has left, from how long the same environment's
 // earlier successful deploys took (the deploy pane's Log heading). It reads
-// only the deploy records, so it has no imports and Node tests can load it.
+// only the deploy records, and imports only eta.js, so Node tests can load it.
+import { SAMPLES, typicalOf } from "./eta.js";
 
 // The deploys an estimate is made from: at most this many, newest first.
-export const ETA_SAMPLES = 10;
+export const ETA_SAMPLES = SAMPLES;
 
 const ACTIVE = ["building", "deploying", "verifying"];
 
@@ -25,18 +26,7 @@ export function tookToLive(d) {
 // successful deploys in list like d (same environment, same kind), with how
 // many it is from: { ms, n }; ms is 0 when there are none.
 export function typical(d, list) {
-  const times = [];
-  for (const x of list) {
-    if (times.length >= ETA_SAMPLES) break;
-    if (x.id === d.id || x.environment !== d.environment || kind(x) !== kind(d)) continue;
-    const ms = tookToLive(x);
-    if (ms) times.push(ms);
-  }
-  if (!times.length) return { ms: 0, n: 0 };
-  times.sort((a, b) => a - b);
-  const mid = times.length >> 1;
-  const ms = times.length % 2 ? times[mid] : (times[mid - 1] + times[mid]) / 2;
-  return { ms, n: times.length };
+  return typicalOf(list, (x) => (x.id === d.id || x.environment !== d.environment || kind(x) !== kind(d) ? 0 : tookToLive(x)), ETA_SAMPLES);
 }
 
 // estimate says how long running deploy d has left at now (ms since the
@@ -53,12 +43,4 @@ export function estimate(d, list, now) {
 
 // etaText words an estimate: "about 3m left", "under a minute left",
 // "taking longer than usual".
-export function etaText(e) {
-  if (!e) return "";
-  if (e.over) return "taking longer than usual";
-  const min = Math.round(e.left / 60000);
-  if (min < 1) return "under a minute left";
-  if (min < 60) return `about ${min}m left`;
-  const h = Math.floor(min / 60), m = min % 60;
-  return `about ${h}h${m ? ` ${m}m` : ""} left`;
-}
+export { etaText } from "./eta.js";

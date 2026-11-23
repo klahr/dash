@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // CodexProvider is the registered name of the Codex CLI provider.
@@ -228,11 +230,7 @@ type codexServer struct {
 // tools in allow run without asking, and are the only ones Codex gets of
 // that server: nobody could approve the others.
 func codexMCPArgs(servers map[string]any, allow map[string][]string, timeout time.Duration) (args, env []string) {
-	names := make([]string, 0, len(servers))
-	for n := range servers {
-		names = append(names, n)
-	}
-	slices.Sort(names)
+	names := slices.Sorted(maps.Keys(servers))
 	for _, n := range names {
 		var s codexServer
 		b, _ := json.Marshal(servers[n])
@@ -242,11 +240,7 @@ func codexMCPArgs(servers map[string]any, allow map[string][]string, timeout tim
 		key := "mcp_servers." + n + "."
 		args = append(args, "-c", key+"url="+tomlString(s.URL))
 		if len(s.Headers) > 0 {
-			hs := make([]string, 0, len(s.Headers))
-			for h := range s.Headers {
-				hs = append(hs, h)
-			}
-			slices.Sort(hs)
+			hs := slices.Sorted(maps.Keys(s.Headers))
 			var table []string
 			for i, h := range hs {
 				v := fmt.Sprintf("DASH_MCP_TOKEN_%s_%d", envName(n), i)
@@ -489,13 +483,7 @@ func (c Codex) Prompt(ctx context.Context, req PromptRequest) (string, error) {
 	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
 	out, err := cmd.Output()
 	if err != nil && ctx.Err() == nil {
-		return string(out), fmt.Errorf("codex exec: %w: %s", err, lastLine(stderr.String()))
+		return string(out), fmt.Errorf("codex exec: %w: %s", err, textutil.LastLine(stderr.String()))
 	}
 	return strings.TrimSpace(string(out)), err
-}
-
-// lastLine is the last line of s that says something.
-func lastLine(s string) string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
 }

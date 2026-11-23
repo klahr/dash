@@ -224,7 +224,7 @@ func (s *Store) reportLocked(is model.Issue, idx findingIndex, changed map[strin
 // for a new task, whose are written).
 func (s *Store) rewriteLocked(t *model.Todo, prev *model.Finding) {
 	title, prompt := s.findingTaskLocked(t.Finding)
-	if prev == nil || t.Finding.PromptSum != "" && t.Finding.PromptSum == model.PromptSum(t.Prompt) {
+	if prev == nil || t.HasGeneratedPrompt() {
 		t.Prompt = prompt
 		t.Finding.PromptSum = model.PromptSum(prompt)
 	}
@@ -374,60 +374,19 @@ func (s *Store) Undismiss(projectID, fingerprint string) (model.DismissedFinding
 func (s *Store) MergeTodos(ids []string) (model.Todo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ids = cleanIDs(ids)
-	if len(ids) < 2 {
-		return model.Todo{}, fmt.Errorf("%w: choose at least two drafts", ErrBadMerge)
-	}
-	var parts []*model.Todo
-	for _, id := range ids {
-		t, ok := s.data.Todos[id]
-		if !ok {
-			return model.Todo{}, ErrNotFound
-		}
-		if t.Status != model.StatusDraft {
-			return model.Todo{}, fmt.Errorf("%w: %q is %s; only drafts can be merged", ErrBadMerge, t.Title, t.Status)
-		}
-		if len(parts) > 0 && t.ProjectID != parts[0].ProjectID {
-			return model.Todo{}, fmt.Errorf("%w: they are in different projects", ErrBadMerge)
-		}
-		if t.Reviewing {
-			return model.Todo{}, ErrReviewing
-		}
-		parts = append(parts, t)
+	parts, err := s.mergeablePartsLocked(ids)
+	if err != nil {
+		return model.Todo{}, err
 	}
 	into := clone(*parts[0])
 	gone := map[string]bool{}
 	generated := true
-	var prompts []string
 	for _, t := range parts {
-		generated = generated && t.Finding != nil && t.Finding.PromptSum != "" && t.Finding.PromptSum == model.PromptSum(t.Prompt)
-		prompts = append(prompts, t.Prompt)
+		generated = generated && t.HasGeneratedPrompt()
 	}
 	for _, t := range parts[1:] {
 		gone[t.ID] = true
-		into.Tags = append(into.Tags, t.Tags...)
-		into.Attachments = append(into.Attachments, t.Attachments...)
-		into.DependsOn = append(into.DependsOn, t.DependsOn...)
-		if t.Priority != nil && (into.Priority == nil || *t.Priority < *into.Priority) {
-			p := *t.Priority
-			into.Priority = &p
-		}
-		if t.Finding != nil {
-			if into.Finding == nil {
-				into.Finding = &model.Finding{}
-			}
-			for _, is := range t.Finding.Issues {
-				if n := into.Finding.Index(is.Fingerprint); n >= 0 {
-					into.Finding.Issues[n].Reports = into.Finding.Issues[n].ReportCount() + is.ReportCount()
-					continue
-				}
-				into.Finding.Issues = append(into.Finding.Issues, is)
-			}
-			if into.Finding.Earlier == "" {
-				into.Finding.Earlier = t.Finding.Earlier
-			}
-			into.Finding.LegacyIDs = append(into.Finding.LegacyIDs, t.Finding.LegacyIDs...)
-		}
+		mergeInto(&into, t)
 	}
 	into.DependsOn = slices.DeleteFunc(cleanIDs(into.DependsOn), func(id string) bool { return gone[id] || id == into.ID })
 	if into.BuildsOn != "" && gone[into.BuildsOn] {
@@ -445,44 +404,14 @@ func (s *Store) MergeTodos(ids []string) (model.Todo, error) {
 		into.Title, into.Prompt = s.findingTaskLocked(into.Finding)
 		into.Finding.PromptSum = model.PromptSum(into.Prompt)
 	} else {
-		var b strings.Builder
-		for n, t := range parts {
-			if n > 0 {
-				b.WriteString("\n\n---\n\n")
-			}
-			if t.Title != "" {
-				fmt.Fprintf(&b, "## %s\n\n", t.Title)
-			}
-			b.WriteString(strings.TrimSpace(prompts[n]))
-		}
-		into.Prompt = b.String()
+		into.Prompt = joinedPrompt(parts)
 		if into.Finding != nil {
 			into.Finding.PromptSum = ""
 		}
 	}
 	into.UpdatedAt = time.Now()
 	// Tasks waiting for a merged-away draft wait for the merged one.
-	var others []*model.Todo
-	for oid, o := range s.data.Todos {
-		if gone[oid] || oid == into.ID {
-			continue
-		}
-		touched := false
-		cp := clone(*o)
-		for n, d := range cp.DependsOn {
-			if gone[d] {
-				cp.DependsOn[n], touched = into.ID, true
-			}
-		}
-		if gone[cp.BuildsOn] {
-			cp.BuildsOn, touched = into.ID, true
-		}
-		if touched {
-			cp.DependsOn = cleanIDs(cp.DependsOn)
-			cp.UpdatedAt = into.UpdatedAt
-			others = append(others, &cp)
-		}
-	}
+	others := s.repointDependentsLocked(gone, into.ID, into.UpdatedAt)
 	for id := range gone {
 		delete(s.data.Todos, id)
 		delete(s.data.TodoChats, id)
@@ -491,7 +420,7 @@ func (s *Store) MergeTodos(ids []string) (model.Todo, error) {
 	for _, o := range others {
 		s.data.Todos[o.ID] = o
 	}
-	err := s.writeLocked(func(tx *sql.Tx) error {
+	err = s.writeLocked(func(tx *sql.Tx) error {
 		for id := range gone {
 			if err := deleteRow(tx, "todos", id); err != nil {
 				return err
@@ -518,6 +447,113 @@ func (s *Store) MergeTodos(ids []string) (model.Todo, error) {
 	}
 	s.emit(model.EvTodoUpdated, into.ProjectID, into.ID, into)
 	return into, nil
+}
+
+// mergeablePartsLocked is the drafts ids name, in order, once checked that
+// there are at least two and that they can be merged: drafts of one
+// project, none of them being reviewed.
+func (s *Store) mergeablePartsLocked(ids []string) ([]*model.Todo, error) {
+	ids = cleanIDs(ids)
+	if len(ids) < 2 {
+		return nil, fmt.Errorf("%w: choose at least two drafts", ErrBadMerge)
+	}
+	var parts []*model.Todo
+	for _, id := range ids {
+		t, ok := s.data.Todos[id]
+		if !ok {
+			return nil, ErrNotFound
+		}
+		if t.Status != model.StatusDraft {
+			return nil, fmt.Errorf("%w: %q is %s; only drafts can be merged", ErrBadMerge, t.Title, t.Status)
+		}
+		if len(parts) > 0 && t.ProjectID != parts[0].ProjectID {
+			return nil, fmt.Errorf("%w: they are in different projects", ErrBadMerge)
+		}
+		if t.Reviewing {
+			return nil, ErrReviewing
+		}
+		parts = append(parts, t)
+	}
+	return parts, nil
+}
+
+// mergeInto folds draft t into into: its tags, attachments, dependencies
+// and issues, and its priority where that is more urgent.
+func mergeInto(into, t *model.Todo) {
+	into.Tags = append(into.Tags, t.Tags...)
+	into.Attachments = append(into.Attachments, t.Attachments...)
+	into.DependsOn = append(into.DependsOn, t.DependsOn...)
+	if t.Priority != nil && (into.Priority == nil || *t.Priority < *into.Priority) {
+		p := *t.Priority
+		into.Priority = &p
+	}
+	if t.Finding != nil {
+		if into.Finding == nil {
+			into.Finding = &model.Finding{}
+		}
+		mergeFinding(into.Finding, t.Finding)
+	}
+}
+
+// mergeFinding folds from's issues into into: an issue both have adds up
+// its report counts, the others are added. into keeps its Earlier task if
+// it has one.
+func mergeFinding(into, from *model.Finding) {
+	for _, is := range from.Issues {
+		if n := into.Index(is.Fingerprint); n >= 0 {
+			into.Issues[n].Reports = into.Issues[n].ReportCount() + is.ReportCount()
+			continue
+		}
+		into.Issues = append(into.Issues, is)
+	}
+	if into.Earlier == "" {
+		into.Earlier = from.Earlier
+	}
+	into.LegacyIDs = append(into.LegacyIDs, from.LegacyIDs...)
+}
+
+// joinedPrompt is the drafts' prompts one after another, each under its
+// title.
+func joinedPrompt(parts []*model.Todo) string {
+	var b strings.Builder
+	for n, t := range parts {
+		if n > 0 {
+			b.WriteString("\n\n---\n\n")
+		}
+		if t.Title != "" {
+			fmt.Fprintf(&b, "## %s\n\n", t.Title)
+		}
+		b.WriteString(strings.TrimSpace(t.Prompt))
+	}
+	return b.String()
+}
+
+// repointDependentsLocked is copies of the tasks (other than to and the
+// gone ones) that depend on or build on a gone task, made to wait for to
+// instead, updated at at.
+func (s *Store) repointDependentsLocked(gone map[string]bool, to string, at time.Time) []*model.Todo {
+	var others []*model.Todo
+	for oid, o := range s.data.Todos {
+		if gone[oid] || oid == to {
+			continue
+		}
+		touched := false
+		cp := clone(*o)
+		for n, d := range cp.DependsOn {
+			if gone[d] {
+				cp.DependsOn[n], touched = to, true
+			}
+		}
+		if gone[cp.BuildsOn] {
+			cp.BuildsOn, touched = to, true
+		}
+		if touched {
+			cp.DependsOn = cleanIDs(cp.DependsOn)
+			cp.UpdatedAt = at
+			others = append(others, &cp)
+		}
+	}
+	return others
 }
 
 func putDismissed(tx *sql.Tx, d *model.DismissedFinding) error {

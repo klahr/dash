@@ -231,24 +231,14 @@ func (s *Store) RecordWebhookDelivery(d model.WebhookDelivery) error {
 
 // ListWebhookDeliveries returns a webhook's history, newest first.
 func (s *Store) ListWebhookDeliveries(id string) ([]model.WebhookDelivery, error) {
-	rows, err := s.db.Query(`SELECT id, webhook_id, at, event, delivery, project_id, project, subject, attempts, status, duration_ms, error
-		FROM webhook_deliveries WHERE webhook_id = ? ORDER BY id DESC LIMIT ?`, id, WebhookHistory)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []model.WebhookDelivery{}
-	for rows.Next() {
-		var d model.WebhookDelivery
+	return queryAll(s.db, func(sc scanner) (d model.WebhookDelivery, err error) {
 		var at int64
-		if err := rows.Scan(&d.ID, &d.WebhookID, &at, &d.Event, &d.Delivery, &d.ProjectID, &d.Project, &d.Subject,
-			&d.Attempts, &d.Status, &d.DurationMS, &d.Error); err != nil {
-			return nil, err
-		}
+		err = sc.Scan(&d.ID, &d.WebhookID, &at, &d.Event, &d.Delivery, &d.ProjectID, &d.Project, &d.Subject,
+			&d.Attempts, &d.Status, &d.DurationMS, &d.Error)
 		d.At = time.Unix(at, 0).UTC()
-		out = append(out, d)
-	}
-	return out, rows.Err()
+		return d, err
+	}, `SELECT id, webhook_id, at, event, delivery, project_id, project, subject, attempts, status, duration_ms, error
+		FROM webhook_deliveries WHERE webhook_id = ? ORDER BY id DESC LIMIT ?`, id, WebhookHistory)
 }
 
 func clip(s string, n int) string {

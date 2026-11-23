@@ -345,7 +345,7 @@ func (s *Server) hubAddRepos(w http.ResponseWriter, r *http.Request) {
 // project on it".
 func (s *Server) ownedRunner(w http.ResponseWriter, r *http.Request, what string) (Caller, tunnel.Runner, bool) {
 	return s.runnerFor(w, r, func(c Caller, x tunnel.Runner) bool {
-		return x.Owner != nil && x.Owner.UserID == c.User
+		return ownedBy(x, c)
 	}, func(c Caller) string {
 		if !s.hasOwnRunner(c) {
 			return "only the runner's owner can " + what + ". " + youHaveNoRunner + " (a project with a git remote can run on a shared runner)"
@@ -518,7 +518,7 @@ func (s *Server) runnerProject(w http.ResponseWriter, r *http.Request) {
 // computer, so no one else may.
 func (s *Server) updateRunnerProject(w http.ResponseWriter, r *http.Request) {
 	c, x, ok := s.runnerFor(w, r, func(c Caller, x tunnel.Runner) bool {
-		return x.Owner != nil && x.Owner.UserID == c.User
+		return ownedBy(x, c)
 	}, deny("only the runner's owner can change its own projects' settings"))
 	if !ok {
 		return

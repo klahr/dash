@@ -99,21 +99,18 @@ func RunShell(ctx context.Context, dir, command string, timeout time.Duration, e
 	res.DurationMS = time.Since(started).Milliseconds()
 	res.Output, res.Truncated = out.result()
 	var exit *exec.ExitError
+	code, exited := localrun.ExitStatus(err)
 	switch {
 	case errors.Is(tctx.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
 		res.Error = fmt.Sprintf("timed out after %s and was stopped", timeout)
 	case ctx.Err() != nil:
 		res.Error = "stopped"
-	case errors.As(err, &exit) && exit.Exited():
-		res.ExitCode = exit.ExitCode()
-	case errors.As(err, &exit):
+	case errors.As(err, &exit) && !exit.Exited():
 		res.Error = exit.String() // killed by a signal
-	case errors.Is(err, exec.ErrWaitDelay):
-		res.ExitCode = 0 // exited; something it left in the background kept the output open
-	case err != nil:
-		res.Error = err.Error()
+	case exited: // also exec.ErrWaitDelay: it exited, but something it left in the background kept the output open
+		res.ExitCode = code
 	default:
-		res.ExitCode = 0
+		res.Error = err.Error()
 	}
 	return res
 }

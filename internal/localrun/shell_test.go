@@ -2,6 +2,8 @@ package localrun
 
 import (
 	"errors"
+	"fmt"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -28,5 +30,28 @@ func TestWindowsBash(t *testing.T) {
 	}
 	if got := windowsBash("", none, func(string) bool { return false }); got != "bash" {
 		t.Errorf("without Git for Windows: got %q, want bash", got)
+	}
+}
+
+func TestExitStatus(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	exited := exec.Command(sh, "-c", "exit 3").Run()
+	for _, c := range []struct {
+		err  error
+		code int
+		ok   bool
+	}{
+		{nil, 0, true},
+		{exited, 3, true},
+		{exec.ErrWaitDelay, 0, true},
+		{fmt.Errorf("wait: %w", exec.ErrWaitDelay), 0, true},
+		{errors.New("exec: not found"), -1, false},
+	} {
+		if code, ok := ExitStatus(c.err); code != c.code || ok != c.ok {
+			t.Errorf("ExitStatus(%v) = %d, %v; want %d, %v", c.err, code, ok, c.code, c.ok)
+		}
 	}
 }

@@ -291,19 +291,5 @@ func (o *OrgStore) DeletePlanningBoard(id string) error {
 
 // PlanningBoardCounts is how many cards each of the org's boards has.
 func (o *OrgStore) PlanningBoardCounts() (map[string]int, error) {
-	out := map[string]int{}
-	rows, err := o.s.db.Query("SELECT cb.board_id, count(*) FROM planning_card_boards cb JOIN planning_cards c ON c.id = cb.card_id WHERE c.org_id = ? GROUP BY cb.board_id", o.org)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id string
-		var n int
-		if err := rows.Scan(&id, &n); err != nil {
-			return nil, err
-		}
-		out[id] = n
-	}
-	return out, rows.Err()
+	return queryMap(o.s.db, scanCount, "SELECT cb.board_id, count(*) FROM planning_card_boards cb JOIN planning_cards c ON c.id = cb.card_id WHERE c.org_id = ? GROUP BY cb.board_id", o.org)
 }

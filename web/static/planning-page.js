@@ -9,8 +9,8 @@
 // show what's needed instead. It also keeps the live updates, whose stream
 // sends a planner Planning's events only. Anyone else is sent to the app, on
 // its Planning view.
-import { $, $$, h, ico } from "./app/dom.js";
-import { api } from "./app/api.js";
+import { $, $$ } from "./app/dom.js";
+import { api, signIn } from "./app/api.js";
 import { attempt, fail, toast } from "./app/dialogs.js";
 import * as store from "./app/store.js";
 import { state } from "./app/state.js";
@@ -20,10 +20,9 @@ import { askAbout, chatShown, claudeNeeded, loadClaude, onClaudeChange, openRunn
 import { openFeatureBrief } from "./app/planner.js";
 import { accountSection, openAccount } from "./app/accountsheet.js";
 import { pushSubscribe, pushSupported, pushTest, pushUnsubscribe } from "./app/pushsub.js";
-import { showOwnAvatar } from "./app/avatar.js";
-import { accountHooks } from "./app/myaccount.js";
+import { accountHooks, logout, showAccountMenu } from "./app/myaccount.js";
 
-const me = await api("GET", "/api/me", null, "");
+const me = await api("GET", "/api/me");
 // The card a link opens (/planning/cards/{id} sends a planner here, ?card=<id>),
 // and the board shown (?board=<id>; left out, the default one).
 const linkedCard = new URLSearchParams(location.search).get("card");
@@ -39,12 +38,9 @@ if (me.org?.role !== "planner") {
 function start() {
   showMe(me);
   document.title = `Planning · ${me.org.name}`;
-  accountHooks.reloadMe = async () => showMe(await api("GET", "/api/me", null, ""));
+  accountHooks.reloadMe = async () => showMe(await api("GET", "/api/me"));
   $("#account-open").addEventListener("click", attempt(async () => { closeMenus(); await openAccount(); }));
-  $("#logout").addEventListener("click", attempt(async () => {
-    await fetch("/api/logout", { method: "POST" });
-    location.replace("/login.html");
-  }));
+  $("#logout").addEventListener("click", attempt(logout));
   $("#runners-open").addEventListener("click", attempt(async () => { closeMenus(); await openRunners(); }));
   // The sections: Planning and Chat.
   for (const b of $$(".nav > [data-view], .menu-views [data-view]")) {
@@ -195,33 +191,12 @@ function followCards() {
 }
 
 // showMe shows who is signed in: the account menu (name, picture, the orgs
-// to switch to) and the org in the top bar. The Account sheet reads state.me.
+// to switch to, as in the app: app/myaccount.js) and the org in the top bar.
+// The Account sheet reads state.me.
 function showMe(m) {
   state.me = m;
   $("#pl-org").textContent = m.org.name;
-  $("#foot-user").textContent = m.username;
-  $("#foot-menu summary").title = `Account menu · ${m.username} in ${m.org.name}`;
-  $("#foot-menu summary").setAttribute("aria-label", `${m.username}, account menu`);
-  showOwnAvatar();
-  $("#google-body").hidden = !m.google_available;
-  const orgs = m.orgs || [];
-  const sw = $("#org-switch");
-  sw.hidden = orgs.length < 2;
-  sw.replaceChildren(...(orgs.length < 2 ? [] : [
-    h("span", { class: "org-switch-label" }, "Switch organization"),
-    ...orgs.map((o) => h("button", {
-      type: "button", class: o.id === m.org.id ? "active" : "", "aria-current": o.id === m.org.id ? "true" : null,
-      onclick: attempt(() => switchOrg(o)),
-    }, ico(o.id === m.org.id ? "check" : "users"), o.name)),
-  ]));
-}
-
-async function switchOrg(o) {
-  if (o.id === me.org.id) return;
-  const hosts = me.org_domains;
-  if (hosts) { location.assign(`${hosts.base_url}/go/${encodeURIComponent(o.slug)}`); return; }
-  await api("POST", "/api/auth/switch-org", { org_id: o.id }, "");
-  location.replace("/"); // a planner there comes back here; anyone else gets the app
+  showAccountMenu(m);
 }
 
 // ---- the sidebar (desktop) and the menu drawer (phone), as in the app
@@ -300,7 +275,7 @@ function connect() {
   ws.onclose = async () => {
     live(false);
     const res = await fetch("/api/me").catch(() => null);
-    if (res?.status === 401) { location.replace("/login.html"); return; }
+    if (res?.status === 401) { signIn(); return; } // back here after signing in
     setTimeout(connect, 2000);
   };
 }

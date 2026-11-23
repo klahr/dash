@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -245,11 +245,7 @@ func UnregisterProvider(name string) {
 func ProviderNames() []string {
 	provMu.RLock()
 	defer provMu.RUnlock()
-	out := make([]string, 0, len(providers))
-	for n := range providers {
-		out = append(out, n)
-	}
-	sort.Strings(out)
+	out := slices.Sorted(maps.Keys(providers))
 	return out
 }
 

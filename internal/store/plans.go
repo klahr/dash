@@ -25,25 +25,14 @@ func (o *OrgStore) ListPlans() ([]model.Plan, error) {
 	if o.org == 0 || o.user == 0 {
 		return nil, ErrNoUser
 	}
-	rows, err := o.s.db.Query("SELECT data FROM plans WHERE org_id = ? AND user_id = ? AND launched = 0 ORDER BY updated_at DESC, id",
-		o.org, o.user)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []model.Plan{}
-	for rows.Next() {
+	return queryAll(o.s.db, func(sc scanner) (p model.Plan, err error) {
 		var data string
-		if err := rows.Scan(&data); err != nil {
-			return nil, err
+		if err := sc.Scan(&data); err != nil {
+			return p, err
 		}
-		var p model.Plan
-		if err := json.Unmarshal([]byte(data), &p); err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
+		err = json.Unmarshal([]byte(data), &p)
+		return p, err
+	}, "SELECT data FROM plans WHERE org_id = ? AND user_id = ? AND launched = 0 ORDER BY updated_at DESC, id", o.org, o.user)
 }
 
 // GetPlan returns one of the user's plans in the org.

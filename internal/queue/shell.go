@@ -69,12 +69,9 @@ func runShell(ctx context.Context, dir, command string, timeout time.Duration, e
 		}
 		return -1, tail, ctx.Err()
 	}
-	var ee *exec.ExitError
-	if errors.As(werr, &ee) {
-		return ee.ExitCode(), tail, nil
+	code, ok := localrun.ExitStatus(werr)
+	if !ok {
+		return code, tail, werr
 	}
-	if werr != nil {
-		return -1, tail, werr
-	}
-	return 0, tail, nil
+	return code, tail, nil
 }

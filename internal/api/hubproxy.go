@@ -75,13 +75,22 @@ func (sv *service) callRunner(ctx context.Context, p model.Project, method, rest
 	}
 	ctx, cancel := context.WithTimeout(tunnel.WithUser(ctx, sv.c.User), 2*time.Minute)
 	defer cancel()
-	err = sv.s.fleet().Call(ctx, run.ID, method, "/api/projects/"+url.PathEscape(rpid)+rest, in, out)
-	if errors.Is(err, tunnel.ErrOffline) || errors.Is(err, tunnel.ErrUnknownName) {
-		return errNoRunnerOnline
-	}
+	err = sv.s.runnerCall(ctx, run.ID, method, "/api/projects/"+url.PathEscape(rpid)+rest, in, out)
 	var ce *tunnel.CallError
 	if errors.As(err, &ce) && ce.Status == http.StatusConflict {
 		return fmt.Errorf("%w: %w", errConflict, err)
+	}
+	return err
+}
+
+// runnerCall calls path on runner runnerID for a project's work, from a
+// hub: a runner that is gone or offline is errNoRunnerOnline (503, see
+// writeErr); a runner's error answer is a *tunnel.CallError. ctx says whom
+// for (tunnel.WithUser) and how long it may take.
+func (s *Server) runnerCall(ctx context.Context, runnerID, method, path string, in, out any) error {
+	err := s.fleet().Call(ctx, runnerID, method, path, in, out)
+	if errors.Is(err, tunnel.ErrOffline) || errors.Is(err, tunnel.ErrUnknownName) {
+		return errNoRunnerOnline
 	}
 	return err
 }
@@ -148,7 +157,7 @@ func (sv *service) projectRunnerAmong(ctx context.Context, p model.Project, cand
 		}
 		return tunnel.Runner{}, "", errNoRunnerOnline
 	}
-	r := mineFirst(cands, sv.c.User)[0]
+	r := mineFirst(cands, sv.c)[0]
 	for _, c := range cands {
 		if c.ID == prefer {
 			r = c
@@ -158,15 +167,15 @@ func (sv *service) projectRunnerAmong(ctx context.Context, p model.Project, cand
 	return r, rpid, err
 }
 
-// mineFirst orders runners for work done for user (0: no one in
-// particular): user's own runners first, then shared ones, then other
+// mineFirst orders runners for work done for c (User 0: no one in
+// particular): c's own runners first, then shared ones, then other
 // members'. A runner does its git work with its owner's git login, so a
 // member's reads go to someone else's runner only when none of their own,
 // and no shared one, is online (and pushes never do: pushRunner). It returns
 // a sorted copy.
-func mineFirst(runs []tunnel.Runner, user int64) []tunnel.Runner {
+func mineFirst(runs []tunnel.Runner, c Caller) []tunnel.Runner {
 	rank := func(r tunnel.Runner) int {
-		if user != 0 && r.OwnerID() == user {
+		if ownedBy(r, c) {
 			return 0
 		}
 		if ok, _ := r.TakesOthers(); ok {
@@ -716,7 +725,7 @@ func shellRunner(runners []tunnel.Runner, c Caller, id string) (string, error) {
 // ownsRunner reports whether c registered run: only its owner gets a
 // terminal on it, not the other members of its org.
 func ownsRunner(c Caller, run tunnel.Runner) error {
-	if c.User == 0 || run.Owner == nil || run.Owner.UserID != c.User {
+	if !ownedBy(run, c) {
 		return fmt.Errorf("terminals on %s open only for the user who registered it", run.Name)
 	}
 	return nil

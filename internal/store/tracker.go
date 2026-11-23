@@ -277,22 +277,12 @@ func (s *Store) AddProjectEvent(ev model.ProjectEvent) (model.ProjectEvent, erro
 
 // ProjectEvents are a project's latest events (at most limit), newest first.
 func (s *Store) ProjectEvents(projectID string, limit int) ([]model.ProjectEvent, error) {
-	rows, err := s.db.Query("SELECT id, project_id, kind, text, user_id, at FROM project_events WHERE project_id = ? ORDER BY id DESC LIMIT ?", projectID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []model.ProjectEvent{}
-	for rows.Next() {
-		var ev model.ProjectEvent
+	return queryAll(s.db, func(sc scanner) (ev model.ProjectEvent, err error) {
 		var at int64
-		if err := rows.Scan(&ev.ID, &ev.ProjectID, &ev.Kind, &ev.Text, &ev.UserID, &at); err != nil {
-			return nil, err
-		}
+		err = sc.Scan(&ev.ID, &ev.ProjectID, &ev.Kind, &ev.Text, &ev.UserID, &at)
 		ev.At = time.Unix(at, 0).UTC()
-		out = append(out, ev)
-	}
-	return out, rows.Err()
+		return ev, err
+	}, "SELECT id, project_id, kind, text, user_id, at FROM project_events WHERE project_id = ? ORDER BY id DESC LIMIT ?", projectID, limit)
 }
 
 // ---- the org's view ----

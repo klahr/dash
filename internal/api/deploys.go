@@ -733,11 +733,7 @@ type deployWhere struct {
 func (s *Server) deployCall(ctx context.Context, at deployWhere, method, path string, in, out any) error {
 	ctx, cancel := context.WithTimeout(tunnel.WithUser(ctx, at.by), 3*time.Minute)
 	defer cancel()
-	err := s.fleet().Call(ctx, at.run.ID, method, path, in, out)
-	if errors.Is(err, tunnel.ErrOffline) || errors.Is(err, tunnel.ErrUnknownName) {
-		return errNoRunnerOnline
-	}
-	return err
+	return s.runnerCall(ctx, at.run.ID, method, path, in, out)
 }
 
 func deployPath(hubProject string, rest ...string) string {

@@ -181,10 +181,10 @@ func TestMineFirst(t *testing.T) {
 		}
 		return strings.Join(out, " ")
 	}
-	if got := ids(mineFirst(runs, 2)); got != "dev-1 dev-2 ada-1 ada-2" {
+	if got := ids(mineFirst(runs, Caller{User: 2})); got != "dev-1 dev-2 ada-1 ada-2" {
 		t.Errorf("for dev: %s", got)
 	}
-	if got := ids(mineFirst(runs, 0)); got != "ada-1 dev-1 ada-2 dev-2" {
+	if got := ids(mineFirst(runs, Caller{})); got != "ada-1 dev-1 ada-2 dev-2" {
 		t.Errorf("for no one: %s", got)
 	}
 	if got := ids(runs); got != "ada-1 dev-1 ada-2 dev-2" {

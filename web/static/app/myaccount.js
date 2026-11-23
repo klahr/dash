@@ -3,19 +3,67 @@ import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { accountSection } from "./accountsheet.js";
+import { showOwnAvatar } from "./avatar.js";
+import { pushUnsubscribe } from "./pushsub.js";
 
 // ------------------------------------------------------------------ your own account
 // The Account sheet's sections about the signed-in user that every role may
 // use (internal/api/planner.go lets planners have them too): two-factor
 // sign-in, the linked Google account, and their data. The app (account.js)
 // and a planner's Planning page (planning-page.js) both load this module;
-// each sets the hooks for what differs between them.
+// each sets the hooks for what differs between them. The account menu's
+// shared parts (who is signed in, the org switch, Sign out) are here too.
 export const accountHooks = {
   // reloadMe reads /api/me again into state.me (and redraws what shows it).
   reloadMe: async () => {},
-  // deleted runs once the account is deleted, before going to the sign-in page.
-  deleted: async () => {},
+  // deleted runs once the account is deleted, before going to the sign-in
+  // page: this browser's own push subscription goes (the server's is gone).
+  deleted: () => pushUnsubscribe(),
 };
+
+// showAccountMenu shows who is signed in (me, from /api/me) in the account
+// menu: name, picture and the orgs to switch to. It reads the picture from
+// state.me, so set that first.
+export function showAccountMenu(me) {
+  const name = me.username;
+  $("#foot-user").textContent = name;
+  showOwnAvatar();
+  $("#foot-menu summary").title = `Account menu · ${name}${me.org ? ` in ${me.org.name}` : ""}`;
+  $("#foot-menu summary").setAttribute("aria-label", `${name}, account menu`);
+  // The Google section drops out of the Account sheet's rail.
+  $("#google-body").hidden = !me.google_available;
+  const orgs = me.orgs || [];
+  const sw = $("#org-switch");
+  sw.hidden = orgs.length < 2;
+  sw.replaceChildren(...(orgs.length < 2 ? [] : [
+    h("span", { class: "org-switch-label" }, "Switch organization"),
+    ...orgs.map((o) => h("button", {
+      type: "button", class: o.id === me.org?.id ? "active" : "",
+      "aria-current": o.id === me.org?.id ? "true" : null,
+      onclick: attempt(() => switchOrg(o)),
+    }, ico(o.id === me.org?.id ? "check" : "users"), o.name)),
+  ]));
+}
+
+// switchOrg moves this browser to org o. Everything on the page belongs to
+// the org it was loaded in (its URL too), so it loads / again there; a
+// planner there comes back to Planning.
+export async function switchOrg(o) {
+  if (o.id === state.me?.org?.id) return;
+  // With org subdomains each org is its own address: go there (the base
+  // domain hands this browser's sign-in over).
+  const hosts = state.me?.org_domains;
+  if (hosts) { location.assign(`${hosts.base_url}/go/${encodeURIComponent(o.slug)}`); return; }
+  await api("POST", "/api/auth/switch-org", { org_id: o.id });
+  location.replace("/");
+}
+
+// logout signs out, and this browser stops getting the account's notifications.
+export async function logout() {
+  await pushUnsubscribe().catch(() => {});
+  await fetch("/api/logout", { method: "POST" });
+  location.replace("/login.html");
+}
 
 // askPassword asks for the user's password again before a sensitive change.
 // An account made by signing in with Google has none: a recent Google

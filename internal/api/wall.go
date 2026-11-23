@@ -210,10 +210,37 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 	if o, err := s.Store.Accounts().Org(c.Org); err == nil {
 		d.Org = o.Name
 	}
+	projects, byProject, err := wallProjects(data.ListProjects(), project, privacy)
+	if err != nil {
+		return d, err
+	}
+	// Only this org's (or this project's) todos are copied: the store
+	// filters before it copies and sorts.
+	scope := ""
+	if project != "" {
+		scope = projects[0].ID
+		d.Project = byProject[scope].Name
+	}
+	todos := data.ListTodos(scope)
+	runners := s.orgRunners(c)
+	v := newWallTally(s, now, privacy, byProject, model.TodosByID(todos), runners)
+	v.startDay(&d)
+	for _, t := range todos {
+		v.card(&d, t)
+	}
+	v.finish(&d)
+	wallOpenIssues(&d, data, byProject, privacy)
+	s.wallRunners(&d, todos, projects, runners, v.runnerName)
+	s.wallQueue(&d, c, runners)
+	return d, nil
+}
 
-	projects := data.ListProjects()
-	// In public mode a project is "Project A", "Project B"…: its letter by
-	// when it was made, so it keeps it as projects come and go.
+// wallProjects are the projects the wall shows (all, or the one asked
+// for: its id, or its name outside public mode), and them by id with the
+// names the wall shows: in public mode a project is "Project A",
+// "Project B"…: its letter by when it was made, so it keeps it as
+// projects come and go.
+func wallProjects(projects []model.Project, project string, privacy bool) ([]model.Project, map[string]model.Project, error) {
 	alias := wallAliases(projects, func(p model.Project) (string, time.Time) { return p.ID, p.CreatedAt }, "Project ")
 	if project != "" {
 		i := slices.IndexFunc(projects, func(p model.Project) bool {
@@ -221,7 +248,7 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 			return p.ID == project || !privacy && strings.EqualFold(p.Name, project)
 		})
 		if i < 0 {
-			return d, fmt.Errorf("%w: no project %q", store.ErrNotFound, project)
+			return nil, nil, fmt.Errorf("%w: no project %q", store.ErrNotFound, project)
 		}
 		projects = projects[i : i+1]
 	}
@@ -232,19 +259,12 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 		}
 		byProject[p.ID] = p
 	}
-	if project != "" {
-		d.Project = byProject[projects[0].ID].Name
-	}
-	// Only this org's (or this project's) todos are copied: the store
-	// filters before it copies and sorts.
-	scope := ""
-	if project != "" {
-		scope = projects[0].ID
-	}
-	todos := data.ListTodos(scope)
-	byID := model.TodosByID(todos) // once, for every queued task's blockers
+	return projects, byProject, nil
+}
 
-	// Runners: the org's, or this computer when it runs tasks itself.
+// orgRunners are the runners in c's org (none: this computer runs tasks
+// itself).
+func (s *Server) orgRunners(c Caller) []tunnel.Runner {
 	var runners []tunnel.Runner
 	if fl := s.fleet(); fl != nil {
 		for _, r := range fl.List() {
@@ -253,154 +273,201 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 			}
 		}
 	}
-	runnerAlias := wallAliases(runners, func(r tunnel.Runner) (string, time.Time) { return r.ID, r.Created }, "Runner ")
-	runnerName := func(id string) string {
-		if id == "" {
-			return "this computer"
-		}
-		for _, r := range runners {
-			if r.ID == id {
-				if privacy {
-					return runnerAlias[id]
-				}
-				return r.Name
-			}
-		}
-		return "a runner"
-	}
-	title := func(t model.Todo) string {
-		if privacy {
-			return "Task in " + byProject[t.ProjectID].Name
-		}
-		return t.Name(120)
-	}
+	return runners
+}
 
+// wallTally sums up tasks for the wall, one card at a time, with the names
+// and words public mode allows.
+type wallTally struct {
+	s           *Server
+	now         time.Time
+	midnight    time.Time
+	privacy     bool
+	byProject   map[string]model.Project
+	byID        map[string]model.Todo // once, for every queued task's blockers
+	runners     []tunnel.Runner
+	runnerAlias map[string]string
+
+	runningTotal time.Duration
+	spend        float64
+	firstTry     int
+}
+
+func newWallTally(s *Server, now time.Time, privacy bool, byProject map[string]model.Project, byID map[string]model.Todo, runners []tunnel.Runner) *wallTally {
 	y, m, dd := now.Date()
-	midnight := time.Date(y, m, dd, 0, 0, 0, 0, now.Location())
-	today := func(at *time.Time) bool { return at != nil && !at.Before(midnight) }
-	d.Today.Midnight, d.Today.Hour, d.Today.PerHour = midnight, now.Hour(), make([]int, 24)
+	return &wallTally{s: s, now: now, midnight: time.Date(y, m, dd, 0, 0, 0, 0, now.Location()), privacy: privacy,
+		byProject: byProject, byID: byID, runners: runners,
+		runnerAlias: wallAliases(runners, func(r tunnel.Runner) (string, time.Time) { return r.ID, r.Created }, "Runner ")}
+}
 
-	// sentBack is why a task was sent back; in public mode only its kind
-	// (the reason names files and branches).
-	sentBack := func(why string) string {
-		if !privacy || why == "" {
-			return why
+// startDay sets up d's day: since midnight, by hour.
+func (v *wallTally) startDay(d *wallData) {
+	d.Today.Midnight, d.Today.Hour, d.Today.PerHour = v.midnight, v.now.Hour(), make([]int, 24)
+}
+
+// today reports whether at is today.
+func (v *wallTally) today(at *time.Time) bool { return at != nil && !at.Before(v.midnight) }
+
+// runnerName is runner id's name on the wall ("": this computer).
+func (v *wallTally) runnerName(id string) string {
+	if id == "" {
+		return "this computer"
+	}
+	for _, r := range v.runners {
+		if r.ID == id {
+			if v.privacy {
+				return v.runnerAlias[id]
+			}
+			return r.Name
 		}
+	}
+	return "a runner"
+}
+
+// title is t's title on the wall.
+func (v *wallTally) title(t model.Todo) string {
+	if v.privacy {
+		return "Task in " + v.byProject[t.ProjectID].Name
+	}
+	return t.Name(120)
+}
+
+// sentBack is why a task was sent back; in public mode only its kind
+// (the reason names files and branches).
+func (v *wallTally) sentBack(why string) string {
+	if !v.privacy || why == "" {
+		return why
+	}
+	switch {
+	case strings.HasPrefix(why, "conflicts"):
+		return "merge conflict"
+	case strings.Contains(why, "tests fail"):
+		return "failing tests"
+	}
+	return "sent back"
+}
+
+// reason is why a task failed: none in public mode.
+func (v *wallTally) reason(err string) string {
+	if v.privacy {
+		return "" // an error quotes commands, paths and output
+	}
+	return wallLine(err, 160)
+}
+
+// card counts t into d: its stage, and the running task or the need for a
+// person it is.
+func (v *wallTally) card(d *wallData, t model.Todo) {
+	if (v.today(t.StartedAt) || v.today(t.FinishedAt)) && t.Status != model.StatusDraft {
+		v.spend += todaysCost(t, v.today)
+	}
+	switch t.Status {
+	case model.StatusQueued:
+		d.Stages.Queued++
 		switch {
-		case strings.HasPrefix(why, "conflicts"):
-			return "merge conflict"
-		case strings.Contains(why, "tests fail"):
-			return "failing tests"
+		case t.Paused:
+			d.Stages.Paused++
+		case len(t.BlockersIn(v.byID)) > 0:
+			d.Stages.Blocked++
+		case t.Waiting != "":
+			d.Stages.WaitingRunner++
 		}
-		return "sent back"
-	}
-	reason := func(err string) string {
-		if privacy {
-			return "" // an error quotes commands, paths and output
+	case model.StatusInProgress:
+		d.Stages.Running++
+		d.Running = append(d.Running, v.running(t))
+	case model.StatusReview:
+		v.review(d, t)
+	case model.StatusMerging:
+		d.Stages.Merging++
+		if t.PR != nil {
+			d.Stages.MergingPR++
 		}
-		return wallLine(err, 160)
+	case model.StatusMerged:
+		if v.today(t.FinishedAt) {
+			d.Stages.MergedToday++
+			d.Stages.MergedAdd += t.DiffAdd
+			d.Stages.MergedDel += t.DiffDel
+			d.Today.PerHour[t.FinishedAt.In(v.now.Location()).Hour()]++
+			if t.Runs == 1 {
+				v.firstTry++
+			}
+		}
+	case model.StatusFailed:
+		d.Stages.Failed++
+		if t.Resumable {
+			d.Stages.Resumable++
+		}
+		since := t.UpdatedAt
+		if t.FinishedAt != nil {
+			since = *t.FinishedAt
+		}
+		p := v.byProject[t.ProjectID]
+		d.Needs = append(d.Needs, wallNeed{Kind: "failed", ID: t.ID, Title: v.title(t), Project: p.Name, Since: since,
+			Old: v.now.Sub(since) > wallFailedOld, Reason: v.reason(t.Error), Resume: t.Resumable})
 	}
+}
 
-	var runningTotal time.Duration
-	var spend float64
-	firstTry := 0
-	for _, t := range todos {
-		p := byProject[t.ProjectID]
-		if (today(t.StartedAt) || today(t.FinishedAt)) && t.Status != model.StatusDraft {
-			spend += todaysCost(t, today)
-		}
-		switch t.Status {
-		case model.StatusQueued:
-			d.Stages.Queued++
-			switch {
-			case t.Paused:
-				d.Stages.Paused++
-			case len(t.BlockersIn(byID)) > 0:
-				d.Stages.Blocked++
-			case t.Waiting != "":
-				d.Stages.WaitingRunner++
+// running is in-progress task t on the wall.
+func (v *wallTally) running(t model.Todo) wallRun {
+	p := v.byProject[t.ProjectID]
+	run := wallRun{ID: t.ID, Title: v.title(t), Project: p.Name, Color: p.Color, Runner: v.runnerName(t.Runner), Run: t.Runs + 1,
+		StartedAt: t.StartedAt, Add: t.DiffAdd, Del: t.DiffDel, Files: t.DiffFiles, SentBack: v.sentBack(t.SentBack)}
+	if !v.privacy {
+		cost := t.CostUSD
+		run.CostUSD = &cost
+		if v.s.Hub != nil {
+			if ev, ok := v.s.Hub.Activity(t.ID); ok && (t.StartedAt == nil || !ev.At.Before(*t.StartedAt)) {
+				run.Activity = wallLine(strings.TrimPrefix(agent.Summary(ev), "🔧 "), 200)
 			}
-		case model.StatusInProgress:
-			d.Stages.Running++
-			run := wallRun{ID: t.ID, Title: title(t), Project: p.Name, Color: p.Color, Runner: runnerName(t.Runner), Run: t.Runs + 1,
-				StartedAt: t.StartedAt, Add: t.DiffAdd, Del: t.DiffDel, Files: t.DiffFiles, SentBack: sentBack(t.SentBack)}
-			if !privacy {
-				cost := t.CostUSD
-				run.CostUSD = &cost
-				if s.Hub != nil {
-					if ev, ok := s.Hub.Activity(t.ID); ok && (t.StartedAt == nil || !ev.At.Before(*t.StartedAt)) {
-						run.Activity = wallLine(strings.TrimPrefix(agent.Summary(ev), "🔧 "), 200)
-					}
-				}
-			}
-			if t.StartedAt != nil {
-				runningTotal += now.Sub(*t.StartedAt)
-			}
-			d.Running = append(d.Running, run)
-		case model.StatusReview:
-			d.Stages.Review++
-			since := t.UpdatedAt
-			if t.FinishedAt != nil {
-				since = *t.FinishedAt
-			}
-			if t.WaitsOnGitHub() {
-				// Reviewed and merged on GitHub: listed only while a person
-				// has to act there, not while it is a draft, back with
-				// Claude, or waiting for its checks.
-				if t.PR.Waits == "" {
-					d.Stages.ReviewGitHub++
-					continue
-				}
-				if w := t.PR.WaitsSince; w != nil && w.After(since) {
-					since = *w
-				}
-			}
-			if d.Stages.ReviewOldest == nil || since.Before(*d.Stages.ReviewOldest) {
-				x := since
-				d.Stages.ReviewOldest = &x
-			}
-			n := wallNeed{Kind: "review", ID: t.ID, Title: title(t), Project: p.Name, Since: since, Old: now.Sub(since) > wallReviewOld,
-				Add: t.DiffAdd, Del: t.DiffDel}
-			if t.Checks != nil {
-				n.Tests = map[bool]string{true: "passed", false: "failed"}[t.Checks.Passed]
-			}
-			if t.PR != nil {
-				n.PR = t.PR.Number
-				if t.WaitsOnGitHub() {
-					n.Waits = t.PR.Waits
-				}
-			}
-			d.Needs = append(d.Needs, n)
-		case model.StatusMerging:
-			d.Stages.Merging++
-			if t.PR != nil {
-				d.Stages.MergingPR++
-			}
-		case model.StatusMerged:
-			if today(t.FinishedAt) {
-				d.Stages.MergedToday++
-				d.Stages.MergedAdd += t.DiffAdd
-				d.Stages.MergedDel += t.DiffDel
-				d.Today.PerHour[t.FinishedAt.In(now.Location()).Hour()]++
-				if t.Runs == 1 {
-					firstTry++
-				}
-			}
-		case model.StatusFailed:
-			d.Stages.Failed++
-			if t.Resumable {
-				d.Stages.Resumable++
-			}
-			since := t.UpdatedAt
-			if t.FinishedAt != nil {
-				since = *t.FinishedAt
-			}
-			d.Needs = append(d.Needs, wallNeed{Kind: "failed", ID: t.ID, Title: title(t), Project: p.Name, Since: since,
-				Old: now.Sub(since) > wallFailedOld, Reason: reason(t.Error), Resume: t.Resumable})
 		}
 	}
+	if t.StartedAt != nil {
+		v.runningTotal += v.now.Sub(*t.StartedAt)
+	}
+	return run
+}
+
+// review counts task t, in review, into d: a need for a reviewer.
+func (v *wallTally) review(d *wallData, t model.Todo) {
+	d.Stages.Review++
+	since := t.UpdatedAt
+	if t.FinishedAt != nil {
+		since = *t.FinishedAt
+	}
+	if t.WaitsOnGitHub() {
+		// Reviewed and merged on GitHub: listed only while a person
+		// has to act there, not while it is a draft, back with
+		// Claude, or waiting for its checks.
+		if t.PR.Waits == "" {
+			d.Stages.ReviewGitHub++
+			return
+		}
+		if w := t.PR.WaitsSince; w != nil && w.After(since) {
+			since = *w
+		}
+	}
+	if d.Stages.ReviewOldest == nil || since.Before(*d.Stages.ReviewOldest) {
+		x := since
+		d.Stages.ReviewOldest = &x
+	}
+	n := wallNeed{Kind: "review", ID: t.ID, Title: v.title(t), Project: v.byProject[t.ProjectID].Name, Since: since,
+		Old: v.now.Sub(since) > wallReviewOld, Add: t.DiffAdd, Del: t.DiffDel}
+	if t.Checks != nil {
+		n.Tests = map[bool]string{true: "passed", false: "failed"}[t.Checks.Passed]
+	}
+	if t.PR != nil {
+		n.PR = t.PR.Number
+		if t.WaitsOnGitHub() {
+			n.Waits = t.PR.Waits
+		}
+	}
+	d.Needs = append(d.Needs, n)
+}
+
+// finish sorts d's lists and sums up the day once every card is counted.
+func (v *wallTally) finish(d *wallData) {
 	if d.Stages.Running > 0 {
-		d.Stages.RunningAvgS = int(runningTotal.Seconds()) / d.Stages.Running
+		d.Stages.RunningAvgS = int(v.runningTotal.Seconds()) / d.Stages.Running
 	}
 	sort.Slice(d.Running, func(i, j int) bool { return startOf(d.Running[i]).Before(startOf(d.Running[j])) })
 	// Reviews first, oldest first; then failures, oldest first.
@@ -415,16 +482,20 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 		d.Needs = d.Needs[:wallMaxItems]
 	}
 	d.Today.Merged = d.Stages.MergedToday
-	if !privacy {
+	if !v.privacy {
+		spend := v.spend
 		d.Today.SpendUSD = &spend
 	}
 	if d.Today.Merged > 0 {
-		f := float64(firstTry) / float64(d.Today.Merged)
+		f := float64(v.firstTry) / float64(d.Today.Merged)
 		d.Today.FirstTry = &f
 	}
+}
 
-	// Open issues: tasks made from reported issues that aren't merged, one
-	// pass over the store for the whole org, most severe first.
+// wallOpenIssues fills in the open issues: tasks made from reported issues
+// that aren't merged, one pass over the store for the whole org, most
+// severe first.
+func wallOpenIssues(d *wallData, data *store.OrgStore, byProject map[string]model.Project, privacy bool) {
 	open := data.OpenFindings(func(id string) bool { _, ok := byProject[id]; return ok })
 	for _, t := range open {
 		d.Issues.Severity[string(t.Finding.Severity())]++
@@ -435,10 +506,6 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 			d.Issues.Top = append(d.Issues.Top, open[i].Title)
 		}
 	}
-
-	s.wallRunners(&d, todos, projects, runners, runnerName)
-	s.wallQueue(&d, c, runners)
-	return d, nil
 }
 
 func startOf(r wallRun) time.Time {

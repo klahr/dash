@@ -606,22 +606,11 @@ func (a *Accounts) SwitchOrg(key string, uid, orgID int64) (Membership, error) {
 
 // Memberships lists the orgs uid belongs to, oldest membership first.
 func (a *Accounts) Memberships(uid int64) ([]Membership, error) {
-	rows, err := a.db.Query(`SELECT `+orgFields+`, m.role FROM org_memberships m
+	return queryAll(a.db, func(sc scanner) (m Membership, err error) {
+		m.Org, err = scanOrg(sc, &m.Role)
+		return m, err
+	}, `SELECT `+orgFields+`, m.role FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id WHERE m.user_id = ? ORDER BY m.created_at, o.id`, uid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Membership{}
-	for rows.Next() {
-		var m Membership
-		var err error
-		if m.Org, err = scanOrg(rows, &m.Role); err != nil {
-			return nil, err
-		}
-		out = append(out, m)
-	}
-	return out, rows.Err()
 }
 
 // Membership is uid's membership of orgID, or ErrNotMember.
@@ -679,24 +668,14 @@ func (a *Accounts) createOrg(tx *sql.Tx, uid int64, name string, now time.Time) 
 
 // Members lists an org's members, owners first.
 func (a *Accounts) Members(orgID int64) ([]Member, error) {
-	rows, err := a.db.Query(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL, u.avatar_at, m.role, m.created_at
+	return queryAll(a.db, func(sc scanner) (m Member, err error) {
+		var joined int64
+		err = sc.Scan(&m.ID, &m.Username, &m.Email, &m.PlatformAdmin, &m.TOTP, &m.Avatar, &m.Role, &joined)
+		m.Joined = time.Unix(joined, 0).UTC()
+		return m, err
+	}, `SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL, u.avatar_at, m.role, m.created_at
 		FROM org_memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = ?
 		ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.username`, orgID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Member{}
-	for rows.Next() {
-		var m Member
-		var joined int64
-		if err := rows.Scan(&m.ID, &m.Username, &m.Email, &m.PlatformAdmin, &m.TOTP, &m.Avatar, &m.Role, &joined); err != nil {
-			return nil, err
-		}
-		m.Joined = time.Unix(joined, 0).UTC()
-		out = append(out, m)
-	}
-	return out, rows.Err()
 }
 
 // changeMemberAs checks that actor may change target's membership of orgID

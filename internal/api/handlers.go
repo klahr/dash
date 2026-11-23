@@ -490,7 +490,7 @@ func (sv *service) checkCommandChange(cur model.Project, req projectUpdate, runn
 		return nil
 	}
 	for _, run := range runners {
-		if run.Owner == nil || run.Owner.UserID != sv.c.User {
+		if !ownedBy(run, sv.c) {
 			return fmt.Errorf("%w: only an org admin, or the owner of every runner the project runs on, can change its commands (they run on %s as the user who registered it)", errForbidden, run.Name)
 		}
 	}
@@ -1010,36 +1010,25 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 // refinePrompt rewrites instructions (often pasted from a chat answer) into a
 // cleaner prompt; the form shows the result and nothing is stored.
 func (s *Server) refinePrompt(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Prompt string `json:"prompt"`
-	}
-	if err := decode(r, &req); err != nil {
-		writeErr(w, err)
-		return
-	}
-	if strings.TrimSpace(req.Prompt) == "" {
-		writeErr(w, fmt.Errorf("%w: prompt is required", errBadRequest))
-		return
-	}
-	sv, ok := s.service(w, r)
-	if !ok {
-		return
-	}
-	out, err := sv.refine(r.Context(), req.Prompt)
-	if errors.Is(err, errNoRefiner) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) {
-		writeError(w, http.StatusServiceUnavailable, err.Error())
-		return
-	}
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"prompt": out})
+	s.promptCall(w, r, func(ctx context.Context, sv *service, prompt string) (any, error) {
+		out, err := sv.refine(ctx, prompt)
+		return map[string]string{"prompt": out}, err
+	})
 }
 
 // splitPrompt proposes how to split a large task into smaller todos; the
 // form shows the parts to edit and confirm, and nothing is stored.
 func (s *Server) splitPrompt(w http.ResponseWriter, r *http.Request) {
+	s.promptCall(w, r, func(ctx context.Context, sv *service, prompt string) (any, error) {
+		parts, err := sv.split(ctx, prompt)
+		return map[string]any{"parts": parts}, err
+	})
+}
+
+// promptCall answers a request with {"prompt": …} in its body by asking
+// Claude: do's answer, or an error (503 when Claude isn't available, see
+// writeClaudeErr).
+func (s *Server) promptCall(w http.ResponseWriter, r *http.Request, do func(context.Context, *service, string) (any, error)) {
 	var req struct {
 		Prompt string `json:"prompt"`
 	}
@@ -1055,16 +1044,12 @@ func (s *Server) splitPrompt(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	parts, err := sv.split(r.Context(), req.Prompt)
-	if errors.Is(err, errNoSplitter) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) {
-		writeError(w, http.StatusServiceUnavailable, err.Error())
-		return
-	}
+	out, err := do(r.Context(), sv, req.Prompt)
 	if err != nil {
-		writeErr(w, err)
+		writeClaudeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"parts": parts})
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {

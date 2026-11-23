@@ -58,7 +58,7 @@ func (s *Server) claudeRunners(c Caller) []tunnel.Runner {
 	}
 	var out []tunnel.Runner
 	for _, r := range fl.List() {
-		if r.Owner != nil && r.Owner.UserID == c.User && r.OrgID() == c.Org {
+		if ownedBy(r, c) && r.OrgID() == c.Org {
 			out = append(out, r)
 		}
 	}
@@ -236,6 +236,24 @@ func checkParts(parts []agent.Part, from string) ([]agent.Part, error) {
 }
 
 var errNoSplitter = errors.New("splitting a task is not available")
+
+// claudeUnavailable reports whether err says Claude can't be asked here
+// now: this Dash has no Claude for the call, or the caller has no runner
+// online (or one too old for it).
+func claudeUnavailable(err error) bool {
+	return errors.Is(err, errNoRefiner) || errors.Is(err, errNoSplitter) || errors.Is(err, errNoPlanner) ||
+		errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) || errors.Is(err, errOldRunner)
+}
+
+// writeClaudeErr answers a failed call to Claude: 503 when Claude isn't
+// available (claudeUnavailable), else as writeErr does.
+func writeClaudeErr(w http.ResponseWriter, err error) {
+	if claudeUnavailable(err) {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	writeErr(w, err)
+}
 
 // claudeInfo handles GET /api/claude: where the caller's chat runs, for the
 // chat's header. local: this Dash runs it; else on one of runners.

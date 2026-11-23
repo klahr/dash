@@ -29,6 +29,16 @@ func FirstLine(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// LastLine is s's last line that says something: s trimmed, cut after its
+// last newline, and trimmed again.
+func LastLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
+		s = s[i+1:]
+	}
+	return strings.TrimSpace(s)
+}
+
 // Summary is s's first line, with " …" when more lines follow, clipped to n
 // bytes: a one-line preview of s for a log.
 func Summary(s string, n int) string {

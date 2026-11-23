@@ -22,6 +22,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/usage"
 )
 
@@ -1516,7 +1517,7 @@ func (e *TodoEngine) prepareWorktree(ctx context.Context, t model.Todo, p model.
 		return fmt.Errorf("setup command: %w", err)
 	}
 	if code != 0 {
-		return fmt.Errorf("setup command exited %d: %s", code, lastLine(tail))
+		return fmt.Errorf("setup command exited %d: %s", code, textutil.LastLine(tail))
 	}
 	return nil
 }
@@ -1640,12 +1641,4 @@ func copyPath(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, b, info.Mode().Perm())
-}
-
-func lastLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
-		return s[i+1:]
-	}
-	return s
 }

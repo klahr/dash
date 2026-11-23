@@ -81,7 +81,13 @@ func (s *Server) canManageRunner(c Caller, r tunnel.Runner) bool {
 	if r.OrgID() != c.Org || r.Owner == nil {
 		return false
 	}
-	return r.Owner.UserID == c.User || s.orgAdmin(c) || c.PlatformAdmin
+	return ownedBy(r, c) || s.orgAdmin(c) || c.PlatformAdmin
+}
+
+// ownedBy reports whether c registered r. A caller with no user (another
+// Dash, or Dash itself) owns no runner.
+func ownedBy(r tunnel.Runner, c Caller) bool {
+	return c.User != 0 && r.OwnerID() == c.User
 }
 
 // orgRunner is runner id if it belongs to c's org (for a planner, if it is
@@ -101,7 +107,7 @@ func (s *Server) orgRunner(c Caller, id string) (tunnel.Runner, bool) {
 // sees reports whether c sees runner r: everyone sees their org's runners,
 // except a planner, who sees only their own (see plannerRoutes).
 func sees(c Caller, r tunnel.Runner) bool {
-	return r.OrgID() == c.Org && (!c.Planner || r.OwnerID() == c.User)
+	return r.OrgID() == c.Org && (!c.Planner || ownedBy(r, c))
 }
 
 // youHaveNoRunner is the advice for a member without a runner of their own.
@@ -111,7 +117,7 @@ const youHaveNoRunner = "You have no runner: Runners → Add a runner, or ask an
 func (s *Server) hasOwnRunner(c Caller) bool {
 	fl := s.fleet()
 	return fl != nil && slices.ContainsFunc(fl.List(), func(r tunnel.Runner) bool {
-		return r.OrgID() == c.Org && r.Owner != nil && r.Owner.UserID == c.User
+		return r.OrgID() == c.Org && ownedBy(r, c)
 	})
 }
 
@@ -119,7 +125,7 @@ func (s *Server) view(c Caller, r tunnel.Runner) runnerView {
 	if s.Dispatch != nil {
 		r.Running = s.Dispatch.Busy(r.ID)
 	}
-	v := runnerView{Runner: r, Mine: r.Owner != nil && r.Owner.UserID == c.User, CanManage: s.canManageRunner(c, r),
+	v := runnerView{Runner: r, Mine: ownedBy(r, c), CanManage: s.canManageRunner(c, r),
 		SignIn: r.Auth().Plan(), CantShare: r.Auth().NotShared(), ClaudeOnly: r.ClaudeOnly()}
 	v.TakesOthers, _ = r.TakesOthers()
 	if v.ClaudeOnly {

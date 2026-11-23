@@ -869,7 +869,7 @@ export async function refreshRunnerLinks() {
 
 async function loadLinkRepos(r) {
   try {
-    links.gh = await api("GET", `/api/runners/${encodeURIComponent(r.id)}/github-repos`, null, "");
+    links.gh = await api("GET", `/api/runners/${encodeURIComponent(r.id)}/github-repos`);
   } catch (e) {
     links.ghError = e.message || String(e);
   }

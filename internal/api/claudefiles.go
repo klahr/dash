@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path"
@@ -256,11 +257,7 @@ func mcpSummary(s string) string {
 	if len(cfg.Servers) == 0 {
 		return "No servers"
 	}
-	names := make([]string, 0, len(cfg.Servers))
-	for n := range cfg.Servers {
-		names = append(names, n)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(cfg.Servers))
 	return clip(plural(len(names), "server")+": "+strings.Join(names, ", "), 240)
 }
 
@@ -280,11 +277,7 @@ func settingsSummary(s string) string {
 	}
 	var parts []string
 	if len(cfg.Hooks) > 0 {
-		events := make([]string, 0, len(cfg.Hooks))
-		for e := range cfg.Hooks {
-			events = append(events, e)
-		}
-		sort.Strings(events)
+		events := slices.Sorted(maps.Keys(cfg.Hooks))
 		parts = append(parts, "Hooks: "+strings.Join(events, ", "))
 	}
 	var perms []string

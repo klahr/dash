@@ -55,6 +55,28 @@ func groupBy[K comparable, V any](q rowsQuerier, scan func(scanner) (K, V, error
 	return out, nil
 }
 
+// queryMap runs query (with args) and maps the rows, read by scan into a
+// key and a value, by key; a later row with the same key wins.
+func queryMap[K comparable, V any](q rowsQuerier, scan func(scanner) (K, V, error), query string, args ...any) (map[K]V, error) {
+	rows, err := q.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[K]V{}
+	for rows.Next() {
+		k, v, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // scanOne reads a row of a single column.
 func scanOne[T any](sc scanner) (T, error) {
 	var v T

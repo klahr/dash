@@ -368,26 +368,15 @@ type RunnerOwner struct {
 // longer a member of its token's org has no owner, and so no org: it gets
 // none of that org's work.
 func (a *Accounts) RunnerOwners() (map[string]RunnerOwner, error) {
-	rows, err := a.db.Query(`SELECT t.runner_id, u.id, u.username, o.id, o.name, o.slug, m.role FROM tokens t
+	return queryMap(a.db, func(sc scanner) (id string, o RunnerOwner, err error) {
+		var role Role
+		err = sc.Scan(&id, &o.UserID, &o.Username, &o.Org.ID, &o.Org.Name, &o.Org.Slug, &role)
+		o.Planner = role.Planner()
+		return id, o, err
+	}, `SELECT t.runner_id, u.id, u.username, o.id, o.name, o.slug, m.role FROM tokens t
 		JOIN users u ON u.id = t.user_id JOIN organizations o ON o.id = t.org_id
 		JOIN org_memberships m ON m.user_id = t.user_id AND m.org_id = t.org_id
 		WHERE t.kind = 'runner'`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]RunnerOwner{}
-	for rows.Next() {
-		var id string
-		var o RunnerOwner
-		var role Role
-		if err := rows.Scan(&id, &o.UserID, &o.Username, &o.Org.ID, &o.Org.Name, &o.Org.Slug, &role); err != nil {
-			return nil, err
-		}
-		o.Planner = role.Planner()
-		out[id] = o
-	}
-	return out, rows.Err()
 }
 
 // PruneTokens deletes expired tokens and OAuth grants.

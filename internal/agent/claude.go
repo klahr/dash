@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"slices"
@@ -110,11 +111,7 @@ func (c ClaudeCode) RunArgs(req ExecRequest) []string {
 	if len(req.AllowedTools) > 0 {
 		args = append(args, "--allowedTools", strings.Join(req.AllowedTools, ","))
 	}
-	servers := make([]string, 0, len(req.AllowMCPTools))
-	for s := range req.AllowMCPTools {
-		servers = append(servers, s)
-	}
-	slices.Sort(servers)
+	servers := slices.Sorted(maps.Keys(req.AllowMCPTools))
 	for _, s := range servers {
 		args = append(args, mcptools.AllowedToolArgs(s, req.AllowMCPTools[s]...)...)
 	}

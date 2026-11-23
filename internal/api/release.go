@@ -638,7 +638,7 @@ func (sv *service) releaseOnRunner(ctx context.Context, p model.Project, r mcpto
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	body := map[string]string{"sha": r.SHA, "version": r.Version, "bump": r.Bump, "notes": r.Notes}
-	if err = sv.s.fleet().Call(cctx, run.ID, http.MethodPost, "/api/projects/"+url.PathEscape(rpid)+"/tags", body, &out); err != nil {
+	if err = sv.s.runnerCall(cctx, run.ID, http.MethodPost, "/api/projects/"+url.PathEscape(rpid)+"/tags", body, &out); err != nil {
 		return out, err
 	}
 	sv.s.watchRelease(p, &out) // the runner follows it for itself; the hub's UI reads the hub's watcher

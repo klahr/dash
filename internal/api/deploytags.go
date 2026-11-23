@@ -85,7 +85,7 @@ func (sv *service) releaseTagsOf(ctx context.Context, p model.Project, q tagsQue
 		return deployTags{}, err
 	}
 	var out deployTags
-	err = s.fleet().Call(ctx, run.ID, http.MethodPost, deployPath(p.ID, "tags"), q, &out)
+	err = s.runnerCall(ctx, run.ID, http.MethodPost, deployPath(p.ID, "tags"), q, &out)
 	return out, err
 }
 

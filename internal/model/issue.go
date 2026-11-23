@@ -142,6 +142,12 @@ func (i Issue) ComputeFingerprint() string {
 	return hex.EncodeToString(sum[:8])
 }
 
+// HasGeneratedPrompt reports whether t's prompt is still the one Dash wrote
+// from its Finding's issues (see Finding.PromptSum): nobody edited it.
+func (t *Todo) HasGeneratedPrompt() bool {
+	return t.Finding != nil && t.Finding.PromptSum != "" && t.Finding.PromptSum == PromptSum(t.Prompt)
+}
+
 // ReportCount is how many times the issue was reported: at least 1.
 func (i Issue) ReportCount() int {
 	return max(i.Reports, 1)
@@ -288,12 +294,6 @@ func SourceTag(source string) string {
 		return strings.ToLower(source)
 	}
 	return "reported"
-}
-
-// IssueTags are the tags a draft made from the issue gets: its type, its
-// severity and its source.
-func (i Issue) Tags() []string {
-	return []string{IssueTypeTag(i.Type), string(i.Severity), SourceTag(i.Source)}
 }
 
 // Severities are the severities, most severe first.

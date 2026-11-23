@@ -66,17 +66,20 @@ func TestIssueAddReport(t *testing.T) {
 	}
 }
 
-func TestIssueTags(t *testing.T) {
+func TestHasGeneratedPrompt(t *testing.T) {
+	gen := &Todo{Prompt: "fix it", Finding: &Finding{PromptSum: PromptSum("fix it")}}
 	for _, c := range []struct {
-		is   Issue
-		want []string
+		name string
+		t    *Todo
+		want bool
 	}{
-		{Issue{Type: IssueVuln, Severity: SevHigh, Source: "scan:Security"}, []string{"security", "high", "scan:security"}},
-		{Issue{Type: IssueBug, Severity: SevLow, Source: "agent:t1"}, []string{"bug", "low", "reported"}},
-		{Issue{Type: IssueOther, Severity: SevInfo, Source: "manual"}, []string{"issue", "info", "reported"}},
+		{"generated", gen, true},
+		{"edited", &Todo{Prompt: "fix it now", Finding: gen.Finding}, false},
+		{"no sum", &Todo{Prompt: "fix it", Finding: &Finding{}}, false},
+		{"no finding", &Todo{Prompt: "fix it"}, false},
 	} {
-		if got := c.is.Tags(); !slices.Equal(got, c.want) {
-			t.Errorf("%+v: tags %q, want %q", c.is, got, c.want)
+		if got := c.t.HasGeneratedPrompt(); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
 		}
 	}
 }

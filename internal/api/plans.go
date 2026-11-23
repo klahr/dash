@@ -350,12 +350,11 @@ func (s *Server) interviewPlan(w http.ResponseWriter, r *http.Request) {
 		pc = sv.featureContext(r.Context(), next.ProjectID)
 	}
 	out, err := sv.planCall(r.Context(), kind.ID, agent.PlanInputWith(next, pc))
-	if errors.Is(err, errNoPlanner) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) || errors.Is(err, errOldRunner) {
-		writeError(w, http.StatusServiceUnavailable, err.Error())
-		return
-	}
 	if err != nil {
-		writeErr(w, fmt.Errorf("the interview round failed: %w", err))
+		if !claudeUnavailable(err) {
+			err = fmt.Errorf("the interview round failed: %w", err)
+		}
+		writeClaudeErr(w, err)
 		return
 	}
 	turn, err := agent.ParsePlanTurn(out)

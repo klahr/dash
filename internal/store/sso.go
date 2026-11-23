@@ -351,26 +351,16 @@ func (a *Accounts) PutOrgSSO(s OrgSSO, now time.Time) error {
 }
 
 func (a *Accounts) domains(where string, args ...any) ([]SSODomain, error) {
-	rows, err := a.db.Query(`SELECT d.org_id, o.name, d.domain, d.verified, d.how, d.created_at, COALESCE(d.verified_at, 0), d.token
-		FROM org_sso_domains d JOIN organizations o ON o.id = d.org_id `+where+` ORDER BY d.domain`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []SSODomain{}
-	for rows.Next() {
-		var d SSODomain
+	return queryAll(a.db, func(sc scanner) (d SSODomain, err error) {
 		var created, verified int64
-		if err := rows.Scan(&d.OrgID, &d.OrgName, &d.Domain, &d.Verified, &d.How, &created, &verified, &d.Token); err != nil {
-			return nil, err
-		}
+		err = sc.Scan(&d.OrgID, &d.OrgName, &d.Domain, &d.Verified, &d.How, &created, &verified, &d.Token)
 		d.Created = time.Unix(created, 0).UTC()
 		if verified > 0 {
 			d.VerifiedAt = time.Unix(verified, 0).UTC()
 		}
-		out = append(out, d)
-	}
-	return out, rows.Err()
+		return d, err
+	}, `SELECT d.org_id, o.name, d.domain, d.verified, d.how, d.created_at, COALESCE(d.verified_at, 0), d.token
+		FROM org_sso_domains d JOIN organizations o ON o.id = d.org_id `+where+` ORDER BY d.domain`, args...)
 }
 
 // CleanDomain lower-cases d and checks it looks like a domain name.
@@ -567,24 +557,14 @@ func (a *Accounts) Audit(e AuthEvent) error {
 
 // AuthEvents is orgID's latest log entries, newest first, at most limit.
 func (a *Accounts) AuthEvents(orgID int64, limit int) ([]AuthEvent, error) {
-	rows, err := a.db.Query(`SELECT e.id, e.at, COALESCE(e.user_id, 0), COALESCE(e.actor_id, 0), COALESCE(u.username, ''), COALESCE(x.username, ''), e.kind, e.detail, e.ip
+	return queryAll(a.db, func(sc scanner) (e AuthEvent, err error) {
+		var at int64
+		err = sc.Scan(&e.ID, &at, &e.UserID, &e.Actor, &e.User, &e.ActorN, &e.Kind, &e.Detail, &e.IP)
+		e.At, e.OrgID = time.Unix(at, 0).UTC(), orgID
+		return e, err
+	}, `SELECT e.id, e.at, COALESCE(e.user_id, 0), COALESCE(e.actor_id, 0), COALESCE(u.username, ''), COALESCE(x.username, ''), e.kind, e.detail, e.ip
 		FROM auth_events e LEFT JOIN users u ON u.id = e.user_id LEFT JOIN users x ON x.id = e.actor_id
 		WHERE e.org_id = ? ORDER BY e.id DESC LIMIT ?`, orgID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []AuthEvent{}
-	for rows.Next() {
-		var e AuthEvent
-		var at int64
-		if err := rows.Scan(&e.ID, &at, &e.UserID, &e.Actor, &e.User, &e.ActorN, &e.Kind, &e.Detail, &e.IP); err != nil {
-			return nil, err
-		}
-		e.At, e.OrgID = time.Unix(at, 0).UTC(), orgID
-		out = append(out, e)
-	}
-	return out, rows.Err()
 }
 
 // AnyOrgGoogleClient reports whether some org has its own Google client.

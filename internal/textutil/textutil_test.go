@@ -42,6 +42,20 @@ func TestFirstLine(t *testing.T) {
 	}
 }
 
+func TestLastLine(t *testing.T) {
+	for s, want := range map[string]string{
+		"":                 "",
+		"  one  ":          "one",
+		"one\n  two  \n\n": "two",
+		"one\r\ntwo\r\n":   "two",
+		"one\n\t\n":        "one",
+	} {
+		if got := LastLine(s); got != want {
+			t.Errorf("LastLine(%q) = %q, want %q", s, got, want)
+		}
+	}
+}
+
 func TestSummary(t *testing.T) {
 	if got := Summary("ls -la\necho hi", 200); got != "ls -la …" {
 		t.Errorf("Summary = %q", got)

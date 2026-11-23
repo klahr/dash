@@ -64,7 +64,7 @@ Click the mic or use the shortcut while the cursor is in a chat, so "send" knows
 | "deny"                                | denies it (`X`)                                              |
 | "next card", "previous card"          | the next or previous task: the board's cursor (`j` `k`), or in an open task, the task beside it in its column |
 | "open board", "open chat"             | the **Board** (`gb`) / the project's chat (`c`)              |
-| "open issues", "open history" …       | that section: board, issues, scans, shell, history, goals, deploys, files, planning |
+| "open scans", "open history" …        | that section: board, scans, shell, history, goals, deploys, files, planning |
 | "stop listening"                      | ends voice commands                                          |
 
 Dash matches loosely: case, punctuation, "the", "this" and "please" don't matter. Speech that

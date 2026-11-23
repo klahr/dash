@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"sort"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -235,12 +236,8 @@ func (r *Reporter) takeProcs() []string { return r.take(&r.procs) }
 func (r *Reporter) take(set *map[string]bool) []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]string, 0, len(*set))
-	for id := range *set {
-		out = append(out, id)
-	}
+	out := slices.Sorted(maps.Keys(*set))
 	*set = nil
-	sort.Strings(out)
 	return out
 }
 

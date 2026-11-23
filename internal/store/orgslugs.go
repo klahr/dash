@@ -278,21 +278,11 @@ func (a *Accounts) FixSlugs(now time.Time) ([]Org, error) {
 // SlugRedirects lists orgID's old slugs that still redirect to it, with
 // when they stop.
 func (a *Accounts) SlugRedirects(orgID int64, now time.Time) (map[string]time.Time, error) {
-	rows, err := a.db.Query("SELECT slug, expires_at FROM org_slug_redirects WHERE org_id = ? AND expires_at > ? ORDER BY slug", orgID, now.Unix())
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]time.Time{}
-	for rows.Next() {
-		var s string
+	return queryMap(a.db, func(sc scanner) (slug string, until time.Time, err error) {
 		var exp int64
-		if err := rows.Scan(&s, &exp); err != nil {
-			return nil, err
-		}
-		out[s] = time.Unix(exp, 0)
-	}
-	return out, rows.Err()
+		err = sc.Scan(&slug, &exp)
+		return slug, time.Unix(exp, 0), err
+	}, "SELECT slug, expires_at FROM org_slug_redirects WHERE org_id = ? AND expires_at > ? ORDER BY slug", orgID, now.Unix())
 }
 
 // SetOrgName renames orgID, if actor is one of its owners or admins. The

@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"regexp"
@@ -209,24 +208,8 @@ func (h *Hub) servePreviewConnect(w http.ResponseWriter, r *http.Request, rec re
 // keepPreviews holds the preview connection open while ctx lasts (the main
 // tunnel is up), reconnecting when it drops.
 func (c *Client) keepPreviews(ctx context.Context, url string) {
-	backoff := 500 * time.Millisecond
-	for ctx.Err() == nil {
-		start := time.Now()
-		err := c.servePreviews(ctx, url)
-		if ctx.Err() != nil {
-			return
-		}
-		if time.Since(start) > 30*time.Second {
-			backoff = 500 * time.Millisecond
-		}
-		slog.Warn("runner: preview connection lost, retrying", "err", err, "in", backoff)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(backoff):
-		}
-		backoff = min(backoff*2, 30*time.Second)
-	}
+	serve := func(ctx context.Context) error { return c.servePreviews(ctx, url) }
+	_ = reconnect(ctx, "preview", 500*time.Millisecond, 30*time.Second, serve, nil)
 }
 
 func (c *Client) servePreviews(ctx context.Context, url string) error {

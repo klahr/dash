@@ -162,7 +162,10 @@ func (a *Accounts) DeleteUser(uid int64) (DeletedAccount, error) {
 // orgFates lists uid's memberships with what deleting uid would mean for
 // each org.
 func orgFates(tx *sql.Tx, uid int64) ([]orgFate, error) {
-	rows, err := tx.Query(`SELECT o.id, o.name, o.slug, o.personal_user_id IS NOT NULL, m.role,
+	return queryAll(tx, func(sc scanner) (f orgFate, err error) {
+		err = sc.Scan(&f.ID, &f.Name, &f.Slug, &f.Personal, &f.role, &f.members, &f.owners, &f.projects, &f.billing, &f.isDefault)
+		return f, err
+	}, `SELECT o.id, o.name, o.slug, o.personal_user_id IS NOT NULL, m.role,
 			(SELECT COUNT(*) FROM org_memberships x WHERE x.org_id = o.id),
 			(SELECT COUNT(*) FROM org_memberships x WHERE x.org_id = o.id AND x.role = 'owner'),
 			(SELECT COUNT(*) FROM projects p WHERE p.org_id = o.id),
@@ -170,19 +173,6 @@ func orgFates(tx *sql.Tx, uid int64) ([]orgFate, error) {
 			o.id = COALESCE((SELECT default_org_id FROM instance WHERE id = 1), 0)
 		FROM org_memberships m JOIN organizations o ON o.id = m.org_id
 		WHERE m.user_id = ? ORDER BY o.id`, uid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []orgFate
-	for rows.Next() {
-		var f orgFate
-		if err := rows.Scan(&f.ID, &f.Name, &f.Slug, &f.Personal, &f.role, &f.members, &f.owners, &f.projects, &f.billing, &f.isDefault); err != nil {
-			return nil, err
-		}
-		out = append(out, f)
-	}
-	return out, rows.Err()
 }
 
 // deleteEmptyOrg deletes an org without projects, with the records and

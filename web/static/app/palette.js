@@ -19,7 +19,7 @@ import { renderPane, startDraw } from "./drawmode.js";
 import { toggleInvisibles, toggleVim } from "./diffedit.js";
 import { openPrefs } from "./prefs.js";
 import { openRunners } from "./runners.js";
-import { logout } from "./account.js";
+import { logout } from "./myaccount.js";
 import { openConnector } from "./wallview.js";
 import { openAccount } from "./accountsheet.js";
 import { notifyOn, toggleNotifications } from "./notifications.js";

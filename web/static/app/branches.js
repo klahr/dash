@@ -901,12 +901,20 @@ export async function mergePR(t) {
   toast(res?.queued ? `Queued to merge${as}` : `Pull request #${t.pr.number} merged${as}`, { tone: "ok", icon: "merge" });
 }
 
-function mergeChip(t) {
+// cardChip is an action button on a card: a click (or press) on it runs
+// run, with its errors shown, and doesn't reach the card under it, which
+// would open the task or start a drag. icon is an icon's name or a node.
+function cardChip(cls, title, icon, label, run) {
+  const stop = (e) => e.stopPropagation();
   return h("button", {
-    type: "button", class: "approve-chip", title: `Merge pull request #${t.pr.number} on GitHub`,
-    onpointerdown: (e) => e.stopPropagation(),
-    onclick: (e) => { e.stopPropagation(); attempt(() => mergePR(t))(); },
-  }, ico("merge"), "Merge pull request");
+    type: "button", class: cls, title,
+    onpointerdown: stop,
+    onclick: (e) => { stop(e); attempt(run)(); },
+  }, typeof icon === "string" ? ico(icon) : icon, label);
+}
+
+function mergeChip(t) {
+  return cardChip("approve-chip", `Merge pull request #${t.pr.number} on GitHub`, "merge", "Merge pull request", () => mergePR(t));
 }
 
 // What a task's pull request waits for, as Dash last saw it.
@@ -961,81 +969,37 @@ function reviewChip(t) {
       title: `Review pull request #${t.pr.number} on GitHub`, onpointerdown: stop, onclick: stop,
     }, ico("eye"), "Review");
   }
-  return h("button", {
-    type: "button", class: "review-chip", title: "Open the diff to review it yourself",
-    onpointerdown: stop,
-    onclick: (e) => {
-      stop(e);
-      attempt(() => openDetail(t.id, { pane: "diff" }))();
-    },
-  }, ico("eye"), "Review");
+  return cardChip("review-chip", "Open the diff to review it yourself", "eye", "Review", () => openDetail(t.id, { pane: "diff" }));
 }
 
 // Claude reviews it (the task view's "Review with Claude").
 function askClaudeChip(t) {
-  return h("button", {
-    type: "button", class: "ask-claude-chip", title: "Have Claude review the changes",
-    onpointerdown: (e) => e.stopPropagation(),
-    onclick: (e) => {
-      e.stopPropagation();
-      attempt(async () => { await openDetail(t.id); reviewTodo(); })();
-    },
-  }, ico("spark"), "Ask Claude");
+  return cardChip("ask-claude-chip", "Have Claude review the changes", "spark", "Ask Claude", async () => { await openDetail(t.id); reviewTodo(); });
 }
 
 // Opens the task with its live preview, starting the server if needed.
 function previewChip(t) {
   const p = previewOf(t.id);
-  return h("button", {
-    type: "button", class: "preview-chip", title: "Open the live preview",
-    onpointerdown: (e) => e.stopPropagation(),
-    onclick: (e) => {
-      e.stopPropagation();
-      attempt(() => previewTodo(t))();
-    },
-  }, p ? h("span", { class: `pv-dot ${p.state}`, "aria-hidden": "true" }) : ico("window"), "Preview");
+  return cardChip("preview-chip", "Open the live preview", p ? h("span", { class: `pv-dot ${p.state}`, "aria-hidden": "true" }) : "window", "Preview", () => previewTodo(t));
 }
 
 function approveChip(t) {
-  return h("button", {
-    type: "button", class: "approve-chip", title: "Approve and merge without opening the diff",
-    onpointerdown: (e) => e.stopPropagation(),
-    onclick: (e) => {
-      e.stopPropagation();
-      attempt(async () => { await api("POST", `/api/todos/${t.id}/approve`); toast("Approved — merging"); })();
-    },
-  }, ico("check"), "Approve");
+  return cardChip("approve-chip", "Approve and merge without opening the diff", "check", "Approve",
+    async () => { await api("POST", `/api/todos/${t.id}/approve`); toast("Approved — merging"); });
 }
 
 function closeChip(t) {
-  return h("button", {
-    type: "button", class: "approve-chip", title: "Close the task: it changed no files, so there is nothing to merge",
-    onpointerdown: (e) => e.stopPropagation(),
-    onclick: (e) => {
-      e.stopPropagation();
-      attempt(() => closeTodo(t))();
-    },
-  }, ico("check"), "Close");
+  return cardChip("approve-chip", "Close the task: it changed no files, so there is nothing to merge", "check", "Close", () => closeTodo(t));
 }
 
 function enqueueChip(t) {
-  return h("button", {
-    type: "button", class: "enqueue-chip", title: "Queue it",
-    onpointerdown: (e) => e.stopPropagation(),
-    onclick: (e) => {
-      e.stopPropagation();
-      attempt(todoKey)(t, "s");
-    },
-  }, ico("queue"), "Queue");
+  return cardChip("enqueue-chip", "Queue it", "queue", "Queue", () => todoKey(t, "s"));
 }
 
 // startNowChip starts a queued card that waits for the weekly pace.
 function startNowChip(t) {
-  return h("button", {
-    type: "button", class: "enqueue-chip start-now-chip", title: `${state.usage?.pacing && state.usage.reason ? `${state.usage.reason}. ` : ""}${startNowHelp}`,
-    onpointerdown: (e) => e.stopPropagation(),
-    onclick: (e) => { e.stopPropagation(); attempt(() => startNow(t))(); },
-  }, ico("play"), "Start now");
+  return cardChip("enqueue-chip start-now-chip", `${state.usage?.pacing && state.usage.reason ? `${state.usage.reason}. ` : ""}${startNowHelp}`,
+    "play", "Start now", () => startNow(t));
 }
 
 export function updateLiveLine(id) {

@@ -1,6 +1,7 @@
 package localrun
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,4 +47,21 @@ func windowsBash(env string, lookPath func(string) (string, error), exists func(
 func fileExists(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && !fi.IsDir()
+}
+
+// ExitStatus reads the error cmd.Run or cmd.Wait returned for a command that
+// ran: code is 0 for no error, the exit code for an *exec.ExitError (-1 when a
+// signal killed it), and 0 for exec.ErrWaitDelay, which means it exited fine
+// but something it left in the background kept its output open. ok is false,
+// with code -1, for any other error: it didn't start, or waiting for it failed.
+func ExitStatus(err error) (code int, ok bool) {
+	var exit *exec.ExitError
+	switch {
+	case err == nil, errors.Is(err, exec.ErrWaitDelay):
+		return 0, true
+	case errors.As(err, &exit):
+		return exit.ExitCode(), true
+	default:
+		return -1, false
+	}
 }

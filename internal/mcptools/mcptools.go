@@ -576,350 +576,390 @@ func (r Reported) Message() string {
 	return string(r.Result)
 }
 
+// boardTools returns the tools that list, read, create, queue, change and
+// delete a project's tasks, and create_release.
 func boardTools(b Board, o Options) []Tool {
-	pProject := Param{"project", "string", "Project name or id (see list_projects).", true}
-	if o.Project != "" {
-		pProject = Param{"project", "string", "Project name or id (see list_projects); defaults to this chat's project.", false}
-	}
-	project := func(a Args) (model.Project, error) {
-		ref := a.Str("project")
-		if ref == "" {
-			ref = o.Project
-		}
-		return b.Project(ref)
-	}
-	createDesc := "Create a task for Claude to work on. It is queued to run unless draft is true."
-	draftDesc := "Keep it as a draft instead of queueing it."
-	runOnDesc := "For a project on a hub's runners: the id of the runner the task must run on, one of the project's runners ids; it waits queued while that runner can't take it. Omit it to run on any of them."
-	modelDesc := "Claude model to run the task on: opus for hard tasks, sonnet or haiku for small ones, or a full model id. " +
-		"Omit it for the default."
-	if o.Draft {
-		createDesc = "Create a task for Claude to work on. It stays a draft on the board unless draft is false."
-		draftDesc = "false queues it to run right away; only when the user asks for that (default true)."
-	}
-	queueDesc := "Queue a draft or failed task to run; only when the user asks to start, run or retry it. " +
-		"A failed task continues in its worktree and Claude session, like dragging its card from Review to Queued."
-	queueParams := []Param{PTodo}
 	restarter, _ := b.(Restarter)
-	if restarter != nil {
-		queueDesc = "Queue a draft or failed task to run; only when the user asks to start, run or retry it."
-		queueParams = append(queueParams, Param{"fresh", "boolean", freshDesc, false})
-	}
 	starter, _ := b.(StartNower)
-	if starter != nil {
-		queueDesc += " With start_now it also takes a task that is already queued."
-		queueParams = append(queueParams, Param{"start_now", "boolean", startNowDesc, false})
-	}
-	// paceWait is why queued task t waits for the weekly pace, or "".
-	paceWait := func(t model.Todo) string {
-		if starter == nil || t.Status != model.StatusQueued {
-			return ""
-		}
-		return starter.PaceWait(t)
-	}
 	tools := []Tool{
-		{"list_projects", "List the projects on every computer in this Dash.", nil,
-			func(a Args) (any, error) {
-				ps, unreachable, err := b.Projects()
-				if err != nil {
-					return nil, err
-				}
-				type row struct {
-					ID            string `json:"id"`
-					Name          string `json:"name"`
-					Machine       string `json:"machine"`
-					Path          string `json:"path"`
-					DefaultBranch string `json:"default_branch"`
-					MergeMode     string `json:"merge_mode,omitempty"`
-				}
-				out := struct {
-					Projects    []row    `json:"projects"`
-					Unreachable []string `json:"unreachable,omitempty"`
-				}{Projects: []row{}, Unreachable: unreachable}
-				for _, p := range ps {
-					out.Projects = append(out.Projects, row{p.ID, p.Name, p.Machine, p.Path, p.DefaultBranch, p.MergeMode})
-				}
-				return out, nil
-			}},
-		{"list_todos", "List a project's tasks (id, title, status, tags), optionally filtered by status or tag. " +
-			"Drafts made from reported problems (scans, report_issue) have tags for their type (bug, security, issue), severity (critical, high, medium, low, info) " +
-			"and source (scan:<name> or reported), and reports, how many times the problem was reported. " +
-			"Tasks merged more than 14 days ago are left out unless status is merged or since is given.", []Param{pProject,
-			{"status", "string", "Only this status: draft, queued, in_progress, review, merging, merged or failed.", false},
-			{"tag", "string", "Only tasks with this tag (case does not matter), e.g. security, high or scan:security.", false},
-			{"since", "string", "Only tasks changed on or after this date (2006-01-02 or an RFC 3339 time).", false},
-			{"limit", "integer", "At most this many tasks.", false}},
-			func(a Args) (any, error) {
-				p, err := project(a)
-				if err != nil {
-					return nil, err
-				}
-				var since time.Time
-				if s := a.Str("since"); s != "" {
-					if since, err = parseSince(s); err != nil {
-						return nil, err
-					}
-				}
-				limit := a.Num("limit", 0)
-				if limit < 0 {
-					return nil, errors.New("limit must not be negative")
-				}
-				ts, err := b.Todos(p.ID)
-				if err != nil {
-					return nil, err
-				}
-				status := a.Str("status")
-				tag := strings.TrimSpace(a.Str("tag"))
-				// Old merged tasks are history: by default they stay out of
-				// the list, so it doesn't grow with every task ever made.
-				var oldMerged time.Time
-				if status == "" && since.IsZero() {
-					oldMerged = time.Now().Add(-listMergedFor)
-				}
-				// Indexed once: Blockers would index all of ts for each task.
-				byID := model.TodosByID(ts)
-				type row struct {
-					ID        string           `json:"id"`
-					Title     string           `json:"title"`
-					Status    model.TodoStatus `json:"status"`
-					Priority  *int             `json:"priority"` // null: unprioritised
-					DependsOn []string         `json:"depends_on,omitempty"`
-					BuildsOn  string           `json:"builds_on,omitempty"`
-					WaitingOn []string         `json:"waiting_on,omitempty"` // dependencies not merged yet, or the task it builds on while unfinished
-					Error     string           `json:"error,omitempty"`
-					StartNow  bool             `json:"start_now,omitempty"`
-					Waiting   string           `json:"waiting,omitempty"` // "pace": it waits for the weekly pace
-					Tags      []string         `json:"tags,omitempty"`
-					Severity  model.Severity   `json:"severity,omitempty"` // of a task made from reported problems: the worst
-					Reports   int              `json:"reports,omitempty"`  // how many times its problems were reported, when more than once
-				}
-				out := []row{}
-				// The pace holds back every task of a project alike, so it is
-				// asked once.
-				pace, paceKnown := "", false
-				for _, t := range ts {
-					if limit > 0 && len(out) >= limit {
-						break
-					}
-					if status != "" && string(t.Status) != status {
-						continue
-					}
-					if !since.IsZero() && t.UpdatedAt.Before(since) {
-						continue
-					}
-					if !oldMerged.IsZero() && t.Status == model.StatusMerged && t.UpdatedAt.Before(oldMerged) {
-						continue
-					}
-					if tag != "" && !slices.ContainsFunc(t.Tags, func(x string) bool { return strings.EqualFold(x, tag) }) {
-						continue
-					}
-					var waiting []string
-					for _, d := range t.BlockersIn(byID) {
-						waiting = append(waiting, d.ID)
-					}
-					r := row{ID: t.ID, Title: t.Title, Status: t.Status, Priority: t.Priority, DependsOn: t.DependsOn, BuildsOn: t.BuildsOn,
-						WaitingOn: waiting, Error: t.Error, StartNow: t.StartNow, Tags: t.Tags, Severity: t.Finding.Severity()}
-					if n := t.Finding.Reports(); n > 1 {
-						r.Reports = n
-					}
-					if t.Status == model.StatusQueued && !t.Paused && !t.StartNow && len(waiting) == 0 {
-						if !paceKnown {
-							pace, paceKnown = paceWait(t), true
-						}
-						if pace != "" {
-							r.Waiting = "pace"
-						}
-					}
-					out = append(out, r)
-				}
-				return out, nil
-			}},
-		{"get_todo", "Show a task: prompt, status, tags, dependencies (depends_on), feedback, test results, diff size, pull request, and each Claude run's kind, tokens, turns and cost (run_stats). " +
-			"A task made from reported problems has finding: each problem's fingerprint, severity, file and line, and how many times and by whom it was reported. " +
-			"A queued task that waits for the weekly pace has waiting \"pace\" and pace_reason; start_now is set once the user asked to start it now.", []Param{PTodo},
-			func(a Args) (any, error) {
-				if a.Str("todo") == "" {
-					return nil, errors.New("todo is required")
-				}
-				t, err := b.Todo(a.Str("todo"))
-				if err != nil {
-					return nil, err
-				}
-				why := ""
-				if !t.Paused && !t.StartNow {
-					why = paceWait(t)
-				}
-				if why == "" {
-					return t, nil
-				}
-				return struct {
-					model.Todo
-					Waiting    string `json:"waiting"`     // "pace", in place of the task's own reason
-					PaceReason string `json:"pace_reason"` // e.g. "Waiting 1h 20m to stay on pace"
-				}{t, "pace", why}, nil
-			}},
-		{"create_todo", createDesc, []Param{pProject,
-			{"prompt", "string", "The task for Claude (the title alone is enough for small tasks).", false},
-			{"title", "string", "Short title (generated from the prompt if empty).", false},
-			{"priority", PriorityParam, priorityDesc + " Omit it to leave the task unprioritised.", false},
-			{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts; it waits queued until then.", false},
-			{"builds_on", "string", buildsOnDesc, false},
-			{"model", "string", modelDesc, false},
-			{"run_on", "string", runOnDesc, false},
-			{"tags", "array", tagsDesc, false},
-			{"draft", "boolean", draftDesc, false}},
-			func(a Args) (any, error) {
-				p, err := project(a)
-				if err != nil {
-					return nil, err
-				}
-				if a.Str("title") == "" && a.Str("prompt") == "" {
-					return nil, errors.New("title or prompt is required")
-				}
-				prio, err := a.OptPriority("priority")
-				if err != nil {
-					return nil, err
-				}
-				return b.CreateTodo(p.ID, NewTodo{
-					Title: a.Str("title"), Prompt: a.Str("prompt"),
-					Priority: prio, Enqueue: !a.FlagOr("draft", o.Draft),
-					DependsOn: a.List("depends_on"), BuildsOn: a.Str("builds_on"), Model: a.Str("model"), RunOn: a.Str("run_on"),
-					Tags: a.List("tags"),
-				})
-			}},
-		{"queue_todo", queueDesc, queueParams,
-			func(a Args) (any, error) {
-				if a.Str("todo") == "" {
-					return nil, errors.New("todo is required")
-				}
-				t, err := b.Todo(a.Str("todo"))
-				if err != nil {
-					return nil, err
-				}
-				now := a.Flag("start_now") && starter != nil
-				switch {
-				case now && t.Status == model.StatusQueued:
-					// Already queued: only Start now.
-				case t.Status != model.StatusDraft && t.Status != model.StatusFailed:
-					if now {
-						return nil, fmt.Errorf("task %q is %s; only draft, failed and queued tasks can start now", t.ID, t.Status)
-					}
-					return nil, fmt.Errorf("task %q is %s; only draft and failed tasks can be queued", t.ID, t.Status)
-				case a.Flag("fresh") && restarter != nil:
-					t, err = restarter.RequeueTodo(t.ID, true, "")
-				default:
-					t, err = b.QueueTodo(t.ID)
-				}
-				if err != nil {
-					return nil, err
-				}
-				if now {
-					st, err := starter.StartNow(t.ID)
-					if err != nil {
-						// Just queued, it may have started already.
-						if cur, gerr := b.Todo(t.ID); gerr == nil && cur.Status == model.StatusInProgress {
-							return queued(cur), nil
-						}
-						return nil, err
-					}
-					t = st
-				}
-				return queued(t), nil
-			}},
+		listProjectsTool(b),
+		listTodosTool(b, o, starter),
+		getTodoTool(b, starter),
+		createTodoTool(b, o),
+		queueTodoTool(b, restarter, starter),
 	}
 	if restarter != nil {
 		tools = append(tools, restartTools(b, restarter)...)
 	}
-	tools = append(tools, []Tool{
-		{"update_todo", "Change a task's title, prompt, priority, dependencies, the task it builds on, its model, the runner it runs on or its tags; only the given fields change. " +
-			"The prompt can only be changed while the task is a draft, queued or failed.", []Param{PTodo,
-			{"title", "string", "New short title.", false},
-			{"prompt", "string", "New task for Claude.", false},
-			{"priority", PriorityParam, priorityDesc + ` "none" or null unsets it.`, false},
-			{"clear_priority", "boolean", "Unset the priority: the task runs after every prioritised one, oldest first.", false},
-			{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts; replaces the list, an empty array clears it.", false},
-			{"builds_on", "string", buildsOnDesc + " An empty string builds on none. It can only be changed while the task is a draft, queued or failed.", false},
-			{"model", "string", modelDesc + " An empty string goes back to the default; a new model applies from the task's next run.", false},
-			{"run_on", "string", runOnDesc + " An empty string runs it on any of them. It can only be changed while the task is a draft, queued or failed.", false},
-			{"tags", "array", tagsDesc + " Replaces the task's tags; an empty array clears them.", false}},
-			func(a Args) (any, error) {
-				if a.Str("todo") == "" {
-					return nil, errors.New("todo is required")
+	return append(tools,
+		updateTodoTool(b),
+		createReleaseTool(b, o),
+		deleteTodoTool(b),
+	)
+}
+
+// runOnDesc is the run_on parameter of create_todo and update_todo.
+const runOnDesc = "For a project on a hub's runners: the id of the runner the task must run on, one of the project's runners ids; it waits queued while that runner can't take it. Omit it to run on any of them."
+
+// modelDesc is the model parameter of create_todo and update_todo.
+const modelDesc = "Claude model to run the task on: opus for hard tasks, sonnet or haiku for small ones, or a full model id. " +
+	"Omit it for the default."
+
+// paceWait is why queued task t waits for the weekly pace, or "" (also
+// when starter is nil).
+func paceWait(starter StartNower, t model.Todo) string {
+	if starter == nil || t.Status != model.StatusQueued {
+		return ""
+	}
+	return starter.PaceWait(t)
+}
+
+// listProjectsTool returns list_projects.
+func listProjectsTool(b Board) Tool {
+	return Tool{"list_projects", "List the projects on every computer in this Dash.", nil,
+		func(a Args) (any, error) {
+			ps, unreachable, err := b.Projects()
+			if err != nil {
+				return nil, err
+			}
+			type row struct {
+				ID            string `json:"id"`
+				Name          string `json:"name"`
+				Machine       string `json:"machine"`
+				Path          string `json:"path"`
+				DefaultBranch string `json:"default_branch"`
+				MergeMode     string `json:"merge_mode,omitempty"`
+			}
+			out := struct {
+				Projects    []row    `json:"projects"`
+				Unreachable []string `json:"unreachable,omitempty"`
+			}{Projects: []row{}, Unreachable: unreachable}
+			for _, p := range ps {
+				out.Projects = append(out.Projects, row{p.ID, p.Name, p.Machine, p.Path, p.DefaultBranch, p.MergeMode})
+			}
+			return out, nil
+		}}
+}
+
+// listTodosTool returns list_todos.
+func listTodosTool(b Board, o Options, starter StartNower) Tool {
+	pProject, project := projectParam(o)
+	return Tool{"list_todos", "List a project's tasks (id, title, status, tags), optionally filtered by status or tag. " +
+		"Drafts made from reported problems (scans, report_issue) have tags for their type (bug, security, issue), severity (critical, high, medium, low, info) " +
+		"and source (scan:<name> or reported), and reports, how many times the problem was reported. " +
+		"Tasks merged more than 14 days ago are left out unless status is merged or since is given.", []Param{pProject,
+		{"status", "string", "Only this status: draft, queued, in_progress, review, merging, merged or failed.", false},
+		{"tag", "string", "Only tasks with this tag (case does not matter), e.g. security, high or scan:security.", false},
+		{"since", "string", "Only tasks changed on or after this date (2006-01-02 or an RFC 3339 time).", false},
+		{"limit", "integer", "At most this many tasks.", false}},
+		func(a Args) (any, error) {
+			p, err := project(b, a)
+			if err != nil {
+				return nil, err
+			}
+			var since time.Time
+			if s := a.Str("since"); s != "" {
+				if since, err = parseSince(s); err != nil {
+					return nil, err
 				}
-				u := TodoUpdate{Title: a.OptStr("title"), Prompt: a.OptStr("prompt"), DependsOn: a.OptList("depends_on"), BuildsOn: a.OptStr("builds_on"), Model: a.OptStr("model"), RunOn: a.OptStr("run_on"), Tags: a.OptList("tags")}
-				if _, ok := a["priority"]; ok {
-					prio, err := a.OptPriority("priority")
-					if err != nil {
-						return nil, err
+			}
+			limit := a.Num("limit", 0)
+			if limit < 0 {
+				return nil, errors.New("limit must not be negative")
+			}
+			ts, err := b.Todos(p.ID)
+			if err != nil {
+				return nil, err
+			}
+			status := a.Str("status")
+			tag := strings.TrimSpace(a.Str("tag"))
+			// Old merged tasks are history: by default they stay out of
+			// the list, so it doesn't grow with every task ever made.
+			var oldMerged time.Time
+			if status == "" && since.IsZero() {
+				oldMerged = time.Now().Add(-listMergedFor)
+			}
+			// Indexed once: Blockers would index all of ts for each task.
+			byID := model.TodosByID(ts)
+			type row struct {
+				ID        string           `json:"id"`
+				Title     string           `json:"title"`
+				Status    model.TodoStatus `json:"status"`
+				Priority  *int             `json:"priority"` // null: unprioritised
+				DependsOn []string         `json:"depends_on,omitempty"`
+				BuildsOn  string           `json:"builds_on,omitempty"`
+				WaitingOn []string         `json:"waiting_on,omitempty"` // dependencies not merged yet, or the task it builds on while unfinished
+				Error     string           `json:"error,omitempty"`
+				StartNow  bool             `json:"start_now,omitempty"`
+				Waiting   string           `json:"waiting,omitempty"` // "pace": it waits for the weekly pace
+				Tags      []string         `json:"tags,omitempty"`
+				Severity  model.Severity   `json:"severity,omitempty"` // of a task made from reported problems: the worst
+				Reports   int              `json:"reports,omitempty"`  // how many times its problems were reported, when more than once
+			}
+			out := []row{}
+			// The pace holds back every task of a project alike, so it is
+			// asked once.
+			pace, paceKnown := "", false
+			for _, t := range ts {
+				if limit > 0 && len(out) >= limit {
+					break
+				}
+				if status != "" && string(t.Status) != status {
+					continue
+				}
+				if !since.IsZero() && t.UpdatedAt.Before(since) {
+					continue
+				}
+				if !oldMerged.IsZero() && t.Status == model.StatusMerged && t.UpdatedAt.Before(oldMerged) {
+					continue
+				}
+				if tag != "" && !slices.ContainsFunc(t.Tags, func(x string) bool { return strings.EqualFold(x, tag) }) {
+					continue
+				}
+				var waiting []string
+				for _, d := range t.BlockersIn(byID) {
+					waiting = append(waiting, d.ID)
+				}
+				r := row{ID: t.ID, Title: t.Title, Status: t.Status, Priority: t.Priority, DependsOn: t.DependsOn, BuildsOn: t.BuildsOn,
+					WaitingOn: waiting, Error: t.Error, StartNow: t.StartNow, Tags: t.Tags, Severity: t.Finding.Severity()}
+				if n := t.Finding.Reports(); n > 1 {
+					r.Reports = n
+				}
+				if t.Status == model.StatusQueued && !t.Paused && !t.StartNow && len(waiting) == 0 {
+					if !paceKnown {
+						pace, paceKnown = paceWait(starter, t), true
 					}
-					u.Priority, u.ClearPriority = prio, prio == nil // null or "none" unsets it
-				}
-				if a.Flag("clear_priority") {
-					if u.Priority != nil {
-						return nil, errors.New("pass priority or clear_priority, not both")
+					if pace != "" {
+						r.Waiting = "pace"
 					}
-					u.ClearPriority = true
 				}
-				if u.Title == nil && u.Prompt == nil && u.Priority == nil && !u.ClearPriority && u.DependsOn == nil && u.BuildsOn == nil && u.Model == nil && u.RunOn == nil && u.Tags == nil {
-					return nil, errors.New("nothing to change: pass title, prompt, priority, clear_priority, depends_on, builds_on, model, run_on or tags")
+				out = append(out, r)
+			}
+			return out, nil
+		}}
+}
+
+// getTodoTool returns get_todo.
+func getTodoTool(b Board, starter StartNower) Tool {
+	return Tool{"get_todo", "Show a task: prompt, status, tags, dependencies (depends_on), feedback, test results, diff size, pull request, and each Claude run's kind, tokens, turns and cost (run_stats). " +
+		"A task made from reported problems has finding: each problem's fingerprint, severity, file and line, and how many times and by whom it was reported. " +
+		"A queued task that waits for the weekly pace has waiting \"pace\" and pace_reason; start_now is set once the user asked to start it now.", []Param{PTodo},
+		func(a Args) (any, error) {
+			if a.Str("todo") == "" {
+				return nil, errors.New("todo is required")
+			}
+			t, err := b.Todo(a.Str("todo"))
+			if err != nil {
+				return nil, err
+			}
+			why := ""
+			if !t.Paused && !t.StartNow {
+				why = paceWait(starter, t)
+			}
+			if why == "" {
+				return t, nil
+			}
+			return struct {
+				model.Todo
+				Waiting    string `json:"waiting"`     // "pace", in place of the task's own reason
+				PaceReason string `json:"pace_reason"` // e.g. "Waiting 1h 20m to stay on pace"
+			}{t, "pace", why}, nil
+		}}
+}
+
+// createTodoTool returns create_todo.
+func createTodoTool(b Board, o Options) Tool {
+	pProject, project := projectParam(o)
+	createDesc := "Create a task for Claude to work on. It is queued to run unless draft is true."
+	draftDesc := "Keep it as a draft instead of queueing it."
+	if o.Draft {
+		createDesc = "Create a task for Claude to work on. It stays a draft on the board unless draft is false."
+		draftDesc = "false queues it to run right away; only when the user asks for that (default true)."
+	}
+	return Tool{"create_todo", createDesc, []Param{pProject,
+		{"prompt", "string", "The task for Claude (the title alone is enough for small tasks).", false},
+		{"title", "string", "Short title (generated from the prompt if empty).", false},
+		{"priority", PriorityParam, priorityDesc + " Omit it to leave the task unprioritised.", false},
+		{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts; it waits queued until then.", false},
+		{"builds_on", "string", buildsOnDesc, false},
+		{"model", "string", modelDesc, false},
+		{"run_on", "string", runOnDesc, false},
+		{"tags", "array", tagsDesc, false},
+		{"draft", "boolean", draftDesc, false}},
+		func(a Args) (any, error) {
+			p, err := project(b, a)
+			if err != nil {
+				return nil, err
+			}
+			if a.Str("title") == "" && a.Str("prompt") == "" {
+				return nil, errors.New("title or prompt is required")
+			}
+			prio, err := a.OptPriority("priority")
+			if err != nil {
+				return nil, err
+			}
+			return b.CreateTodo(p.ID, NewTodo{
+				Title: a.Str("title"), Prompt: a.Str("prompt"),
+				Priority: prio, Enqueue: !a.FlagOr("draft", o.Draft),
+				DependsOn: a.List("depends_on"), BuildsOn: a.Str("builds_on"), Model: a.Str("model"), RunOn: a.Str("run_on"),
+				Tags: a.List("tags"),
+			})
+		}}
+}
+
+// queueTodoTool returns queue_todo; restarter adds its fresh parameter and
+// starter its start_now (either may be nil).
+func queueTodoTool(b Board, restarter Restarter, starter StartNower) Tool {
+	queueDesc := "Queue a draft or failed task to run; only when the user asks to start, run or retry it. " +
+		"A failed task continues in its worktree and Claude session, like dragging its card from Review to Queued."
+	queueParams := []Param{PTodo}
+	if restarter != nil {
+		queueDesc = "Queue a draft or failed task to run; only when the user asks to start, run or retry it."
+		queueParams = append(queueParams, Param{"fresh", "boolean", freshDesc, false})
+	}
+	if starter != nil {
+		queueDesc += " With start_now it also takes a task that is already queued."
+		queueParams = append(queueParams, Param{"start_now", "boolean", startNowDesc, false})
+	}
+	return Tool{"queue_todo", queueDesc, queueParams,
+		func(a Args) (any, error) {
+			if a.Str("todo") == "" {
+				return nil, errors.New("todo is required")
+			}
+			t, err := b.Todo(a.Str("todo"))
+			if err != nil {
+				return nil, err
+			}
+			now := a.Flag("start_now") && starter != nil
+			switch {
+			case now && t.Status == model.StatusQueued:
+				// Already queued: only Start now.
+			case t.Status != model.StatusDraft && t.Status != model.StatusFailed:
+				if now {
+					return nil, fmt.Errorf("task %q is %s; only draft, failed and queued tasks can start now", t.ID, t.Status)
 				}
-				t, err := b.UpdateTodo(a.Str("todo"), u)
+				return nil, fmt.Errorf("task %q is %s; only draft and failed tasks can be queued", t.ID, t.Status)
+			case a.Flag("fresh") && restarter != nil:
+				t, err = restarter.RequeueTodo(t.ID, true, "")
+			default:
+				t, err = b.QueueTodo(t.ID)
+			}
+			if err != nil {
+				return nil, err
+			}
+			if now {
+				st, err := starter.StartNow(t.ID)
+				if err != nil {
+					// Just queued, it may have started already.
+					if cur, gerr := b.Todo(t.ID); gerr == nil && cur.Status == model.StatusInProgress {
+						return queued(cur), nil
+					}
+					return nil, err
+				}
+				t = st
+			}
+			return queued(t), nil
+		}}
+}
+
+// updateTodoTool returns update_todo.
+func updateTodoTool(b Board) Tool {
+	return Tool{"update_todo", "Change a task's title, prompt, priority, dependencies, the task it builds on, its model, the runner it runs on or its tags; only the given fields change. " +
+		"The prompt can only be changed while the task is a draft, queued or failed.", []Param{PTodo,
+		{"title", "string", "New short title.", false},
+		{"prompt", "string", "New task for Claude.", false},
+		{"priority", PriorityParam, priorityDesc + ` "none" or null unsets it.`, false},
+		{"clear_priority", "boolean", "Unset the priority: the task runs after every prioritised one, oldest first.", false},
+		{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts; replaces the list, an empty array clears it.", false},
+		{"builds_on", "string", buildsOnDesc + " An empty string builds on none. It can only be changed while the task is a draft, queued or failed.", false},
+		{"model", "string", modelDesc + " An empty string goes back to the default; a new model applies from the task's next run.", false},
+		{"run_on", "string", runOnDesc + " An empty string runs it on any of them. It can only be changed while the task is a draft, queued or failed.", false},
+		{"tags", "array", tagsDesc + " Replaces the task's tags; an empty array clears them.", false}},
+		func(a Args) (any, error) {
+			if a.Str("todo") == "" {
+				return nil, errors.New("todo is required")
+			}
+			u := TodoUpdate{Title: a.OptStr("title"), Prompt: a.OptStr("prompt"), DependsOn: a.OptList("depends_on"), BuildsOn: a.OptStr("builds_on"), Model: a.OptStr("model"), RunOn: a.OptStr("run_on"), Tags: a.OptList("tags")}
+			if _, ok := a["priority"]; ok {
+				prio, err := a.OptPriority("priority")
 				if err != nil {
 					return nil, err
 				}
-				deps := t.DependsOn
-				if deps == nil {
-					deps = []string{}
+				u.Priority, u.ClearPriority = prio, prio == nil // null or "none" unsets it
+			}
+			if a.Flag("clear_priority") {
+				if u.Priority != nil {
+					return nil, errors.New("pass priority or clear_priority, not both")
 				}
-				return struct {
-					ID        string           `json:"id"`
-					Title     string           `json:"title"`
-					Status    model.TodoStatus `json:"status"`
-					Priority  *int             `json:"priority"`
-					DependsOn []string         `json:"depends_on"`
-					BuildsOn  string           `json:"builds_on,omitempty"`
-					Model     string           `json:"model,omitempty"`
-					RunOn     string           `json:"run_on,omitempty"`
-					Tags      []string         `json:"tags,omitempty"`
-				}{t.ID, t.Title, t.Status, t.Priority, deps, t.BuildsOn, t.Model, t.RunOn, t.Tags}, nil
-			}},
-		{"create_release", "Tag a release: an annotated tag in the project's tag format (e.g. vX.Y.Z), pushed to origin, " +
-			"which starts the repository's release workflow. Only when the user asks for a release. Give version or bump.", []Param{pProject,
-			{"version", "string", "The version, e.g. \"1.4.0\" (or a full tag in the project's format).", false},
-			{"bump", "string", "Instead of version: patch, minor or major, from the latest release tag (the first release is 0.1.0).", false},
-			{"sha", "string", "Commit to tag; it must be on origin (default: the tip of origin's default branch).", false},
-			{"notes", "string", "Release notes for the tag message (default: the Dash tasks merged since the previous release).", false}},
-			func(a Args) (any, error) {
-				p, err := project(a)
-				if err != nil {
-					return nil, err
-				}
-				if a.Str("version") == "" && a.Str("bump") == "" {
-					return nil, errors.New("give a version (e.g. 1.4.0) or a bump (patch, minor or major)")
-				}
-				return b.CreateRelease(p.ID, NewRelease{Version: a.Str("version"), Bump: a.Str("bump"), SHA: a.Str("sha"), Notes: a.Str("notes")})
-			}},
-		{"delete_todo", "Delete a draft, queued or failed task; only when the user asks to remove it (e.g. a draft made by mistake).", []Param{PTodo},
-			func(a Args) (any, error) {
-				if a.Str("todo") == "" {
-					return nil, errors.New("todo is required")
-				}
-				t, err := b.Todo(a.Str("todo"))
-				if err != nil {
-					return nil, err
-				}
-				switch t.Status {
-				case model.StatusDraft, model.StatusQueued, model.StatusFailed:
-				default:
-					return nil, fmt.Errorf("task %q is %s; only draft, queued or failed tasks can be deleted here", t.ID, t.Status)
-				}
-				if err := b.DeleteTodo(t.ID); err != nil {
-					return nil, err
-				}
-				return fmt.Sprintf("Deleted task %s (%s).", t.ID, t.Title), nil
-			}},
-	}...)
-	return tools
+				u.ClearPriority = true
+			}
+			if u.Title == nil && u.Prompt == nil && u.Priority == nil && !u.ClearPriority && u.DependsOn == nil && u.BuildsOn == nil && u.Model == nil && u.RunOn == nil && u.Tags == nil {
+				return nil, errors.New("nothing to change: pass title, prompt, priority, clear_priority, depends_on, builds_on, model, run_on or tags")
+			}
+			t, err := b.UpdateTodo(a.Str("todo"), u)
+			if err != nil {
+				return nil, err
+			}
+			deps := t.DependsOn
+			if deps == nil {
+				deps = []string{}
+			}
+			return struct {
+				ID        string           `json:"id"`
+				Title     string           `json:"title"`
+				Status    model.TodoStatus `json:"status"`
+				Priority  *int             `json:"priority"`
+				DependsOn []string         `json:"depends_on"`
+				BuildsOn  string           `json:"builds_on,omitempty"`
+				Model     string           `json:"model,omitempty"`
+				RunOn     string           `json:"run_on,omitempty"`
+				Tags      []string         `json:"tags,omitempty"`
+			}{t.ID, t.Title, t.Status, t.Priority, deps, t.BuildsOn, t.Model, t.RunOn, t.Tags}, nil
+		}}
+}
+
+// createReleaseTool returns create_release.
+func createReleaseTool(b Board, o Options) Tool {
+	pProject, project := projectParam(o)
+	return Tool{"create_release", "Tag a release: an annotated tag in the project's tag format (e.g. vX.Y.Z), pushed to origin, " +
+		"which starts the repository's release workflow. Only when the user asks for a release. Give version or bump.", []Param{pProject,
+		{"version", "string", "The version, e.g. \"1.4.0\" (or a full tag in the project's format).", false},
+		{"bump", "string", "Instead of version: patch, minor or major, from the latest release tag (the first release is 0.1.0).", false},
+		{"sha", "string", "Commit to tag; it must be on origin (default: the tip of origin's default branch).", false},
+		{"notes", "string", "Release notes for the tag message (default: the Dash tasks merged since the previous release).", false}},
+		func(a Args) (any, error) {
+			p, err := project(b, a)
+			if err != nil {
+				return nil, err
+			}
+			if a.Str("version") == "" && a.Str("bump") == "" {
+				return nil, errors.New("give a version (e.g. 1.4.0) or a bump (patch, minor or major)")
+			}
+			return b.CreateRelease(p.ID, NewRelease{Version: a.Str("version"), Bump: a.Str("bump"), SHA: a.Str("sha"), Notes: a.Str("notes")})
+		}}
+}
+
+// deleteTodoTool returns delete_todo.
+func deleteTodoTool(b Board) Tool {
+	return Tool{"delete_todo", "Delete a draft, queued or failed task; only when the user asks to remove it (e.g. a draft made by mistake).", []Param{PTodo},
+		func(a Args) (any, error) {
+			if a.Str("todo") == "" {
+				return nil, errors.New("todo is required")
+			}
+			t, err := b.Todo(a.Str("todo"))
+			if err != nil {
+				return nil, err
+			}
+			switch t.Status {
+			case model.StatusDraft, model.StatusQueued, model.StatusFailed:
+			default:
+				return nil, fmt.Errorf("task %q is %s; only draft, queued or failed tasks can be deleted here", t.ID, t.Status)
+			}
+			if err := b.DeleteTodo(t.ID); err != nil {
+				return nil, err
+			}
+			return fmt.Sprintf("Deleted task %s (%s).", t.ID, t.Title), nil
+		}}
 }
 
 // freshDesc is the fresh parameter of queue_todo and restart_todo.

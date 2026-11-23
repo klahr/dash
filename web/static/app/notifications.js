@@ -57,7 +57,7 @@ function othersTask(kind, t) {
 }
 async function loadPushEvents() {
   try {
-    const v = await api("GET", "/api/me/notifications", null, "");
+    const v = await api("GET", "/api/me/notifications");
     state.pushEvents = new Set(v.settings.push);
     state.pushTasks = v.settings.tasks || null;
   } catch { state.pushEvents = state.pushTasks = null; }

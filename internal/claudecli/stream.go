@@ -3,6 +3,7 @@ package claudecli
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -163,7 +164,7 @@ func checkLine(line string) (string, []string) {
 				c.bad = append(c.bad, "unifiedWindows isn't a map of windows")
 				break
 			}
-			for _, name := range sortedKeys(ws) {
+			for _, name := range slices.Sorted(maps.Keys(ws)) {
 				w := ws[name]
 				for _, f := range []string{"utilization", "resetsAt"} {
 					if kindOf(w[f]) != kindNumber {
@@ -261,13 +262,4 @@ func (c *checker) want(obj map[string]json.RawMessage, field string, k kind) boo
 		return false
 	}
 	return true
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	ks := make([]string, 0, len(m))
-	for k := range m {
-		ks = append(ks, k)
-	}
-	slices.Sort(ks)
-	return ks
 }

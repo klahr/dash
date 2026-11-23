@@ -2,7 +2,7 @@ import { $, dateText, fill, h, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
-import { switchOrg } from "./account.js";
+import { switchOrg } from "./myaccount.js";
 
 // ------------------------------------------------------------------ billing
 // Only when the hub has Stripe configured: an org with two or more members
@@ -11,7 +11,7 @@ import { switchOrg } from "./account.js";
 export async function loadBilling() {
   const org = state.me?.org;
   if (!org) return null;
-  const b = await api("GET", `/api/orgs/${org.id}/billing`, null, "");
+  const b = await api("GET", `/api/orgs/${org.id}/billing`);
   state.billing = b;
   renderBillingBanner();
   return b;
@@ -20,12 +20,12 @@ document.addEventListener("dash:billing-read-only", () => loadBilling().catch(()
 
 
 async function startCheckout() {
-  const r = await api("POST", `/api/orgs/${state.me.org.id}/billing/checkout`, null, "");
+  const r = await api("POST", `/api/orgs/${state.me.org.id}/billing/checkout`);
   location.href = r.url;
 }
 
 async function openBillingPortal() {
-  const r = await api("POST", `/api/orgs/${state.me.org.id}/billing/portal`, null, "");
+  const r = await api("POST", `/api/orgs/${state.me.org.id}/billing/portal`);
   location.href = r.url;
 }
 
@@ -203,7 +203,7 @@ export async function offerSubscription(notice) {
 export async function newOrg() {
   const name = await ask({ title: "New organization", body: "You become its owner and can invite people to it.", input: true, placeholder: "Name", ok: "Create" });
   if (!name) return;
-  const o = await api("POST", "/api/orgs", { name }, "");
+  const o = await api("POST", "/api/orgs", { name });
   toast(`${o.name} created`, { tone: "ok" });
   await switchOrg(o);
 }

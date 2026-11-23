@@ -165,7 +165,7 @@ func (sv *service) linkGitHubRepo(x tunnel.Runner, ownerRepo, name string, runsO
 			return p, false, nil
 		}
 	}
-	if x.Owner == nil || x.Owner.UserID != sv.c.User {
+	if !ownedBy(x, sv.c) {
 		return model.Project{}, false, fmt.Errorf("%w: only %s's owner can add GitHub repositories with its GitHub login", errForbidden, x.Name)
 	}
 	if name = strings.TrimSpace(name); name == "" {

@@ -1,4 +1,4 @@
-import { $, dateText, dateTimeText, fill, h, ico, plural } from "./dom.js";
+import { $, dateText, dateTimeText, fill, h, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, railOf, toast } from "./dialogs.js";
 import { savedNote } from "./autosave.js";
@@ -6,9 +6,8 @@ import { changed } from "./routes.js";
 import { state } from "./state.js";
 import { copyBlock } from "./prefs.js";
 import { loadBilling, offerSubscription, renderOrgBilling } from "./billing.js";
-import { pushUnsubscribe } from "./notifications.js";
-import { avatar, showOwnAvatar } from "./avatar.js";
-import { accountHooks, askPassword } from "./myaccount.js";
+import { avatar } from "./avatar.js";
+import { accountHooks, askPassword, logout, showAccountMenu } from "./myaccount.js";
 import { loadOrgSection } from "./accountsheet.js";
 import { renderTeamSetup } from "./teamsetup.js";
 import { EVENT_TEXT, resetPassword, showAdminEntry, signOutEverywhere, turnOff2FA } from "./admin.js";
@@ -16,7 +15,6 @@ import { EVENT_TEXT, resetPassword, showAdminEntry, signOutEverywhere, turnOff2F
 // Your own account's sections (two-factor, Google, your data) are in
 // myaccount.js, shared with a planner's Planning page.
 accountHooks.reloadMe = () => loadMe();
-accountHooks.deleted = () => pushUnsubscribe(); // the browser's own subscription; the server's is gone
 
 // ------------------------------------------------------------------ account & organizations
 export async function loadMe() {
@@ -26,24 +24,8 @@ export async function loadMe() {
   state.me = me;
   const name = me.username;
   if (!name) return;
-  $("#foot-user").textContent = name;
-  showOwnAvatar();
-  $("#foot-menu summary").title = `Account menu · ${name}${me.org ? ` in ${me.org.name}` : ""}`;
-  $("#foot-menu summary").setAttribute("aria-label", `${name}, account menu`);
-  const orgs = me.orgs || [];
-  const sw = $("#org-switch");
-  sw.hidden = orgs.length < 2;
-  sw.replaceChildren(...(orgs.length < 2 ? [] : [
-    h("span", { class: "org-switch-label" }, "Switch organization"),
-    ...orgs.map((o) => h("button", {
-      type: "button", class: o.id === me.org?.id ? "active" : "",
-      "aria-current": o.id === me.org?.id ? "true" : null,
-      onclick: attempt(() => switchOrg(o)),
-    }, ico(o.id === me.org?.id ? "check" : "users"), o.name)),
-  ]));
+  showAccountMenu(me); // name, picture, org switch, Google section (myaccount.js)
   $("#org-open").hidden = !me.org;
-  // The Google section drops out of the Account sheet's rail.
-  $("#google-body").hidden = !me.google_available;
   // The queue pause is the whole Dash's, for platform admins.
   const admin = !!me.user?.is_platform_admin;
   $("#pm-queue").hidden = !admin;
@@ -53,21 +35,11 @@ export async function loadMe() {
   if (!me.org) {
     await ask({
       title: "No organization",
-      body: orgs.length ? "Pick an organization from the account menu." :
+      body: me.orgs?.length ? "Pick an organization from the account menu." :
         "Your account isn't a member of any organization any more. Ask an owner or admin for an invitation link, or sign out.",
       ok: "Sign out",
     }) && logout();
   }
-}
-
-export async function switchOrg(o) {
-  if (o.id === state.me?.org?.id) return;
-  // With org subdomains each org is its own address: go there (the base
-  // domain hands this browser's sign-in over).
-  const hosts = state.me?.org_domains;
-  if (hosts) { location.assign(`${hosts.base_url}/go/${encodeURIComponent(o.slug)}`); return; }
-  await api("POST", "/api/auth/switch-org", { org_id: o.id }, "");
-  location.replace("/"); // everything on the page belongs to the org it was loaded in (its URL too)
 }
 
 const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member", planner: "Planner" };
@@ -92,7 +64,7 @@ export async function openOrg() {
 async function renderOrg() {
   const me = state.me;
   if (!me?.org) throw new Error("You aren't in an organization.");
-  const org = await api("GET", `/api/orgs/${me.org.id}/members`, null, "");
+  const org = await api("GET", `/api/orgs/${me.org.id}/members`);
   const mine = org.role;
   const manage = RANK[mine] >= RANK.admin;
   $("#org-title").textContent = org.org.name;
@@ -124,7 +96,7 @@ async function renderOrg() {
       const pw = await askPassword(`Make ${m.username} ${ROLE_LABEL[sel.value].toLowerCase()}?`);
       if (pw == null) { sel.value = m.role; return; }
       try {
-        await api("PATCH", `/api/orgs/${org.org.id}/members/${m.id}`, { role: sel.value, password: pw }, "");
+        await api("PATCH", `/api/orgs/${org.org.id}/members/${m.id}`, { role: sel.value, password: pw });
       } catch (err) { sel.value = m.role; throw err; }
       toast(`${m.username} is now ${ROLE_LABEL[sel.value].toLowerCase()}`, { tone: "ok" });
       if (m.id === me.user.id) await loadMe();
@@ -156,7 +128,7 @@ async function renderOrg() {
           self ? "You lose access at once, and your queued tasks here go back to Drafts. Someone has to invite you again to come back."
             : `${m.username} loses access to ${org.org.name} at once. Their queued tasks go back to Drafts, as no runner would take them any more.`);
         if (pw == null) return;
-        await api("DELETE", `/api/orgs/${org.org.id}/members/${m.id}`, { password: pw }, "");
+        await api("DELETE", `/api/orgs/${org.org.id}/members/${m.id}`, { password: pw });
         if (self) { location.replace("/"); return; }
         toast(`${m.username} removed`);
         await renderOrg();
@@ -174,7 +146,7 @@ async function renderOrg() {
       h("span", { class: "runner-name" }, i.email),
       h("span", { class: "item-sub hint" }, `${ROLE_LABEL[i.role]} · expires ${dateText(i.expires)}${i.invited_by ? ` · by ${i.invited_by}` : ""}`),
       h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
-        await api("DELETE", `/api/orgs/${org.org.id}/invitations/${i.id}`, null, "");
+        await api("DELETE", `/api/orgs/${org.org.id}/invitations/${i.id}`);
         toast(`Invitation for ${i.email} revoked`);
         await renderOrg();
       }) }, "Revoke")));
@@ -225,12 +197,12 @@ const SSO_EVENTS = {
 async function renderOrgSSO(o, mine) {
   const box = $("#org-sso");
   if (RANK[mine] < RANK.admin || o.personal) { box.hidden = true; box.replaceChildren(); return; }
-  const s = await api("GET", `/api/orgs/${o.id}/sso`, null, "");
+  const s = await api("GET", `/api/orgs/${o.id}/sso`);
   const owner = mine === "owner";
   const patch = async (body, title, text = "") => {
     const pw = await askPassword(title, text);
     if (pw == null) { await renderOrgSSO(o, mine); return; }
-    try { await api("PATCH", `/api/orgs/${o.id}/sso`, { ...body, password: pw }, ""); }
+    try { await api("PATCH", `/api/orgs/${o.id}/sso`, { ...body, password: pw }); }
     finally { await renderOrgSSO(o, mine); }
     savedNote(box);
   };
@@ -250,7 +222,7 @@ async function renderOrgSSO(o, mine) {
     if (!domain) { domainInput.focus(); return; }
     const pw = await askPassword(`Add ${domain}?`, "People with Google Workspace accounts of a verified domain can join (with auto-join on) and must use Google (with that on).");
     if (pw == null) return;
-    const d = await api("POST", `/api/orgs/${o.id}/sso/domains`, { domain, password: pw }, "");
+    const d = await api("POST", `/api/orgs/${o.id}/sso/domains`, { domain, password: pw });
     toast(d.verified ? `${d.domain} added and verified` : `${d.domain} added: it waits for verification`, { tone: "ok" });
     await renderOrgSSO(o, mine);
   });
@@ -260,14 +232,14 @@ async function renderOrgSSO(o, mine) {
       ? `Verified${d.how === "admin" ? " by a platform admin" : d.how === "dns" ? " by its DNS record" : d.how === "google" ? " by an owner's Google sign-in" : ""}`
       : "Not verified yet: add the TXT record to its DNS, or a platform admin approves it"),
     !d.verified && d.token ? h("button", { class: "btn small", type: "button", onclick: attempt(async () => {
-      await api("POST", `/api/orgs/${o.id}/sso/domains/${encodeURIComponent(d.domain)}/check`, {}, "");
+      await api("POST", `/api/orgs/${o.id}/sso/domains/${encodeURIComponent(d.domain)}/check`, {});
       toast(`${d.domain} verified`, { tone: "ok" });
       await renderOrgSSO(o, mine);
     }) }, "Check DNS") : null,
     h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
       const pw = await askPassword(`Delete ${d.domain}?`, "Its people can't join by it any more, nor are required to use Google.");
       if (pw == null) return;
-      await api("DELETE", `/api/orgs/${o.id}/sso/domains/${encodeURIComponent(d.domain)}`, { password: pw }, "");
+      await api("DELETE", `/api/orgs/${o.id}/sso/domains/${encodeURIComponent(d.domain)}`, { password: pw });
       await renderOrgSSO(o, mine);
     }), hidden: d.verified && !owner }, "Delete…"),
     !d.verified && d.token ? h("div", { class: "domain-txt" },
@@ -364,7 +336,7 @@ export async function setOrgName() {
   if (!name) { input.reportValidity(); return; }
   const pw = await askPassword(`Rename ${org.name} to ${name}?`);
   if (pw == null) return;
-  await api("PATCH", `/api/orgs/${org.id}`, { name, password: pw }, "");
+  await api("PATCH", `/api/orgs/${org.id}`, { name, password: pw });
   toast(`Renamed to ${name}`, { tone: "ok" });
   await loadMe();
   await renderOrg();
@@ -379,7 +351,7 @@ export async function renameOrg() {
   const pw = await askPassword(`Move ${org.name} to ${slug}.${state.me.org_domains.domain}?`,
     "Bookmarks, runners and connected apps using the old address keep working for 30 days. Update them before then.");
   if (pw == null) return;
-  const o = await api("PATCH", `/api/orgs/${org.id}`, { slug, password: pw }, "");
+  const o = await api("PATCH", `/api/orgs/${org.id}`, { slug, password: pw });
   toast(`${o.name} moved to ${o.slug}.${state.me.org_domains.domain}`, { tone: "ok" });
   location.assign(`${state.me.org_domains.base_url}/go/${encodeURIComponent(o.slug)}`);
 }
@@ -392,7 +364,7 @@ export async function setRequire2FA() {
     on ? "Members without it are asked to set it up before they can do anything else, from their next click." : "Members keep two-factor sign-in if they have it, and can turn it off.");
   if (pw == null) { box.checked = !on; return; }
   try {
-    await api("PATCH", `/api/orgs/${state.me.org.id}`, { require_2fa: on, password: pw }, "");
+    await api("PATCH", `/api/orgs/${state.me.org.id}`, { require_2fa: on, password: pw });
   } catch (err) { box.checked = !on; throw err; }
   toast(on ? "Two-factor sign-in is now required" : "Two-factor sign-in is optional", { tone: "ok" });
   await loadMe();
@@ -430,7 +402,7 @@ export async function sendInvite() {
   if (!email) { $("#org-invite-email").focus(); throw new Error("Enter the email address to invite."); }
   const pw = await askPassword(`Invite ${email} as ${ROLE_LABEL[role].toLowerCase()}?`);
   if (pw == null) return;
-  const res = await api("POST", `/api/orgs/${state.me.org.id}/invitations`, { email, role, password: pw, any_email: $("#org-invite-any").checked }, "");
+  const res = await api("POST", `/api/orgs/${state.me.org.id}/invitations`, { email, role, password: pw, any_email: $("#org-invite-any").checked });
   if (res.billing) offerSubscription(res.billing).catch((err) => toast(err.message, true));
   const link = (state.me?.org_domains?.base_url || location.origin) + res.path; // invitations open on the base domain
   $("#org-invite-link").replaceChildren(
@@ -442,9 +414,4 @@ export async function sendInvite() {
   await renderOrg();
 }
 
-export async function logout() {
-  await pushUnsubscribe().catch(() => {}); // this browser stops getting the account's notifications
-  await fetch("/api/logout", { method: "POST" });
-  location.replace("/login.html");
-}
 $("#logout").addEventListener("click", logout);

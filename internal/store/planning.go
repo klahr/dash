@@ -33,21 +33,12 @@ func linkKey(kind, id string) string { return kind + ":" + id }
 
 // loadPlanLinks builds the link index from the database.
 func (s *Store) loadPlanLinks() error {
-	rows, err := s.db.Query("SELECT l.kind, l.work_id, l.card_id, c.org_id FROM planning_links l JOIN planning_cards c ON c.id = l.card_id")
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	idx := map[string][]planRef{}
-	for rows.Next() {
+	idx, err := groupBy(s.db, func(sc scanner) (key string, ref planRef, err error) {
 		var kind, work string
-		var ref planRef
-		if err := rows.Scan(&kind, &work, &ref.card, &ref.org); err != nil {
-			return err
-		}
-		idx[linkKey(kind, work)] = append(idx[linkKey(kind, work)], ref)
-	}
-	if err := rows.Err(); err != nil {
+		err = sc.Scan(&kind, &work, &ref.card, &ref.org)
+		return linkKey(kind, work), ref, err
+	}, "SELECT l.kind, l.work_id, l.card_id, c.org_id FROM planning_links l JOIN planning_cards c ON c.id = l.card_id")
+	if err != nil {
 		return err
 	}
 	s.planMu.Lock()
@@ -747,20 +738,7 @@ func (o *OrgStore) RemoveCardFile(cardID, uploadID string) error {
 // CardUploads are the ids of the uploads attached to any org's cards, for
 // cleanup to keep.
 func (s *Store) CardUploads() ([]string, error) {
-	rows, err := s.db.Query("SELECT DISTINCT upload_id FROM planning_card_files")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
+	return queryAll(s.db, scanOne[string], "SELECT DISTINCT upload_id FROM planning_card_files")
 }
 
 // CardComments are a card's comments, oldest first.
@@ -768,43 +746,25 @@ func (o *OrgStore) CardComments(cardID string) ([]model.CardComment, error) {
 	if _, err := o.GetCard(cardID); err != nil {
 		return nil, err
 	}
-	rows, err := o.s.db.Query(`SELECT m.id, m.card_id, COALESCE(m.author, 0), COALESCE(u.username, ''), m.text, m.created_at
-		FROM planning_comments m LEFT JOIN users u ON u.id = m.author WHERE m.card_id = ? ORDER BY m.id`, cardID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []model.CardComment{}
-	for rows.Next() {
-		var m model.CardComment
+	return queryAll(o.s.db, func(sc scanner) (m model.CardComment, err error) {
 		var at int64
-		if err := rows.Scan(&m.ID, &m.CardID, &m.Author, &m.AuthorName, &m.Text, &at); err != nil {
-			return nil, err
-		}
+		err = sc.Scan(&m.ID, &m.CardID, &m.Author, &m.AuthorName, &m.Text, &at)
 		m.CreatedAt = time.Unix(at, 0).UTC()
-		out = append(out, m)
-	}
-	return out, rows.Err()
+		return m, err
+	}, `SELECT m.id, m.card_id, COALESCE(m.author, 0), COALESCE(u.username, ''), m.text, m.created_at
+		FROM planning_comments m LEFT JOIN users u ON u.id = m.author WHERE m.card_id = ? ORDER BY m.id`, cardID)
 }
 
 // CommentCounts is how many comments each of the org's cards has.
 func (o *OrgStore) CommentCounts() (map[string]int, error) {
-	rows, err := o.s.db.Query(`SELECT m.card_id, count(*) FROM planning_comments m JOIN planning_cards c ON c.id = m.card_id
+	return queryMap(o.s.db, scanCount, `SELECT m.card_id, count(*) FROM planning_comments m JOIN planning_cards c ON c.id = m.card_id
 		WHERE c.org_id = ? GROUP BY m.card_id`, o.org)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var id string
-		var n int
-		if err := rows.Scan(&id, &n); err != nil {
-			return nil, err
-		}
-		out[id] = n
-	}
-	return out, rows.Err()
+}
+
+// scanCount reads a row of an id and a count.
+func scanCount(sc scanner) (id string, n int, err error) {
+	err = sc.Scan(&id, &n)
+	return id, n, err
 }
 
 // AddCardComment adds the view's user's comment to a card. text must be
@@ -956,21 +916,8 @@ func (o *OrgStore) UnlinkCard(cardID, kind, workID string) error {
 
 // CardsLinkedTo are the org's cards that link to a task or goal.
 func (o *OrgStore) CardsLinkedTo(kind, workID string) ([]model.Card, error) {
-	rows, err := o.s.db.Query("SELECT "+cardColumns+` FROM planning_cards c JOIN planning_links l ON l.card_id = c.id
+	return queryAll(o.s.db, scanCard, "SELECT "+cardColumns+` FROM planning_cards c JOIN planning_links l ON l.card_id = c.id
 		WHERE c.org_id = ? AND l.kind = ? AND l.work_id = ? ORDER BY c.title, c.id`, o.org, kind, workID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []model.Card{}
-	for rows.Next() {
-		c, err := scanCard(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
 }
 
 // TaskCards are the Planning cards, of any org, that link to task todoID,
