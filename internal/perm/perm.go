@@ -104,7 +104,16 @@ type run struct {
 
 // AskFunc decides a tool call itself instead of queueing it for the board,
 // e.g. by asking in the chat that started the run.
-type AskFunc func(ctx context.Context, tool string, input json.RawMessage) (allow bool, message string)
+type AskFunc func(ctx context.Context, tool string, input json.RawMessage) Answer
+
+// Answer is how an AskFunc decided a tool call: Allow it or not, with
+// Message saying why not. Answers are the user's answers to an AskTool
+// request, keyed by question text; allowing one needs an answer to each.
+type Answer struct {
+	Allow   bool
+	Message string
+	Answers map[string]string
+}
 
 type pending struct {
 	req  Request
@@ -356,10 +365,17 @@ func (b *Broker) ServeMCP(w http.ResponseWriter, r *http.Request) {
 func (b *Broker) answer(ctx context.Context, rn run, tool string, input json.RawMessage) string {
 	var res Request
 	if rn.ask != nil {
-		allow, msg := rn.ask(ctx, tool, input)
-		res.Decision, res.Message = "deny", msg
-		if allow {
+		a := rn.ask(ctx, tool, input)
+		res.Decision, res.Message = "deny", a.Message
+		if a.Allow {
 			res.Decision = "allow"
+		}
+		if a.Allow && tool == AskTool {
+			// A question is answered, not just allowed.
+			var err error
+			if res.Answers, err = checkAnswers(input, a.Answers); err != nil {
+				res.Decision, res.Message = "deny", "The user didn't answer: "+err.Error()+"."
+			}
 		}
 	} else {
 		res = b.ask(ctx, rn, tool, input)

@@ -18,6 +18,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/perm"
 )
 
 func TestWithTodoContext(t *testing.T) {
@@ -91,12 +92,12 @@ func TestChatApprovals(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a, sent := approvalClient(time.Minute)
 			done := make(chan bool)
-			go func() { ok, _ := a.forTurn(context.Background())(context.Background(), "Bash", input); done <- ok }()
+			go func() { done <- a.forTurn(context.Background())(context.Background(), "Bash", input).Allow }()
 			req := <-sent
 			if req.Kind != "permission" || req.Tool != "Bash" || string(req.Input) != string(input) || req.ID == "" {
 				t.Fatalf("request: %+v", req)
 			}
-			if !a.answer(req.ID, tc.allow) {
+			if !a.answer(req.ID, perm.Answer{Allow: tc.allow}) {
 				t.Fatal("request not pending")
 			}
 			if got := <-done; got != tc.want {
@@ -105,20 +106,38 @@ func TestChatApprovals(t *testing.T) {
 			if d := <-sent; d.Kind != "permission_decided" || d.ID != req.ID || d.Text != tc.decided {
 				t.Fatalf("decided: %+v", d)
 			}
-			if a.answer(req.ID, true) {
+			if a.answer(req.ID, perm.Answer{Allow: true}) {
 				t.Fatal("answered twice")
 			}
 		})
 	}
 }
 
+func TestChatApprovalAnswers(t *testing.T) {
+	parallel(t)
+
+	a, sent := approvalClient(time.Minute)
+	done := make(chan perm.Answer)
+	go func() {
+		done <- a.forTurn(context.Background())(context.Background(), perm.AskTool, json.RawMessage(`{"questions":[{"question":"Which?"}]}`))
+	}()
+	req := <-sent
+	if !a.answer(req.ID, perm.Answer{Allow: true, Answers: map[string]string{"Which?": "Blue"}}) {
+		t.Fatal("request not pending")
+	}
+	if got := <-done; !got.Allow || got.Answers["Which?"] != "Blue" {
+		t.Fatalf("answer: %+v", got)
+	}
+	<-sent
+}
+
 func TestChatApprovalTimeout(t *testing.T) {
 	parallel(t)
 
 	a, sent := approvalClient(20 * time.Millisecond)
-	ok, msg := a.forTurn(context.Background())(context.Background(), "Edit", json.RawMessage(`{}`))
-	if ok || msg == "" {
-		t.Fatalf("timeout should deny with a reason: %v %q", ok, msg)
+	ans := a.forTurn(context.Background())(context.Background(), "Edit", json.RawMessage(`{}`))
+	if ans.Allow || ans.Message == "" {
+		t.Fatalf("timeout should deny with a reason: %+v", ans)
 	}
 	<-sent
 	if d := <-sent; d.Text != "timeout" {
@@ -132,13 +151,13 @@ func TestChatApprovalTurnEnds(t *testing.T) {
 	a, sent := approvalClient(time.Minute)
 	turn, endTurn := context.WithCancel(context.Background())
 	done := make(chan bool)
-	go func() { ok, _ := a.forTurn(turn)(context.Background(), "Bash", json.RawMessage(`{}`)); done <- ok }()
+	go func() { done <- a.forTurn(turn)(context.Background(), "Bash", json.RawMessage(`{}`)).Allow }()
 	req := <-sent
 	endTurn() // the client disconnected or sent a new message
 	if <-done {
 		t.Fatal("ended turn should deny")
 	}
-	if a.answer(req.ID, true) {
+	if a.answer(req.ID, perm.Answer{Allow: true}) {
 		t.Fatal("request should no longer be pending")
 	}
 }

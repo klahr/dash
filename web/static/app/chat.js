@@ -638,7 +638,7 @@ function chatStreamHandler(c) {
         break;
       }
       case "permission":
-        cur.reply.before(entering(chatPermCard(d, (decision) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision })))));
+        cur.reply.before(entering(chatPermCard(d, (decision, answers) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision, answers })))));
         speakApproval(d);
         c.waiting.add(d.id);
         c.onState();

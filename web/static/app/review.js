@@ -4,7 +4,7 @@ import { ask, attempt, toast } from "./dialogs.js";
 import { saveComments, state } from "./state.js";
 import { baseBranch } from "./events.js";
 import { renderBoard, title } from "./branches.js";
-import { describePerm, duration, isQuestion } from "./chatparts.js";
+import { describePerm, duration, isQuestion, questionGroups } from "./chatparts.js";
 import { openDetail, renderActions } from "./detail.js";
 import { renderPane } from "./drawmode.js";
 
@@ -120,31 +120,7 @@ function questionCard(p, withTodo) {
   const key = `${p.id}:${withTodo ? "board" : "task"}`;
   if (questionCards.has(key)) return questionCards.get(key);
   const t = state.todos.get(p.todo_id);
-  const qs = (Array.isArray(p.input?.questions) ? p.input.questions : []).filter((q) => q && typeof q.question === "string");
-  const groups = qs.map((q, qi) => {
-    const type = q.multiSelect ? "checkbox" : "radio", name = `ask-${p.id}-${withTodo ? "b" : "t"}-${qi}`;
-    const otherPick = h("input", { type, name, value: "", "aria-label": "Other" });
-    const other = h("input", { type: "text", class: "ask-other-text", placeholder: "Your own answer", maxLength: 2000, "aria-label": `Other answer: ${q.question}` });
-    other.addEventListener("input", () => { if (other.value.trim()) otherPick.checked = true; });
-    otherPick.addEventListener("change", () => { if (otherPick.checked) other.focus(); });
-    const el = h("fieldset", { class: "choice ask-q" },
-      h("legend", {}, q.header ? h("span", { class: "ask-head" }, q.header) : null, h("span", { class: "ask-text" }, q.question)),
-      q.multiSelect ? h("p", { class: "hint ask-multi" }, "Choose any that apply.") : null,
-      ...(Array.isArray(q.options) ? q.options : []).map((o) => h("label", { class: "radio" },
-        h("input", { type, name, value: String(o?.label ?? "") }),
-        h("span", {}, String(o?.label ?? ""), o?.description ? h("em", {}, o.description) : null))),
-      h("label", { class: "radio ask-other" }, otherPick, h("span", {}, "Other", other)));
-    return { q, el, otherPick, other };
-  });
-  const answers = () => {
-    const out = {};
-    for (const g of groups) {
-      const picked = [...g.el.querySelectorAll("input:checked")].map((i) => i === g.otherPick ? g.other.value.trim() : i.value).filter(Boolean);
-      if (!picked.length) return { missing: g };
-      out[g.q.question] = picked.join(", ");
-    }
-    return { out };
-  };
+  const { qs, groups, answers, focusMissing } = questionGroups(p, `ask-${p.id}-${withTodo ? "b" : "t"}`);
   const send = (body, done) => attempt(async () => {
     buttons.forEach((b) => { b.disabled = true; });
     try {
@@ -167,7 +143,7 @@ function questionCard(p, withTodo) {
     const a = answers();
     if (a.missing) {
       toast(`Answer “${a.missing.q.header || a.missing.q.question}” first`);
-      (a.missing.el.querySelector("input:checked") ? a.missing.other : a.missing.el.querySelector("input"))?.focus();
+      focusMissing(a.missing);
       return;
     }
     send({ decision: "allow", answers: a.out }, "Answer sent");

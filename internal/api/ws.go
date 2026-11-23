@@ -34,7 +34,7 @@ import (
 //
 //	client → {"type":"send","project":"<id>","todo":"<id>","messages":[{"role":"user","content":"…"}, …]}
 //	client → {"type":"cancel"} stops the reply streaming, keeping what it said so far
-//	client → {"type":"permission","id":"<id>","decision":"allow"|"deny"}
+//	client → {"type":"permission","id":"<id>","decision":"allow"|"deny","answers":{question: answer}} (answers only for AskUserQuestion)
 //	client → {"type":"shell","id":"<id>","project":"<id>","todo":"<id>","messages":[…, {"role":"user","content":"!<command>"}]}
 //	server → {"kind":"thinking"|"text"|"done"|"error","text":"…"}
 //	server → {"kind":"cwd","text":"<dir>"} where the turn runs
@@ -142,9 +142,9 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if msg.Type == "permission" {
-			if !approvals.answer(msg.ID, msg.Decision == "allow") {
+			if !approvals.answer(msg.ID, perm.Answer{Allow: msg.Decision == "allow", Answers: msg.Answers}) {
 				// Asked by the turn on the caller's runner.
-				relay.send(map[string]string{"type": "permission", "id": msg.ID, "decision": msg.Decision})
+				relay.send(map[string]any{"type": "permission", "id": msg.ID, "decision": msg.Decision, "answers": msg.Answers})
 			}
 			continue
 		}
@@ -261,10 +261,13 @@ type chatRequest struct {
 	Messages []agent.ChatMessage `json:"messages"`
 	ID       string              `json:"id"`
 	Decision string              `json:"decision"`
-	Review   bool                `json:"review"`  // with "todo": the turn reviews it, locking its status
-	Runner   string              `json:"runner"`  // chat on a hub that doesn't run Claude: which of the caller's runners
-	Mode     string              `json:"mode"`    // a hub's project chat on its runner: the hub project's permission mode
-	Suggest  bool                `json:"suggest"` // guess the user's next message once the reply is done
+	// Answers are the user's answers to a question ("permission" for an
+	// AskUserQuestion request), keyed by question text.
+	Answers map[string]string `json:"answers,omitempty"`
+	Review  bool              `json:"review"`  // with "todo": the turn reviews it, locking its status
+	Runner  string            `json:"runner"`  // chat on a hub that doesn't run Claude: which of the caller's runners
+	Mode    string            `json:"mode"`    // a hub's project chat on its runner: the hub project's permission mode
+	Suggest bool              `json:"suggest"` // guess the user's next message once the reply is done
 	// Hub marks a hub's own chat on its runner (runnerChat): Project
 	// and Todo are the hub's ids, not the runner's.
 	Hub bool `json:"hub"`
@@ -862,14 +865,14 @@ type chatApprovals struct {
 	timeout time.Duration
 
 	mu      sync.Mutex
-	pending map[string]chan bool
+	pending map[string]chan perm.Answer
 }
 
 // forTurn returns the approver for one turn: requests are denied when the
 // turn ends (a new message, or the client disconnects) as well as when
 // Claude's own request is cancelled.
 func (a *chatApprovals) forTurn(turn context.Context) perm.AskFunc {
-	return func(ctx context.Context, tool string, input json.RawMessage) (bool, string) {
+	return func(ctx context.Context, tool string, input json.RawMessage) perm.Answer {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		defer context.AfterFunc(turn, cancel)()
@@ -877,14 +880,14 @@ func (a *chatApprovals) forTurn(turn context.Context) perm.AskFunc {
 	}
 }
 
-func (a *chatApprovals) ask(ctx context.Context, tool string, input json.RawMessage) (bool, string) {
+func (a *chatApprovals) ask(ctx context.Context, tool string, input json.RawMessage) perm.Answer {
 	buf := make([]byte, 6)
 	_, _ = rand.Read(buf)
 	id := hex.EncodeToString(buf)
-	ch := make(chan bool, 1)
+	ch := make(chan perm.Answer, 1)
 	a.mu.Lock()
 	if a.pending == nil {
-		a.pending = map[string]chan bool{}
+		a.pending = map[string]chan perm.Answer{}
 	}
 	a.pending[id] = ch
 	a.mu.Unlock()
@@ -899,30 +902,30 @@ func (a *chatApprovals) ask(ctx context.Context, tool string, input json.RawMess
 	defer timer.Stop()
 	decided := func(d string) { a.send(agent.ChatDelta{Kind: "permission_decided", ID: id, Text: d}) }
 	select {
-	case ok := <-ch:
-		if ok {
+	case ans := <-ch:
+		if ans.Allow {
 			decided("allow")
-			return true, ""
+			return perm.Answer{Allow: true, Answers: ans.Answers}
 		}
 		decided("deny")
-		return false, "The user denied this action."
+		return perm.Answer{Message: "The user denied this action."}
 	case <-timer.C:
 		decided("timeout")
-		return false, "Nobody answered the permission request in time."
+		return perm.Answer{Message: "Nobody answered the permission request in time."}
 	case <-ctx.Done():
 		decided("deny")
-		return false, "The request was cancelled."
+		return perm.Answer{Message: "The request was cancelled."}
 	}
 }
 
-// answer reports whether id was waiting.
-func (a *chatApprovals) answer(id string, allow bool) bool {
+// answer answers request id with ans, and reports whether id was waiting.
+func (a *chatApprovals) answer(id string, ans perm.Answer) bool {
 	a.mu.Lock()
 	ch, ok := a.pending[id]
 	delete(a.pending, id)
 	a.mu.Unlock()
 	if ok {
-		ch <- allow
+		ch <- ans
 	}
 	return ok
 }

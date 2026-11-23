@@ -253,7 +253,7 @@ function delta(d) {
       break;
     }
     case "permission":
-      cur.reply.before(entering(chatPermCard(d, (decision) => decide(d.id, decision))));
+      cur.reply.before(entering(chatPermCard(d, (decision, answers) => decide(d.id, decision, answers))));
       break;
     case "permission_decided":
       permDecided(cur.el, d);
@@ -269,8 +269,8 @@ function delta(d) {
   toEnd();
 }
 
-function decide(id, decision) {
-  sendWS({ type: "permission", id, decision });
+function decide(id, decision, answers) {
+  sendWS({ type: "permission", id, decision, answers });
 }
 
 // settle ends the reply: done, or failed with why (the question is taken

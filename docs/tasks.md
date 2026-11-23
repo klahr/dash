@@ -90,6 +90,9 @@ with your answers.
 Click **Decline** to skip the question. You can tell Claude why. A question nobody answers is
 declined like any other request when it times out.
 
+A chat asks its questions the same way: the card shows in the chat, with **Submit** and
+**Decline**.
+
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
 ## Review

@@ -184,14 +184,14 @@ func TestRegisterFuncAnswersItself(t *testing.T) {
 	defer srv.Close()
 	var gotTool, gotCmd string
 	allow := false
-	token, release := b.RegisterFunc(owner, func(_ context.Context, tool string, input json.RawMessage) (bool, string) {
+	token, release := b.RegisterFunc(owner, func(_ context.Context, tool string, input json.RawMessage) Answer {
 		var in struct{ Command string }
 		_ = json.Unmarshal(input, &in)
 		gotTool, gotCmd = tool, in.Command
 		if allow {
-			return true, ""
+			return Answer{Allow: true}
 		}
-		return false, "no thanks"
+		return Answer{Message: "no thanks"}
 	})
 
 	_, out := rpc(t, srv, token, "tools/call", call("Bash"))
@@ -351,5 +351,33 @@ func TestAnswersIgnoredForOtherTools(t *testing.T) {
 	in := a["updatedInput"].(map[string]any)
 	if a["behavior"] != "allow" || in["command"] != "npm install" || in["answers"] != nil {
 		t.Fatalf("allow: %v", a)
+	}
+}
+
+func TestRegisterFuncAnswersQuestion(t *testing.T) {
+	b := NewBroker(nopPub{})
+	srv := httptest.NewServer(http.HandlerFunc(b.ServeMCP))
+	defer srv.Close()
+	var given map[string]string
+	token, release := b.RegisterFunc(owner, func(context.Context, string, json.RawMessage) Answer {
+		return Answer{Allow: true, Answers: given}
+	})
+	defer release()
+	ask := map[string]any{"name": ToolName, "arguments": map[string]any{"tool_name": AskTool,
+		"input": map[string]any{"questions": []any{map[string]any{"question": "Which?", "options": []any{map[string]any{"label": "Blue"}}}}}}}
+
+	// Allowed without an answer: Claude is told so, not given an empty one.
+	_, out := rpc(t, srv, token, "tools/call", ask)
+	if a := answer(t, out); a["behavior"] != "deny" {
+		t.Fatalf("unanswered: %v", a)
+	}
+	given = map[string]string{"Which?": " Blue "}
+	_, out = rpc(t, srv, token, "tools/call", ask)
+	a := answer(t, out)
+	if a["behavior"] != "allow" {
+		t.Fatalf("answered: %v", a)
+	}
+	if got := a["updatedInput"].(map[string]any)["answers"].(map[string]any)["Which?"]; got != "Blue" {
+		t.Fatalf("answers in input: %v", a["updatedInput"])
 	}
 }

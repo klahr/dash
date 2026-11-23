@@ -167,9 +167,75 @@ function toolGroup(first) {
   return g;
 }
 
+// questionGroups builds the questions of Claude's question request p
+// (AskUserQuestion): each with its header, its options (checkboxes when
+// several may be chosen) and an Other field for an answer in the user's own
+// words. Inputs are named from prefix, which must be unique on the page.
+// answers() returns {out}, the answers keyed by question (several choices
+// joined with ", "), or {missing} for the first group left unanswered.
+export function questionGroups(p, prefix) {
+  const qs = (Array.isArray(p.input?.questions) ? p.input.questions : []).filter((q) => q && typeof q.question === "string");
+  const groups = qs.map((q, qi) => {
+    const type = q.multiSelect ? "checkbox" : "radio", name = `${prefix}-${qi}`;
+    const otherPick = h("input", { type, name, value: "", "aria-label": "Other" });
+    const other = h("input", { type: "text", class: "ask-other-text", placeholder: "Your own answer", maxLength: 2000, "aria-label": `Other answer: ${q.question}` });
+    other.addEventListener("input", () => { if (other.value.trim()) otherPick.checked = true; });
+    otherPick.addEventListener("change", () => { if (otherPick.checked) other.focus(); });
+    const el = h("fieldset", { class: "choice ask-q" },
+      h("legend", {}, q.header ? h("span", { class: "ask-head" }, q.header) : null, h("span", { class: "ask-text" }, q.question)),
+      q.multiSelect ? h("p", { class: "hint ask-multi" }, "Choose any that apply.") : null,
+      ...(Array.isArray(q.options) ? q.options : []).map((o) => h("label", { class: "radio" },
+        h("input", { type, name, value: String(o?.label ?? "") }),
+        h("span", {}, String(o?.label ?? ""), o?.description ? h("em", {}, o.description) : null))),
+      h("label", { class: "radio ask-other" }, otherPick, h("span", {}, "Other", other)));
+    return { q, el, otherPick, other };
+  });
+  const answers = () => {
+    const out = {};
+    for (const g of groups) {
+      const picked = [...g.el.querySelectorAll("input:checked")].map((i) => i === g.otherPick ? g.other.value.trim() : i.value).filter(Boolean);
+      if (!picked.length) return { missing: g };
+      out[g.q.question] = picked.join(", ");
+    }
+    return { out };
+  };
+  // focusMissing puts focus where group g wants an answer.
+  const focusMissing = (g) => (g.el.querySelector("input:checked") ? g.other : g.el.querySelector("input"))?.focus();
+  return { qs, groups, answers, focusMissing };
+}
+
+// chatQuestionCard answers Claude's question request p in a chat: decide
+// gets "allow" with the answers, or "deny".
+function chatQuestionCard(p, decide) {
+  const { qs, groups, answers, focusMissing } = questionGroups(p, `chat-ask-${p.id}`);
+  const hint = h("p", { class: "hint", role: "status", style: "margin:0 0 8px", hidden: true });
+  const done = () => card.querySelectorAll("button, input").forEach((el) => { el.disabled = true; });
+  const card = h("form", { class: "perm ask", "aria-label": `Claude asks: ${qs.map((q) => q.question).join(" ")}`, "data-id": p.id, onsubmit: (e) => {
+    e.preventDefault();
+    const a = answers();
+    if (a.missing) {
+      hint.textContent = `Answer “${a.missing.q.header || a.missing.q.question}” first`;
+      hint.hidden = false;
+      focusMissing(a.missing);
+      return;
+    }
+    hint.hidden = true;
+    done();
+    decide("allow", a.out);
+  } },
+    h("p", { class: "perm-q" }, qs.length > 1 ? "Claude has some questions" : "Claude has a question"),
+    ...groups.map((g) => g.el),
+    hint,
+    h("div", { class: "perm-actions" },
+      ib({ class: "btn allow", type: "submit" }, "check", "Submit"),
+      ib({ class: "btn danger", type: "button", onclick: () => { done(); decide("deny"); } }, "x", "Decline")));
+  return card;
+}
+
 // An approval request from a chat, answered over its own socket: decide
-// gets "allow" or "deny".
+// gets "allow" or "deny", and for a question (see isQuestion) the answers.
 export function chatPermCard(p, decide) {
+  if (isQuestion(p)) return chatQuestionCard(p, decide);
   const d = describePerm(p);
   const answer = (decision) => (e) => {
     e.currentTarget.parentElement.querySelectorAll("button").forEach((b) => { b.disabled = true; });
