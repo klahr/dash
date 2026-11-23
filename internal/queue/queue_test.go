@@ -156,7 +156,14 @@ func (h *harness) add(title string) model.Todo {
 
 func (h *harness) waitFor(id string, want model.TodoStatus) model.Todo {
 	h.t.Helper()
-	deadline := time.Now().Add(waitTimeout)
+	return h.waitForWithin(id, want, waitTimeout)
+}
+
+// waitForWithin is waitFor with its own bound, for a wait that covers
+// several test runs.
+func (h *harness) waitForWithin(id string, want model.TodoStatus, timeout time.Duration) model.Todo {
+	h.t.Helper()
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		td, err := h.st.GetTodo(id)
 		if err == nil && td.Status == want {

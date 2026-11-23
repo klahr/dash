@@ -164,6 +164,13 @@ func TestBatchFailureBlamesOnlyTheCulprit(t *testing.T) {
 	tds := h.reviewed(titles...)
 	h.approveTogether(tds)
 
+	// Wait in the order the queue gets there: the good ones land after the
+	// batch's run and three runs one by one (slow on a busy machine, so a
+	// longer bound), and only then is the culprit sent back.
+	goods := []model.Todo{tds[0], tds[2]}
+	for _, td := range goods {
+		h.waitForWithin(td.ID, model.StatusMerged, 3*waitTimeout)
+	}
 	bad := h.waitFor(tds[1].ID, model.StatusFailed)
 	if !strings.Contains(bad.Error, "tests fail") {
 		t.Errorf("bad's error = %q", bad.Error)
@@ -174,8 +181,7 @@ func TestBatchFailureBlamesOnlyTheCulprit(t *testing.T) {
 	if log := h.logOf(bad.ID); !strings.Contains(log, "testing it on its own, on top of main and #"+tds[0].ID) {
 		t.Errorf("bad's log should show it tested on its own on top of good1:\n%s", log)
 	}
-	for _, td := range []model.Todo{tds[0], tds[2]} {
-		h.waitFor(td.ID, model.StatusMerged)
+	for _, td := range goods {
 		if got := h.onMain(td.Title + ".txt"); got != td.Title+"\n" {
 			t.Errorf("main has %s.txt %q", td.Title, got)
 		}
