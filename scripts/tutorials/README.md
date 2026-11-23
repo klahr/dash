@@ -6,6 +6,8 @@ the same animated intro and outro around every video.
 
 The demo Dash comes from [`../landing-shots`](../landing-shots): `demo.sh` starts it,
 `seed.mjs` fills it, `fakeclaude.mjs` stands in for Claude Code and `cdp.mjs` drives Chrome.
+The 90-second demo video, recorded by hand with real Claude runs, uses the same demo: see
+[its README](../landing-shots/README.md#the-demo-video).
 
 ## What you need
 

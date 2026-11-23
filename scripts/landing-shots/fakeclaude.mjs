@@ -7,8 +7,15 @@
 // A task whose prompt matches a "hold" entry keeps running while
 // $DEMO_DIR/hold exists. Every run reports the usage windows Claude Code
 // would (rate_limit_event), so the usage meters have something to show.
+//
+// Each task has a session of its own (demo-<id>), so a resumed run (a
+// rework, or a merge conflict sent back) knows its task even though Dash
+// then sends only the new notes. A conflict is resolved by keeping both
+// sides' changes (it needs merge.conflictStyle diff3, which demo.sh sets);
+// a task with rework() makes that change on any other rework.
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const args = process.argv.slice(2);
 const has = (a) => args.includes(a);
@@ -24,6 +31,11 @@ if (!stdin.trim()) {
   process.exit(1);
 }
 
+// The session this run reports: --resume's, or its task's (see task()).
+let session = (() => {
+  const i = args.indexOf('--resume');
+  return i >= 0 ? args[i + 1] : 'demo-session';
+})();
 const out = (v) => process.stdout.write(JSON.stringify(v) + '\n');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const hour = 3600;
@@ -40,7 +52,7 @@ const usage = () => out({
 });
 const result = (text, cost = 0.42, turns = 14) => out({
   type: 'result', subtype: 'success', is_error: false, result: text, num_turns: turns,
-  total_cost_usd: cost, session_id: 'demo-session',
+  total_cost_usd: cost, session_id: session,
   usage: { input_tokens: 18400, output_tokens: 6200, cache_read_input_tokens: 412000, cache_creation_input_tokens: 21000 },
 });
 let toolN = 0;
@@ -78,9 +90,275 @@ function write(file, text) {
   writeFileSync(file, text);
 }
 
+// The demo video's five tasks (seed.mjs's demo-video scene), by their
+// titles. Each works for a while (pace ms between steps), so the board
+// shows them running side by side. "Add dark mode" and "Update the README"
+// both change the README's line about dark mode, so the second of them to
+// merge conflicts; "Validate the webhook URL" leaves the Save button as low
+// as it was, and fixes it when the task is sent back with any note.
+const videoTasks = [
+  {
+    id: 'dark-mode', key: /^# Task: Add dark mode$/m, pace: 2500,
+    short: 'Dark theme that follows the system',
+    summary: 'Added a dark theme: the colours in `public/style.css` are CSS custom properties now, with dark values under `prefers-color-scheme: dark`, so every page follows the system setting. The README says so.',
+    steps: [['Read', { file_path: 'public/style.css' }], ['Grep', { pattern: '#[0-9a-f]{6}', path: 'public' }], ['Edit', { file_path: 'public/style.css' }], ['Edit', { file_path: 'README.md' }], ['Bash', { command: 'node --test' }]],
+    run() {
+      const colours = [
+        ['color: #ffffff', 'color: var(--on-accent)'],
+        ['#f6f7f9', 'var(--bg)'], ['#ffffff', 'var(--surface)'], ['#1d2330', 'var(--text)'], ['#2453d6', 'var(--accent)'],
+        ['#dde1e8', 'var(--border)'], ['#4a5263', 'var(--muted)'], ['#6b7385', 'var(--faint)'], ['#c3c9d4', 'var(--input-border)'],
+        ['#1f7a3d', 'var(--ok)'], ['#c42b2b', 'var(--danger)'], ['#eceff3', 'var(--rule)'],
+      ];
+      let css = readFileSync('public/style.css', 'utf8');
+      for (const [from, to] of colours) css = css.replaceAll(from, to);
+      css = css.replace('/* The shop\'s shared styles. */\n', `/* The shop's shared styles. Colours are custom properties, with a dark
+   theme that follows the system setting. */
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1d2330;
+  --muted: #4a5263;
+  --faint: #6b7385;
+  --accent: #2453d6;
+  --on-accent: #ffffff;
+  --border: #dde1e8;
+  --input-border: #c3c9d4;
+  --rule: #eceff3;
+  --ok: #1f7a3d;
+  --danger: #c42b2b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151c;
+    --surface: #1b1f29;
+    --text: #e6e9ef;
+    --muted: #a3abbb;
+    --faint: #8189a0;
+    --accent: #7a9bff;
+    --on-accent: #0b0e14;
+    --border: #2c3240;
+    --input-border: #3a4152;
+    --rule: #252a36;
+    --ok: #5fd08a;
+    --danger: #ff7a7a;
+  }
+}
+`);
+      write('public/style.css', css);
+      edit('README.md', '- Light theme only: dark mode is planned\n', '- A dark theme that follows the system setting\n');
+    },
+  },
+  {
+    id: 'webhook-url', key: /^# Task: Validate the webhook URL$/m, pace: 2500,
+    short: 'Webhook URL must be https',
+    summary: 'The webhook URL must now be an absolute `https://` address that isn\'t localhost or a private network. The field is a required `type="url"` input, the server checks it again in `src/webhooks.js` and shows "Enter an https:// URL" under the field, and `test/webhooks.test.js` covers it.',
+    steps: [['Read', { file_path: 'src/views/webhooks.html' }], ['Read', { file_path: 'src/webhooks.js' }], ['Edit', { file_path: 'src/webhooks.js' }], ['Edit', { file_path: 'src/views/webhooks.html' }], ['Edit', { file_path: 'src/server.js' }], ['Write', { file_path: 'test/webhooks.test.js' }], ['Bash', { command: 'node --test' }]],
+    run() {
+      write('src/webhooks.js', `// The webhook Acme calls when an order is paid. Kept in memory for now.
+let url = '';
+
+export function webhookUrl() {
+  return url;
+}
+
+// validWebhookUrl reports whether value is an absolute https:// URL that
+// isn't localhost or a private network address.
+export function validWebhookUrl(value) {
+  let u;
+  try {
+    u = new URL(value);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:') return false;
+  const host = u.hostname;
+  return !(host === 'localhost' || host.endsWith('.localhost') || /^(127|10|192\\.168)\\./.test(host) || /^172\\.(1[6-9]|2\\d|3[01])\\./.test(host));
+}
+
+// setWebhookUrl saves value, or returns an error message and keeps the old one.
+export function setWebhookUrl(value) {
+  value = value.trim();
+  if (!validWebhookUrl(value)) return 'Enter an https:// URL';
+  url = value;
+  return '';
+}
+`);
+      edit('src/views/webhooks.html',
+        '    <input id="webhook-url" name="url" type="text" placeholder="https://example.com/hooks/orders" value="{{url}}">\n',
+        '    <input id="webhook-url" name="url" type="url" required pattern="https://.*" placeholder="https://example.com/hooks/orders" value="{{url}}" aria-describedby="webhook-error">\n');
+      edit('src/views/webhooks.html', '  {{saved}}\n', '  <p class="error" id="webhook-error">{{error}}</p>\n  {{saved}}\n');
+      edit('src/server.js', `    setWebhookUrl((await form(req)).get('url') || '');
+    page(res, 'Webhooks', fill(file('./views/webhooks.html'), { url: escape(webhookUrl()), saved: '<p class="notice">Saved.</p>' }), ['webhooks.css']);`,
+      `    const value = (await form(req)).get('url') || '';
+    const error = setWebhookUrl(value);
+    if (error) res.statusCode = 400;
+    page(res, 'Webhooks', fill(file('./views/webhooks.html'), {
+      url: escape(error ? value : webhookUrl()), error, saved: error ? '' : '<p class="notice">Saved.</p>',
+    }), ['webhooks.css']);`);
+      write('test/webhooks.test.js', `import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { validWebhookUrl, setWebhookUrl, webhookUrl } from '../src/webhooks.js';
+
+test('an https URL is valid', () => {
+  assert.ok(validWebhookUrl('https://example.com/hooks/orders'));
+});
+
+test('anything else is not', () => {
+  for (const u of ['', 'not a url', 'http://example.com/hooks', 'ftp://example.com', 'https://localhost/x', 'https://192.168.1.4/x']) {
+    assert.equal(validWebhookUrl(u), false, u);
+  }
+});
+
+test('a bad URL keeps the saved one', () => {
+  assert.equal(setWebhookUrl('https://example.com/a'), '');
+  assert.equal(setWebhookUrl('nope'), 'Enter an https:// URL');
+  assert.equal(webhookUrl(), 'https://example.com/a');
+});
+`);
+    },
+    rework: {
+      summary: 'Lined the Save button up with the URL field: the row centres its items and the button lost its stray margins.',
+      steps: [['Read', { file_path: 'public/webhooks.css' }], ['Edit', { file_path: 'public/webhooks.css' }]],
+      run() {
+        edit('public/webhooks.css', 'align-items: flex-start;', 'align-items: center;');
+        edit('public/webhooks.css', '.webhook-form .save { margin-top: 22px; margin-left: 4px; }', '.webhook-form .save { margin: 0; }');
+      },
+    },
+  },
+  {
+    id: 'export-dates', key: /^# Task: Fix the date bug in exports$/m, pace: 2500,
+    short: 'Export dates no longer a month early',
+    summary: 'The orders export wrote every date a month early (January as month 00): `formatDate` used `getMonth()`, which counts from 0. It adds 1 now, and a test pins January and December.',
+    steps: [['Read', { file_path: 'src/export.js' }], ['Write', { file_path: 'test/export.test.js' }], ['Bash', { command: 'node --test test/export.test.js' }, '✖ dates keep their month\n  expected: 2026-01-31\n  actual:   2026-00-31'], ['Edit', { file_path: 'src/export.js' }], ['Bash', { command: 'node --test' }]],
+    run() {
+      edit('src/export.js', 'pad(d.getMonth())', 'pad(d.getMonth() + 1)');
+      edit('test/export.test.js', "import { ordersCsv } from '../src/export.js';", "import { ordersCsv, formatDate } from '../src/export.js';");
+      write('test/export.test.js', readFileSync('test/export.test.js', 'utf8') + `
+test('dates keep their month', () => {
+  assert.equal(formatDate(new Date(2026, 0, 31)), '2026-01-31');
+  assert.equal(formatDate(new Date(2026, 11, 1)), '2026-12-01');
+});
+`);
+    },
+  },
+  {
+    id: 'billing-tests', key: /^# Task: Add tests for the billing page$/m, pace: 2500,
+    short: 'Tests for plans, proration and VAT',
+    summary: 'Added `test/billing.test.js`: plan prices, prorating a month that started on the 11th, VAT rounding, extra seats and an unknown plan. They all pass; no bug in `src/billing.js`.',
+    steps: [['Read', { file_path: 'src/billing.js' }], ['Read', { file_path: 'src/views/billing.html' }], ['Write', { file_path: 'test/billing.test.js' }], ['Bash', { command: 'node --test test/billing.test.js' }], ['Bash', { command: 'node --test' }]],
+    run() {
+      write('test/billing.test.js', `import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { PLANS, prorate, vat, invoice } from '../src/billing.js';
+
+test('a full month costs the plan price', () => {
+  const inv = invoice({ plan: 'starter' });
+  assert.equal(inv.net, PLANS.starter.price);
+  assert.equal(inv.vat, 225);
+  assert.equal(inv.total, 1125);
+});
+
+test('a month started late is prorated to the cent', () => {
+  assert.equal(prorate(2900, 20, 30), 1933);
+  assert.equal(prorate(2900, 30, 30), 2900);
+});
+
+test('VAT rounds to the nearest cent', () => {
+  assert.equal(vat(2599), 650);
+  assert.equal(vat(2598), 650);
+  assert.equal(vat(2597), 649);
+});
+
+test('extra seats are billed and prorated too', () => {
+  const inv = invoice({ plan: 'growth', seats: 3, startedDay: 11, daysInMonth: 30 });
+  assert.deepEqual(inv.lines.map((l) => l.amount), [1933, 667]);
+  assert.equal(inv.total, 3250);
+});
+
+test('an unknown plan is an error', () => {
+  assert.throws(() => invoice({ plan: 'gold' }), /unknown plan gold/);
+});
+`);
+    },
+  },
+  {
+    id: 'readme', key: /^# Task: Update the README$/m, pace: 2500,
+    short: 'README matches the shop today',
+    summary: 'Rewrote the README: the Features list now names what the shop has (card checkout, webhooks, billing, the CSV export) instead of PayPal, PDF export and gift cards, and it runs with `npm start` on `$PORT` and tests with `npm test` (node\'s test runner), not Yarn and Jest.',
+    steps: [['Read', { file_path: 'README.md' }], ['Read', { file_path: 'package.json' }], ['Grep', { pattern: 'PORT', path: 'src' }], ['Write', { file_path: 'README.md' }]],
+    run() {
+      write('README.md', `# acme-shop
+
+The Acme storefront, with the settings pages and exports behind it.
+
+## Features
+
+- Products and a cart
+- Card checkout, with free shipping from €50
+- Webhooks: Acme calls your URL when an order is paid
+- Billing: plans, extra seats and a prorated first month
+- Orders export as CSV
+
+## Run it
+
+Needs Node 22. There is nothing to install.
+
+    npm start    # http://localhost:4100, or $PORT
+    npm test     # node --test
+`);
+    },
+  },
+];
+
+// conflictFiles are the files with conflict markers in the working tree.
+function conflictFiles() {
+  try {
+    return execFileSync('git', ['grep', '-l', '-e', '^<<<<<<< '], { encoding: 'utf8' }).split('\n').filter(Boolean);
+  } catch {
+    return []; // git grep exits 1 when nothing matches
+  }
+}
+
+// merge3 resolves one conflict by keeping both sides' changes: ours, less
+// the base lines theirs dropped, with the lines theirs added put after the
+// line before them.
+function merge3(ours, base, theirs) {
+  if (!base) return [...ours, ...theirs.filter((l) => !ours.includes(l))];
+  const dropped = new Set(base.filter((l) => !theirs.includes(l)));
+  const res = ours.filter((l) => !dropped.has(l));
+  let at = 0;
+  for (const l of theirs) {
+    const i = res.indexOf(l, at);
+    if (i >= 0) at = i + 1;
+    else if (!base.includes(l)) res.splice(at++, 0, l);
+  }
+  return res;
+}
+
+// resolveConflicts rewrites every conflict in file (diff3 markers) with merge3.
+function resolveConflicts(file) {
+  const out_ = [];
+  let part = null; // 'ours', 'base' or 'theirs' inside a conflict
+  let ours, base, theirs;
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    if (line.startsWith('<<<<<<< ')) { part = 'ours'; ours = []; base = null; theirs = []; continue; }
+    if (part && line.startsWith('||||||| ')) { part = 'base'; base = []; continue; }
+    if (part && line === '=======') { part = 'theirs'; continue; }
+    if (part && line.startsWith('>>>>>>> ')) { out_.push(...merge3(ours, base, theirs)); part = null; continue; }
+    if (part === 'ours') ours.push(line);
+    else if (part === 'base') base.push(line);
+    else if (part === 'theirs') theirs.push(line);
+    else out_.push(line);
+  }
+  writeFileSync(file, out_.join('\n'));
+}
+
 // The demo tasks: a word in the prompt, what Claude "does", and whether
 // the run holds (stays Running) while $DEMO_DIR/hold exists.
 const tasks = [
+  ...videoTasks,
   {
     key: /discount code/i, short: 'Discount codes at checkout, with tests', summary: 'Added discount codes: `src/discounts.js` validates a code and works out the reduction, checkout applies it before shipping, and the tests cover percentage, fixed and expired codes.',
     run() {
@@ -253,10 +531,55 @@ test('no hint once shipping is free', () => {
   { key: /inline the critical css/i, hold: true, steps: [['Read', { file_path: 'src/views/layout.html' }], ['Bash', { command: 'npx lighthouse http://localhost:4100 --only-categories=performance --quiet' }]] },
 ];
 
+const sessionOf = (t) => `demo-${t.id || tasks.indexOf(t)}`;
+
+// steps shows tool calls pace ms apart: [name, input, output?]. FAKECLAUDE_PACE_MS
+// overrides the pace (0 for tests, more to slow a rehearsal down).
+async function steps(list, pace) {
+  if (process.env.FAKECLAUDE_PACE_MS) pace = Number(process.env.FAKECLAUDE_PACE_MS);
+  for (const [name, input, output] of list) {
+    await sleep(pace);
+    tool(name, input, output || 'ok');
+  }
+  await sleep(pace);
+}
+
 async function task() {
-  out({ type: 'system', subtype: 'init', session_id: 'demo-session' });
+  // A resumed run gets only the new notes: its task is its session's.
+  const resumed = has('--resume');
+  const t = (resumed && tasks.find((x) => sessionOf(x) === session)) || tasks.find((x) => x.key.test(stdin));
+  if (t) session = sessionOf(t);
+  out({ type: 'system', subtype: 'init', session_id: session });
   usage();
-  const t = tasks.find((x) => x.key.test(stdin));
+  // The merge queue sent it back: main conflicts with it.
+  if (/merging it into your work conflicts in|conflict markers are still in the code/.test(stdin)) {
+    const files = conflictFiles();
+    say(`\`main\` moved on under this task. I'll resolve the conflicts in ${files.join(', ')}, keeping both changes.`);
+    await steps(files.map((f) => ['Read', { file_path: f }]), t?.pace || 500);
+    files.forEach(resolveConflicts);
+    await steps([...files.map((f) => ['Edit', { file_path: f }]), ['Bash', { command: 'node --test' }]], t?.pace || 500);
+    const text = `Resolved the conflicts in ${files.join(', ')}: both this task's change and the one now on main are kept.`;
+    say(text);
+    return result(text, 0.12, 5);
+  }
+  // Sent back with notes (Rework…): its rework, if it has one.
+  const rework = t?.rework && (resumed ? !stdin.includes('You were interrupted') : stdin.includes('## Follow-up notes'));
+  if (rework) {
+    say('Thanks for the picture: I\'ll fix that.');
+    await steps(t.rework.steps, t.pace || 500);
+    t.rework.run();
+    await steps([['Bash', { command: 'node --test' }, '# pass\n# fail 0']], t.pace || 500);
+    say(t.rework.summary);
+    return result(t.rework.summary, 0.09, 4);
+  }
+  if (t?.steps && !t.hold) {
+    say('I\'ll read the relevant code, make the change and run the tests.');
+    await steps(t.steps.slice(0, -1), t.pace);
+    t.run();
+    await steps(t.steps.slice(-1), t.pace);
+    say(t.summary);
+    return result(t.summary);
+  }
   if (!t) {
     say('Nothing to do for this one.');
     result('Nothing to change.', 0.05, 2);
@@ -355,6 +678,8 @@ async function chat() {
 // A short call: a title, or the summary of a finished task's report.
 // A task with a title of its own is named by its prompt.
 const small = () => console.log(tasks.find((t) => t.summary && stdin.includes(t.summary.slice(0, 40)))?.short
+  || (stdin.includes('Lined the Save button up') && 'Save button lined up with the field')
+  || (stdin.includes('Resolved the conflicts in') && 'Conflicts with main resolved')
   || tasks.find((t) => t.title && t.key.test(stdin))?.title || 'Demo task');
 
 try {

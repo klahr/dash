@@ -3,10 +3,11 @@
 // in every lane, and a goal, for the landing page's screenshots. A scene
 // other than the default "landing" seeds another starting state:
 // "first-task" is a quiet board for scripts/tutorials/first-task.yaml, two
-// tasks done and two drafts.
+// tasks done and two drafts; "demo-video" the demo video's five drafts.
 //
-//   node seed.mjs http://127.0.0.1:7791 <project id> [landing|first-task]
+//   node seed.mjs http://127.0.0.1:7791 <project id> [landing|first-task|demo-video]
 import { writeFileSync } from 'node:fs';
+import { VIDEO_TASKS } from './video-tasks.mjs';
 
 const [base, pid, scene = 'landing'] = process.argv.slice(2);
 const demo = process.env.DEMO_DIR || '/tmp/landing-demo';
@@ -132,6 +133,17 @@ async function firstTask() {
   return {};
 }
 
-const scenes = { landing, 'first-task': firstTask };
+// The 90-second demo video (README.md here): the five tasks of
+// video-tasks.mjs as drafts, to be queued on camera, or queued at once with
+// SEED_QUEUE=1.
+async function demoVideo() {
+  await api('PATCH', `/api/projects/${pid}`, { run_command: 'npm start', test_command: 'node --test' });
+  const queue = !!process.env.SEED_QUEUE;
+  const ids = [];
+  for (const [title, prompt] of VIDEO_TASKS) ids.push((await add(title, prompt, { enqueue: queue })).id);
+  return { tasks: ids };
+}
+
+const scenes = { landing, 'first-task': firstTask, 'demo-video': demoVideo };
 if (!scenes[scene]) throw new Error(`unknown scene ${scene}: ${Object.keys(scenes).join(', ')}`);
 console.log(JSON.stringify(await scenes[scene]()));
