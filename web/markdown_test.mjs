@@ -63,6 +63,11 @@ test("emphasis can hold a single character", () => {
   assert.equal(renderMarkdown("** a**"), "<p>** a**</p>");
 });
 
+test("***bold italic*** nests properly", () => {
+  assert.equal(renderMarkdown("***a***"), "<p><strong><em>a</em></strong></p>");
+  assert.equal(renderMarkdown("___a b___ and ***c***"),
+    "<p><strong><em>a b</em></strong> and <strong><em>c</em></strong></p>");});
+
 test("the rest renders as before", () => {
   assert.equal(renderMarkdown("**bold** `b` [c](https://example.com)"),
     '<p><strong>bold</strong> <code>b</code> <a href="https://example.com" target="_blank" rel="noopener noreferrer">c</a></p>');

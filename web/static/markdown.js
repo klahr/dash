@@ -25,6 +25,9 @@ function inlineHTML(s) {
     // the attribute.
     .replace(/!?\[([^\]]*)\]\(([^)\s\u0000]+)(?:\s+&quot;[^)]*&quot;)?\)/g, (m, text, url) => (SAFE_URL.test(url) ? a(url, text || url) : m))
     .replace(/(^|[\s(])(https?:\/\/[^\s<)\u0000]+[^\s<).,:;!?'&\u0000])/g, (_, pre, url) => pre + a(url, url))
+    // ***x*** first, or the strong rule takes "*x" and the em rule pairs
+    // the leftover * across </strong>.
+    .replace(/(\*\*\*|___)([^\s*_]|[^\s*_][\s\S]*?[^\s*_])\1/g, "<strong><em>$2</em></strong>")
     .replace(/(\*\*|__)(\S|\S[\s\S]*?\S)\1/g, "<strong>$2</strong>")
     .replace(/(^|[^*\w])([*_])(?=\S)([^*_]*?\S)\2(?![*\w])/g, "$1<em>$3</em>")
     .replace(/~~(\S|\S[\s\S]*?\S)~~/g, "<del>$1</del>");
