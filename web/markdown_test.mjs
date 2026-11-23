@@ -55,6 +55,14 @@ test("an svg block in a list item is a picture too", () => {
   assert.match(html, /<li>one:<figure class="md-svg"/);
 });
 
+test("emphasis can hold a single character", () => {
+  assert.equal(renderMarkdown("**a** __b__ *c* _d_ ~~e~~"),
+    "<p><strong>a</strong> <strong>b</strong> <em>c</em> <em>d</em> <del>e</del></p>");
+  assert.equal(renderMarkdown("**a** and **b**"), "<p><strong>a</strong> and <strong>b</strong></p>");
+  assert.equal(renderMarkdown("x **** y"), "<p>x **** y</p>");
+  assert.equal(renderMarkdown("** a**"), "<p>** a**</p>");
+});
+
 test("the rest renders as before", () => {
   assert.equal(renderMarkdown("**bold** `b` [c](https://example.com)"),
     '<p><strong>bold</strong> <code>b</code> <a href="https://example.com" target="_blank" rel="noopener noreferrer">c</a></p>');

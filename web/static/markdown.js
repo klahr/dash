@@ -25,9 +25,9 @@ function inlineHTML(s) {
     // the attribute.
     .replace(/!?\[([^\]]*)\]\(([^)\s\u0000]+)(?:\s+&quot;[^)]*&quot;)?\)/g, (m, text, url) => (SAFE_URL.test(url) ? a(url, text || url) : m))
     .replace(/(^|[\s(])(https?:\/\/[^\s<)\u0000]+[^\s<).,:;!?'&\u0000])/g, (_, pre, url) => pre + a(url, url))
-    .replace(/(\*\*|__)(?=\S)([\s\S]+?\S)\1/g, "<strong>$2</strong>")
+    .replace(/(\*\*|__)(\S|\S[\s\S]*?\S)\1/g, "<strong>$2</strong>")
     .replace(/(^|[^*\w])([*_])(?=\S)([^*_]*?\S)\2(?![*\w])/g, "$1<em>$3</em>")
-    .replace(/~~(?=\S)([\s\S]+?\S)~~/g, "<del>$1</del>");
+    .replace(/~~(\S|\S[\s\S]*?\S)~~/g, "<del>$1</del>");
   const STASHED = /\u0000(\d+)\u0000/;
   while (STASHED.test(s)) s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[i]); // links can hold code
   return s;
