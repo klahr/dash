@@ -8,7 +8,7 @@ import { draft, promptEditor } from "./todoform.js";
 import { LANES, STATUS_LABEL, statusLabel, cp, hist, state } from "./state.js";
 import { navView, showView } from "./nav.js";
 import { baseBranch, projectKey } from "./events.js";
-import { cleanup, grouped, loadProjects, menuOpen, notifyLabel, openDeleteProject, openNewProject, openPlanner, openProjects, projectWhere, selectProject, setMenu, setPicker, setSideCollapsed, sideCollapsed, stepProject, toggleProjectPause } from "./projects.js";
+import { cleanup, grouped, loadProjects, toggleStar, menuOpen, notifyLabel, openDeleteProject, openNewProject, openPlanner, openProjects, projectWhere, selectProject, setMenu, setPicker, setSideCollapsed, sideCollapsed, stepProject, toggleProjectPause } from "./projects.js";
 import { mineOn, multiMember } from "./people.js";
 import { pushDone } from "./board.js";
 import { byPriority, title } from "./branches.js";
@@ -28,6 +28,7 @@ import { openCI } from "./actions.js";
 import { openClaudeStatus } from "./claudestatus.js";
 import { openSettings } from "./settings.js";
 import { chat, todoChat } from "./chat.js";
+import { isStarred, starsOn } from "./stars.js";
 import { pane, paneOverlays, projectChatFor, toggleChatPane, togglePin } from "./chatpane.js";
 import { attached, openShell, shellBlocked, startProc, techFor, term } from "./terminal.js";
 import { closeCommit, commitScroller, moveCommit, stepCommitFile } from "./history.js";
@@ -81,6 +82,7 @@ function paletteCommands() {
     ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
     ["Planning", "plan", go("planning"), "gp", "plan roadmap product owner cards ideas planned"],
     ["Switch project", "repo", openProjects, "p", "projects"],
+    p && starsOn() && [isStarred(p) ? "Unstar project" : "Star project", "star", () => toggleStar(p), "", "favorite favourite pin sidebar starred"],
     ["Add project", "plus", () => openNewProject(), "", "new create local repository runner github clone url"],
     ["Write a project brief", "spark", () => openPlanner(), "", "idea brief interview plan new project goal"],
     p && ["Project settings", "settings", openSettings, ":settings", "configure commands"],
@@ -113,7 +115,9 @@ function paletteCommands() {
 }
 
 function paletteProjects() {
-  return state.projects.filter((p) => projectKey(p) !== projectKey(state.project)).map((p) => ({
+  // Starred projects first, then the rest in their order.
+  const others = state.projects.filter((p) => projectKey(p) !== projectKey(state.project));
+  return [...others.filter(isStarred), ...others.filter((p) => !isStarred(p))].map((p) => ({
     kind: "Project", label: p.name, icon: "repo", hint: grouped() ? projectWhere(p) : baseBranch(p),
     text: `${p.name} ${p.machine} ${projectWhere(p)} ${p.path}`, run: () => selectProject(p),
   }));
@@ -303,7 +307,8 @@ document.addEventListener("keydown", (e) => {
 // sections, p the projects (in the phone menu), Tab switches between them. j/k move, Enter opens the focused item, Esc, q
 // or l leave the list.
 const SECTIONS = ".nav > button[data-view]";
-const PROJECTS = "#side-project-list .side-project";
+// The projects and the Other projects fold between them (stars.js).
+const PROJECTS = "#side-project-list .side-project, #side-others-fold";
 function sidebarList(el) {
   if (el?.matches?.(SECTIONS)) return SECTIONS;
   if (el?.closest?.("#side-project-list")) return PROJECTS;

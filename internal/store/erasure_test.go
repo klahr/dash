@@ -61,6 +61,12 @@ func TestDeleteUser(t *testing.T) {
 	if err := s.AppendProjectChat(p.ID, admin.ID, model.ChatMessage{Role: "user", Content: "admin's project question", CreatedBy: admin.ID}); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.StarProject(ann, def.ID, p.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StarProject(admin.ID, def.ID, p.ID, now); err != nil {
+		t.Fatal(err)
+	}
 	for _, e := range []AuthEvent{
 		{OrgID: def.ID, UserID: ann, Actor: ann, Kind: "google.linked", Detail: "ann@example.com", IP: "192.0.2.7"},
 		{OrgID: def.ID, UserID: admin.ID, Actor: ann, Kind: "member.signed_out", Detail: "admin", IP: "192.0.2.7"},
@@ -84,6 +90,9 @@ func TestDeleteUser(t *testing.T) {
 	if i := slices.IndexFunc(x.Messages, func(m ExportMessage) bool { return m.Conversation == "project" }); i < 0 ||
 		x.Messages[i].Content != "ann's project question" || x.Messages[i].Of != p.ID || x.Messages[i].OrgID != def.ID {
 		t.Fatalf("export lacks ann's project chat: %+v", x.Messages)
+	}
+	if len(x.Starred) != 1 || x.Starred[0].Project != p.ID || x.Starred[0].OrgID != def.ID {
+		t.Fatalf("export stars: %+v", x.Starred)
 	}
 
 	// Not the env account.
@@ -143,6 +152,8 @@ func TestDeleteUser(t *testing.T) {
 		"SELECT COUNT(*) FROM auth_events WHERE actor_id IS NULL AND ip = '' AND detail = 'admin'":                  1,
 		"SELECT COUNT(*) FROM auth_events WHERE ip != '' OR user_id = " + itoa(ann):                                 0,
 		"SELECT COUNT(*) FROM org_memberships WHERE user_id = " + itoa(ann):                                         0,
+		"SELECT COUNT(*) FROM starred_projects WHERE user_id = " + itoa(ann):                                        0,
+		"SELECT COUNT(*) FROM starred_projects WHERE user_id = " + itoa(admin.ID):                                   1,
 		"SELECT COUNT(*) FROM chat_messages WHERE kind = 'main' AND owner_id LIKE '%:" + itoa(ann) + "'":            0,
 		"SELECT COUNT(*) FROM chat_messages WHERE kind = 'project' AND owner_id = '" + p.ID + ":" + itoa(ann) + "'": 0,
 	} {

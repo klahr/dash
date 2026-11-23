@@ -443,6 +443,8 @@ the account in **Admin → Users**.
 | `GET /api/account/google`, `DELETE … {password}`  | your linked Google account; unlink        |
 | `GET /api/admin/sso`, `PUT /api/admin/sso/google`, `POST /api/admin/sso/domains/verify` | platform admins: the instance's client, approving domains |
 | `GET /api/account/export`, `DELETE /api/account {password}` | your data as JSON; delete your account ([privacy.md](privacy.md)) |
+| `GET /api/me/starred-projects`                    | the projects you starred in your active org (`projects`: keys) |
+| `PUT /api/me/starred-projects/{key}`, `DELETE …`  | star or unstar one; the key is a project's id, or `<runner>%2F<id>` for a runner's own project |
 | `DELETE /api/admin/users/{uid} {password}`        | platform admins: delete someone's account |
 | `GET /api/admin/users?q=`, `GET /api/admin/users/{uid}` | platform admins: every account (`total`, `matched`), one with its sign-in log |
 | `POST /api/admin/users/{uid}/password-reset {password, sign_out}`, `DELETE …/2fa {password}`, `POST …/sign-out {password}` | platform admins: help someone sign in |

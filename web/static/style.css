@@ -2241,6 +2241,26 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .side-machine { display: flex; align-items: center; gap: 8px; padding: 14px 10px 4px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; color: var(--muted); }
 .side-machine:first-child { padding-top: 2px; }
 .side-machine-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Starred projects (app/stars.js): each row's star shows on hover, and always
+   on a starred row and on touch. */
+.side-star {
+  flex: none; display: grid; place-items: center; width: 28px; align-self: stretch; border-radius: var(--r-m);
+  color: var(--faint); opacity: 0; transition: opacity .12s var(--ease), color .12s var(--ease);
+}
+.side-star .ico { width: 15px; height: 15px; }
+.side-project-list li:hover > .side-star, .side-star:focus-visible, .side-star[aria-pressed="true"] { opacity: 1; }
+.side-star:hover { background: var(--raised); color: var(--text); }
+.side-star[aria-pressed="true"] { color: var(--accent); }
+.side-star[aria-pressed="true"] path, #pm-star.on path { fill: currentColor; }
+@media (hover: none) { .side-star { opacity: 1; } }
+/* Other projects (N): the projects not starred fold away under Starred, in their groups. */
+.side-project-list li.side-others { display: block; margin-top: 8px; }
+.side-fold.side-others-fold { gap: 10px; padding-left: 8px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.side-others-icon { position: relative; flex: none; display: grid; place-items: center; width: 22px; height: 22px; }
+.side-fold .side-others-icon .ico { width: 16px; height: 16px; margin: 0; transform: none; }
+.side-others-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-other-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.side-other-list[hidden] { display: none; }
 /* The Runners block under the project buttons: its natural height, while the projects list takes the rest. */
 .side-runners { flex: none; display: flex; flex-direction: column; }
 /* Its head is a button that folds the list away, leaving a summary beside the name. */
@@ -2435,6 +2455,11 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-collapsed .side-ci-build { position: absolute; right: 2px; bottom: 0; width: 18px; height: 18px; margin: 0; }
   .side-collapsed .side-project[aria-current="true"] .side-project-icon { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent); }
   .side-collapsed .side-new-project { justify-content: center; padding: 0; }
+  /* Collapsed to icons: the starred projects, a line, then the fold as a "more" button. */
+  .side-collapsed .side-star, .side-collapsed .side-others-name, .side-collapsed .side-others-fold > .ico { display: none; }
+  .side-collapsed .side-project-list li.side-others { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+  .side-collapsed .side-others-fold { justify-content: center; padding: 0; min-height: 40px; }
+  .side-collapsed .side-other-list { gap: 4px; margin-top: 4px; }
   .side-collapsed .side-new-project svg { width: 26px; height: 26px; padding: 5px; }
   .side-collapsed .quick-actions { flex-direction: column; }
   .side-collapsed .quick-btn { padding: 0; min-height: 40px; }

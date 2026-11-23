@@ -511,6 +511,57 @@ func TestBrowserTerminalPreview(t *testing.T) {
 	}
 }
 
+// Starred projects come first in the sidebar, under Starred; the rest fold
+// away under Other projects, the current one staying in sight. Stars are the
+// user's, on the server, so they survive a reload; the fold is this browser's.
+func TestBrowserStarredProjects(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	api := h.api
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	const peer = "/peer/laptop"
+	var web struct{ ID string }
+	api.must("POST", peer+"/api/projects", map[string]any{"name": "lib"}, http.StatusCreated, nil)
+	api.must("POST", peer+"/api/projects", map[string]any{"name": "web"}, http.StatusCreated, &web)
+	b.do("reload", chromedp.Reload())
+	names := `[...document.querySelectorAll("#side-project-list .side-project-name")].map((n) => n.textContent).join(",")`
+	b.waitJS("every project, no sections", `document.querySelectorAll("#side-project-list .side-project").length === 3 && !document.querySelector("#side-others-fold") && !document.querySelector(".side-starred-head")`)
+	b.clickTextUntil(`#side-project-list .side-project`, "app", `document.querySelector("#project-name")?.textContent === "app"`)
+
+	// Star web from its row: it comes first, the rest fold away, app (the
+	// current project) stays in sight under it.
+	b.clickIn("#side-project-list li", "web", ".side-star")
+	folded := `document.querySelector("#side-others-fold")?.getAttribute("aria-expanded") === "false" && ` +
+		`document.querySelector("#side-others-fold").textContent.includes("Other projects (2)") && ` + names + ` === "web,app"`
+	b.waitJS("web starred, the rest folded", folded+` && document.querySelector('.side-star[aria-pressed="true"]')?.getAttribute("aria-label") === "Star web"`)
+	var stars struct{ Projects []string }
+	api.must("GET", "/api/me/starred-projects", nil, http.StatusOK, &stars)
+	if len(stars.Projects) != 1 || stars.Projects[0] != "laptop/"+web.ID {
+		t.Fatalf("stars on the server: %v", stars.Projects)
+	}
+	b.do("reload", chromedp.Reload())
+	b.waitJS("still starred after a reload", folded)
+
+	// Open the fold: the others show in their groups; it stays open in this browser.
+	b.until("open Other projects", `document.querySelector("#side-others-fold")?.getAttribute("aria-expanded") === "true"`, chromedp.Click(chromedp.ID("side-others-fold")))
+	b.waitJS("every project shown once", names+` === "web,app,lib" && document.activeElement?.id === "side-others-fold"`)
+	b.do("reload", chromedp.Reload())
+	b.waitJS("still open after a reload", `document.querySelector("#side-others-fold")?.getAttribute("aria-expanded") === "true" && `+names+` === "web,app,lib"`)
+
+	// Unstar it from the project menu: the list is as it was.
+	b.clickTextUntil(`#side-project-list .side-project`, "web", `document.querySelector("#project-name")?.textContent === "web"`)
+	b.until("open the project menu", `document.querySelector("#project-menu").open`, chromedp.Click(chromedp.CSS("#project-menu summary")))
+	b.waitJS("Unstar project in the menu", `document.querySelector("#pm-star")?.textContent === "Unstar project"`)
+	b.do("unstar web", chromedp.Click(chromedp.ID("pm-star")))
+	b.waitJS("no sections again", `!document.querySelector("#side-others-fold") && document.querySelectorAll("#side-project-list .side-project").length === 3`)
+	api.must("GET", "/api/me/starred-projects", nil, http.StatusOK, &stars)
+	if len(stars.Projects) != 0 {
+		t.Fatalf("stars on the server after unstarring: %v", stars.Projects)
+	}
+}
+
 // The chat pane's tabs: This project and General, plus the chats added with
 // + in each project (each project its own), plus another project's chat
 // while its reply streams or is unread.

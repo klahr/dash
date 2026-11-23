@@ -63,6 +63,7 @@ Open **Account → Your data** and click **Download**. You get a JSON file with:
 - browsers that get your push notifications, your personal webhooks and your [notification settings](notifications.md#your-notification-settings)
 - the sign-in log entries about you, with their IP addresses
 - the tasks you created and the chat messages you wrote, in your own general and project chats too
+- the projects you starred
 - your [project and feature plans](plan-project.md), drafts and launched ones
 
 Secrets are left out: password and token hashes, the authenticator secret, push keys and webhook
@@ -77,7 +78,7 @@ your password. An account that signs in with Google confirms with a Google sign-
 This happens at once:
 
 - Your account goes, with its profile picture, sessions, tokens, connected apps, linked Google account, recovery
-  codes, push subscriptions, personal webhooks and notification settings. Every browser and connector is signed out.
+  codes, push subscriptions, personal webhooks, notification settings and starred projects. Every browser and connector is signed out.
 - Your general chats and your project chats with Claude are deleted, and your project plans.
 - Each organization you are the only member of is deleted, your personal workspace too.
 - Tasks, goals and messages you wrote in other organizations stay there, without your name.

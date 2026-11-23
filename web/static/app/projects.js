@@ -1,4 +1,4 @@
-import { projectGroups as groupProjects, isShared, LABEL_ANY, parseLabels, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, servesProject, uniqueProjects } from "../groups.js";
+import { projectGroups as groupProjects, isShared, LABEL_ANY, parseLabels, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, servesProject, starKey, starSections, uniqueProjects } from "../groups.js";
 import { $, $$, h, ib, ico, plural, resizeHandle, setLabel } from "./dom.js";
 import { sizeText } from "./lightbox.js";
 import * as store from "./store.js";
@@ -37,11 +37,14 @@ import { gp, loadGoals, resetGoals, showGoal } from "./goals.js";
 import { planner } from "./planner.js";
 import { followProject } from "./planning.js";
 import { loadPeople } from "./people.js";
+import { isStarred, loadStars, othersOpen, setOthersOpen, setStar, starsOn } from "./stars.js";
 
 // ------------------------------------------------------------------ projects
 export async function loadProjects() {
   if (!state.machines) state.machines = await api("GET", "/api/machines");
-  const lists = await Promise.all(state.machines.map(async (m) => {
+  const first = !state.projectsLoaded;
+  // The stars come with the first list, so it doesn't jump once drawn.
+  const [lists] = await Promise.all([Promise.all(state.machines.map(async (m) => {
     if (!m.ok) return [];
     try {
       return (await api("GET", "/api/projects", null, m.prefix)).map((p) => ({ ...p, machine: m.name, prefix: m.prefix }));
@@ -50,9 +53,8 @@ export async function loadProjects() {
       m.error = e.message;
       return [];
     }
-  }));
+  })), first && loadStars()]);
   state.projects = lists.flat();
-  const first = !state.projectsLoaded;
   state.projectsLoaded = true;
   const saved = store.get("dash.project");
   // The first time, the project the page's URL names wins (routes.js); the
@@ -770,6 +772,11 @@ export const projectDot = (p) => (p.color ?h("span", { class: "project-dot", sty
 // and actions live in the top bar's project menu. Runners show as a badge
 // on a project whose runners need attention, and in the Runners block below
 // the project buttons (runners.js).
+//
+// With projects starred (stars.js), the starred ones come first under
+// Starred and the rest fold away under Other projects (N), in their groups;
+// the current project shows under Starred while they are folded. Collapsed
+// to icons, the fold is a "more" button between the two.
 export function renderSideProjects() {
   const item = (p) => {
     const cur = projectKey(state.project) === projectKey(p);
@@ -779,7 +786,8 @@ export function renderSideProjects() {
     if (st) icon.append(h("span", { class: `side-project-status ${st}` }));
     const sub = projectSubtitle(p);
     const badge = runnerBadge(p);
-    return h("li", { class: cur ? "current" : "" },
+    const starred = isStarred(p);
+    return h("li", { class: [cur && "current", starred && "starred"].filter(Boolean).join(" ") },
       h("button", {
         type: "button", class: "side-project", title: [p.name, sub, p.path, stLabel].filter(Boolean).join("\n"), "aria-current": cur ? "true" : "false",
         onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
@@ -789,11 +797,80 @@ export function renderSideProjects() {
       sharedMark(p),
       badge ? badgeEl(badge, "side-project-branch") : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null,
       stLabel ? h("span", { class: "sr-only" }, `, ${stLabel.toLowerCase()}`) : null),
+      starsOn() ? h("button", {
+        type: "button", class: "side-star", "data-star": starKey(p), "aria-pressed": String(starred),
+        "aria-label": `Star ${p.name}`, title: starred ? "Unstar project" : "Star project",
+        onclick: attempt(() => toggleStar(p)),
+      }, ico("star")) : null,
       cur ? ciBuilding : null);
   };
-  const items = withHeadings(projectGroups(), (g) => h("li", { class: "side-machine", "data-group": g.key }, groupHead(g)), item);
+  const groups = projectGroups();
+  const head = (g) => h("li", { class: "side-machine", "data-group": g.key }, groupHead(g));
+  const sections = starsOn() ? starSections(groups, state.stars) : null;
+  let items;
+  if (!sections) items = withHeadings(groups, head, item);
+  else {
+    const open = othersOpen();
+    const others = uniqueProjects(sections.others);
+    const pinned = !open && others.find((p) => projectKey(p) === projectKey(state.project));
+    // A dot on the fold: something folded away is running or ready for review.
+    const sts = others.map(projectStatus);
+    const st = sts.includes("running") ? "running" : sts.includes("review") ? "review" : "";
+    const stLabel = st === "running" ? "Claude is working in one of them" : st === "review" ? "one of them is ready for review" : "";
+    const fold = sections.count ? h("li", { class: "side-others" },
+      h("button", {
+        type: "button", class: "side-fold side-others-fold", id: "side-others-fold", "aria-expanded": String(open), "aria-controls": "side-other-projects",
+        // Named here too: collapsed to icons, its text is hidden.
+        "aria-label": [`Other projects (${sections.count})`, !open && stLabel].filter(Boolean).join(", "),
+        title: open ? "Fold the other projects" : "Show the other projects",
+        onclick: () => { setOthersOpen(!open); renderSideProjects(); $("#side-others-fold")?.focus(); },
+      },
+      h("span", { class: "side-others-icon", "aria-hidden": "true" }, ico("more"), !open && st ? h("span", { class: `side-project-status ${st}` }) : null),
+      h("span", { class: "side-others-name" }, `Other projects (${sections.count})`),
+      ico("chevron-right")),
+      // Unfolded only: folded, the list isn't drawn (so the current
+      // project, shown under Starred, is in the list once).
+      h("ul", { class: "side-other-list", id: "side-other-projects", hidden: !open },
+        ...(open ? (groups.length > 1 ? sections.others.flatMap((g) => [head(g), ...g.projects.map(item)]) : others.map(item)) : []))) : null;
+    items = [
+      h("li", { class: "side-machine side-starred-head", "data-group": "starred" }, groupHead({ name: "Starred" })),
+      ...sections.starred.map(item),
+      pinned ? item(pinned) : null,
+      fold,
+    ].filter(Boolean);
+  }
   $("#side-project-list").replaceChildren(...(items.length ? items : [h("li", { class: "machine-empty" }, "No projects yet")]));
+  syncStarMenu();
   renderSideRunners();
+}
+
+// toggleStar stars or unstars p (the current project without one), in the
+// sidebar at once; focus stays on p's star if it had it.
+export async function toggleStar(p = state.project) {
+  if (!p) throw new Error(projectFirst(" (p)"));
+  const had = document.activeElement?.dataset?.star;
+  await setStar(p, !isStarred(p), () => {
+    renderSideProjects();
+    if (had) $(`.side-star[data-star="${CSS.escape(had)}"]`)?.focus();
+  });
+}
+
+// The top bar's project menu stars and unstars the current project.
+function syncStarMenu() {
+  const btn = $("#pm-star");
+  btn.hidden = !starsOn() || !state.project;
+  if (btn.hidden) return;
+  const on = isStarred(state.project);
+  setLabel(btn, "star", on ? "Unstar project" : "Star project");
+  btn.classList.toggle("on", on);
+}
+
+// sidebarOrder is the PROJECTS list's groups in the sidebar's order: with
+// stars, Starred first (unfolded, for the picker and J/K).
+function sidebarOrder() {
+  const groups = projectGroups();
+  const sections = starsOn() ? starSections(groups, state.stars) : null;
+  return sections ? [{ key: "starred", name: "Starred", projects: sections.starred }, ...sections.others] : groups;
 }
 
 // projectGroups are the PROJECTS list's groups (see groups.js): on a hub,
@@ -963,7 +1040,7 @@ export function openProjects() {
 }
 // J/K: the next/previous project in sidebar order, wrapping around.
 export function stepProject(d) {
-  const list = uniqueProjects(projectGroups());
+  const list = uniqueProjects(sidebarOrder());
   if (!list.length) return;
   const i = list.findIndex((p) => projectKey(p) === projectKey(state.project));
   return selectProject(list[(((i + d) % list.length) + list.length) % list.length]);
@@ -985,7 +1062,7 @@ export function setPicker(open) {
     }, projectLabel(h("span", { class: "project-name" }, projectDot(p), p.name, sharedMark(p)), sub, "picker-text"),
     runnerBadge(p) ? badgeEl(runnerBadge(p), "project-branch") : h("span", { class: "project-branch" }, baseBranch(p)));
   };
-  const items = withHeadings(projectGroups(), (g) => h("div", { class: "side-machine", "data-group": g.key }, groupHead(g)), item);
+  const items = withHeadings(sidebarOrder(), (g) => h("div", { class: "side-machine", "data-group": g.key }, groupHead(g)), item);
   list.replaceChildren(...(state.projects.length ? items : [h("div", { class: "machine-empty" }, "No projects yet")]),
     h("button", { type: "button", role: "menuitem", class: "picker-new", onclick: () => { setPicker(false); openNewProject(); } }, "+ Add project"));
   ($("button[aria-current=true]", list) || $("button", list))?.focus();
@@ -1018,6 +1095,7 @@ desktop.addEventListener("change", () => {
 });
 $("#side-new-project").addEventListener("click", () => openNewProject());
 $("#pm-settings").addEventListener("click", openSettings);
+$("#pm-star").addEventListener("click", attempt(() => toggleStar()));
 $("#push-main").addEventListener("click", attempt(pushDone));
 $("#pm-pause").addEventListener("click", attempt(toggleProjectPause));
 // Project settings → Repository: the sheet is open for state.project, which cleanup cleans.

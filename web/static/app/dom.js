@@ -71,6 +71,7 @@ document.addEventListener("animationcancel", entered);
 // Line icons for buttons on a 24px grid. Static buttons name theirs with data-icon.
 const ICONS = {
   plus: "M12 5v14M5 12h14",
+  star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z",
   check: "m5 12.5 4.5 4.5L19 7.5",
   checks: "m2 12.5 4.5 4.5L16 7.5M11 16l1 1 9-9.5",
   x: "M6 6l12 12M18 6 6 18",

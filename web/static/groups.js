@@ -34,6 +34,26 @@ export function projectGroups({ machines = [], runners = null, projects = [] }) 
   return groups;
 }
 
+// starKey names p for its star (the server's starred projects): a project
+// of the Dash serving the page by its id, a runner's own by "<runner>/<id>".
+// Not projectKey's "<machine>/<id>": this computer's name is its host name,
+// which changes when it moves, and a star should stay.
+export const starKey = (p) => (!p ? "" : p.prefix ? `${p.machine}/${p.id}` : p.id);
+
+// starSections splits the PROJECTS list's groups (projectGroups) by the
+// keys in starred (a Set of starKeys): { starred, others, count }, starred
+// sorted by name, others the groups without them (empty ones dropped) and
+// count the projects in others. It returns null when no project is starred
+// (stars of projects that are gone count for nothing): the list is just
+// the groups then.
+export function starSections(groups, starred) {
+  const all = uniqueProjects(groups);
+  const on = all.filter((p) => starred?.has(starKey(p)));
+  if (!on.length) return null;
+  const others = groups.map((g) => ({ ...g, projects: g.projects.filter((p) => !on.includes(p)) })).filter((g) => g.projects.length);
+  return { starred: [...on].sort(byName), others, count: all.length - on.length };
+}
+
 // LABEL_ANY is the label every runner matches without having it: a project
 // that runs on it alone runs on any runner of its org (model.LabelAny).
 export const LABEL_ANY = "any";

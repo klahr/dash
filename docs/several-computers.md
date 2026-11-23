@@ -128,6 +128,21 @@ At the bottom of the list, **Runners** opens the Runners page (the same as accou
 Runners). Its dot sums up the org's runners: green when all are online, amber when some are
 offline, red when none is, grey when there are none yet.
 
+### Star the projects you work on
+
+Hover a project in the **Projects** list and click its star (on a phone, the star is always
+shown). You can also use **Star project** in the top bar's project menu, or in the command palette
+(`Ctrl-k`).
+
+Starred projects come first, under **Starred**. The rest fold away under **Other projects (N)**,
+still in their groups; click it to open or fold it. The current project stays in sight under
+**Starred** while they are folded, and a dot on **Other projects** says one of them has Claude
+working or work waiting for review. With the sidebar collapsed to icons, the starred projects come
+first, then a line and a **⋯** button for the rest. With nothing starred, the list is as above.
+
+Stars are yours: they follow you to every browser and computer you sign in on, in each
+organization. Whether **Other projects** is open is kept per browser.
+
 ## Add a runner
 
 In the hub's dashboard, open the account menu → **Runners** → **Add a runner** (any member

@@ -439,6 +439,10 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/me/notifications", s.getNotifySettings)
 	mux.HandleFunc("PUT /api/me/notifications", s.putNotifySettings)
 	mux.HandleFunc("POST /api/me/notifications/test-summary", s.testSummary)
+	// The projects the caller starred: listed first in the sidebar
+	mux.HandleFunc("GET /api/me/starred-projects", s.listStarredProjects)
+	mux.HandleFunc("PUT /api/me/starred-projects/{key}", s.starProject)
+	mux.HandleFunc("DELETE /api/me/starred-projects/{key}", s.unstarProject)
 	mux.HandleFunc("GET "+notify.UnsubscribePath+"{token}", s.unsubscribeSummary) // public: see auth.publicPath
 	mux.HandleFunc("POST "+notify.UnsubscribePath+"{token}", s.unsubscribeSummary)
 	// Claude's status page: its webhook (public, the token is its

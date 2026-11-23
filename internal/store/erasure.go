@@ -260,6 +260,7 @@ type AccountExport struct {
 	Push          []ExportPush       `json:"push_subscriptions"`
 	Webhooks      []ExportWebhook    `json:"personal_webhooks"`
 	Notifications []ExportNotify     `json:"notification_settings"`
+	Starred       []ExportStar       `json:"starred_projects"`
 	Plans         []ExportPlan       `json:"project_plans"`
 	Comments      []ExportComment    `json:"planning_comments"`
 	AuthEvents    []AuthEvent        `json:"sign_in_log"`
@@ -300,6 +301,13 @@ type ExportNotify struct {
 	OrgID    int64           `json:"org_id"`
 	Settings json.RawMessage `json:"settings"`
 	LastSent time.Time       `json:"last_summary,omitzero"`
+}
+
+// ExportStar is a project they starred in an org (see starred.go).
+type ExportStar struct {
+	OrgID   int64     `json:"org_id"`
+	Project string    `json:"project"`
+	Starred time.Time `json:"starred"`
 }
 
 type ExportWebhook struct {
@@ -459,6 +467,17 @@ func (a *Accounts) ExportUser(uid int64, now time.Time) (AccountExport, error) {
 			n.Settings = json.RawMessage("{}")
 		}
 		x.Notifications = append(x.Notifications, n)
+		return err
+	}); err != nil {
+		return x, err
+	}
+	x.Starred = []ExportStar{}
+	if err := each(`SELECT org_id, project_key, created_at FROM starred_projects WHERE user_id = ? ORDER BY org_id, created_at, rowid`, func(r *sql.Rows) error {
+		var st ExportStar
+		var at int64
+		err := r.Scan(&st.OrgID, &st.Project, &at)
+		st.Starred = time.Unix(at, 0).UTC()
+		x.Starred = append(x.Starred, st)
 		return err
 	}); err != nil {
 		return x, err

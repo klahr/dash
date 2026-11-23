@@ -475,6 +475,10 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 		if _, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND substr(owner_id, 1, length(?2) + 1) = ?2 || ':'", chatProject, id); err != nil {
 			return err
 		}
+		// Its stars go with it (see starred.go).
+		if _, err := tx.Exec("DELETE FROM starred_projects WHERE org_id = ? AND project_key = ?", org, id); err != nil {
+			return err
+		}
 		// Planning cards outlive their project: they become the org's.
 		if _, err := tx.Exec("UPDATE planning_cards SET project_id = '' WHERE project_id = ?", id); err != nil {
 			return err

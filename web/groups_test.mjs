@@ -2,7 +2,7 @@
 // `node --test web/`; groups_test.go runs them as part of `go test ./...`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { projectGroups, uniqueProjects, projectRunnerNames, projectRunners, runnerBadge, remoteRepo, projectSubtitle, servesProject, missingLabels, parseLabels, projectLabels, runnerAgent, agentRunners } from "./static/groups.js";
+import { projectGroups, uniqueProjects, starKey, starSections, projectRunnerNames, projectRunners, runnerBadge, remoteRepo, projectSubtitle, servesProject, missingLabels, parseLabels, projectLabels, runnerAgent, agentRunners } from "./static/groups.js";
 
 const hub = { name: "hub", local: true, ok: true, prefix: "" };
 const runner = (name, ok) => ({ name, runner: true, ok, prefix: `/peer/${name}`, error: ok ? "" : "offline" });
@@ -182,4 +182,29 @@ test("agentRunners: the online runners that can run an agent, and why the others
   assert.deepEqual(agentRunners(list, "").ready.map((r) => r.name), ["old"]);
   assert.deepEqual(agentRunners(list, "claude").why, ["a: not logged in", "b: doesn't have it"]);
   assert.deepEqual(agentRunners(list, "gemini").ready, []);
+});
+
+test("starKey names this Dash's projects by id and a runner's by runner/id", () => {
+  assert.equal(starKey({ id: "a1", machine: "my-laptop.local", prefix: "" }), "a1");
+  assert.equal(starKey({ id: "b2", machine: "beta", prefix: "/peer/beta" }), "beta/b2");
+  assert.equal(starKey(null), "");
+});
+
+test("starSections puts starred projects first and keeps the rest in their groups", () => {
+  const a = { id: "a", name: "api", machine: "hub", prefix: "" };
+  const w = { id: "w", name: "Web", machine: "hub", prefix: "" };
+  const x = { id: "x", name: "cli", machine: "beta", prefix: "/peer/beta" };
+  const groups = [
+    { key: "shared", name: "Shared", projects: [a, w] },
+    { key: "on:beta", name: "On beta", projects: [x] },
+  ];
+  assert.equal(starSections(groups, new Set()), null);
+  assert.equal(starSections(groups, new Set(["gone", "beta/a"])), null, "stars of projects that are gone count for nothing");
+  const s = starSections(groups, new Set(["w", "beta/x"]));
+  assert.deepEqual(s.starred.map((p) => p.id), ["x", "w"], "sorted by name");
+  assert.deepEqual(s.others.map((g) => [g.key, g.projects.map((p) => p.id)]), [["shared", ["a"]]], "empty groups dropped");
+  assert.equal(s.count, 1);
+  const every = starSections(groups, new Set(["a", "w", "beta/x"]));
+  assert.deepEqual(every.others, []);
+  assert.equal(every.count, 0);
 });
