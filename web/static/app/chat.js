@@ -191,12 +191,22 @@ function chatComposer(c, { form, mode, shell, clear }) {
     if (m?.send) {
       await att.settled();
       const q = input.value.trim(), files = att.items();
-      if (!await m.send(q, files)) return;
-      recall.end();
-      input.value = "";
-      att.reset();
-      autoGrow();
-      c.busyButton();
+      // The composer empties as it goes, not once the server answers (a second
+      // Enter meanwhile sends nothing twice); what wasn't sent comes back.
+      const empty = (text, items) => {
+        recall.end();
+        input.value = text;
+        att.reset(items);
+        autoGrow();
+        c.busyButton();
+      };
+      if (q || files.length) empty("", []);
+      let sent = false;
+      try {
+        sent = await m.send(q, files);
+      } finally {
+        if (!sent && (q || files.length) && !composing()) empty(q, files);
+      }
       return;
     }
     // With nothing written, only a press of the button stops a reply: Enter in the text field doesn't.
@@ -532,9 +542,19 @@ function chatRecall(c, input, autoGrow) {
     // Enter sends on devices with a hardware keyboard; on touch keyboards Enter adds a line.
     if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) {
       e.preventDefault();
+      sentByEnter = true;
       c.form.requestSubmit();
     }
   });
+  // The Enter that sent mustn't also add a line to the emptied box: an Enter
+  // delivered as a key and a separate character (as automation and some IMEs
+  // do) types its line break after the keydown's preventDefault.
+  let sentByEnter = false;
+  input.addEventListener("beforeinput", (e) => {
+    if (sentByEnter && (e.inputType === "insertLineBreak" || e.inputType === "insertParagraph")) e.preventDefault();
+    sentByEnter = false;
+  });
+  input.addEventListener("keyup", (e) => { if (e.key === "Enter") sentByEnter = false; });
   return recall;
 }
 
