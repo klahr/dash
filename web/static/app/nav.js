@@ -15,6 +15,7 @@ import { closeDeploy, loadDeploys } from "./deploys.js";
 import { closeCard, planningShown } from "./planning.js";
 import { changed, initial } from "./routes.js";
 import { boardSeen } from "./branches.js";
+import { projectKey } from "./events.js";
 
 // ------------------------------------------------------------------ navigation
 // Shell is one page with two places, main (view "run") and a commit (view
@@ -32,9 +33,26 @@ export function showView(name, { now = false } = {}) {
   apply();
 }
 
+// Each project remembers the view it was last shown in (localStorage), so
+// switching projects returns to it (projects.js: selectProject). Planning is
+// the organization's, across projects, so it isn't one of them; a commit in
+// Shell (try) is that project's, so it is kept as Shell.
+const PROJECT_VIEWS = "dash.projectViews";
+export function projectView(p) {
+  const v = p && store.getJSON(PROJECT_VIEWS, {})[projectKey(p)];
+  return v && v !== "planning" && $(`.nav > button[data-view="${v}"]`) ? v : null;
+}
+function rememberView(name) {
+  if (!state.project || name === "planning") return;
+  const views = store.getJSON(PROJECT_VIEWS, {});
+  views[projectKey(state.project)] = navView(name);
+  store.setJSON(PROJECT_VIEWS, views);
+}
+
 function applyView(name) {
   state.view = name;
   store.set("dash.view", name);
+  rememberView(name);
   renderNavActive();
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${navView(name)}`));
   $("#view-run").classList.toggle("at-commit", name === "try");

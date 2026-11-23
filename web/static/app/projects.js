@@ -8,7 +8,7 @@ import { changed, findProject, initial } from "./routes.js";
 import { start as startRouter } from "./router.js";
 import { attempt, busy, fail, railOf, reduceMotion, toast } from "./dialogs.js";
 import { projectFirst, state } from "./state.js";
-import { showView } from "./nav.js";
+import { projectView, showView } from "./nav.js";
 import { baseBranch, eventFor, latest, multi, projectKey, projectStatus, refreshLive } from "./events.js";
 import { loadTodos, pushDone, renderPushMain } from "./board.js";
 import { renderBoard } from "./branches.js";
@@ -77,7 +77,10 @@ export async function loadProjects() {
 
 // selectProject shows project p. Planning follows the switch to a hub
 // project unless follow is false (the first pick as the page loads).
-export async function selectProject(p, { follow = true } = {}) {
+// A switch shows the view p was last shown in (nav.js: projectView), unless
+// restore is false (the first pick: the page's link or saved view stays) or
+// Planning, which is across projects, is shown.
+export async function selectProject(p, { follow = true, restore = follow } = {}) {
   state.project = p;
   state.todos = new Map();
   state.goals = new Map();
@@ -106,10 +109,17 @@ export async function selectProject(p, { follow = true } = {}) {
   resetScans();
   resetGoals();
   loadTry().catch(() => {});
+  // After the resets: a view shown here loads its own data for p (nav.js),
+  // so History, Files and Scans aren't loaded twice below. (Goals are: a
+  // caller may open a goal once this returns.)
+  let view = restore && state.view !== "planning" ? projectView(p) : null;
+  if (view === state.view) view = null;
+  if (view) showView(view, { now: true });
+  const shows = (v) => !view && state.view === v;
   // Planning is the hub's: it follows a hub project, not a runner's.
   if (follow && p && !p.prefix) followProject(p.id);
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); return; }
-  await Promise.all([loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "scans" && loadScans()]);
+  await Promise.all([loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), shows("history") && loadGraph(), shows("files") && loadFiles(), shows("scans") && loadScans()]);
 }
 
 async function loadPerms() {
