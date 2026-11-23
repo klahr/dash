@@ -2733,6 +2733,12 @@ a.review-chip { text-decoration: none; }
 .ask-claude-chip .ico { color: currentColor; }
 .ask-claude-chip:hover { color: var(--text); border-color: var(--line); background: var(--raised); }
 .review-chip:active, .preview-chip:active, .approve-chip:active, .enqueue-chip:active, .ask-claude-chip:active { transform: translateY(1px); }
+/* Approving, merging or closing: every button on the card waits for it. */
+.card-actions.busy :is(button, a) { opacity: .55; cursor: progress; transform: none; }
+.card-actions.busy a { pointer-events: none; }
+.card-actions.busy .approve-chip .ico, #d-actions[aria-busy="true"] .btn.review svg { animation: pulse-dot 1.4s ease-in-out infinite; }
+#d-actions[aria-busy="true"] :is(.btn:disabled, a.btn.is-disabled) { cursor: progress; }
+#d-actions a.btn.is-disabled { opacity: .5; pointer-events: none; }
 .btn.reviewing { color: var(--running); cursor: default; }
 .btn.reviewing svg { animation: pulse-dot 1.4s ease-in-out infinite; }
 a.revert-tag { text-decoration: underline; }

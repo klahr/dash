@@ -8,7 +8,7 @@ import { baseBranch, projectKey } from "./events.js";
 import { openNewProject, renderProjectHeader, renderProjectList } from "./projects.js";
 import { landsOnGitHub, loadUnpushed, pushBar } from "./board.js";
 import { activityNodes } from "./activity.js";
-import { canStartNow, closeDetail, openDetail, pacing, renderDetail, startNow, startNowHelp } from "./detail.js";
+import { canStartNow, closeDetail, openDetail, pacing, renderActions, renderDetail, startNow, startNowHelp } from "./detail.js";
 import { canPreview, previewOf, previewTag, previewTodo } from "./preview.js";
 import { reviewTodo } from "./drawmode.js";
 import { renderRunnerBanner, runnerName, welcomeScreen } from "./runners.js";
@@ -831,8 +831,7 @@ export function todoRow(t, li = -1, ri = -1) {
       t.run_on ? runOnTag(t.run_on) : null,
       hasPriority(t) ? h("span", { class: `prio-tag prio-${priorityLevel(t.priority)}`, title: `${PRIORITY_LEVELS[priorityLevel(t.priority)]} priority: runs before tasks without one` }, PRIORITY_LEVELS[priorityLevel(t.priority)]) : null,
       creatorEl(t),
-      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, closable(t) ? null : reviewChip(t), closable(t) ? null : askClaudeChip(t),
-        closable(t) ? closeChip(t) : approvable(t) ? approveChip(t) : canMergePR(t) ? mergeChip(t) : null) : null,
+      t.status === "review" && !t.reviewing ? reviewActions(t) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null,
       paced ? h("span", { class: "card-actions" }, startNowChip(t)) : null));
 }
@@ -868,8 +867,49 @@ export function closedNoChanges(t) {
 
 // closeTodo closes task t, in review without changes.
 export async function closeTodo(t) {
-  await api("POST", `/api/todos/${t.id}/close`);
+  await whileBusy(t, "Closing…", () => api("POST", `/api/todos/${t.id}/close`));
   toast("Closed");
+}
+
+// The tasks being approved, merged or closed, each with what its main
+// button says meanwhile ("Merging…"). Their buttons, on the card and in the
+// task's pane, stay disabled until the request is done, also when the
+// board is drawn again in between.
+export const busyTodos = new Map();
+
+// whileBusy runs run with task t's buttons disabled and label on its main one.
+export async function whileBusy(t, label, run) {
+  if (busyTodos.has(t.id)) return;
+  busyTodos.set(t.id, label);
+  redrawBusy(t.id);
+  try {
+    return await run();
+  } finally {
+    busyTodos.delete(t.id);
+    redrawBusy(t.id);
+  }
+}
+
+function redrawBusy(id) {
+  renderBoard();
+  const t = state.detail === id && state.todos.get(id);
+  if (t) renderActions(t);
+}
+
+// reviewActions is a card's buttons in review: Preview · Review · Ask Claude,
+// then Approve, Merge pull request or Close. All disabled while one runs.
+function reviewActions(t) {
+  const el = h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, closable(t) ? null : reviewChip(t), closable(t) ? null : askClaudeChip(t),
+    closable(t) ? closeChip(t) : approvable(t) ? approveChip(t) : canMergePR(t) ? mergeChip(t) : null);
+  const label = busyTodos.get(t.id);
+  if (label == null) return el;
+  el.classList.add("busy");
+  el.setAttribute("aria-busy", "true");
+  for (const b of el.querySelectorAll("button")) b.disabled = true;
+  for (const a of el.querySelectorAll("a")) { a.setAttribute("aria-disabled", "true"); a.tabIndex = -1; }
+  const main = el.querySelector(".approve-chip");
+  if (main) main.lastChild.textContent = label;
+  return el;
 }
 
 // Whether Merge pull request applies: its pull request is open and ready
@@ -896,7 +936,7 @@ export async function mergePR(t) {
     ok: "Merge pull request",
   });
   if (!ok) return;
-  const res = await api("POST", `/api/todos/${t.id}/merge-pr`);
+  const res = await whileBusy(t, "Merging…", () => api("POST", `/api/todos/${t.id}/merge-pr`));
   const as = res?.as ? ` as ${res.as}` : "";
   toast(res?.queued ? `Queued to merge${as}` : `Pull request #${t.pr.number} merged${as}`, { tone: "ok", icon: "merge" });
 }
@@ -985,7 +1025,7 @@ function previewChip(t) {
 
 function approveChip(t) {
   return cardChip("approve-chip", "Approve and merge without opening the diff", "check", "Approve",
-    async () => { await api("POST", `/api/todos/${t.id}/approve`); toast("Approved — merging"); });
+    async () => { await whileBusy(t, "Merging…", () => api("POST", `/api/todos/${t.id}/approve`)); toast("Approved — merging"); });
 }
 
 function closeChip(t) {

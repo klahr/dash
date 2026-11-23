@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
 import { statusLabel, state } from "./state.js";
-import { approvable, buildsOnMeta, closable, closeTodo, closedNoChanges, canMergePR, doneMeta, conflictMeta, mergePR, depMeta, hasPriority, prChecksEl, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
+import { approvable, buildsOnMeta, busyTodos, closable, closeTodo, closedNoChanges, canMergePR, whileBusy, doneMeta, conflictMeta, mergePR, depMeta, hasPriority, prChecksEl, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
 import { goalChip } from "./goals.js";
 import { editable, openTodoForm } from "./todos.js";
 import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.js";
@@ -243,6 +243,7 @@ export function renderActions(t) {
       if (closable(t)) {
         btns.push(b("redo", "Ask for changes…", rework));
         btns.push(b("check", "Close", attempt(() => closeTodo(t)), "review grow"));
+        if (busyTodos.has(t.id)) disableWhileBusy(btns, busyTodos.get(t.id));
         break;
       }
       // Preview · Rework · Approve (Claude's review is on the card and in ⋯)
@@ -253,7 +254,10 @@ export function renderActions(t) {
         btns.push(b("redo", "Rework…", rework));
       }
       if (approvable(t)) {
-        btns.push(b("check", "Approve", post("approve", null, waitsOnGitHub(t) ? "Pushing the pull request again" : "Approved — merging"), "review grow"));
+        btns.push(b("check", "Approve", attempt(async () => {
+          await whileBusy(t, waitsOnGitHub(t) ? "Pushing…" : "Merging…", () => api("POST", `/api/todos/${t.id}/approve`));
+          toast(waitsOnGitHub(t) ? "Pushing the pull request again" : "Approved — merging");
+        }), "review grow"));
       } else if (canMergePR(t)) {
         btns.push(h("a", { class: "btn", href: t.pr.url, target: "_blank", rel: "noopener", title: `Open pull request #${t.pr.number} on GitHub` }, ico("external"), "GitHub"));
         btns.push(b("merge", "Merge pull request", attempt(() => mergePR(t)), "review grow"));
@@ -262,6 +266,7 @@ export function renderActions(t) {
         btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener", title: "Review, approve or close it on GitHub" },
           ico("external"), `Review PR #${t.pr.number} on GitHub`));
       }
+      if (busyTodos.has(t.id)) disableWhileBusy(btns, busyTodos.get(t.id));
       break;
     case "merging":
       if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, ico("external"), `Open pull request #${t.pr.number}`));
@@ -276,7 +281,21 @@ export function renderActions(t) {
       if (!t.revert && !closedNoChanges(t)) btns.push(b("undo", "Revert…", attempt(() => revertTodo(t)), "grow"));
       break;
   }
+  if (!busyTodos.has(t.id)) $("#d-actions").removeAttribute("aria-busy");
   $("#d-actions").replaceChildren(...btns.filter(Boolean));
+}
+
+// disableWhileBusy disables the pane's buttons while the task is approved,
+// merged or closed, with label on the main one (the last).
+function disableWhileBusy(btns, label) {
+  const els = btns.filter(Boolean);
+  for (const el of els) {
+    if (el.tagName === "A") { el.setAttribute("aria-disabled", "true"); el.tabIndex = -1; el.classList.add("is-disabled"); }
+    else el.disabled = true;
+  }
+  const main = els.at(-1);
+  if (main?.tagName === "BUTTON") main.lastChild.textContent = label;
+  $("#d-actions").setAttribute("aria-busy", "true");
 }
 
 // retryButton queues failed task t again. One its runner can resume
