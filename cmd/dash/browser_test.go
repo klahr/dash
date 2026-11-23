@@ -1156,6 +1156,11 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	b.signIn(h)
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the one-lane layout", `!matchMedia("(min-width: 1024px)").matches && document.querySelectorAll("#board .col").length && [...document.querySelectorAll("#board .col")].filter((c) => c.offsetWidth).length === 1`)
+	// Chrome on Linux also takes a sideways swipe the page doesn't scroll as
+	// Back or Forward: a swipe left went Forward to Project settings closed a
+	// moment before (opening it over the board), a swipe right Back to a blank
+	// page. The page turns that off where it switches lanes.
+	b.waitJS("no history swipes", `getComputedStyle(document.documentElement).overscrollBehaviorX === "none"`)
 	var draft struct{ ID string }
 	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Hold me", "prompt": "Stay a draft"}, http.StatusCreated, &draft)
 	b.waitCard(draft.ID, "draft")
@@ -1238,13 +1243,18 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	swipe("a swipe from the screen's edge", 385, 500, 150, 500, 0)
 	still("a swipe from the screen's edge", "draft")
 
-	// In something that scrolls sideways (a code block, a row of chips).
+	// In something that scrolls sideways (a code block, a row of chips). A
+	// re-render (a runner's update, any time) replaces the lane and the
+	// scroller with it, so it is put back at once, before the next touch.
 	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
 		const s = document.createElement("div");
 		s.id = "e2e-scroller";
 		s.style.cssText = "overflow-x: auto; position: fixed; left: 0; right: 0; top: 300px; height: 80px; z-index: 50";
 		s.innerHTML = '<div style="width: 2000px; height: 80px"></div>';
-		document.querySelector("#board .col.active .col-body").append(s);
+		const add = () => s.isConnected || document.querySelector("#board .col.active .col-body").append(s);
+		add();
+		window.e2eScroller = new MutationObserver(add);
+		window.e2eScroller.observe(document.querySelector("#board"), { childList: true });
 		return true;
 	})()`)); err != nil {
 		b.fail("add a sideways scroller", err)
@@ -1252,6 +1262,9 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	swipe("swipe in a sideways scroller", 300, 340, 100, 340, 0)
 	still("swipe in a sideways scroller", "draft")
 	b.waitJS("the scroller still there", `!!document.querySelector("#e2e-scroller")`)
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`window.e2eScroller.disconnect(), document.querySelector("#e2e-scroller").remove(), true`)); err != nil {
+		b.fail("remove the sideways scroller", err)
+	}
 
 	// A long-press drags the card instead.
 	b.do("scroll the card into view", chromedp.ScrollIntoView(chromedp.CSS(cardSel(draft.ID))))

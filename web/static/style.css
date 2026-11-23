@@ -328,6 +328,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
    never makes the page wider than the screen, which on a phone grows the
    layout viewport and pushes the fixed bottom nav off-screen. */
 @media (max-width: 1023px) {
+  /* A sideways swipe moves to the next lane (here and in Planning): it must
+     not also go Back or Forward, as Chrome does with a swipe the page doesn't
+     scroll. Only on narrow screens: a desktop keeps the trackpad's swipe Back. */
+  html { overscroll-behavior-x: none; }
   #view-board.active { display: flex; flex-direction: column; min-height: var(--view-h); }
   .board { overflow-x: clip; }
   .board:not(:empty) { flex: 1 0 auto; }
