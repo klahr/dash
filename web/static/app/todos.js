@@ -1,7 +1,7 @@
 import { $, $$, h } from "./dom.js";
 import { api, here } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
-import { buildOnPicker, depPicker, runOnPicker, draft, draftKey, promptEditor, setModelField, split, todoAttach } from "./todoform.js";
+import { buildOnPicker, depPicker, runOnPicker, tagPicker, draft, draftKey, promptEditor, setModelField, split, todoAttach } from "./todoform.js";
 import { projectFirst, state } from "./state.js";
 import { projectKey } from "./events.js";
 import { grouped, projectWhere } from "./projects.js";
@@ -11,6 +11,8 @@ import { levelPriority, priorityLevel } from "./dnd.js";
 import { goalsOn, openGoalSheet } from "./goals.js";
 import { confirmRunAs } from "./people.js";
 import { openFeatureBrief } from "./planner.js";
+import { tagChips } from "./tags.js";
+import { addTag, quickTags } from "../tagtext.js";
 
 // ------------------------------------------------------------------ new / edit todo
 // A task's title, instructions and options can be edited while it is a draft,
@@ -65,6 +67,7 @@ export function openTodoForm(t = null, { pick = false } = {}) {
   depPicker.reset(t, t?.depends_on || []);
   buildOnPicker.reset(t, t?.builds_on || "");
   runOnPicker.reset(t, t?.run_on || "");
+  tagPicker.reset(t?.tags || []);
   promptEditor.render();
   draft.open(draftKey(t));
   $("#todo-sheet").returnValue = ""; // Esc keeps the previous close's value
@@ -83,6 +86,8 @@ new ResizeObserver(([e]) => {
 // Claude names it. A multi-line paste stays one task; the field just grows.
 // "More options…" carries the text over to the full form (Shift+N). It
 // ends like the full form: Save draft (Enter, so it is the primary button) or Queue (Ctrl/⌘+Enter).
+// A #tag in the text tags the task (quickTags in tagtext.js has the rule):
+// it is taken out of the text, and the field with focus shows its tags below.
 const quick = {
   sheet: $("#quick-sheet"),
   rows: $("#quick-rows"),
@@ -102,6 +107,13 @@ function fitQuickRow(ta) {
   ta.style.height = "auto";
   ta.style.height = `${ta.scrollHeight + (ta.offsetHeight - ta.clientHeight)}px`;
 }
+// showQuickTags shows the tags of the field ta, while it has any.
+function showQuickTags(ta) {
+  const el = $("#quick-tags");
+  const { tags } = quickTags(ta?.value || "");
+  el.hidden = !tags.length;
+  el.replaceChildren(...(tags.length ? [h("span", { class: "hint" }, "Tags"), ...tagChips(tags)] : []));
+}
 function quickAddRow(after = null, text = "") {
   const ta = quickRow(text);
   after ? after.after(ta) : quick.rows.append(ta);
@@ -118,18 +130,25 @@ export function openQuickAdd(texts = [""]) {
   quick.sheet.returnValue = "";
   quick.sheet.showModal();
   texts.forEach((t) => quickAddRow(null, t));
+  showQuickTags(document.activeElement);
 }
 
 async function submitQuick(enqueue) {
   const texts = quickTexts();
   if (!texts.length) { quickFields()[0]?.focus(); return; }
+  const tasks = texts.map(quickTags);
+  const bare = tasks.findIndex((x) => !x.text);
+  if (bare >= 0) {
+    quickFields().filter((r) => r.value.trim())[bare]?.focus();
+    throw new Error("Say what Claude should do, not only tags.");
+  }
   const p = state.project;
   quick.sheet.close("add");
   let done = 0;
   const ids = [];
   try {
-    for (const prompt of texts) {
-      const t = await api("POST", `/api/projects/${p.id}/todos`, { title: "", prompt, enqueue }, p.prefix || "");
+    for (const { text: prompt, tags } of tasks) {
+      const t = await api("POST", `/api/projects/${p.id}/todos`, { title: "", prompt, tags, enqueue }, p.prefix || "");
       if (t?.id) ids.push(t.id);
       done++;
     }
@@ -152,10 +171,14 @@ export function showNewTasks(lane, ids) {
   if (ids.length) renderBoard();
 }
 
+// The #tags go to the form's Tags.
 function quickMore() {
-  const text = quickTexts().join("\n\n");
+  const tasks = quickTexts().map(quickTags);
+  const text = tasks.map((x) => x.text).filter(Boolean).join("\n\n");
   quick.sheet.close("more");
   openTodoForm();
+  const tags = tasks.flatMap((x) => x.tags).reduce((list, x) => addTag(list, x).tags, tagPicker.list());
+  if (tags.length !== tagPicker.list().length) { tagPicker.reset(tags); draft.changed(); }
   if (!text) return;
   const f = $("#todo-form");
   const kept = f.prompt.value.trim(); // a restored draft of the full form
@@ -165,8 +188,9 @@ function quickMore() {
 }
 
 quick.rows.addEventListener("input", (e) => {
-  if (e.target.matches(".quick-row")) fitQuickRow(e.target);
+  if (e.target.matches(".quick-row")) { fitQuickRow(e.target); showQuickTags(e.target); }
 });
+quick.rows.addEventListener("focusin", (e) => { if (e.target.matches(".quick-row")) showQuickTags(e.target); });
 quick.rows.addEventListener("keydown", (e) => {
   const ta = e.target;
   if (!ta.matches(".quick-row") || e.isComposing) return;
@@ -224,6 +248,9 @@ $("#todo-brief").addEventListener("click", () => {
 });
 
 $("#todo-sheet").addEventListener("close", attempt(async () => {
+  // A close event comes as a task of its own: when the form was opened again
+  // meanwhile, that one is still being edited.
+  if ($("#todo-sheet").open) return;
   const action = $("#todo-sheet").returnValue;
   if (action === "split") return draft.done(); // saved as the split's tasks
   if (action === "goal" || action === "brief") return draft.close(); // kept, in case the goal or brief isn't made
@@ -236,7 +263,7 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   draft.flush(); // if saving fails below, the draft is still there
   const f = $("#todo-form");
   await todoAttach.settled();
-  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: levelPriority(f.priority.value, editing?.priority), model: f.model.value, attachments: todoAttach.ids(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
+  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: levelPriority(f.priority.value, editing?.priority), model: f.model.value, attachments: todoAttach.ids(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value(), tags: tagPicker.value() };
   if (editing) {
     if (!await confirmRunAs(editing, body, action === "queue" && editing.status !== "queued")) {
       draft.close();

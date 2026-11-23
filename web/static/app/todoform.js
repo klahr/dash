@@ -11,6 +11,8 @@ import { PRIORITY_LEVELS, levelPriority, priorityLevel } from "./dnd.js";
 import { servesProject } from "../groups.js";
 import { agentCan, cantSay } from "./agents.js";
 import { dictation } from "./dictation.js";
+import { tagInput } from "./tags.js";
+import { addTag } from "../tagtext.js";
 
 // ------------------------------------------------------------------ the task form
 export const promptEditor = mdEditor($("#todo-form").prompt);
@@ -121,13 +123,34 @@ export const runOnPicker = (() => {
 
 export { setModelField }; // in dom.js, as Scans use it too
 
+// The task form's tags: the chip input of the task pane (tagInput), kept
+// in the form until it is saved. value() counts a tag still being typed.
+export const tagPicker = (() => {
+  let tags = [], field = null;
+  const make = () => field ||= tagInput($("#todo-tags"), {
+    tags: () => tags,
+    save: (next) => { tags = next; field.render(); draft.changed(); },
+  });
+  return {
+    reset(list = []) { tags = [...list]; make().render(); },
+    list: () => tags, // without one being typed: for the draft
+    value() {
+      const typed = make().input.value;
+      if (!typed.trim()) return tags;
+      const r = addTag(tags, typed);
+      if (r.error) throw new Error(r.error);
+      return r.tags;
+    },
+  };
+})();
+
 // The todo form autosaves to this browser while you type; reopening the
 // form (even after a reload or a crash) brings the draft back.
 export const draftKey = (t) => `${projectKey(state.project)}/${t?.id || "new"}`;
 export const draft = drafts({
   read() {
     const f = $("#todo-form");
-    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, model: f.model.value, attachments: todoAttach.items(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
+    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, model: f.model.value, attachments: todoAttach.items(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value(), tags: tagPicker.list() };
   },
   write(d) {
     const f = $("#todo-form");
@@ -140,6 +163,7 @@ export const draft = drafts({
     depPicker.reset(editing, d.depends_on ?? editing?.depends_on ?? []); // drafts from before dependencies have none
     buildOnPicker.reset(editing, d.builds_on ?? editing?.builds_on ?? "");
     runOnPicker.reset(editing, d.run_on ?? editing?.run_on ?? "");
+    tagPicker.reset(d.tags ?? editing?.tags ?? []); // drafts from before tags have none
     promptEditor.render();
   },
   onStatus(st, at) {
@@ -166,6 +190,7 @@ function discardDraft() {
   depPicker.reset(t, t?.depends_on || []);
   buildOnPicker.reset(t, t?.builds_on || "");
   runOnPicker.reset(t, t?.run_on || "");
+  tagPicker.reset(t?.tags || []);
   promptEditor.render();
   draft.open(draftKey(t));
   toast("Draft discarded");
@@ -180,6 +205,7 @@ $("#todo-clear").addEventListener("click", () => {
   depPicker.reset(null, []);
   buildOnPicker.reset(null, "");
   runOnPicker.reset(null, "");
+  tagPicker.reset([]);
   promptEditor.render();
   draft.open(draftKey(null));
   f.title.focus();
@@ -207,8 +233,8 @@ $("#todo-refine").addEventListener("click", attempt(async () => {
 }));
 // Split asks Claude how to break a large task into smaller ones and shows
 // them in a sheet over the form to edit, drop or add to. Saving them makes
-// one task each, with the form's priority, model, files, dependencies and
-// the task they build on;
+// one task each, with the form's priority, model, tags, files, dependencies
+// and the task they build on;
 // a part Claude says builds on earlier ones starts after they are merged.
 // The form's task itself isn't saved (an edited one is replaced).
 export const split = {
@@ -323,7 +349,7 @@ split.list.addEventListener("keydown", (e) => {
 $("#split-form").noValidate = true;
 
 // saveSplit makes the parts not saved yet as tasks of p, with the form's
-// priority, model, files and dependencies.
+// priority, model, tags, files and dependencies.
 async function saveSplit(parts, p, enqueue) {
   const left = parts.filter((x) => !x.id);
   if (!left.length) throw new Error("Add a task to save.");
@@ -332,7 +358,7 @@ async function saveSplit(parts, p, enqueue) {
   await todoAttach.settled();
   const attachments = todoAttach.ids();
   if (attachments.length && p.prefix !== here()) throw new Error(`Attachments can't be sent to ${p.name} on ${p.machine}; remove them or pick a project on this computer.`);
-  const common = { priority: levelPriority(f.priority.value, editing?.priority), model: f.model.value, attachments, builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
+  const common = { priority: levelPriority(f.priority.value, editing?.priority), model: f.model.value, attachments, builds_on: buildOnPicker.value(), run_on: runOnPicker.value(), tags: tagPicker.value() };
   const deps = depPicker.ids();
   const order = $("#split-order").checked;
   for (const part of left) {

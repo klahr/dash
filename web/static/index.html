@@ -704,12 +704,16 @@
   </div>
 
   <!-- Quick add (FAB, n): one field per task -->
+  <!-- The project's tags, offered in a task's tag input (app/tags.js) -->
+  <datalist id="task-tag-options"></datalist>
+
   <dialog class="sheet" id="quick-sheet" aria-labelledby="quick-title">
     <form method="dialog" id="quick-form">
       <header class="sheet-head"><h2 id="quick-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint warn runner-note" id="quick-runner-note" hidden></p>
       <div class="quick-rows" id="quick-rows"></div>
-      <p class="hint quick-hint"><kbd>Enter</kbd> save draft · <kbd><span data-mod>Ctrl</span>-Enter</kbd> queue · <kbd>Shift-Enter</kbd> another task</p>
+      <div class="quick-tags" id="quick-tags" aria-live="polite" hidden></div>
+      <p class="hint quick-hint"><kbd>Enter</kbd> save draft · <kbd><span data-mod>Ctrl</span>-Enter</kbd> queue · <kbd>Shift-Enter</kbd> another task · <kbd>#tag</kbd> tags it</p>
       <div class="quick-tools">
         <button class="link" type="button" id="quick-another" data-icon="plus">Another task</button>
         <button class="link" type="button" id="quick-goal" data-icon="target">New goal…</button>
@@ -744,6 +748,7 @@
         <label class="field inline"><span>Priority</span><select name="priority"><option value="">None</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
         <label class="field inline" title="The Claude model the task runs on, from its next run"><span>Model</span><select name="model"><option value="">Default</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></label>
       </div>
+      <div class="field"><span id="todo-tags-label">Tags <em>Enter or a comma adds one</em></span><div class="tag-field" id="todo-tags" role="group" aria-labelledby="todo-tags-label"></div></div>
       <div class="field" id="todo-deps-field" hidden><span id="todo-deps-label">Depends on <em>starts once these are merged</em></span><div class="dep-picker" id="todo-deps" role="group" aria-labelledby="todo-deps-label"></div></div>
       <label class="field" id="todo-buildon-field" hidden title="The first run continues that task's Claude session, so Claude doesn't explore the code again"><span>Build on <em>continues a finished task's Claude session</em></span><select name="builds_on"></select></label>
       <label class="field" id="todo-runon-field" hidden title="The task runs only on this runner, and waits queued while it is offline or busy"><span>Runner <em>which of the project's runners runs it</em></span><select name="run_on"></select></label>

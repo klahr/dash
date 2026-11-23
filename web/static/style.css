@@ -1324,6 +1324,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .quick-rows { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 0; }
 /* One line per task; a multi-line paste grows the field (app/todos.js sizes it). */
 .quick-row { resize: none; overflow-y: auto; min-height: 0; max-height: 40dvh; font-size: var(--fs-in); line-height: 1.45; }
+.quick-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 0; font-size: var(--fs-xs); }
 .quick-tools { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin: 4px -4px 0; }
 @media (hover: none) { .quick-hint { display: none; } }
 
@@ -3123,11 +3124,13 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .reports-tag { font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 @media (pointer: coarse) { .tag-chip { min-height: 26px; } }
 .detail-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.tag-field { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .tag-chip.editable { max-width: 24ch; padding-right: 2px; }
 .tag-x { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
 .tag-x:hover { background: var(--raised); color: var(--text); }
 .tag-input { flex: 0 1 9rem; min-width: 6rem; min-height: 26px; padding: 0 8px; border: 1px dashed var(--line); border-radius: var(--r-pill); background: transparent; color: var(--text); font: inherit; font-size: var(--fs-xs); }
 .tag-input:focus { border-style: solid; border-color: var(--accent); outline: none; }
+@media (max-width: 1023px) { .tag-input { font-size: var(--fs-in); } } /* no iOS zoom */
 /* What a task made from reported issues knows about them. */
 .finding-note { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); font-size: var(--fs-s); color: var(--muted); }
 .finding-note[hidden] { display: none; }

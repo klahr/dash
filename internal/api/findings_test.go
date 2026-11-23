@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -198,6 +199,23 @@ func TestTaskTags(t *testing.T) {
 	}
 	if w := do(t, h, "PATCH", "/api/todos/"+td.ID, `{"tags":["`+strings.Repeat("x", 41)+`"]}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("a long tag: %d %s", w.Code, w.Body)
+	}
+	// The task form sends its tags with the other fields, as quick add sends #tags.
+	w = do(t, h, "PATCH", "/api/todos/"+td.ID, `{"title":"Restyle","prompt":"Restyle it","tags":["auth","  bug  fix "]}`)
+	if err := json.Unmarshal(w.Body.Bytes(), &td); err != nil || w.Code != http.StatusOK || !slices.Equal(td.Tags, []string{"auth", "bug fix"}) {
+		t.Fatalf("edit with tags: %d %s", w.Code, w.Body)
+	}
+	w = do(t, h, "POST", "/api/projects/"+p.ID+"/todos", `{"prompt":"Fix login redirect","tags":["auth","bug"],"enqueue":false}`)
+	var quick model.Todo
+	if err := json.Unmarshal(w.Body.Bytes(), &quick); err != nil || w.Code != http.StatusCreated || !slices.Equal(quick.Tags, []string{"auth", "bug"}) || quick.Prompt != "Fix login redirect" {
+		t.Fatalf("quick add with tags: %d %s", w.Code, w.Body)
+	}
+	many := make([]string, model.MaxCardTags+1)
+	for i := range many {
+		many[i] = `"t` + strconv.Itoa(i) + `"`
+	}
+	if w := do(t, h, "POST", "/api/projects/"+p.ID+"/todos", `{"title":"Too many","tags":[`+strings.Join(many, ",")+`]}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("21 tags: %d %s", w.Code, w.Body)
 	}
 
 	// The chat's tools set and filter by tags too.

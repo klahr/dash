@@ -35,8 +35,19 @@ Click **New task** (or press <kbd>n</kbd>) and write what Claude should do, as y
 chat; Claude names the task. <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a field for another task (a
 pasted multi-line text stays one task).
 
+Type `#tag` to tag the task. Dash takes the tag out of the text and shows it below the field:
+
+```text
+Fix login redirect #auth #bug
+```
+
+A `#` starts a tag only at the start of a word, and the tag needs a letter. Letters, digits, `-`
+and `_` make up a tag, with `.`, `/` or `:` allowed inside it (`#v1.2`, `#scan:deps`). So
+`issue #123`, `C#`, `page#top` and `# heading` stay as you typed them, and so does a `#` in
+`code`.
+
 **More options…** (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form, with a title, priority,
-model, dependencies, the task it builds on and attachments.
+model, tags, dependencies, the task it builds on and attachments.
 
 - **Priority** is **None**, **High** or **Urgent**: urgent tasks start first, then high ones, then
   the rest, oldest first. The API takes the same levels; see [Task priority](mcp.md#task-priority).
@@ -48,8 +59,11 @@ model, dependencies, the task it builds on and attachments.
 
 A task can have tags: short labels such as `backend` or `docs`. They show as chips on the card
 and in the task, each in a colour of its own: the same tag has the same colour everywhere, and
-severity tags (`critical`, `high`, …) have their severity's colour. Edit them under **Tags** in the task. A task has at most 20 tags, each at most
-40 characters. Click a tag on a card to show only tasks with that tag; remove the filter with
+severity tags (`critical`, `high`, …) have their severity's colour. Set them under **Tags** in
+the task form, or with `#tag` in **New task**; edit them under **Tags** in the task. Type a tag
+and press <kbd>Enter</kbd> or a comma to add it; <kbd>Backspace</kbd> in the empty box takes the
+last one off. The project's other tags are offered as you type. A task has at most 20 tags, each
+at most 40 characters. Click a tag on a card to show only tasks with that tag; remove the filter with
 its chip above the board.
 
 ## Drafts from reported problems

@@ -6,6 +6,7 @@ import { isTyping } from "./vim.js";
 import { renderBoard, title } from "./branches.js";
 import { openDetail } from "./detail.js";
 import { goalHue } from "./goals.js";
+import { MAX_TAG_LEN, addTag, cleanTag } from "../tagtext.js";
 
 // ------------------------------------------------------------------ tags
 // Tasks carry short tags. A draft made from a reported issue (a scan's
@@ -191,42 +192,79 @@ document.addEventListener("keydown", (e) => {
   clearPicked();
 });
 
-// ------------------------------------------------------------------ a task's pane
-// The tags, editable: Enter or a comma adds what is typed, × takes one off.
-let tagInput = null;
-
-async function saveTags(t, tags) {
-  await api("PATCH", `/api/todos/${t.id}`, { tags });
+// ------------------------------------------------------------------ the tag input
+// tagInput makes el a task's tags, editable: a chip each with × to take it
+// off, and a box where Enter or a comma adds what is typed and Backspace in
+// the empty box takes the last one off. The project's other tags are offered
+// as you type. tags() gives the tags shown; save(next) sets them (it may be
+// async; render again once they change). The task pane and the task form use it.
+export function tagInput(el, { tags, save }) {
+  const input = h("input", { class: "tag-input", placeholder: "Add tag", "aria-label": "Add a tag", autocomplete: "off", maxlength: MAX_TAG_LEN, list: "task-tag-options" });
+  const add = attempt(async () => {
+    const v = input.value;
+    if (!cleanTag(v)) { input.value = ""; return; }
+    const cur = tags();
+    const r = addTag(cur, v);
+    if (r.error) throw new Error(r.error);
+    input.value = "";
+    if (r.tags.length !== cur.length) await save(r.tags);
+  });
+  input.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === ",") && !e.isComposing) { e.preventDefault(); add(); }
+    else if (e.key === "Backspace" && !input.value) {
+      const cur = tags();
+      if (cur.length) attempt(() => save(cur.slice(0, -1)))();
+    }
+  });
+  // Nor does Enter submit a form the box is in (the task form).
+  input.addEventListener("keypress", (e) => { if (e.key === "Enter") e.preventDefault(); });
+  input.addEventListener("focus", tagOptions);
+  // A suggestion picked from the list adds it at once.
+  input.addEventListener("input", (e) => { if (e.inputType === "insertReplacementText" || !e.inputType) add(); });
+  input.addEventListener("blur", () => { if (input.value.trim()) add(); });
+  // The chips change around the box, which stays put so it keeps focus.
+  const render = () => {
+    const cur = tags();
+    if (input.parentNode !== el) el.replaceChildren(input);
+    for (const c of [...el.children]) if (c !== input) c.remove();
+    input.before(...cur.map((x) => {
+      const look = tagLook(x);
+      return h("span", { class: `tag-chip editable${look.cls}`, style: look.style }, x,
+        h("button", { type: "button", class: "tag-x", "aria-label": `Remove tag ${x}`, title: `Remove ${x}`,
+          onclick: attempt(() => save(tags().filter((y) => y !== x))) }, "×"));
+    }));
+  };
+  return { render, input };
 }
 
-export function renderDetailTags(t) {
-  const el = $("#d-tags");
-  if (!tagInput) {
-    tagInput = h("input", { class: "tag-input", placeholder: "Add tag", "aria-label": "Add a tag", autocomplete: "off", maxlength: 40 });
-    const add = attempt(async () => {
-      const cur = state.todos.get(state.detail);
-      const v = tagInput.value.replace(/,/g, " ").trim();
-      if (!cur || !v) return;
-      tagInput.value = "";
-      if (hasTag(cur, v)) return;
-      await saveTags(cur, [...(cur.tags || []), v]);
-    });
-    tagInput.addEventListener("keydown", (e) => {
-      if ((e.key === "Enter" || e.key === ",") && !e.isComposing) { e.preventDefault(); add(); }
-      else if (e.key === "Backspace" && !tagInput.value) {
-        const cur = state.todos.get(state.detail);
-        if (cur?.tags?.length) attempt(() => saveTags(cur, cur.tags.slice(0, -1)))();
-      }
-    });
-    tagInput.addEventListener("blur", () => { if (tagInput.value.trim()) add(); });
+// tagOptions fills the suggestions with the project's tags, the most used first.
+function tagOptions() {
+  const counts = new Map();
+  for (const t of state.todos.values()) for (const x of t.tags || []) {
+    const k = x.toLowerCase();
+    counts.set(k, { name: counts.get(k)?.name || x, n: (counts.get(k)?.n || 0) + 1 });
   }
-  const chips = (t.tags || []).map((x) => {
-    const look = tagLook(x);
-    return h("span", { class: `tag-chip editable${look.cls}`, style: look.style }, x,
-      h("button", { type: "button", class: "tag-x", "aria-label": `Remove tag ${x}`, title: `Remove ${x}`,
-        onclick: attempt(() => saveTags(t, t.tags.filter((y) => y !== x))) }, "×"));
+  const list = [...counts.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  $("#task-tag-options").replaceChildren(...list.map((x) => h("option", { value: x.name })));
+}
+
+// tagChips is a read-only chip per tag, as the tag input shows them.
+export const tagChips = (tags) => tags.map((x) => {
+  const look = tagLook(x);
+  return h("span", { class: `tag-chip${look.cls}`, style: look.style }, x);
+});
+
+// ------------------------------------------------------------------ a task's pane
+// The tags, editable; a change is saved at once and shows when the task updates.
+let detailTask = null, detailTags = null;
+
+export function renderDetailTags(t) {
+  detailTask = t;
+  detailTags ||= tagInput($("#d-tags"), {
+    tags: () => detailTask?.tags || [],
+    save: async (tags) => { if (detailTask) await api("PATCH", `/api/todos/${detailTask.id}`, { tags }); },
   });
-  el.replaceChildren(...chips, tagInput);
+  detailTags.render();
 }
 
 // dismissNote tells, in a delete dialog, that deleting t dismisses its
