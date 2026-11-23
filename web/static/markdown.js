@@ -28,7 +28,9 @@ function inlineHTML(s) {
     // ***x*** first, or the strong rule takes "*x" and the em rule pairs
     // the leftover * across </strong>.
     .replace(/(\*\*\*|___)([^\s*_]|[^\s*_][\s\S]*?[^\s*_])\1/g, "<strong><em>$2</em></strong>")
-    .replace(/(\*\*|__)(\S|\S[\s\S]*?\S)\1/g, "<strong>$2</strong>")
+    // The content can't start or end with the delimiter's own character, so
+    // a run like ****** isn't split into an empty pair and stray *s.
+    .replace(/\*\*([^\s*]|[^\s*][\s\S]*?[^\s*])\*\*|__([^\s_]|[^\s_][\s\S]*?[^\s_])__/g, (_, a, b) => `<strong>${a ?? b}</strong>`)
     .replace(/(^|[^*\w])([*_])(?=\S)([^*_]*?\S)\2(?![*\w])/g, "$1<em>$3</em>")
     .replace(/~~(\S|\S[\s\S]*?\S)~~/g, "<del>$1</del>");
   const STASHED = /\u0000(\d+)\u0000/;

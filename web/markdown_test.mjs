@@ -63,10 +63,17 @@ test("emphasis can hold a single character", () => {
   assert.equal(renderMarkdown("** a**"), "<p>** a**</p>");
 });
 
+test("a run of asterisks or underscores stays as it is", () => {
+  assert.equal(renderMarkdown("x ****** y"), "<p>x ****** y</p>");
+  assert.equal(renderMarkdown("x ______ y"), "<p>x ______ y</p>");
+  assert.equal(renderMarkdown("**_a_** __*b*__"), "<p><strong><em>a</em></strong> <strong><em>b</em></strong></p>");
+});
+
 test("***bold italic*** nests properly", () => {
   assert.equal(renderMarkdown("***a***"), "<p><strong><em>a</em></strong></p>");
   assert.equal(renderMarkdown("___a b___ and ***c***"),
-    "<p><strong><em>a b</em></strong> and <strong><em>c</em></strong></p>");});
+    "<p><strong><em>a b</em></strong> and <strong><em>c</em></strong></p>");
+});
 
 test("the rest renders as before", () => {
   assert.equal(renderMarkdown("**bold** `b` [c](https://example.com)"),
