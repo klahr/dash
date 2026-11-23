@@ -35,9 +35,9 @@ import { loadDismissed, loadScans, onScanRun, scanFinished, scans } from "./scan
 import { checkForUpdate } from "./updates.js";
 import { onPlanningEvent } from "./planning.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
-import { goalTaskChanged, onGoalEvent, showGoal, shownStatus } from "./goals.js";
+import { goalTaskChanged, onGoalDeleted, onGoalEvent, showGoal, shownStatus } from "./goals.js";
 import { onDeployEvent } from "./deploys.js";
-import { goalChatEvent, projectChatEvent } from "./chatpane.js";
+import { goalChatEvent, goalChatGone, projectChatEvent } from "./chatpane.js";
 
 // ------------------------------------------------------------------ live events
 // One live connection per computer, so notifications arrive from all of them.
@@ -226,6 +226,10 @@ function onEvent(ev, m = { name: "" }) {
     case "goal.updated":
       goalChatEvent(ev.data, m); // a wake-up added to the coordinator's conversation
       if (mine) onGoalEvent(ev);
+      break;
+    case "goal.deleted":
+      goalChatGone(ev.data, m);
+      if (mine) onGoalDeleted(ev.data?.id);
       break;
     case "deploy.updated":
       if (mine) onDeployEvent(ev);

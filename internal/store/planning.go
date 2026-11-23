@@ -87,7 +87,7 @@ func (s *Store) emitLinked(t model.EventType, todoID string, data any) {
 	switch t {
 	case model.EvTodoUpdated, model.EvTodoDeleted:
 		key = linkKey(model.LinkTask, todoID)
-	case model.EvGoalUpdated:
+	case model.EvGoalUpdated, model.EvGoalDeleted:
 		g, ok := data.(model.Goal)
 		if !ok {
 			return

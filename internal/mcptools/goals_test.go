@@ -100,14 +100,27 @@ func TestFleetGoalTools(t *testing.T) {
 	if last() != `POST /api/goals/g1/message {"text":"use SQLite"}` {
 		t.Errorf("message sent %s", last())
 	}
+	if out := run(t, tools, "delete_goal", `{"goal":"g1"}`); !strings.Contains(out, `"deleted":"g1"`) || !strings.Contains(out, "stay on the board") {
+		t.Errorf("delete_goal %s", out)
+	}
+	if last() != `DELETE /api/goals/g1 null` {
+		t.Errorf("delete sent %s", last())
+	}
+	for _, tl := range tools {
+		if tl.Name == "delete_goal" {
+			if _, err := tl.Run(Args{"goal": "nope"}); err == nil {
+				t.Error("delete_goal of an unknown goal")
+			}
+		}
+	}
 
 	// A read-only connector may look at goals but not change them.
 	ro := ReadOnly(tools, FleetReadTools, errFake("read-only"))
 	run(t, ro, "get_goal", `{"goal":"g1"}`)
 	for _, tl := range ro {
-		if tl.Name == "stop_goal" {
+		if tl.Name == "stop_goal" || tl.Name == "delete_goal" {
 			if _, err := tl.Run(Args{"goal": "g1"}); err == nil {
-				t.Error("read-only stop_goal ran")
+				t.Errorf("read-only %s ran", tl.Name)
 			}
 		}
 	}

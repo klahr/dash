@@ -80,6 +80,7 @@ export async function loadGoals() {
   const goals = new Map((list || []).map((g) => [g.id, g]));
   for (const { ev, m } of seen) {
     if (ev.type === "goal.updated" && eventFor(p, ev, m)) goals.set(ev.data.id, { ...goals.get(ev.data.id), ...ev.data });
+    if (ev.type === "goal.deleted" && eventFor(p, ev, m)) goals.delete(ev.data?.id);
   }
   gp.project = p;
   state.goals = goals;
@@ -207,6 +208,20 @@ export function onGoalEvent(ev) {
     reviewPlan(next).catch(fail);
   }
   if (g.status === "done" || g.status === "out_of_budget") gp.planFor.delete(g.id);
+}
+
+// onGoalDeleted drops goal id, deleted here or in another window: its pane
+// closes, and its tasks (still on the board) lose their chip by their own
+// todo.updated.
+export function onGoalDeleted(id) {
+  if (!id || !state.goals.has(id)) return;
+  state.goals.delete(id);
+  gp.planFor.delete(id);
+  if (gp.open === id) closeGoal();
+  if (state.goalFilter === id) filterGoal(null);
+  renderGoals();
+  renderBoard();
+  if (state.detail) renderDetail();
 }
 
 // announce tells you about a goal that now waits for you, can't run, is
@@ -354,7 +369,8 @@ function renderGoalActions(g) {
     g.status !== "done" ? btn("edit", "Edit goal", () => openGoalSheet({ goal: g })) : null,
     prefix() ? null : btn("plan", "Link to card", () => linkToCard("goal", g.id), "btn small", "Show this goal's status on a Planning card"),
     btn("link", "Copy link", () => copy(linkTo({ view: "goals", goal: g.id }, state.project), "Link copied"), "btn small", "Copy a link that opens this goal"),
-    g.status !== "done" ? btn("stop", "Stop", () => stopGoal(g), "btn small danger", "End the goal for good; its tasks stay on the board") : null);
+    g.status !== "done" ? btn("stop", "Stop", () => stopGoal(g), "btn small danger", "End the goal for good; its tasks stay on the board") : null,
+    btn("trash", "Delete", () => deleteGoal(g), "btn small danger", "Delete the goal; its tasks stay on the board"));
 }
 
 // The note says why the goal waits, ended or can't go on: the
@@ -447,6 +463,14 @@ async function stopGoal(g) {
   const saved = await api("POST", `${goalAPI(g.id)}/stop`, {}, prefix());
   if (gp.open === g.id) { gp.detail = saved; renderGoal(); }
   toast("Goal stopped");
+}
+
+async function deleteGoal(g) {
+  const body = `“${g.title}” goes, with its plan, log and the coordinator's conversation. Its tasks stay on the board as they are, without a goal.`;
+  if (!await ask({ title: "Delete the goal?", body, ok: "Delete goal", danger: true })) return;
+  await api("DELETE", goalAPI(g.id), null, prefix());
+  onGoalDeleted(g.id);
+  toast("Goal deleted");
 }
 
 async function queueDrafts(g) {

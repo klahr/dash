@@ -422,7 +422,7 @@ var (
 	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "read_try_terminal", "list_goals", "get_goal", "list_cards", "get_card", "list_deploys", ShowImageTool}
 	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "create_release", "delete_todo",
 		"report_issue", "read_try_terminal",
-		"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal", "accept_goal_plan", "reject_goal_plan", "message_goal",
+		"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal", "delete_goal", "accept_goal_plan", "reject_goal_plan", "message_goal",
 		"list_cards", "get_card", "create_card", "update_card", "comment_card", "start_card", "link_card",
 		"list_deploys", "deploy", "rollback", "promote",
 		ShowImageTool}

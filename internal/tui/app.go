@@ -793,6 +793,11 @@ func (a *App) handleEvent(ev wireEvent) tea.Cmd {
 		if mine && json.Unmarshal(ev.Data, &g) == nil && g.ID != "" {
 			a.goals[g.ID] = g
 		}
+	case model.EvGoalDeleted:
+		var g model.Goal
+		if mine && json.Unmarshal(ev.Data, &g) == nil {
+			delete(a.goals, g.ID)
+		}
 	case model.EvTodoDeleted:
 		if mine {
 			delete(a.todos, ev.TodoID)

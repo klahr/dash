@@ -164,7 +164,7 @@ func (n *Notifier) now() time.Time {
 func (n *Notifier) Observe(ev model.Event) {
 	switch ev.Type {
 	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts, model.EvRunnerDisk, model.EvGoalUpdated,
-		model.EvDeployUpdated:
+		model.EvGoalDeleted, model.EvDeployUpdated:
 	default:
 		return
 	}
@@ -227,6 +227,12 @@ func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 	}
 	if ev.Type == model.EvGoalUpdated {
 		n.goal(ctx, ev)
+		return
+	}
+	if ev.Type == model.EvGoalDeleted {
+		if g, ok := ev.Data.(model.Goal); ok {
+			delete(n.goals, g.ID)
+		}
 		return
 	}
 	if t, ok := ev.Data.(model.Todo); ok && ev.Type == model.EvTodoUpdated {

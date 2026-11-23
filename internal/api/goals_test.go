@@ -81,6 +81,9 @@ type fakeCoordinator struct {
 	// fail, when set, is what a turn fails with before it runs, as when no
 	// runner of the owner's can run it.
 	fail error
+	// hold, when set, runs at the end of each turn with the turn's context,
+	// as a long turn of Claude's would (until it is stopped).
+	hold func(ctx context.Context)
 }
 
 func (f *fakeCoordinator) Stream(ctx context.Context, dir string, history []agent.ChatMessage, emit func(agent.ChatDelta)) error {
@@ -100,10 +103,16 @@ func (f *fakeCoordinator) Stream(ctx context.Context, dir string, history []agen
 		return err
 	}
 	f.turns, f.dirs = append(f.turns, msg), append(f.dirs, dir)
-	act := f.act
+	act, hold := f.act, f.hold
 	f.mu.Unlock()
 	if act != nil {
 		act(msg, func(tool, args string) (string, bool) { return toolCall(f.h, token, tool, args) })
+	}
+	if hold != nil {
+		hold(ctx)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 	}
 	emit(agent.ChatDelta{Kind: "text", Text: "Done."})
 	emit(agent.ChatDelta{Kind: "done"})
@@ -636,5 +645,110 @@ func TestPlannerStartsGoalForADeveloper(t *testing.T) {
 		if u.Planner != (u.ID == pat.ID) {
 			t.Errorf("people: %+v", people)
 		}
+	}
+}
+
+// Deleting a goal stops its coordinator's running turn first, then takes
+// the goal; its tasks stay on the board where they were, without a goal.
+// A planner can't, and a deleted goal is gone for every call.
+func TestDeleteGoal(t *testing.T) {
+	s, p, fc := goalServer(t)
+	h := loggedIn(t, s.Routes())
+	fc.setAct(func(msg string, call func(string, string) (string, bool)) {
+		if strings.Contains(msg, "propose a plan") {
+			call("propose_plan", `{"tasks":[{"title":"Index","prompt":"Add an index"},{"title":"Use it","prompt":"Query it","after":[0]}]}`)
+		}
+	})
+	w := do(t, h, "POST", "/api/goals", `{"project":"`+p.ID+`","title":"Faster search","mode":"ask"}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+	var g goalView
+	_ = json.Unmarshal(w.Body.Bytes(), &g)
+	settleGoals(s)
+	if w := do(t, h, "POST", "/api/goals/"+g.ID+"/plan/accept", `{}`); w.Code != http.StatusOK {
+		t.Fatalf("accept: %d %s", w.Code, w.Body)
+	}
+	g = getGoal(t, h, g.ID)
+	if len(g.Tasks) != 2 {
+		t.Fatalf("tasks %+v", g.Tasks)
+	}
+	first, second := g.Tasks[0].ID, g.Tasks[1].ID
+
+	ph, _ := plannerOf(t, s, s.Routes())
+	if w := do(t, ph, "DELETE", "/api/goals/"+g.ID, ""); w.Code != http.StatusForbidden {
+		t.Fatalf("a planner deleted a goal: %d %s", w.Code, w.Body)
+	}
+
+	// A task in review wakes the coordinator, whose turn runs until stopped.
+	started, stopped := make(chan struct{}), make(chan error, 1)
+	var once sync.Once
+	fc.mu.Lock()
+	fc.hold = func(ctx context.Context) {
+		once.Do(func() { close(started) })
+		select {
+		case <-ctx.Done():
+			stopped <- ctx.Err()
+		case <-time.After(time.Minute):
+			stopped <- errors.New("the turn wasn't stopped")
+		}
+	}
+	fc.mu.Unlock()
+	setStatus(t, s, first, model.StatusQueued, model.StatusInProgress, model.StatusReview)
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the coordinator wasn't woken")
+	}
+	if cur, _ := raw(s).GetGoal(g.ID); !cur.Running {
+		t.Fatalf("the goal's turn isn't running: %+v", cur)
+	}
+
+	at := time.Now()
+	if w := do(t, h, "DELETE", "/api/goals/"+g.ID, ""); w.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", w.Code, w.Body)
+	}
+	if err := <-stopped; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the running turn: %v", err)
+	}
+	if d := time.Since(at); d >= goalStopWait {
+		t.Errorf("delete waited %v for the stopped turn", d)
+	}
+	settleGoals(s)
+
+	if w := do(t, h, "GET", "/api/goals/"+g.ID, ""); w.Code != http.StatusNotFound {
+		t.Fatalf("deleted goal: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, h, "DELETE", "/api/goals/"+g.ID, ""); w.Code != http.StatusNotFound {
+		t.Fatalf("deleted twice: %d %s", w.Code, w.Body)
+	}
+	var list []goalView
+	_ = json.Unmarshal(do(t, h, "GET", "/api/projects/"+p.ID+"/goals", "").Body.Bytes(), &list)
+	if len(list) != 0 {
+		t.Fatalf("goals after delete %+v", list)
+	}
+	if chat, err := raw(s).ForOrg(1).GoalChat(g.ID); err == nil || len(chat) != 0 {
+		t.Fatalf("its chat: %+v %v", chat, err)
+	}
+	var todos []model.Todo
+	_ = json.Unmarshal(do(t, h, "GET", "/api/projects/"+p.ID+"/todos", "").Body.Bytes(), &todos)
+	want := map[string]model.TodoStatus{first: model.StatusReview, second: model.StatusDraft}
+	if len(todos) != len(want) {
+		t.Fatalf("board after delete: %+v", todos)
+	}
+	for _, td := range todos {
+		if st, ok := want[td.ID]; !ok || td.Status != st || td.GoalID != "" {
+			t.Errorf("task after its goal went: %s %s goal %q", td.ID, td.Status, td.GoalID)
+		}
+		if td.ID == second && !slices.Equal(td.DependsOn, []string{first}) {
+			t.Errorf("the second task lost its dependency: %+v", td.DependsOn)
+		}
+	}
+	// A task event no longer wakes anything.
+	n := fc.turnCount()
+	setStatus(t, s, first, model.StatusMerging, model.StatusMerged)
+	settleGoals(s)
+	if fc.turnCount() != n {
+		t.Errorf("a deleted goal's coordinator was woken")
 	}
 }

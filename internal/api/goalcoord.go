@@ -288,6 +288,33 @@ func (e *goalEngine) cancel(id string) {
 	}
 }
 
+// goalStopWait is how long deleting a goal waits for its coordinator's
+// turn to end once stopped. A chat turn isn't stopped: past this, the goal
+// is deleted under it, and what the turn still writes to it is refused.
+var goalStopWait = 5 * time.Second
+
+// forget runs del, which deletes goal id, once its coordinator is stopped:
+// a running wake-up turn is cancelled, and del waits (up to goalStopWait)
+// for the goal's turn lock, so no turn starts or writes in between.
+func (e *goalEngine) forget(id string, del func() error) error {
+	e.cancel(id)
+	l := e.lock(id)
+	locked := l.TryLock()
+	for deadline := time.Now().Add(goalStopWait); !locked && time.Now().Before(deadline); locked = l.TryLock() {
+		time.Sleep(20 * time.Millisecond)
+	}
+	err := del()
+	if locked {
+		l.Unlock()
+	}
+	if err == nil {
+		e.mu.Lock()
+		delete(e.locks, id)
+		e.mu.Unlock()
+	}
+	return err
+}
+
 // turn runs one coordinator turn for goal id's waiting events, and reports
 // whether it ran (false: nothing to do, or it couldn't run; the events then
 // wait for the next kick).

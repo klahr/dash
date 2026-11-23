@@ -126,7 +126,7 @@ func TestChatArgsBoard(t *testing.T) {
 		"mcp__dash_board__report_issue", "mcp__dash_board__read_try_terminal",
 		"mcp__dash_board__list_goals", "mcp__dash_board__get_goal", "mcp__dash_board__create_goal", "mcp__dash_board__update_goal",
 		"mcp__dash_board__pause_goal", "mcp__dash_board__resume_goal", "mcp__dash_board__stop_goal",
-		"mcp__dash_board__accept_goal_plan", "mcp__dash_board__reject_goal_plan", "mcp__dash_board__message_goal",
+		"mcp__dash_board__delete_goal", "mcp__dash_board__accept_goal_plan", "mcp__dash_board__reject_goal_plan", "mcp__dash_board__message_goal",
 		"mcp__dash_board__list_cards", "mcp__dash_board__get_card", "mcp__dash_board__create_card", "mcp__dash_board__update_card",
 		"mcp__dash_board__comment_card", "mcp__dash_board__start_card", "mcp__dash_board__link_card", "mcp__dash_board__list_deploys",
 		"mcp__dash_board__show_image"}) {

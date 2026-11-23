@@ -27,6 +27,7 @@ func (s *Server) goalRoutes(mux routeMux) {
 	mux.HandleFunc("POST /api/goals", s.createGoal)
 	mux.HandleFunc("GET /api/goals/{gid}", s.getGoal)
 	mux.HandleFunc("PATCH /api/goals/{gid}", s.updateGoal)
+	mux.HandleFunc("DELETE /api/goals/{gid}", s.deleteGoal)
 	mux.HandleFunc("POST /api/goals/{gid}/pause", s.goalAction("pause"))
 	mux.HandleFunc("POST /api/goals/{gid}/resume", s.goalAction("resume"))
 	mux.HandleFunc("POST /api/goals/{gid}/stop", s.goalAction("stop"))
@@ -428,6 +429,31 @@ func (sv *service) stopGoal(id string) (model.Goal, error) {
 		sv.s.goals().cancel(id)
 	}
 	return g, err
+}
+
+// deleteGoal handles DELETE /api/goals/{gid}.
+func (s *Server) deleteGoal(w http.ResponseWriter, r *http.Request) {
+	sv, g, ok := s.goal(w, r)
+	if !ok {
+		return
+	}
+	if err := sv.deleteGoal(g.ID); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteGoal deletes goal id for good. Its coordinator is stopped first;
+// its tasks stay on the board as they are, without a goal.
+func (sv *service) deleteGoal(id string) error {
+	if err := sv.writable(); err != nil {
+		return err
+	}
+	return sv.s.goals().forget(id, func() error {
+		_, _, err := sv.data.DeleteGoal(id)
+		return err
+	})
 }
 
 // acceptGoalPlan handles POST /api/goals/{gid}/plan/accept: the waiting
@@ -1082,6 +1108,13 @@ func (b board) GoalAction(id, action string) (mcptools.GoalView, error) {
 		return mcptools.GoalView{}, err
 	}
 	return b.view(b.sv.goalAction(id, action))
+}
+
+func (b board) DeleteGoal(id string) error {
+	if _, err := b.GetGoal(id); err != nil {
+		return err
+	}
+	return b.sv.deleteGoal(id)
 }
 
 func (b board) AcceptGoalPlan(id string, plan []model.GoalPlanItem, queue bool) (mcptools.GoalView, []model.Todo, error) {

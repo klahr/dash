@@ -10,7 +10,7 @@ import (
 
 // The user's goal tools on the chat's board: start a goal, reject and
 // accept its plan, write to its coordinator (which answers its question),
-// change, pause, resume and stop it.
+// change, pause, resume, stop and delete it.
 func TestGoalToolsForUser(t *testing.T) {
 	s, p, fc := goalServer(t)
 	h := s.Routes()
@@ -115,5 +115,24 @@ func TestGoalToolsForUser(t *testing.T) {
 	}
 	if out, isErr := toolCall(h, token, "get_goal", `{"goal":"nope"}`); !isErr || !strings.Contains(out, "no goal") {
 		t.Fatalf("unknown goal: %s", out)
+	}
+
+	// delete_goal: the goal goes, its task stays on the board without it.
+	if out := tool("delete_goal", `{"goal":"`+id+`"}`); !strings.Contains(out, id) || !strings.Contains(out, "deleted") {
+		t.Fatalf("delete_goal: %s", out)
+	}
+	if out, isErr := toolCall(h, token, "get_goal", `{"goal":"`+id+`"}`); !isErr || !strings.Contains(out, "no goal") {
+		t.Fatalf("deleted goal: %s", out)
+	}
+	if out, isErr := toolCall(h, token, "delete_goal", `{"goal":"`+id+`"}`); !isErr || !strings.Contains(out, "no goal") {
+		t.Fatalf("deleted twice: %s", out)
+	}
+	for _, td := range raw(s).ListTodos(p.ID) {
+		if td.GoalID != "" {
+			t.Errorf("task %s still has goal %s", td.ID, td.GoalID)
+		}
+	}
+	if n := len(raw(s).ListTodos(p.ID)); n != 1 {
+		t.Errorf("%d tasks on the board after deleting the goal, want 1", n)
 	}
 }

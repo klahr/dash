@@ -97,6 +97,67 @@ func (s *Store) UpdateGoal(id string, fn func(*model.Goal) error) (model.Goal, e
 	return cloneGoal(cp), nil
 }
 
+// DeleteGoal forgets a goal and its coordinator's conversation, in one
+// transaction. What points to it stays and forgets it: its tasks stay on
+// the board without a goal (a coordinator's review note on one stays, no
+// longer naming the goal), and a plan that launched it no longer names
+// it. Planning cards keep their link (the card shows the goal as removed).
+// It returns the deleted goal and the tasks it took off it.
+func (s *Store) DeleteGoal(id string) (model.Goal, []model.Todo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, ok := s.data.Goals[id]
+	if !ok {
+		return model.Goal{}, nil, ErrNotFound
+	}
+	gone := cloneGoal(*g)
+	org := s.projectOrgLocked(g.ProjectID)
+	var freed []*model.Todo
+	for tid, t := range s.data.Todos {
+		if t.GoalID == id || (t.GoalNote != nil && t.GoalNote.Goal == id) {
+			cp := clone(*t)
+			if cp.GoalID == id {
+				cp.GoalID = ""
+			}
+			if cp.GoalNote != nil && cp.GoalNote.Goal == id {
+				cp.GoalNote.Goal = ""
+			}
+			cp.UpdatedAt = time.Now()
+			s.data.Todos[tid] = &cp
+			freed = append(freed, &cp)
+		}
+	}
+	delete(s.data.Goals, id)
+	delete(s.data.GoalChats, id)
+	err := s.writeLocked(func(tx *sql.Tx) error {
+		for _, t := range freed {
+			if err := putTodo(tx, t); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec("UPDATE plans SET data = json_remove(data, '$.goal_id') WHERE json_extract(data, '$.goal_id') = ?", id); err != nil {
+			return err
+		}
+		if err := setChat(tx, chatGoal, id, org, nil); err != nil {
+			return err
+		}
+		return deleteRow(tx, "goals", id)
+	})
+	out := make([]model.Todo, 0, len(freed))
+	for _, t := range freed {
+		out = append(out, *t)
+	}
+	if err != nil {
+		return gone, out, err
+	}
+	gone.Log = nil
+	s.emit(model.EvGoalDeleted, gone.ProjectID, "", gone)
+	for _, t := range freed {
+		s.emit(model.EvTodoUpdated, t.ProjectID, t.ID, *t)
+	}
+	return gone, out, nil
+}
+
 // GoalOrg is the org a goal belongs to: its project's.
 func (s *Store) GoalOrg(goalID string) (int64, bool) {
 	s.mu.RLock()
@@ -213,6 +274,14 @@ func (o *OrgStore) UpdateGoal(id string, fn func(*model.Goal) error) (model.Goal
 		return model.Goal{}, ErrNotFound
 	}
 	return o.s.UpdateGoal(id, fn)
+}
+
+// DeleteGoal deletes one of the org's goals (Store.DeleteGoal).
+func (o *OrgStore) DeleteGoal(id string) (model.Goal, []model.Todo, error) {
+	if !o.ownsGoal(id) {
+		return model.Goal{}, nil, ErrNotFound
+	}
+	return o.s.DeleteGoal(id)
 }
 
 func (o *OrgStore) GoalChat(id string) ([]model.ChatMessage, error) {

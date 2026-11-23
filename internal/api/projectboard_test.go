@@ -112,6 +112,7 @@ func TestProjectChatCantReachOtherProjects(t *testing.T) {
 		{"update_goal", fmt.Sprintf(`{"goal":%q,"title":"renamed"}`, otherGoal.ID)},
 		{"pause_goal", onGoal},
 		{"stop_goal", onGoal},
+		{"delete_goal", onGoal},
 		{"accept_goal_plan", onGoal},
 		{"reject_goal_plan", onGoal},
 		{"message_goal", fmt.Sprintf(`{"goal":%q,"text":"hi"}`, otherGoal.ID)},

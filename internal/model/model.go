@@ -1119,6 +1119,7 @@ const (
 	EvClaudeStatus     EventType = "claude.status"      // Claude's status page changed (internal/claudestatus); Data is its Status
 	EvScanTemplate     EventType = "scan.template"      // a Dash scan template was created, edited or deleted; Data is {"name": …, "deleted": bool}
 	EvGoalUpdated      EventType = "goal.updated"       // a goal was created or changed; Data is the Goal (without its log)
+	EvGoalDeleted      EventType = "goal.deleted"       // a goal was deleted (its tasks stay, without it); Data is the Goal as it was (without its log)
 	EvDeployUpdated    EventType = "deploy.updated"     // a deploy was queued, moved on or finished; Data is the Deploy (without its log)
 	EvProjectChat      EventType = "project.chat"       // a user's own chat about a project was saved or cleared, or a turn of it began or ended; Data is {"busy": bool} from a turn, nil from a save. Sent to that user only
 	EvPlanningCard     EventType = "planning.card"      // a planning card was created, changed, moved, commented, linked or deleted; Data is {"card": id, "deleted": bool}

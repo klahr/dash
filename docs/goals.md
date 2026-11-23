@@ -58,7 +58,7 @@ Pick a goal to open it beside the list (full screen with **Back** on a phone). `
 - **Log**: what the coordinator did and why, newest first.
 
 Its buttons: **Review plan** (a plan waits), **Queue drafts** (its drafts wait), **Talk to
-coordinator**, **Pause**, **Resume**, **Try again** (it can't run), **Edit goal**, **Copy link** and **Stop**. **Talk to
+coordinator**, **Pause**, **Resume**, **Try again** (it can't run), **Edit goal**, **Copy link**, **Stop** and **Delete**. **Talk to
 coordinator** opens the goal's chat as a tab in the chat pane; answer its questions there.
 **Copy link** copies the goal's address, which opens it for anyone in the project (see
 [Links](links.md)).
@@ -110,7 +110,7 @@ can still send a task back with notes: that task was already queued by you.
 If the coordinator needs a decision, it asks: the goal waits for you, with the question as its
 note. Answer in the goal's chat, or with `message_goal` from Claude (see below).
 
-## Pause, resume, edit, stop
+## Pause, resume, edit, stop, delete
 
 - **Pause** holds the goal: task events wait, and a coordinator turn running now stops. Its
   tasks carry on. **Resume** goes on where it was and wakes the coordinator for what came
@@ -118,6 +118,11 @@ note. Answer in the goal's chat, or with `message_goal` from Claude (see below).
 - **Edit** changes the title, description, mode or budget. To go on with a goal that ran out of
   budget, raise its budget, then resume it.
 - **Stop** ends the goal for good: it is done, and its tasks stay on the board as they are.
+  The goal stays in the list.
+- **Delete** removes the goal from the list, with its plan, log and the coordinator's
+  conversation. A coordinator turn running now stops first. Its tasks stay on the board as they
+  are, without a goal (and without its chip). A Planning card linked to the goal shows it as
+  removed. This can't be undone.
 
 ## Budget
 
@@ -158,7 +163,7 @@ a question the goal waits on. A paused goal, or one out of budget, gets it when 
 
 `dash-mcp`, the claude.ai connector and Dash's chats have goal tools too: `list_goals`,
 `get_goal`, `create_goal`, `update_goal`, `pause_goal`, `resume_goal`, `stop_goal`,
-`accept_goal_plan`, `reject_goal_plan` and `message_goal`. See
+`delete_goal`, `accept_goal_plan`, `reject_goal_plan` and `message_goal`. See
 [MCP](mcp.md#goals).
 
 ## API
@@ -173,6 +178,7 @@ a question the goal waits on. A paused goal, or one out of budget, gets it when 
 | `POST /api/goals/{id}/pause` | pause it |
 | `POST /api/goals/{id}/resume` | resume it |
 | `POST /api/goals/{id}/stop` | stop it |
+| `DELETE /api/goals/{id}` | delete it; its tasks stay on the board, without a goal |
 | `GET /api/goals/{id}/log` | its log |
 | `POST /api/goals/{id}/plan/accept` | accept the waiting plan: `{"plan": [edited items], "queue": true}`, both optional |
 | `POST /api/goals/{id}/plan/reject` | reject it: `{"feedback": "…"}` |
@@ -180,7 +186,7 @@ a question the goal waits on. A paused goal, or one out of budget, gets it when 
 | `GET /api/goals/{id}/chat` | the coordinator's conversation |
 
 `mode` is `ask` (ask before queuing) or `queue` (queue on its own). Changes to a goal are
-broadcast on `/ws/events` as `goal.updated`.
+broadcast on `/ws/events` as `goal.updated`, and a deleted goal as `goal.deleted`.
 
 ```sh
 curl -b cookies.txt -X POST https://dash.example.com/api/goals \

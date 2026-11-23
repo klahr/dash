@@ -223,6 +223,13 @@ export function goalChatEvent(g, m) {
     if (viewingChat(gc.tab.key)) loadGoalChat(gc).catch(() => {});
   }
 }
+// goalChatGone: goal g was deleted (here or elsewhere); its chat's tab closes.
+export function goalChatGone(g, m) {
+  for (const t of pane.goalTabs) {
+    if (t.id !== g?.id || projectByKey(t.pk)?.machine !== m.name) continue;
+    closeGoalTab(t.key);
+  }
+}
 
 // Tabs are This project, General, then the chats added with + in the selected
 // project (each project has its own), then other projects' chats with a reply

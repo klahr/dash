@@ -11,7 +11,7 @@ import (
 
 // The user's goal tools: what a person does with goals (list, start, change,
 // pause, resume, stop them, accept or reject a plan, write to the
-// coordinator), for dash-mcp, the connector and the chat. A goal's own
+// coordinator, delete them), for dash-mcp, the connector and the chat. A goal's own
 // coordinator has GoalTools instead.
 
 // GoalTask is one of a goal's tasks, as a GoalView lists it.
@@ -58,6 +58,9 @@ type GoalManager interface {
 	UpdateGoal(id string, c GoalChange) (GoalView, error)
 	// GoalAction pauses, resumes or stops a goal (action: pause, resume, stop).
 	GoalAction(id, action string) (GoalView, error)
+	// DeleteGoal deletes a goal for good, stopping its coordinator first.
+	// Its tasks stay on the board, without a goal.
+	DeleteGoal(id string) error
 	// AcceptGoalPlan turns the plan waiting for the user (or plan, their
 	// edit of it, if not nil) into the goal's tasks: drafts, or queued.
 	AcceptGoalPlan(id string, plan []model.GoalPlanItem, queue bool) (GoalView, []model.Todo, error)
@@ -198,6 +201,19 @@ func GoalManagerTools(b Board, gm GoalManager, o Options) []Tool {
 		{"resume_goal", "Resume a paused goal, or one out of budget once its budget allows more (see update_goal).", []Param{PGoal}, do("resume")},
 		{"stop_goal", "Stop a goal for good: it is done and its coordinator never woken again. Its tasks stay on the board as they are. " +
 			"Only when the user asks to stop it.", []Param{PGoal}, do("stop")},
+		{"delete_goal", "Delete a goal for good: its coordinator is stopped and the goal, its log and its conversation are gone. " +
+			"Its tasks stay on the board as they are, without a goal. Only when the user asks to delete it (stop_goal keeps it, done).",
+			[]Param{PGoal},
+			func(a Args) (any, error) {
+				id, err := need(a, "goal")
+				if err != nil {
+					return nil, err
+				}
+				if err := gm.DeleteGoal(id); err != nil {
+					return nil, err
+				}
+				return map[string]string{"deleted": id, "note": "Its tasks stay on the board, without a goal."}, nil
+			}},
 		{"accept_goal_plan", "Accept the plan a goal waits for you on (get_goal shows it): its tasks are made, as drafts, or queued with queue. " +
 			"Only when the user accepts the plan.",
 			[]Param{PGoal,
@@ -400,6 +416,11 @@ func (f Fleet) GoalAction(id, action string) (GoalView, error) {
 	return f.onGoal(id, func(gm GoalManager) (GoalView, error) { return gm.GoalAction(id, action) })
 }
 
+func (f Fleet) DeleteGoal(id string) error {
+	_, err := f.onGoal(id, func(gm GoalManager) (GoalView, error) { return GoalView{}, gm.DeleteGoal(id) })
+	return err
+}
+
 func (f Fleet) AcceptGoalPlan(id string, plan []model.GoalPlanItem, queue bool) (GoalView, []model.Todo, error) {
 	var made []model.Todo
 	g, err := f.onGoal(id, func(gm GoalManager) (GoalView, error) {
@@ -471,6 +492,10 @@ func (c RESTComputer) GoalAction(id, action string) (GoalView, error) {
 	}
 	var out GoalView
 	return out, c.API.Call("POST", c.goalPath(id, "/", action), nil, &out)
+}
+
+func (c RESTComputer) DeleteGoal(id string) error {
+	return c.API.Call("DELETE", c.goalPath(id), nil, nil)
 }
 
 func (c RESTComputer) AcceptGoalPlan(id string, plan []model.GoalPlanItem, queue bool) (GoalView, []model.Todo, error) {

@@ -222,6 +222,13 @@ func (pb projectBoard) GoalAction(id, action string) (mcptools.GoalView, error) 
 	return pb.b.GoalAction(id, action)
 }
 
+func (pb projectBoard) DeleteGoal(id string) error {
+	if err := pb.goal(id); err != nil {
+		return err
+	}
+	return pb.b.DeleteGoal(id)
+}
+
 func (pb projectBoard) AcceptGoalPlan(id string, plan []model.GoalPlanItem, queue bool) (mcptools.GoalView, []model.Todo, error) {
 	if err := pb.goal(id); err != nil {
 		return mcptools.GoalView{}, nil, err

@@ -257,6 +257,7 @@ the **Goals** page:
 - `update_goal(goal, title?, description?, mode?, max_tasks?, weekly_share?)`: only the given
   ones change.
 - `pause_goal`, `resume_goal` and `stop_goal(goal)`.
+- `delete_goal(goal)`: delete the goal for good. Its tasks stay on the board, without a goal.
 - `accept_goal_plan(goal, queue?, tasks?)`: the waiting plan becomes drafts, or queued tasks
   with `queue`. `tasks` is your edit of the plan, as `{title, prompt, after, model}` objects.
 - `reject_goal_plan(goal, feedback?)`: the coordinator plans again.
