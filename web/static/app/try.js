@@ -1,7 +1,9 @@
-import { $, $$, h, ib } from "./dom.js";
+import { $, $$, h, ib, setLabel } from "./dom.js";
 import { desktop, wsURL } from "./viewport.js";
 import { api } from "./api.js";
 import { attempt, fail, openSheet, toast } from "./dialogs.js";
+import { popMenu } from "./drawmode.js";
+import { href } from "./routes.js";
 import { projectFirst, state, tryState } from "./state.js";
 import { showView } from "./nav.js";
 import { setMenu } from "./projects.js";
@@ -27,12 +29,12 @@ export async function loadTry() {
   const p = state.project;
   if (tryState.pid !== (p?.id || null)) {
     disconnectTry();
-    Object.assign(tryState, { pid: p?.id || null, loaded: false, runners: [], disabled: "", session: null, runner: "", refused: null, pending: null });
+    Object.assign(tryState, { pid: p?.id || null, loaded: false, runners: [], candidates: [], default: "", disabled: "", session: null, runner: "", refused: null, pending: null, stopAsked: false });
   }
   if (!tryProject(p)) { renderTryButton(); if (state.view === "try") renderTry(); return; }
   const st = await api("GET", `/api/projects/${p.id}/try`);
   if (state.project?.id !== p.id) return;
-  Object.assign(tryState, { loaded: true, runners: st.runners || [], disabled: st.disabled || "", session: st.session || null });
+  Object.assign(tryState, { loaded: true, runners: st.runners || [], candidates: st.candidates || [], default: st.default || "", disabled: st.disabled || "", session: st.session || null });
   const ids = tryState.runners.map((r) => r.id);
   if (tryState.session) tryState.runner = tryState.session.runner_id;
   else if (!ids.includes(tryState.runner)) tryState.runner = st.default || "";
@@ -44,6 +46,7 @@ export async function loadTry() {
 // which only a CLI project with a runner for it can use.
 const NOT_CLI = "Trying a commit is for CLI projects: set the preview to Terminal in the project's settings.";
 export function renderTryButton() {
+  renderRun();
   const p = state.project, s = tryState.session;
   $(".shell-at").hidden = !p; // no project: the page is its "No project" note (ensureShell)
   $("#shell-at-branch").textContent = p?.default_branch || "main";
@@ -54,6 +57,100 @@ export function renderTryButton() {
   btn.title = !p ? "Pick a project first" : !can ? NOT_CLI : off ? tryState.disabled
     : s ? `Trying ${shortSHA(s.commit)} on ${s.runner}. Pick another commit`
       : "Try the project at a commit, in a throwaway worktree on a runner";
+}
+
+// ---- Run: the header's split button
+// ▶ Run starts the latest commit (an empty ref: the default branch's tip) on
+// the runner used last, or the only one; ▾ lists the project's runners to
+// pick from. While a run starts or goes it is ■ Terminate, with the commit
+// and runner beside it, linking to its terminal.
+const runKey = (pid) => `dash.run.runner.${pid}`;
+function lastRunner(pid) { try { return localStorage.getItem(runKey(pid)) || ""; } catch { return ""; } }
+function rememberRunner(pid, id) { try { localStorage.setItem(runKey(pid), id); } catch { /* private mode */ } }
+
+// running: a run is starting or going (an exited one shows its last screen,
+// but the button is Run again).
+const running = () => !!tryState.starting || !!tryState.pending || tryState.stopAsked || tryState.session?.state === "live";
+
+// runRunner is the runner ▶ Run uses without asking: the one used last, the
+// default, or the only one that can run it ("" when it must ask).
+function runRunner() {
+  const ok = tryState.runners.map((r) => r.id);
+  const last = state.project ? lastRunner(state.project.id) : "";
+  if (ok.includes(last)) return last;
+  if (ok.includes(tryState.default)) return tryState.default;
+  return ok.length === 1 ? ok[0] : "";
+}
+
+function renderRun() {
+  const p = state.project, s = tryState.session;
+  const wrap = $("#run-split"), main = $("#run-main"), pick = $("#run-pick"), at = $("#run-at");
+  wrap.hidden = !tryProject(p);
+  if (wrap.hidden) return;
+  const stop = running();
+  const none = tryState.loaded && !tryState.runners.length;
+  main.classList.toggle("stop", stop);
+  setLabel(main, stop ? "stop" : "play", h("span", { class: "run-main-label" }, stop ? "Terminate" : "Run"));
+  main.disabled = !stop && none;
+  const on = tryState.runners.find((r) => r.id === runRunner())?.name;
+  const label = stop ? "Terminate the run" : on ? `Run the latest ${p.default_branch || "main"} on ${on}` : `Run the latest ${p.default_branch || "main"} on a runner`;
+  main.title = none && !stop ? tryState.disabled || "No runner can run this project." : label;
+  if (stop && document.activeElement === pick) main.focus(); // ▾ hides: focus stays on the button
+  pick.hidden = stop;
+  pick.disabled = none && !tryState.candidates.length; // the list still says why each can't
+  pick.title = none ? main.title : "Pick where to run it";
+  // What runs, and where: a link to its terminal.
+  const what = s && !tryState.starting ? shortSHA(s.commit) : "";
+  const where = s && !tryState.starting ? s.runner : tryState.runners.find((r) => r.id === (tryState.pending?.runner || tryState.runner))?.name || "";
+  at.hidden = !stop;
+  if (stop) {
+    at.href = href({ view: "try" }, p);
+    at.title = "Open its terminal";
+    at.replaceChildren(what ? h("code", {}, what) : "starting", where ? h("span", { class: "run-at-on" }, ` on ${where}`) : "");
+  }
+}
+
+// runOn starts the latest commit on runner and opens its terminal.
+async function runOn(runner) {
+  const p = state.project;
+  if (!p) return;
+  rememberRunner(p.id, runner);
+  if (pane.open && !desktop.matches) toggleChatPane(false); // a phone shows the terminal, not the chat
+  if (state.view === "try") return startTry({ ref: "", runner });
+  tryState.pending = { ref: "", runner }; // enterTry starts it
+  renderRun();
+  openTry();
+}
+
+// runMenu drops down the project's runners (those that can't run it greyed,
+// saying why), then "Pick a commit…".
+function runMenu() {
+  const cands = tryState.candidates.length ? tryState.candidates : tryState.runners.map((r) => ({ ...r, online: true }));
+  const ok = new Set(tryState.runners.map((r) => r.id));
+  const last = state.project ? lastRunner(state.project.id) : "";
+  const rows = cands.map((r) => {
+    const can = ok.has(r.id);
+    const why = can ? "" : r.why || tryState.disabled || "Can't run this project.";
+    return ["computer", r.id === last ? `${r.name} (last used)` : r.name, () => runOn(r.id),
+      { disabled: !can, note: !r.online ? "offline" : can ? "online" : "can't run it", title: why }];
+  });
+  if (!rows.length) rows.push(["computer", "No runner", () => {}, { disabled: true, title: tryState.disabled }]);
+  return popMenu($("#run-pick"), [rows, [["log", "Pick a commit…", () => { tryState.runner ||= runRunner(); return pickCommit(); }]]], { heading: "Run on" });
+}
+
+async function clickRun() {
+  const p = state.project;
+  if (!p) throw new Error(projectFirst());
+  if (running()) {
+    // Terminate: stop it, or ask startTry to once it has started.
+    if (tryState.starting || tryState.pending) { tryState.stopAsked = true; tryState.pending = null; return renderRun(); }
+    return stopTry();
+  }
+  if (!tryState.loaded) await loadTry();
+  if (!tryState.runners.length) throw new Error(tryState.disabled || "No runner can run this project.");
+  const id = runRunner();
+  if (!id) return runMenu();
+  await runOn(id);
 }
 
 export function openTry() {
@@ -86,9 +183,14 @@ export async function enterTry() {
   if (state.view !== "try") return;
   const want = tryState.pending; // a commit picked before the page showed
   tryState.pending = null;
-  if (want && !tryState.starting) await startTry(want);
+  if (tryState.stopAsked) { tryState.stopAsked = false; renderRun(); } // Terminate, before it started
+  else if (want && !tryState.starting) await startTry(want);
   else if (!tryState.session && tryState.runner && !tryState.starting) await startTry({ ref: "" });
-  if (desktop.matches && !pane.open && state.project) toggleChatPane(true, "project");
+  if (desktop.matches && !pane.open && state.project) {
+    const keep = document.activeElement?.id === "run-main" ? document.activeElement : null; // Run started it
+    toggleChatPane(true, "project");
+    keep?.focus();
+  }
 }
 
 export function leaveTry() {
@@ -105,19 +207,27 @@ async function startTry({ ref = tryState.session?.ref || "", runner = tryState.r
   tryState.runner = runner;
   disconnectTry();
   renderTry();
+  renderRun();
+  let ok = false;
   try {
     const s = await api("POST", `/api/projects/${p.id}/try`, { runner, ref });
     if (state.project?.id !== p.id) return;
     Object.assign(tryState, { session: s, runner: s.runner_id, refused: null });
+    ok = true;
   } finally {
     tryState.starting = "";
+    if (!ok) tryState.stopAsked = false;
     if (state.project?.id === p.id) { renderTry(); renderTryButton(); }
   }
+  // Terminate was pressed while it was starting: stop what started.
+  if (tryState.stopAsked && state.project?.id === p.id) await stopTry();
 }
 
 async function stopTry() {
   const p = state.project;
   if (!p) return;
+  tryState.stopAsked = false;
+  tryState.pending = null;
   disconnectTry();
   await api("DELETE", `/api/projects/${p.id}/try`);
   tryState.session = null;
@@ -155,7 +265,8 @@ function connectTry(s) {
       loadTry().catch(() => renderTry()); // it exited, went idle, or the runner left
     },
   });
-  requestAnimationFrame(() => { t.fit(); if (desktop.matches) t.term.focus(); });
+  // The header's Run button keeps focus when it started the run (it is Terminate now).
+  requestAnimationFrame(() => { t.fit(); if (desktop.matches && document.activeElement?.id !== "run-main") t.term.focus(); });
 }
 
 function renderTry() {
@@ -260,6 +371,16 @@ async function openTryCommits() {
 }
 
 $("#shell-at-main").addEventListener("click", () => showView("run"));
+$("#run-main").addEventListener("click", attempt(clickRun));
+$("#run-pick").addEventListener("click", attempt(async () => {
+  if (!tryState.loaded) await loadTry();
+  await runMenu();
+}));
+$("#run-at").addEventListener("click", (e) => {
+  if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // a new tab or window
+  e.preventDefault();
+  attempt(openTry)();
+});
 $("#shell-at-commit").addEventListener("click", attempt(pickCommit));
 $("#try-commit").addEventListener("click", attempt(openTryCommits));
 $("#try-restart").addEventListener("click", attempt(() => startTry({ ref: tryState.session?.ref || "" })));
@@ -291,7 +412,11 @@ $$("#try-keys [data-key]").forEach((b) => {
   });
 });
 // The session may stop on the runner (idle, exited): look again now and then while it's shown.
-setInterval(() => { if (state.view === "try" && !document.hidden && !tryState.starting) loadTry().catch(() => {}); }, 20000);
+// Elsewhere, a running session is looked at too, so the header's Terminate turns back into Run.
+setInterval(() => {
+  if (document.hidden || tryState.starting || !tryProject()) return;
+  if (state.view === "try" || tryState.session?.state === "live") loadTry().catch(() => {});
+}, 20000);
 
 export async function loadProcs() {
   if (!state.project) return;

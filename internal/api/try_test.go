@@ -61,6 +61,25 @@ func TestTryRunnerEligibility(t *testing.T) {
 		t.Error("picked a runner that isn't eligible")
 	}
 
+	// The Run button's list: every runner working on the project, with why
+	// it can't run on the ones it can't.
+	cands := map[string]tryCandidate{}
+	for _, x := range tryCandidates(fleet, p, me) {
+		cands[x.ID] = x
+	}
+	for id, want := range map[string]string{"ok": "", "off": "Not connected", "noterm": "terminals", "notmine": "your own runner"} {
+		x, ok := cands[id]
+		if !ok || (want == "") != (x.Why == "") || !strings.Contains(x.Why, want) {
+			t.Errorf("candidate %s: %+v (listed %v), want why %q", id, x, ok, want)
+		}
+	}
+	if !cands["ok"].Online || cands["off"].Online || cands["ok"].Name != "laptop" {
+		t.Errorf("candidates' names or online: %+v", cands)
+	}
+	if _, ok := cands["unlinked"]; ok || len(cands) != 4 {
+		t.Errorf("listed a runner not working on the project: %+v", cands)
+	}
+
 	for _, c := range []struct {
 		name   string
 		fleet  []tunnel.Runner
@@ -155,6 +174,8 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 	// The runner hasn't said it opens terminals: Try is off, and says why.
 	if st := state(); len(st.Runners) != 0 || !strings.Contains(st.Disabled, "allows terminals") {
 		t.Fatalf("before the runner allows terminals: %+v", st)
+	} else if len(st.Candidates) != 1 || st.Candidates[0].ID != creds.ID || !st.Candidates[0].Online || !strings.Contains(st.Candidates[0].Why, "terminals") {
+		t.Fatalf("the Run button's list before the runner allows terminals: %+v", st.Candidates)
 	}
 	if w := do(t, h, "POST", "/api/projects/"+p.ID+"/try", `{}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("try without an eligible runner: %d %s", w.Code, w.Body)
@@ -163,7 +184,8 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the runner's report", func() bool { r, _ := rh.Get(creds.ID); return r.Reported != nil && r.Reported.Terminals })
-	if st := state(); len(st.Runners) != 1 || st.Default != creds.ID || st.Disabled != "" || st.Session != nil {
+	if st := state(); len(st.Runners) != 1 || st.Default != creds.ID || st.Disabled != "" || st.Session != nil ||
+		len(st.Candidates) != 1 || st.Candidates[0].Why != "" {
 		t.Fatalf("eligible runner: %+v", st)
 	}
 

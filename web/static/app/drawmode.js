@@ -496,8 +496,8 @@ export async function revertTodo(t) {
 // popMenu drops a menu down from anchor (a button), looking like the project
 // menu (.foot-menu-list). groups are lists of choices, separated by a line
 // (empty ones are skipped). A choice is [icon, label, fn] or
-// [icon, label, fn, { disabled, note, danger }]: a disabled one shows why
-// (note). Arrow keys move, Enter picks, Esc or a click outside closes it and
+// [icon, label, fn, { disabled, note, danger, title }]: a disabled one shows why
+// (note, or title as its tooltip). Arrow keys move, Enter picks, Esc or a click outside closes it and
 // focus returns to anchor. Resolves once the picked choice has run.
 let popOpen = null; // the open menu's close function
 export function popMenu(anchor, groups, { heading = "" } = {}) {
@@ -509,8 +509,8 @@ export function popMenu(anchor, groups, { heading = "" } = {}) {
   let picked = null, done;
   const rows = groups.flatMap((g, i) => [
     i ? h("hr", { class: "menu-sep", role: "separator" }) : null,
-    ...g.map(([icon, label, fn, { disabled = false, note = "", danger = false } = {}]) => ib({
-      type: "button", role: "menuitem", class: danger ? "danger" : null, disabled, title: note || null, tabindex: -1,
+    ...g.map(([icon, label, fn, { disabled = false, note = "", danger = false, title = "" } = {}]) => ib({
+      type: "button", role: "menuitem", class: danger ? "danger" : null, disabled, title: title || note || null, tabindex: -1,
       onclick: () => { picked = fn; close(true); },
     }, icon, h("span", { class: "menu-label" }, label), note ? h("em", { class: "menu-note" }, note) : null)),
   ]);

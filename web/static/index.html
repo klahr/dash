@@ -37,6 +37,13 @@
         </button>
         <div class="foot-menu-list project-picker-list" id="project-picker" role="menu" aria-label="Projects" hidden></div>
       </div>
+      <!-- Run (app/try.js): the latest commit's preview command on a runner, for terminal projects.
+           The main part runs (or, while it runs, terminates); ▾ picks the runner. -->
+      <div class="run-split" id="run-split" role="group" aria-label="Run the latest commit" hidden>
+        <button type="button" class="run-main" id="run-main"><span class="run-main-label">Run</span></button>
+        <button type="button" class="run-pick" id="run-pick" aria-label="Pick where to run it" title="Pick where to run it" aria-haspopup="menu" aria-expanded="false" data-icon="down"></button>
+        <a class="run-at" id="run-at" hidden></a>
+      </div>
       <div class="lane-chips" id="lane-chips" role="group" aria-label="Minimized columns"></div>
       <!-- Claude's status page (status.claude.com): shown while something is wrong, when a platform admin turned it on. -->
       <button class="usage-pill claude-pill" id="claude-pill" type="button" hidden aria-haspopup="dialog" title="Claude's status"></button>

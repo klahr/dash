@@ -77,6 +77,37 @@ type tryRunner struct {
 	Name string `json:"name"`
 }
 
+// tryCandidate is a runner working on the project, as the Run button's list
+// shows it: Why says, when set, why Try can't run on it.
+type tryCandidate struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Online bool   `json:"online"`
+	Why    string `json:"why,omitempty"`
+}
+
+// tryCandidates are the runners working on p (tunnel.Runner.Serves), each
+// with why c can't try p on it ("" when c can).
+func tryCandidates(fleet []tunnel.Runner, p model.Project, c Caller) []tryCandidate {
+	out := []tryCandidate{}
+	for _, r := range fleet {
+		if !r.Serves(p) {
+			continue
+		}
+		x := tryCandidate{ID: r.ID, Name: r.Name, Online: r.Online}
+		switch {
+		case !r.Online:
+			x.Why = "Not connected."
+		case r.Reported == nil || !r.Reported.Terminals:
+			x.Why = "Doesn't allow terminals: update it."
+		case ownsRunner(c, r) != nil:
+			x.Why = "Terminals open only on your own runner."
+		}
+		out = append(out, x)
+	}
+	return out
+}
+
 // tryRunners are the runners p's try session may run on for c: online,
 // working on p (tunnel.Runner.Serves), opening terminals for the hub (an
 // older runner may not) and registered by c (terminals open only for a runner's
@@ -124,6 +155,9 @@ type tryState struct {
 	// Default is the runner picked when there is only one.
 	Default string            `json:"default,omitempty"`
 	Session *model.TrySession `json:"session,omitempty"`
+	// Candidates are all the runners working on the project, those it can't
+	// run on too, for the Run button's list.
+	Candidates []tryCandidate `json:"candidates"`
 }
 
 // tryProject is the caller's project {pid} and the runners it may try it on.
@@ -246,9 +280,12 @@ func (s *Server) getTry(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	st := tryState{Runners: runs, Disabled: why}
+	st := tryState{Runners: runs, Disabled: why, Candidates: []tryCandidate{}}
 	if st.Runners == nil {
 		st.Runners = []tryRunner{}
+	}
+	if s.hub() && s.Dispatch != nil {
+		st.Candidates = tryCandidates(s.fleet().List(), p, sv.c)
 	}
 	if len(runs) == 1 {
 		st.Default = runs[0].ID

@@ -50,6 +50,24 @@ matches, or type any hash, tag or branch). Picking one, or another runner, repla
 its worktree. A project has one try session; **commit…** shows it again while it runs. It stops after 30
 minutes without typing (or with **Stop**), and its worktree is removed.
 
+### Run and Terminate: the latest commit in one click
+
+A CLI project has a **Run** button (▶) in the header, beside the project's name. It runs
+`preview_command` at the tip of the default branch, as the Shell at a commit does, and opens its
+terminal.
+
+- **Run** runs on the runner you used last, or on the only runner that can run it. With no such
+  runner yet, it opens the list.
+- **▾** lists the project's runners, connected or not. Those that can't run it are greyed out;
+  hover one to see why. **Pick a commit…** at the end opens the commit picker.
+- Dash remembers the runner you picked, per project, in this browser.
+- With no runner at all, **Run** is greyed out and says why.
+
+While it starts or runs, the button is a red **Terminate** (■), with the commit and the runner beside
+it (`abc1234 on laptop`): click those to open the terminal. **Terminate** stops the run at once, with
+no question. When the run stops by itself (idle for 30 minutes, the command exits, the runner goes
+away), the button turns back into **Run** within about 20 seconds.
+
 The project chat sits beside the terminal (on a phone: the **Chat** tab, and **Terminal** to come
 back). While a session runs, the chat is told about it and can read the terminal's last lines with
 the `read_try_terminal` tool. Say "note …" or describe a bug and it reports it (`report_issue`)
@@ -59,6 +77,8 @@ with the command, its output and the commit hash: that adds a draft task on the 
 The hub's routes are `GET|POST|DELETE /api/projects/<id>/try` (`{"runner", "ref"}` to start),
 `GET /api/projects/<id>/try/commits?runner=&q=&fetch=1`, `GET /api/projects/<id>/try/log?lines=N`
 and the terminal at `/ws/projects/<id>/try`; each goes through to the runner over its tunnel.
+`GET` returns `runners` (those it can run on), `candidates` (every runner with the project, each
+with `online` and, when it can't run on it, `why`), `default` and `session`.
 
 ## Setting up a preview domain
 
