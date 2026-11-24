@@ -308,6 +308,20 @@ func TestAdminOrgs(t *testing.T) {
 	if w := admin.do("DELETE", fmt.Sprintf("/api/admin/orgs/%d", e.org), `{"name":"Default","password":"s3cret"}`); w.Code != http.StatusConflict {
 		t.Fatalf("delete the default org: %d %s", w.Code, w.Body)
 	}
+	setStatus := func(status string) {
+		t.Helper()
+		if _, err := e.a.acc.UpdateOrgBilling(e.two, func(b *store.OrgBilling) error { b.Status = status; return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setStatus("active")
+	if w := admin.do("DELETE", two, `{"name":"Second","password":"s3cret"}`); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "subscription") {
+		t.Fatalf("delete an org with a live subscription: %d %s", w.Code, w.Body)
+	}
+	if w := admin.do("GET", two, ""); w.Code != http.StatusOK {
+		t.Fatalf("org after the refusal: %d", w.Code)
+	}
+	setStatus("canceled")
 	cal := e.as(t, "cal")
 	if w := admin.do("DELETE", two, `{"name":"Second","password":"s3cret"}`); w.Code != http.StatusOK {
 		t.Fatalf("delete: %d %s", w.Code, w.Body)

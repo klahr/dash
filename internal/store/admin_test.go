@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/klahr/dash/internal/model"
 )
 
 // An org admin manages an account only when every org of it is one they
@@ -269,5 +271,62 @@ func TestAdminTOTPMembersAndOrgs(t *testing.T) {
 	}
 	if users, _, _, _ := acc.AdminUsers("%"); len(users) != 0 { // LIKE wildcards are literal
 		t.Fatalf("%%: %+v", users)
+	}
+}
+
+// DeleteOrg refuses while the org has projects or a subscription that still
+// bills, and leaves both in place; once they are gone it deletes the org
+// with its planner settings.
+func TestDeleteOrgRefusesWhileInUse(t *testing.T) {
+	t.Parallel()
+
+	s, acc, admin, _, org2 := tokenAccounts(t)
+	p, err := s.ForOrg(org2).CreateProject(model.Project{Name: "keep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acc.DeleteOrg(org2); !errors.Is(err, ErrOrgInUse) {
+		t.Fatalf("delete an org with a project: %v", err)
+	}
+	if _, err := acc.AdminOrg(org2); err != nil {
+		t.Fatalf("org after the refusal: %v", err)
+	}
+	if _, err := s.ForOrg(org2).GetProject(p.ID); err != nil {
+		t.Fatalf("project after the refusal: %v", err)
+	}
+	if _, err := s.DeleteProject(p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, status := range []string{"active", "trialing", "past_due"} {
+		if _, err := acc.UpdateOrgBilling(org2, func(b *OrgBilling) error { b.Status = status; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := acc.DeleteOrg(org2); !errors.Is(err, ErrOrgInUse) {
+			t.Fatalf("delete an org with a %s subscription: %v", status, err)
+		}
+		if b, err := acc.OrgBilling(org2); err != nil || b.Status != status {
+			t.Fatalf("billing after the refusal: %+v %v", b, err)
+		}
+	}
+	if _, err := acc.UpdateOrgBilling(org2, func(b *OrgBilling) error { b.Status = "canceled"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := acc.SetPlannerContext(admin, org2, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acc.DeleteOrg(org2); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := acc.AdminOrg(org2); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("org after delete: %v", err)
+	}
+	var n int
+	if err := acc.db.QueryRow("SELECT COUNT(*) FROM org_planner_settings WHERE org_id = ?", org2).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("planner settings after delete: %d %v", n, err)
+	}
+	if b, err := acc.OrgBilling(org2); err != nil || b.Status != "" {
+		t.Fatalf("billing after delete: %+v %v", b, err)
 	}
 }
