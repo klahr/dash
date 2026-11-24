@@ -107,12 +107,16 @@ func (b *Base) Observed(ws []string) {
 // Loop calls check now and then every `every` (an hour when it isn't set)
 // until ctx ends: the CLIs update themselves, so what they are can change
 // under a running Dash. In between it calls side every sideEvery (at most
-// every), for what changes more often, such as the sign-in.
+// every; every when it isn't set), for what changes more often, such as the
+// sign-in.
 func Loop(ctx context.Context, every, sideEvery time.Duration, check, side func(context.Context)) {
 	if every <= 0 {
 		every = time.Hour
 	}
-	tick := time.NewTicker(min(sideEvery, every))
+	if sideEvery <= 0 || sideEvery > every {
+		sideEvery = every
+	}
+	tick := time.NewTicker(sideEvery)
 	defer tick.Stop()
 	for {
 		check(ctx)
