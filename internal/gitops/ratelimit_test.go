@@ -242,3 +242,76 @@ func removeFile(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 }
+
+// A call that went through but started before the pause began doesn't end
+// it; one that started after does.
+func TestRateLimitOKStartedBeforePause(t *testing.T) {
+	t.Parallel()
+	c := &clock{t: time.Date(2026, 11, 23, 13, 0, 0, 0, time.UTC)}
+	r := &RateLimits{Now: c.now, Jitter: noJitter}
+	hit := c.t
+	r.Hit("", &RateLimitError{Kind: RateLimitSecondary, Until: hit})
+
+	c.add(2 * time.Second)
+	r.OK("", hit.Add(-time.Second))
+	if r.Active("") == nil {
+		t.Fatal("a call started before the pause must not end it")
+	}
+	r.OK("", hit)
+	if r.Active("") == nil {
+		t.Fatal("a call started as the pause began must not end it")
+	}
+	r.OK("other", hit.Add(time.Second))
+	if r.Active("") == nil {
+		t.Fatal("a call on another machine must not end this one's pause")
+	}
+	r.OK("", hit.Add(time.Second))
+	if got := r.Active(""); got != nil {
+		t.Fatalf("a call started after the pause began should end it, got %+v", got)
+	}
+}
+
+// Limited again during a pause: the pause isn't shortened (it runs the
+// same strike's backoff from now), and it isn't a new strike, so the next
+// pause after it ends is the second, not the third.
+func TestRateLimitHitDuringPause(t *testing.T) {
+	t.Parallel()
+	c := &clock{t: time.Date(2026, 11, 23, 13, 0, 0, 0, time.UTC)}
+	r := &RateLimits{Now: c.now, Jitter: noJitter}
+	start := c.t
+
+	first := r.Hit("", &RateLimitError{Kind: RateLimitSecondary, Until: start})
+	if want := start.Add(time.Minute); !first.Until.Equal(want) {
+		t.Fatalf("first pause: want until %v, got %v", want, first.Until)
+	}
+
+	c.add(10 * time.Second)
+	again := r.Hit("", &RateLimitError{Kind: RateLimitSecondary, Until: c.t.Add(5 * time.Second)})
+	if want := c.t.Add(time.Minute); !again.Until.Equal(want) {
+		t.Fatalf("a hit during the pause: want the first strike's minute from now (%v), got %v", want, again.Until)
+	}
+	if got := r.Active(""); got == nil || !got.Until.Equal(again.Until) {
+		t.Fatalf("want the pause in force until %v, got %+v", again.Until, got)
+	}
+
+	// GitHub's own time, when later, still wins during a pause.
+	c.add(10 * time.Second)
+	later := c.t.Add(5 * time.Minute)
+	if got := r.Hit("", &RateLimitError{Kind: RateLimitSecondary, Until: later}); !got.Until.Equal(later) {
+		t.Fatalf("want GitHub's later time %v, got %v", later, got.Until)
+	}
+	// And a shorter one doesn't cut the pause back.
+	c.add(10 * time.Second)
+	if got := r.Hit("", &RateLimitError{Kind: RateLimitSecondary, Until: c.t}); !got.Until.Equal(later) {
+		t.Fatalf("a hit during the pause must not shorten it: want until %v, got %v", later, got.Until)
+	}
+
+	c.t = later
+	if r.Active("") != nil {
+		t.Fatal("the pause should end on time")
+	}
+	next := r.Hit("", &RateLimitError{Kind: RateLimitSecondary, Until: c.t})
+	if want := c.t.Add(2 * time.Minute); !next.Until.Equal(want) {
+		t.Fatalf("want the second strike's two minutes, got until %v (now %v)", next.Until, c.t)
+	}
+}
