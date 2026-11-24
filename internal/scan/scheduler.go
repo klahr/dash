@@ -164,6 +164,7 @@ func (s *Scheduler) plan(projectID string, t Template, now time.Time) (plan, boo
 // Dash was down, so the slot doesn't run the scan a second time. With
 // early runs on, a run started early or by hand stands for its whole cron
 // period: the anchor is the cron time that ends it, so that one is skipped.
+// So does a restart of such a run.
 func (s *Scheduler) anchor(projectID, name string, sch Schedule, c Cron, set model.ScanSetting, has bool, now time.Time) time.Time {
 	var a time.Time
 	early := sch.EarlyOn()
@@ -172,8 +173,16 @@ func (s *Scheduler) anchor(projectID, name string, sch Schedule, c Cron, set mod
 			(early && (r.Trigger == model.TriggerEarly || r.Trigger == model.TriggerManual))
 	}); ok {
 		a = last.StartedAt
-		if last.Trigger == model.TriggerEarly || last.Trigger == model.TriggerManual {
-			if end := c.PeriodEnd(a); !end.IsZero() {
+		// A restart stands for the run it starts over: an early or manual
+		// one still covers the cron period it started in.
+		from := last
+		if last.Trigger == model.TriggerResume && last.ResumedFrom != "" {
+			if orig, err := s.Store.GetScanRun(last.ResumedFrom); err == nil {
+				from = orig
+			}
+		}
+		if early && (from.Trigger == model.TriggerEarly || from.Trigger == model.TriggerManual) {
+			if end := c.PeriodEnd(from.StartedAt); end.After(a) {
 				a = end
 			}
 		}

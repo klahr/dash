@@ -239,6 +239,25 @@ func TestEarlyRunAfterManualRun(t *testing.T) {
 	wantRuns(t, tickAt(t, fx, s, c, "2026-11-09 06:00"), model.TriggerSchedule)
 }
 
+// An early run that Dash restarts after a shutdown still stands for its
+// period: the restart doesn't let the cron time run the scan again.
+func TestEarlyRunResumedCoversPeriod(t *testing.T) {
+	t.Parallel()
+
+	fx, s, c := earlyFixture(t, model.EarlyAnyTime, &fakeUsage{})
+	c.t = at("2026-11-08 05:10")
+	fx.interrupt(t, "nightly", model.TriggerEarly)
+	s.Runner = fx.runner
+	c.t = at("2026-11-08 05:21")
+	if got := fx.runner.ResumeInterrupted(); len(got) != 1 {
+		t.Fatalf("resumed: %+v", got)
+	}
+	fx.runner.Wait()
+	wantRuns(t, tickAt(t, fx, s, c, "2026-11-08 06:00"))
+	wantRuns(t, tickAt(t, fx, s, c, "2026-11-08 06:01"))
+	wantRuns(t, tickAt(t, fx, s, c, "2026-11-09 06:00"), model.TriggerSchedule)
+}
+
 // With the option off, spare usage changes nothing.
 func TestEarlyRunOff(t *testing.T) {
 	t.Parallel()
