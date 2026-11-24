@@ -215,7 +215,13 @@ func TestAdminTOTPMembersAndOrgs(t *testing.T) {
 	if _, err := acc.SetRequire2FA(admin, org1, false); err != nil {
 		t.Fatal(err)
 	}
-	acc.db.Exec("UPDATE organizations SET require_2fa = 1 WHERE id = ?", org1)
+	res, err := acc.db.Exec("UPDATE organizations SET require_2fa = 1 WHERE id = ?", org1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		t.Fatalf("require 2FA: %d rows, %v", n, err)
+	}
 	if u, err := acc.AdminDisableTOTP(bea); err != nil || u.TOTP {
 		t.Fatalf("disable: %+v %v", u, err)
 	}
