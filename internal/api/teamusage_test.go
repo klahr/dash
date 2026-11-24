@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 )
@@ -119,6 +120,148 @@ func TestTeamUsage(t *testing.T) {
 	rows, err := csv.NewReader(w.Body).ReadAll()
 	if err != nil || len(rows) != 3 || rows[0][0] != "week" || rows[2][1] != "u" || rows[2][9] != "2.5000" {
 		t.Errorf("csv %q %v", rows, err)
+	}
+}
+
+// A task from before runs were kept counts once, its whole cost, when it
+// finished (else started, else was created); a scan's cost counts for Dash;
+// another org's tasks don't count.
+func TestTeamUsageLegacyScansAndOrgs(t *testing.T) {
+	parallel(t)
+
+	s, web := wallServer(t)
+	routes := s.Routes()
+	h := loginAs(t, routes, "u", "p")
+	owner := testOwner(t, s)
+
+	week := periodStart(time.Now().UTC(), usageWeek)
+	thisWeek, lastWeek := week.Add(time.Hour), week.AddDate(0, 0, -7).Add(time.Hour)
+	// Finished this week, started last week: counts this week.
+	setTodo(t, s, web, func(x *model.Todo) {
+		x.CreatedBy, x.Status, x.CostUSD = owner.User, model.StatusReview, 4
+		x.StartedAt, x.FinishedAt = &lastWeek, &thisWeek
+	})
+	// Started last week, not finished: counts last week.
+	setTodo(t, s, web, func(x *model.Todo) {
+		x.CreatedBy, x.Status, x.CostUSD = owner.User, model.StatusInProgress, 0.25
+		x.StartedAt, x.FinishedAt = &lastWeek, nil
+	})
+	// Never started: counts when it was created (now).
+	setTodo(t, s, web, func(x *model.Todo) {
+		x.CreatedBy, x.Status, x.CostUSD = owner.User, model.StatusQueued, 0.125
+		x.StartedAt, x.FinishedAt = nil, nil
+	})
+	// Free: no row.
+	setTodo(t, s, web, func(x *model.Todo) { x.CreatedBy, x.Status = owner.User, model.StatusReview })
+	for _, cost := range []float64{1, 0} {
+		if _, err := raw(s).CreateScanRun(model.ScanRun{ProjectID: web.ID, Scan: "test-gaps", StartedAt: thisWeek, CostUSD: cost}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Another org's costed task and scan.
+	beta, err := raw(s).Accounts().CreateOrg(owner.User, "Beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bs := raw(s).ForOrg(beta.ID)
+	bp, err := bs.CreateProject(model.Project{Name: "beta-only", Path: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bt, err := bs.CreateTodo(model.Todo{ProjectID: bp.ID, Title: "beta task", Prompt: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bs.UpdateTodo(bt.ID, func(x *model.Todo) error {
+		x.CreatedBy, x.CostUSD = owner.User, 100
+		x.RunStats = []model.TodoRun{{At: thisWeek, Kind: model.RunFirst, CostUSD: 100}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw(s).CreateScanRun(model.ScanRun{ProjectID: bp.ID, Scan: "test-gaps", StartedAt: thisWeek, CostUSD: 50}); err != nil {
+		t.Fatal(err)
+	}
+
+	get := func(h http.Handler, url string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", url, nil))
+		return w
+	}
+	w := get(h, "/api/usage/team?tz=0")
+	if w.Code != http.StatusOK {
+		t.Fatalf("usage: %d %s", w.Code, w.Body)
+	}
+	var u teamUsage
+	if err := json.Unmarshal(w.Body.Bytes(), &u); err != nil {
+		t.Fatal(err)
+	}
+	if u.Total.CostUSD != 5.375 || u.Total.Runs != 4 || u.Total.Tasks != 3 {
+		t.Errorf("total %+v", u.Total)
+	}
+	if len(u.Rows) != 3 {
+		t.Fatalf("rows %+v", u.Rows)
+	}
+	lw, tw := week.AddDate(0, 0, -7).Format(time.DateOnly), week.Format(time.DateOnly)
+	var dash, last, this *teamUsageRow
+	for i, r := range u.Rows {
+		if r.ProjectID != web.ID {
+			t.Errorf("row of another project %+v", r)
+		}
+		switch {
+		case r.MemberID == 0:
+			dash = &u.Rows[i]
+		case r.Period == lw:
+			last = &u.Rows[i]
+		case r.Period == tw:
+			this = &u.Rows[i]
+		}
+	}
+	if dash == nil || dash.Member != "Dash" || dash.Period != tw || dash.Tasks != 0 || dash.Runs != 1 || dash.CostUSD != 1 {
+		t.Errorf("Dash's row %+v", dash)
+	}
+	if last == nil || last.MemberID != owner.User || last.Tasks != 1 || last.Runs != 1 || last.CostUSD != 0.25 {
+		t.Errorf("last week %+v", last)
+	}
+	if this == nil || this.MemberID != owner.User || this.Tasks != 2 || this.Runs != 2 || this.CostUSD != 4.125 {
+		t.Errorf("this week %+v", this)
+	}
+}
+
+// Bad queries are 400s; another Dash (a machine caller) may not see usage.
+func TestTeamUsageRejects(t *testing.T) {
+	parallel(t)
+
+	s, _ := wallServer(t)
+	routes := s.Routes()
+	h := loginAs(t, routes, "u", "p")
+	for _, q := range []string{
+		"tz=99999", "tz=-99999", "tz=x",
+		"from=x", "to=2026-13-01",
+		"from=2026-02-01&to=2026-01-01",
+		"from=2020-01-01&to=2026-01-01",
+		"format=xml",
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "/api/usage/team?"+q, nil))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("?%s: %d %s", q, w.Code, w.Body)
+		}
+	}
+	// Just under three years is fine.
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/usage/team?from=2023-01-02&to=2026-01-01", nil))
+	if w.Code != http.StatusOK {
+		t.Errorf("three years: %d %s", w.Code, w.Body)
+	}
+
+	r := httptest.NewRequest("GET", "/api/usage/team", nil)
+	r = r.WithContext(auth.WithHub(r.Context()))
+	w = httptest.NewRecorder()
+	s.getTeamUsage(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("a machine caller: %d %s", w.Code, w.Body)
 	}
 }
 
