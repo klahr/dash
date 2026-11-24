@@ -536,11 +536,13 @@ func TestBrowserStarredProjects(t *testing.T) {
 	folded := `document.querySelector("#side-others-fold")?.getAttribute("aria-expanded") === "false" && ` +
 		`document.querySelector("#side-others-fold").textContent.includes("Other projects (2)") && ` + names + ` === "web,app"`
 	b.waitJS("web starred, the rest folded", folded+` && document.querySelector('.side-star[aria-pressed="true"]')?.getAttribute("aria-label") === "Star web"`)
-	var stars struct{ Projects []string }
-	api.must("GET", "/api/me/starred-projects", nil, http.StatusOK, &stars)
-	if len(stars.Projects) != 1 || stars.Projects[0] != "laptop/"+web.ID {
-		t.Fatalf("stars on the server: %v", stars.Projects)
+	// The page stars at once and saves after, so wait for the server to have it.
+	stars := func() []string {
+		var s struct{ Projects []string }
+		api.must("GET", "/api/me/starred-projects", nil, http.StatusOK, &s)
+		return s.Projects
 	}
+	waitFor(t, h.hub, "web starred on the server", func() bool { return slices.Equal(stars(), []string{"laptop/" + web.ID}) })
 	b.do("reload", chromedp.Reload())
 	b.waitJS("still starred after a reload", folded)
 
@@ -556,10 +558,7 @@ func TestBrowserStarredProjects(t *testing.T) {
 	b.waitJS("Unstar project in the menu", `document.querySelector("#pm-star")?.textContent === "Unstar project"`)
 	b.do("unstar web", chromedp.Click(chromedp.ID("pm-star")))
 	b.waitJS("no sections again", `!document.querySelector("#side-others-fold") && document.querySelectorAll("#side-project-list .side-project").length === 3`)
-	api.must("GET", "/api/me/starred-projects", nil, http.StatusOK, &stars)
-	if len(stars.Projects) != 0 {
-		t.Fatalf("stars on the server after unstarring: %v", stars.Projects)
-	}
+	waitFor(t, h.hub, "no stars on the server", func() bool { return len(stars()) == 0 })
 }
 
 // The chat pane's tabs: This project and General, plus the chats added with
