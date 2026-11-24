@@ -191,6 +191,11 @@ When a build fails, Dash queues a task asking Claude to fix it ("Fix failing bui
 made by Dash. On a hub it runs on the runners of a member: who turned that setting on, else who
 added the project, else the org's owner ([whose work a runner does](several-computers.md#whose-work-a-runner-does)).
 
+A project has one such task at a time. If the build fails again while it is open, Dash waits for
+it to end (merged, closed, or finished without changes because the failure was flaky). If that
+newer build is still the newest one and still failing then, Dash queues a fix for it. If a newer build of the same workflow is
+already running, Dash waits for that build instead of fixing the older failure.
+
 ## Rate limits
 
 Dash calls GitHub with `gh`. On a hub, each runner calls it with its own `gh` login. Dash polls:

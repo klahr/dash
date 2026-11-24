@@ -86,6 +86,46 @@ func TestFailedBuildIsInvestigatedOnce(t *testing.T) {
 	if n := len(w.Store.ListTodos(p.ID)); n != 1 {
 		t.Fatalf("want exactly one fix todo, got %d", n)
 	}
+
+	// The fix ends without changing anything (a flaky test, say): the
+	// failure that came in meanwhile gets a fix of its own, once.
+	if _, err := w.Store.SetStatus(fix.ID, model.StatusMerged, ""); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = w.Refresh(ctx, p.ID)
+	again, _ := w.Store.GetTodo(st.TodoID)
+	if st.TodoID == "" || st.TodoID == fix.ID || again.CIRun != 13 {
+		t.Fatalf("want a new fix for run 13 after the first one ended, got %+v", again)
+	}
+	if _, err := w.Store.SetStatus(again.ID, model.StatusMerged, ""); err != nil {
+		t.Fatal(err)
+	}
+	w.Refresh(ctx, p.ID)
+	if n := len(w.Store.ListTodos(p.ID)); n != 2 {
+		t.Fatalf("a failure was fixed twice: %d fix todos", n)
+	}
+}
+
+func TestFailureFollowedByARunningBuildWaits(t *testing.T) {
+	w, p, setRuns := newWatcher(t, true)
+	ctx := context.Background()
+	// A fix landed (ccc) and builds; the failure before it is left to that build.
+	setRuns(runs(run(13, "CI", "ccc", "in_progress", ""), run(12, "CI", "bbb", "completed", "failure")))
+	if st, _ := w.Refresh(ctx, p.ID); st.TodoID != "" {
+		t.Fatalf("queued a fix while a newer build runs: %+v", st)
+	}
+	setRuns(runs(run(13, "CI", "ccc", "completed", "success"), run(12, "CI", "bbb", "completed", "failure")))
+	w.Refresh(ctx, p.ID)
+	if n := len(w.Store.ListTodos(p.ID)); n != 0 {
+		t.Fatalf("the newer build passed; got %d fix todos", n)
+	}
+	// It failed too: that one gets the fix.
+	setRuns(runs(run(15, "CI", "ddd", "completed", "failure"), run(13, "CI", "ccc", "completed", "success")))
+	st, _ := w.Refresh(ctx, p.ID)
+	fix, _ := w.Store.GetTodo(st.TodoID)
+	if fix.CIRun != 15 {
+		t.Fatalf("want a fix for run 15, got %+v", fix)
+	}
 }
 
 func TestRunningAndDisabled(t *testing.T) {

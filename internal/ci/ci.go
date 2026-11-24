@@ -480,20 +480,33 @@ func latestPerWorkflow(runs []gitops.Run, sha string) []gitops.Run {
 
 // investigate queues one todo for the workflows whose newest finished run
 // failed and hasn't been looked at yet (or regardless, when forced).
+//
+// While a fix is still open, new failures aren't marked handled: they wait
+// for it to end, so a build that failed again meanwhile (or that the fix
+// closed without changing) gets a fix of its own then. A failure that a
+// newer build of the same workflow, still running, follows is left to that
+// build (a fix that just landed is building, say).
 func (w *Watcher) investigate(ctx context.Context, p model.Project, runs []gitops.Run, force bool) (*model.Todo, error) {
 	var failed []gitops.Run
-	seen := map[string]bool{}
+	seen, running := map[string]bool{}, map[string]bool{}
 	for _, r := range runs {
-		if !r.Done() || seen[r.Workflow] {
+		if seen[r.Workflow] {
+			continue
+		}
+		if !r.Done() {
+			running[r.Workflow] = !force
 			continue
 		}
 		seen[r.Workflow] = true // newest finished run per workflow decides
-		if r.Failed() && (force || r.ID > p.CIHandledRun) {
+		if r.Failed() && !running[r.Workflow] && (force || r.ID > p.CIHandledRun) {
 			failed = append(failed, r)
 		}
 	}
+	if !force && len(failed) > 0 && w.openFix(p.ID) != nil {
+		return nil, nil // they wait for the open fix to end
+	}
 	defer w.markHandled(p, runs)
-	if len(failed) == 0 || (!force && w.openFix(p.ID) != nil) {
+	if len(failed) == 0 {
 		return nil, nil
 	}
 	t, err := w.Store.CreateTodo(model.Todo{
