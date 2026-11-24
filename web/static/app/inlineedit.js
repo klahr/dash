@@ -57,7 +57,8 @@ async function saveTitle(refocus) {
 }
 // While editable, the heading holds a real button (named by the title, described as
 // "Rename"), so a screen reader hears a control rather than just a heading.
-titleEl.addEventListener("click", (e) => { if (e.target.closest(".title-edit")) editTitle(); });
+// A click anywhere on the heading (its padding too) renames; editTitle checks it is editable.
+titleEl.addEventListener("click", editTitle);
 titleEl.addEventListener("keydown", (e) => {
   if (e.key !== "Enter" && e.key !== " ") return;
   e.stopPropagation(); // not the app's keys; the button's own click opens the field
