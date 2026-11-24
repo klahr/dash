@@ -153,6 +153,24 @@ func TestHubPreviewsATaskOnItsRunner(t *testing.T) {
 	if w := do(t, as(other), "GET", "/preview/"+label, ""); w.Code != http.StatusFound {
 		t.Fatalf("open for another member of the org: %d %s", w.Code, w.Body)
 	}
+	// A user of another org gets neither: not by the hub's task, nor by the
+	// label (a runner's preview, which only a platform admin may open).
+	two, err := hub.Auth.Accounts().CreateOrg(owner.User, "Two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsider := member(t, hub, two.ID, "eve", store.RoleMember)
+	osess := sessionOf(t, hub, outsider, two.ID)
+	asOutsider := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub.mux().ServeHTTP(w, r.WithContext(auth.WithSession(r.Context(), osess)))
+	})
+	for _, path := range []string{pv.OpenURL, "/preview/" + label} {
+		w := do(t, asOutsider, "GET", path, "")
+		if loc := w.Header().Get("Location"); w.Code != http.StatusNotFound || loc != "" ||
+			strings.Contains(w.Body.String(), "hello-from-the-runner") {
+			t.Fatalf("open %s for a user of another org: %d %q %s", path, w.Code, loc, w.Body)
+		}
+	}
 
 	if w := do(t, h, "DELETE", "/api/todos/"+ht.ID+"/preview", ""); w.Code != http.StatusNoContent {
 		t.Fatalf("stop: %d %s", w.Code, w.Body)
