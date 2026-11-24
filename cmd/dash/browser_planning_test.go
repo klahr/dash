@@ -321,8 +321,14 @@ func TestBrowserPlanningTags(t *testing.T) {
 	// Mine shows only the cards you are on: none yet.
 	b.until("Mine", `document.querySelector("#pl-mine").getAttribute("aria-pressed") === "true" && document.querySelectorAll("#view-planning .pl-card").length === 0 && location.search.includes("mine=1")`,
 		chromedp.Click(chromedp.CSS(`#pl-mine`)))
-	b.do("Mine off, and the tags", chromedp.Click(chromedp.CSS(`#pl-mine`)),
-		chromedp.Click(chromedp.CSS(`#pl-tag-filter .icon-btn`)), chromedp.Click(chromedp.CSS(`#pl-tag-filter .icon-btn`)))
+	// Each click re-renders the filters, so each is its own step: a click
+	// queued behind another can find its node replaced.
+	b.until("Mine off", `document.querySelector("#pl-mine").getAttribute("aria-pressed") === "false" && !location.search.includes("mine=1")`,
+		chromedp.Click(chromedp.CSS(`#pl-mine`)))
+	b.until("one tag off", `document.querySelectorAll("#pl-tag-filter .pl-tag").length === 1`,
+		chromedp.Click(chromedp.CSS(`#pl-tag-filter .icon-btn`)))
+	b.until("the other tag off", `document.querySelector("#pl-tag-filter").hidden`,
+		chromedp.Click(chromedp.CSS(`#pl-tag-filter .icon-btn`)))
 	b.waitJS("all cards again", `document.querySelectorAll("#view-planning .pl-card").length === 2 && document.querySelector("#pl-tag-filter").hidden`)
 
 	// On a phone, the pane's tags and their box fit the screen.
