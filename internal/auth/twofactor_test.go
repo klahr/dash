@@ -179,6 +179,32 @@ func TestLoginWithTOTP(t *testing.T) {
 	}
 }
 
+// An account disabled between the password and the code gets no session.
+func TestLoginTOTPDisabledMidLogin(t *testing.T) {
+	t.Parallel()
+
+	a, h := newServer(t)
+	clk := pinClock(a)
+	org, _ := a.acc.DefaultOrg()
+	bea := addUser(t, a, org.ID, "bea", store.RoleMember)
+	secret, _ := enrol(t, signIn(t, h, "bea", "pw-bea-long"), clk)
+
+	ticket := passwordStep(t, h, "10.0.0.1", "bea", "pw-bea-long")
+	if _, err := a.acc.SetDisabled(bea, true, clk.t); err != nil {
+		t.Fatal(err)
+	}
+	clk.tick()
+	w := codeStep(h, "10.0.0.1", ticket, codeAt(t, secret, clk.t))
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), `"code":"disabled"`) {
+		t.Fatalf("disabled mid-login: %d %s", w.Code, w.Body)
+	}
+	for _, k := range w.Result().Cookies() {
+		if k.Name == PlainCookieName || k.Name == CookieName {
+			t.Fatalf("a session cookie for a disabled account: %v", k)
+		}
+	}
+}
+
 func TestLoginWithRecoveryCode(t *testing.T) {
 	t.Parallel()
 
