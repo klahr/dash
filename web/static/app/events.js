@@ -31,7 +31,7 @@ import { renderPane } from "./drawmode.js";
 import { attach, attached, termWS } from "./terminal.js";
 import { loadProcs } from "./try.js";
 import { refreshGraph } from "./history.js";
-import { loadDismissed, loadScans, onScanRun, scanFinished, scans } from "./scans.js";
+import { loadDismissed, loadScans, onScanRun, scanFinished, scanTasksChanged, scans } from "./scans.js";
 import { checkForUpdate } from "./updates.js";
 import { onPlanningEvent } from "./planning.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
@@ -196,6 +196,7 @@ function onEvent(ev, m = { name: "" }) {
           if (cur && !keep) state.activity.delete(ev.todo_id);
         }
         renderBoard();
+        if (prev?.status !== ev.data.status) scanTasksChanged(ev.todo_id); // a run's draft merged, queued, …
         if (ev.data.goal_id && prev?.status !== ev.data.status) goalTaskChanged(ev.data);
         if (state.detail === ev.todo_id) {
           renderDetail();
@@ -250,6 +251,7 @@ function onEvent(ev, m = { name: "" }) {
       state.todos.delete(ev.todo_id);
       if (state.detail === ev.todo_id) closeDetail();
       renderBoard();
+      scanTasksChanged(ev.todo_id);
       break;
     case "todo.output":
       state.lastLine.set(ev.todo_id, String(ev.data).split("\n").pop());

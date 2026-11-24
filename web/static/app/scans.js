@@ -155,6 +155,18 @@ function counts(r) {
 // runTasks are the drafts a run added: for new issues and for ones that came back.
 const runTasks = (r) => [...(r.new_tasks || []), ...(r.reopened_tasks || [])];
 
+// scanTasksChanged re-renders the Scans page when tasks it counts changed:
+// what a run's drafts became (still drafts, in a task, fixed, deleted) is
+// read from state.todos. With no id (all tasks were loaded), always.
+export function scanTasksChanged(id) {
+  if (!scans.loaded) return;
+  if (id) {
+    const runs = [...scans.list.flatMap((s) => [s.last_run, s.last_report]), ...[...scans.history.values()].flat()];
+    if (!runs.some((r) => r && runTasks(r).includes(id))) return;
+  }
+  renderScans();
+}
+
 // showRunTasks shows what a run added: the one draft, or the Board with
 // its drafts that are still drafts picked (and shown, From scans or not).
 function showRunTasks(run) {

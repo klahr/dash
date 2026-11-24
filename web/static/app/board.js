@@ -5,6 +5,7 @@ import { state } from "./state.js";
 import { baseBranch, eventFor, latest, projectKey } from "./events.js";
 import { renderBoard } from "./branches.js";
 import { renderDetail } from "./detail.js";
+import { scanTasksChanged } from "./scans.js";
 
 // ------------------------------------------------------------------ board
 export async function loadTodos() {
@@ -20,6 +21,7 @@ export async function loadTodos() {
   }
   state.todos = todos;
   renderBoard();
+  scanTasksChanged(); // Scans counts what became of its drafts from these
   if (state.detail) renderDetail();
   loadUnpushed().catch(fail);
 }
