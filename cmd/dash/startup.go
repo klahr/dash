@@ -810,7 +810,7 @@ func (a *app) setupHub() {
 	} else if k, err := notify.ParseSummaryKey(key); err != nil {
 		slog.Warn("summaries off: key", "err", err)
 	} else {
-		apiSrv.Summaries = &notify.Summaries{Store: st, Notifier: notifier, Mail: authn.Mailer(), Key: k}
+		apiSrv.Summaries = &notify.Summaries{Store: st, Notifier: notifier, Mail: authn.Mailer(), Key: k, Brand: apiSrv.Brand}
 		go apiSrv.Summaries.Run(ctx)
 	}
 

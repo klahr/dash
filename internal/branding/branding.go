@@ -124,15 +124,6 @@ func PublicPath(path string) bool {
 	return path == LogoPath || path == TermsPath || path == PrivacyPath
 }
 
-// MailFooter closes Dash's emails: who sent it, and where to write.
-func (c Config) MailFooter() string {
-	s := "\n-- \n" + c.Name + "\n"
-	if c.Contact != "" {
-		s += "Questions? Write to " + c.Contact + "\n"
-	}
-	return s
-}
-
 var footerTmpl = template.Must(template.New("footer").Parse(
 	`<footer class="site-footer"><a href="{{.SourceURL}}" rel="noopener">Source code</a>` +
 		`{{if .TermsURL}} · <a href="{{.TermsURL}}" rel="noopener">Terms</a>{{end}}` +

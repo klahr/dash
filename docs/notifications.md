@@ -260,7 +260,9 @@ Summaries are sent by the hub, never by runners.
 
 ### By email
 
-One plain-text email, grouped by project, with a link to each item. At the end, **Stop these
+One email, grouped by project, with a link to each item and a label for its kind (**New issue**,
+**Ready for review**, **Failed** and so on). It has an HTML version and a plain-text one; your
+mail app shows the one it can. At the end, **Stop these
 summaries** turns the summary off without signing in; mail apps that offer an unsubscribe
 button use the same link (`List-Unsubscribe`).
 

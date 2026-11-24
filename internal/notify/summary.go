@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/applink"
+	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/model"
 )
@@ -225,6 +227,9 @@ type Summaries struct {
 	Notifier *Notifier
 	// Mail sends summary emails; nil: email summaries are unavailable.
 	Mail mail.Sender
+	// Brand names the product in the emails, and gives their contact
+	// address.
+	Brand branding.Config
 	// Key signs unsubscribe links (NewSummaryKey; keep it: links in old
 	// emails must go on working).
 	Key []byte
@@ -553,42 +558,58 @@ func (s *Summaries) sendEmail(ctx context.Context, user, org int64, set model.No
 	if base := strings.TrimSuffix(sum.URL, "/"); base != "" {
 		unsub = base + UnsubscribePath + s.UnsubscribeToken(user, org)
 	}
-	m := mail.Message{To: to, Subject: emailSubject(sum, orgName), Body: EmailBody(sum, orgName, set.Location(), unsub)}
+	e := summaryEmail{Sum: sum, Brand: s.Brand.WithDefaults(), Org: orgName, Loc: set.Location(), Unsubscribe: unsub}
+	m := mail.Message{To: to, Subject: e.subject(), Body: e.text(), HTML: e.html()}
 	if unsub != "" {
 		m.Headers = map[string]string{"List-Unsubscribe": "<" + unsub + ">", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}
 	}
 	return s.Notifier.retry(ctx, attempts, func() error { return s.Mail.Send(ctx, m) })
 }
 
-func emailSubject(sum Summary, orgName string) string {
-	subj := "Dash summary"
-	if orgName != "" {
-		subj += " for " + orgName
+// summaryEmail is a summary as an email, in plain text and in HTML.
+type summaryEmail struct {
+	Sum         Summary
+	Brand       branding.Config
+	Org         string         // the org's name; empty: "your projects"
+	Loc         *time.Location // the user's time zone
+	Unsubscribe string         // the link that stops these summaries, if any
+}
+
+func (e summaryEmail) subject() string {
+	subj := e.Brand.Name + " summary"
+	if e.Org != "" {
+		subj += " for " + e.Org
 	}
-	return subj + ": " + sum.CountText()
+	return subj + ": " + e.Sum.CountText()
 }
 
-// periodText is the summary's period as the user's clock reads it.
-func periodText(sum Summary, loc *time.Location) string {
-	a, b := sum.PeriodStart.In(loc), sum.PeriodEnd.In(loc)
-	return fmt.Sprintf("%s – %s (%s)", a.Format("Mon 2 Jan 15:04"), b.Format("Mon 2 Jan 15:04"), loc.String())
+func (e summaryEmail) who() string {
+	if e.Org != "" {
+		return e.Org
+	}
+	return "your projects"
 }
 
-// EmailBody is a summary email: plain text, grouped by project, with a
-// link to each item and, at the end, to change or stop these emails.
-func EmailBody(sum Summary, orgName string, loc *time.Location, unsubscribe string) string {
+// period is the summary's period as the user's clock reads it.
+func (e summaryEmail) period() string {
+	a, b := e.Sum.PeriodStart.In(e.Loc), e.Sum.PeriodEnd.In(e.Loc)
+	return fmt.Sprintf("%s – %s (%s)", a.Format("Mon 2 Jan 15:04"), b.Format("Mon 2 Jan 15:04"), e.Loc.String())
+}
+
+func (e summaryEmail) countLine() string {
+	if e.Sum.Count() == 0 {
+		return "Nothing to report."
+	}
+	return upperFirst(e.Sum.CountText()) + "."
+}
+
+// text is the plain-text version: grouped by project, with a link to each
+// item and, at the end, to change or stop these emails.
+func (e summaryEmail) text() string {
 	var b strings.Builder
-	who := "your projects"
-	if orgName != "" {
-		who = orgName
-	}
-	fmt.Fprintf(&b, "What happened in %s, %s:\n\n", who, periodText(sum, loc))
-	if sum.Count() == 0 {
-		b.WriteString("Nothing to report.\n")
-	} else {
-		fmt.Fprintf(&b, "%s.\n", upperFirst(sum.CountText()))
-	}
-	for _, p := range sum.Projects {
+	fmt.Fprintf(&b, "%s summary for %s\n%s\n\n", e.Brand.Name, e.who(), e.period())
+	b.WriteString(e.countLine() + "\n")
+	for _, p := range e.Sum.Projects {
 		fmt.Fprintf(&b, "\n%s\n%s\n", p.Name, strings.Repeat("=", min(len([]rune(p.Name)), 60)))
 		for _, it := range p.Items {
 			fmt.Fprintf(&b, "\n- %s: %s\n", itemHead(it), oneLine(it.Title, 200))
@@ -598,14 +619,91 @@ func EmailBody(sum Summary, orgName string, loc *time.Location, unsubscribe stri
 		}
 	}
 	b.WriteString("\n-- \n")
-	if sum.URL != "" {
-		fmt.Fprintf(&b, "Open Dash: %s\n", sum.URL)
-		b.WriteString("Change what this summary covers, or when it comes: Account → Notifications in Dash.\n")
+	b.WriteString("You get this summary because you turned it on in " + e.Brand.Name + ".\n")
+	if e.Sum.URL != "" {
+		fmt.Fprintf(&b, "Open %s: %s\n", e.Brand.Name, e.Sum.URL)
+		b.WriteString("Change what it covers, or when it comes: Account → Notifications.\n")
 	}
-	if unsubscribe != "" {
-		fmt.Fprintf(&b, "Stop these summaries: %s\n", unsubscribe)
+	if e.Unsubscribe != "" {
+		fmt.Fprintf(&b, "Stop these summaries: %s\n", e.Unsubscribe)
+	}
+	if e.Brand.Contact != "" {
+		fmt.Fprintf(&b, "Questions? Write to %s\n", e.Brand.Contact)
 	}
 	return b.String()
+}
+
+// kindColour is the label colour of each kind of item, white text on it
+// readable (WCAG AA).
+var kindColour = map[string]string{
+	model.SummaryIssue:  "#a15c00",
+	model.SummaryReview: "#3b55d9",
+	model.SummaryFailed: "#c0322b",
+	model.SummaryMerged: "#1f7a43",
+	model.SummaryGoal:   "#7b3fc4",
+	model.SummaryBuild:  "#c0322b",
+}
+
+type summaryHTMLItem struct {
+	Head, Colour, Title, URL string
+}
+
+type summaryHTMLProject struct {
+	Name, URL string
+	Items     []summaryHTMLItem
+}
+
+var summaryHTMLTmpl = template.Must(template.New("summary").Parse(
+	`<p style="margin:0 0 4px;font-size:13px;color:#5b6678">{{.Period}}</p>` +
+		`<p style="margin:0 0 8px;font-size:15px">{{.Count}}</p>` +
+		`{{range .Projects}}<h2 style="margin:28px 0 4px;font-size:16px;line-height:1.4;font-weight:700;color:#1b2433">` +
+		`{{if .URL}}<a href="{{.URL}}" style="color:#1b2433;text-decoration:none">{{.Name}}</a>{{else}}{{.Name}}{{end}}</h2>` +
+		`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">` +
+		`{{range .Items}}<tr><td style="padding:10px 0;border-top:1px solid #e3e8f0;font-size:14px;line-height:1.5">` +
+		`<span style="display:inline-block;padding:1px 8px;margin:0 8px 2px 0;border-radius:10px;background:{{.Colour}};color:#ffffff;font-size:12px;font-weight:600;white-space:nowrap">{{.Head}}</span>` +
+		`{{if .URL}}<a href="{{.URL}}" style="color:#1b2433;text-decoration:underline;text-decoration-color:#c5cddb">{{.Title}}</a>{{else}}{{.Title}}{{end}}` +
+		`</td></tr>{{end}}</table>{{end}}`))
+
+// html is the HTML version: the same, laid out as a card per project.
+func (e summaryEmail) html() string {
+	data := struct {
+		Period, Count string
+		Projects      []summaryHTMLProject
+	}{Period: e.period(), Count: e.countLine()}
+	for _, p := range e.Sum.Projects {
+		hp := summaryHTMLProject{Name: p.Name, URL: p.URL}
+		for _, it := range p.Items {
+			c := kindColour[it.Kind]
+			if c == "" {
+				c = "#5b6678"
+			}
+			hp.Items = append(hp.Items, summaryHTMLItem{Head: itemHead(it), Colour: c, Title: oneLine(it.Title, 200), URL: it.URL})
+		}
+		data.Projects = append(data.Projects, hp)
+	}
+	var b strings.Builder
+	if err := summaryHTMLTmpl.Execute(&b, data); err != nil {
+		return ""
+	}
+	body := []template.HTML{template.HTML(b.String())}
+	if e.Sum.URL != "" {
+		body = append(body, mail.Rule(), mail.Button("Open "+e.Brand.Name, e.Sum.URL))
+	}
+	foot := []template.HTML{template.HTML(template.HTMLEscapeString(
+		"You get this summary because you turned it on in " + e.Brand.Name + ". Change what it covers, or when it comes, in Account → Notifications."))}
+	if e.Unsubscribe != "" {
+		foot = append(foot, mail.A("Stop these summaries", e.Unsubscribe))
+	}
+	if e.Brand.Contact != "" {
+		foot = append(foot, mail.Join(template.HTML("Questions? Write to "), mail.A(e.Brand.Contact, "mailto:"+e.Brand.Contact)))
+	}
+	return mail.Page{
+		Brand:     e.Brand.Name,
+		Preheader: e.countLine(),
+		Title:     "Summary for " + e.who(),
+		Body:      mail.Join(body...),
+		Footer:    foot,
+	}.HTML()
 }
 
 func upperFirst(s string) string {

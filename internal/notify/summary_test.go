@@ -434,6 +434,12 @@ func TestSummaryEmailAndUnsubscribe(t *testing.T) {
 			t.Errorf("body lacks %q:\n%s", want, m.Body)
 		}
 	}
+	for _, want := range []string{"Summary for ", ">Shop</a>", ">New issue (high)</span>", ">Leaked key</a>",
+		`href="https://dash.example.com/p/` + e.shop.ID + `/issues/i1"`, "(Europe/Stockholm)", ">Stop these summaries</a>", ">Open Dash</a>"} {
+		if !strings.Contains(m.HTML, want) {
+			t.Errorf("HTML lacks %q:\n%s", want, m.HTML)
+		}
+	}
 	lu := m.Headers["List-Unsubscribe"]
 	if !strings.HasPrefix(lu, "<https://dash.example.com"+UnsubscribePath) || m.Headers["List-Unsubscribe-Post"] != "List-Unsubscribe=One-Click" {
 		t.Fatalf("headers %v", m.Headers)

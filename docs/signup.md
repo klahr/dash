@@ -17,8 +17,9 @@ while open signup is on without them.
 
 Dash sends its few emails (confirming an address, resetting a password, and the
 [daily or weekly summaries](notifications.md#summary) people turn on) through an SMTP
-server you already have: your mail provider's submission server, or a transactional email
-service. Set, in `.env` or the environment of the service:
+server you already have. Each email has an HTML version and a plain-text one, with the
+[brand name and contact address](branding.md) if you set them. Use your mail provider's
+submission server, or a transactional email service. Set, in `.env` or the environment of the service:
 
 | Variable              | Flag          | What                                                            |
 |-----------------------|---------------|-----------------------------------------------------------------|

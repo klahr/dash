@@ -4,6 +4,7 @@
 package mail
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -11,20 +12,25 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// Message is a plain-text email to one recipient.
+// Message is an email to one recipient: plain text, and HTML too when
+// HTML is set (then mail apps show the HTML, and the text is the fallback).
 type Message struct {
 	To      string
 	Subject string
 	Body    string
+	HTML    string // a whole HTML document (see Page); empty: text only
 	// Headers are extra headers (e.g. List-Unsubscribe), ASCII only.
 	Headers map[string]string
 }
@@ -195,12 +201,47 @@ func Compose(from string, m Message, now time.Time) ([]byte, error) {
 		b.WriteString(h)
 	}
 	b.WriteString("MIME-Version: 1.0\r\n")
-	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
-	b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
-	body := strings.ReplaceAll(strings.ReplaceAll(m.Body, "\r\n", "\n"), "\n", "\r\n")
-	b.WriteString(body) // net/smtp's DATA writer dot-stuffs lines that start with "."
-	if !strings.HasSuffix(body, "\r\n") {
-		b.WriteString("\r\n")
+	// net/smtp's DATA writer dot-stuffs lines that start with ".".
+	if m.HTML == "" {
+		b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+		b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+		body := crlf(m.Body)
+		b.WriteString(body)
+		if !strings.HasSuffix(body, "\r\n") {
+			b.WriteString("\r\n")
+		}
+		return []byte(b.String()), nil
 	}
+	// Text first, HTML last: mail apps show the last part they can.
+	var parts bytes.Buffer
+	mw := multipart.NewWriter(&parts)
+	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + mw.Boundary() + "\"\r\n\r\n")
+	for _, p := range []struct{ typ, body string }{{"text/plain", m.Body}, {"text/html", m.HTML}} {
+		pw, err := mw.CreatePart(textproto.MIMEHeader{
+			"Content-Type":              {p.typ + "; charset=utf-8"},
+			"Content-Transfer-Encoding": {"quoted-printable"},
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Quoted-printable keeps every line under SMTP's 1,000 characters,
+		// which long HTML lines and links would break.
+		qw := quotedprintable.NewWriter(pw)
+		if _, err := qw.Write([]byte(crlf(p.body))); err != nil {
+			return nil, err
+		}
+		if err := qw.Close(); err != nil {
+			return nil, err
+		}
+	}
+	if err := mw.Close(); err != nil {
+		return nil, err
+	}
+	b.Write(parts.Bytes())
 	return []byte(b.String()), nil
+}
+
+// crlf ends s's lines with CRLF, as SMTP wants.
+func crlf(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\n", "\r\n")
 }

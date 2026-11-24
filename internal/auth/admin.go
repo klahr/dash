@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -522,22 +521,30 @@ func (a *Auth) revoked(toks []store.Token) {
 // ---- emails ----
 
 func (a *Auth) sendAdminReset(u store.User, tok, by string) {
-	b := a.brand()
-	a.send(mail.Message{To: u.Email, Subject: "Reset your " + b.Name + " password", Body: "Hello " + u.Username + ",\n\n" +
-		"An administrator (" + by + ") made a link for you to choose a new password for your " + b.Name + " account at " + a.baseURL + ".\n" +
-		"Open it within " + durationText(store.ResetTTL) + " to choose one:\n\n" +
-		a.link("reset="+tok) + "\n\n" +
-		"Choosing a new password signs you out everywhere and stops your API tokens and connected apps.\n" +
-		"If you didn't ask for this, tell your administrator: your password stays as it is until the link is used.\n" + b.MailFooter()})
+	name := a.brand().Name
+	n := a.notice("Choose a new password", "Hello "+u.Username+",")
+	n.Before = []string{
+		"An administrator (" + by + ") made a link for you to choose a new password for your " + name + " account at " + a.baseURL + ". " +
+			"Open it within " + durationText(store.ResetTTL) + " to choose one:",
+	}
+	n.Action, n.URL = "Choose a new password", a.link("reset="+tok)
+	n.After = []string{
+		"Choosing a new password signs you out everywhere and stops your API tokens and connected apps.",
+		"If you didn't ask for this, tell your administrator: your password stays as it is until the link is used.",
+	}
+	a.send(n.Message(u.Email, "Reset your "+name+" password"))
 }
 
 func (a *Auth) sendTOTPOff(u store.User, by string) {
-	b := a.brand()
-	a.send(mail.Message{To: u.Email, Subject: "Two-factor sign-in was turned off for your " + b.Name + " account", Body: "Hello " + u.Username + ",\n\n" +
-		"An administrator (" + by + ") turned off two-factor sign-in for your " + b.Name + " account at " + a.baseURL + ".\n" +
+	name := a.brand().Name
+	n := a.notice("Two-factor sign-in was turned off", "Hello "+u.Username+",")
+	n.Before = []string{
+		"An administrator (" + by + ") turned off two-factor sign-in for your " + name + " account at " + a.baseURL + ".",
 		"You sign in with your password alone until you turn it on again under Account → Two-factor sign-in " +
-		"(if an organization of yours requires it, you're asked to at your next sign-in).\n\n" +
-		"If you didn't ask for this, tell your administrator and change your password.\n" + b.MailFooter()})
+			"(if an organization of yours requires it, you're asked to at your next sign-in).",
+	}
+	n.After = []string{"If you didn't ask for this, tell your administrator and change your password."}
+	a.send(n.Message(u.Email, "Two-factor sign-in was turned off for your "+name+" account"))
 }
 
 func durationText(d time.Duration) string {

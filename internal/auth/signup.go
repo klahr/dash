@@ -135,34 +135,52 @@ func (a *Auth) send(m mail.Message) {
 
 func (a *Auth) link(fragment string) string { return a.baseURL + "/login.html#" + fragment }
 
-func (a *Auth) sendVerification(u store.User, tok string) {
+// notice starts an account email with the deployment's name and contact.
+func (a *Auth) notice(title, greeting string) mail.Notice {
 	b := a.brand()
-	a.send(mail.Message{To: u.Email, Subject: "Confirm your email address for " + b.Name, Body: "Hello,\n\n" +
-		"Someone, hopefully you, signed up for " + b.Name + " at " + a.baseURL + " with this address.\n" +
-		"Open this link within 24 hours to confirm it, choose your password and sign in:\n\n" +
-		a.link("verify="+tok) + "\n\n" +
-		"If it wasn't you, ignore this email: no account is made without the link.\n" + b.MailFooter()})
+	return mail.Notice{Brand: b.Name, Contact: b.Contact, Title: title, Greeting: greeting}
+}
+
+func (a *Auth) sendVerification(u store.User, tok string) {
+	name := a.brand().Name
+	n := a.notice("Confirm your email address", "Hello,")
+	n.Before = []string{
+		"Someone, hopefully you, signed up for " + name + " at " + a.baseURL + " with this address. " +
+			"Open this link within 24 hours to confirm it, choose your password and sign in:",
+	}
+	n.Action, n.URL = "Confirm email address", a.link("verify="+tok)
+	n.After = []string{"If it wasn't you, ignore this email: no account is made without the link."}
+	a.send(n.Message(u.Email, "Confirm your email address for "+name))
 }
 
 func (a *Auth) sendAlreadyRegistered(u store.User) {
-	b := a.brand()
-	body := "Hello,\n\n" +
-		"Someone, hopefully you, tried to sign up for " + b.Name + " at " + a.baseURL + " with this address, " +
-		"but it has an account already (username " + u.Username + ").\n\n" +
-		"Sign in here: " + a.baseURL + "/login.html\n"
-	body += "Forgot your password? Choose a new one here: " + a.link("forgot") + "\n"
-	body += "\nIf it wasn't you, ignore this email; nothing has changed.\n" + b.MailFooter()
-	a.send(mail.Message{To: u.Email, Subject: "You already have a " + b.Name + " account", Body: body})
+	name := a.brand().Name
+	n := a.notice("You already have an account", "Hello,")
+	n.Before = []string{
+		"Someone, hopefully you, tried to sign up for " + name + " at " + a.baseURL + " with this address, " +
+			"but it has an account already (username " + u.Username + "). Sign in here:",
+	}
+	n.Action, n.URL = "Sign in", a.baseURL+"/login.html"
+	n.After = []string{
+		"Forgot your password? Choose a new one here: " + a.link("forgot"),
+		"If it wasn't you, ignore this email; nothing has changed.",
+	}
+	a.send(n.Message(u.Email, "You already have a "+name+" account"))
 }
 
 func (a *Auth) sendReset(u store.User, tok string) {
-	b := a.brand()
-	a.send(mail.Message{To: u.Email, Subject: "Reset your " + b.Name + " password", Body: "Hello " + u.Username + ",\n\n" +
-		"Someone, hopefully you, asked to reset the password of your " + b.Name + " account at " + a.baseURL + ".\n" +
-		"Open this link within an hour to choose a new one:\n\n" +
-		a.link("reset="+tok) + "\n\n" +
-		"Choosing a new password signs you out everywhere and stops your API tokens and connected apps.\n" +
-		"If it wasn't you, ignore this email: your password stays as it is.\n" + b.MailFooter()})
+	name := a.brand().Name
+	n := a.notice("Reset your password", "Hello "+u.Username+",")
+	n.Before = []string{
+		"Someone, hopefully you, asked to reset the password of your " + name + " account at " + a.baseURL + ". " +
+			"Open this link within an hour to choose a new one:",
+	}
+	n.Action, n.URL = "Choose a new password", a.link("reset="+tok)
+	n.After = []string{
+		"Choosing a new password signs you out everywhere and stops your API tokens and connected apps.",
+		"If it wasn't you, ignore this email: your password stays as it is.",
+	}
+	a.send(n.Message(u.Email, "Reset your "+name+" password"))
 }
 
 // ---- handlers ----
