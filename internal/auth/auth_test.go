@@ -280,6 +280,30 @@ func TestConfirmPasswordSuccessDoesNotCount(t *testing.T) {
 	}
 }
 
+// An empty submission isn't a guess: it mustn't lock the account, though
+// the same number of wrong passwords does.
+func TestConfirmPasswordEmptyDoesNotCount(t *testing.T) {
+	t.Parallel()
+
+	a := newAuth(t, "u", "p")
+	r := signedIn(t, a, httptest.NewRequest("DELETE", "/api/projects/x", nil))
+	for range 2 * maxFailures {
+		if err := a.ConfirmPassword(r, ""); err != ErrPasswordRequired {
+			t.Fatalf("no password: %v", err)
+		}
+	}
+	if err := a.ConfirmPassword(r, "p"); err != nil {
+		t.Fatalf("right password after empty ones: %v, want nil", err)
+	}
+
+	for range maxFailures {
+		a.ConfirmPassword(r, "nope")
+	}
+	if err := a.ConfirmPassword(r, "p"); err != ErrLockedOut {
+		t.Fatalf("right password after %d wrong ones: %v, want locked out", maxFailures, err)
+	}
+}
+
 func TestLoadDotEnv(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env")
 	os.WriteFile(path, []byte("# comment\nexport DASH_T_A=one\nDASH_T_B=\"two words\"\nDASH_T_C='three'\nDASH_T_PRESET=fromfile\n"), 0o600)
