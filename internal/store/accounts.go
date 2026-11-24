@@ -489,7 +489,7 @@ func (a *Accounts) CreateSessionVia(key string, uid, org int64, family, method s
 	// A disabled account gets no session (ErrAccountDisabled), however it
 	// signed in.
 	return inTx(a.db, func(tx *sql.Tx) error {
-		res, err := tx.Exec(`INSERT INTO sessions (key, user_id, active_org_id, family, created_at, expires_at, method, auth_at)
+		err := execOne(tx, ErrAccountDisabled, `INSERT INTO sessions (key, user_id, active_org_id, family, created_at, expires_at, method, auth_at)
 			SELECT ?1, ?2, COALESCE((SELECT org_id FROM org_memberships WHERE user_id = ?2 AND org_id = ?3),
 				(SELECT org_id FROM org_memberships WHERE user_id = ?2 ORDER BY created_at, org_id LIMIT 1)), ?4, ?5, ?6,
 				COALESCE(?7, (SELECT method FROM sessions WHERE family = ?4 AND user_id = ?2 ORDER BY created_at LIMIT 1), 'password'),
@@ -498,9 +498,6 @@ func (a *Accounts) CreateSessionVia(key string, uid, org int64, family, method s
 			key, uid, org, fam, now.Unix(), expires.Unix(), meth)
 		if err != nil {
 			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return ErrAccountDisabled
 		}
 		if method == "" {
 			return nil // another host of a sign-in already counted
@@ -892,14 +889,7 @@ func (a *Accounts) RevokeInvitation(actor, orgID, id int64) error {
 		if !mine.Role.AtLeast(RoleAdmin) {
 			return ErrForbidden
 		}
-		res, err := tx.Exec("DELETE FROM org_invitations WHERE id = ? AND org_id = ?", id, orgID)
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return ErrNotFound
-		}
-		return nil
+		return execOne(tx, ErrNotFound, "DELETE FROM org_invitations WHERE id = ? AND org_id = ?", id, orgID)
 	})
 }
 
@@ -1002,14 +992,7 @@ func (a *Accounts) RegisterWithInvitation(tok, username, password string) (User,
 
 // DeclineInvitation deletes the invitation a link's token stands for.
 func (a *Accounts) DeclineInvitation(tok string) error {
-	res, err := a.db.Exec("DELETE FROM org_invitations WHERE token_hash = ?", hashToken(tok))
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrInvitation
-	}
-	return nil
+	return execOne(a.db, ErrInvitation, "DELETE FROM org_invitations WHERE token_hash = ?", hashToken(tok))
 }
 
 // PlannerContext reports whether org's planners' feature brief interviews

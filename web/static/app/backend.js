@@ -5,7 +5,7 @@ import { fieldError, saveField, saveQueue } from "./autosave.js";
 import { state } from "./state.js";
 import { projectKey } from "./events.js";
 import { copyBlock } from "./prefs.js";
-import { agoText } from "./branches.js";
+import { agoText } from "../time.js";
 
 // ------------------------------------------------------------------ board backend
 // Where the project's tasks are planned: Dash's own board (the default) or

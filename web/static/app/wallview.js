@@ -5,7 +5,7 @@ import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { accountSection, openAccount, orgSection } from "./accountsheet.js";
 import { connectorSteps, copyBlock } from "./prefs.js";
-import { agoText } from "./branches.js";
+import { agoText } from "../time.js";
 
 // ------------------------------------------------------------------ wall view
 // Organization → Wall view configures /wall: which projects it shows and privacy mode (kept in this

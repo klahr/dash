@@ -740,15 +740,11 @@ func isProjectPath(p string) bool {
 // confirmThenForward checks the password in a delete-project request for a
 // runner here, then passes it on unchanged (the runner trusts its tunnel).
 func (s *Server) confirmThenForward(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
-	if err != nil {
-		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
-		return
-	}
 	var req struct {
 		Password string `json:"password"`
 	}
-	if err := json.Unmarshal(body, &req); err != nil {
+	body, err := readJSON(r, &req)
+	if err != nil {
 		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}

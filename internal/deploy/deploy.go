@@ -29,6 +29,7 @@ import (
 
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // EnvDir is the folder of the environments' secrets files: ~/.dash/env.
@@ -364,6 +365,9 @@ func (r *job) phase(p model.DeployStatus) {
 	r.mu.Unlock()
 }
 
+// maxSayLine caps a command's one-line preview in the log (textutil.Summary).
+const maxSayLine = 200
+
 // say adds a line of Dash's own to the log, after a blank line unless it
 // is the first.
 func (r *job) say(format string, a ...any) {
@@ -414,7 +418,7 @@ func (m *Manager) run(ctx context.Context, r *job, j Job) {
 		if i == 0 {
 			label = "testing"
 		}
-		r.say("%s: %s", label, firstLine(st.cmd))
+		r.say("%s: %s", label, textutil.Summary(st.cmd, maxSayLine))
 		code, err := runScript(ctx, j.Dir, st.cmd, env, r)
 		if ctx.Err() != nil {
 			r.say("stopped")
@@ -491,7 +495,7 @@ func (m *Manager) check(ctx context.Context, r *job, j Job, url string, env []st
 		_ = r.checked(model.CheckHealth, nil)
 	}
 	if j.Verify != "" {
-		r.say("verify: %s", firstLine(j.Verify))
+		r.say("verify: %s", textutil.Summary(j.Verify, maxSayLine))
 		venv := append(slices.Clone(env), model.DeployVarURL+"="+url)
 		code, err := runScript(ctx, j.Dir, j.Verify, venv, r)
 		if ctx.Err() != nil {
@@ -550,14 +554,6 @@ func (r *job) checked(name string, err error) error {
 	r.state.Checks = append(r.state.Checks, c)
 	r.mu.Unlock()
 	return err
-}
-
-func firstLine(s string) string {
-	line, rest, _ := strings.Cut(s, "\n")
-	if rest != "" {
-		line += " …"
-	}
-	return line
 }
 
 // runScript runs a bash script in dir with env, its output to w, and

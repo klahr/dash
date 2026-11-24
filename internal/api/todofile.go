@@ -129,13 +129,8 @@ func (s *Server) saveTodoFile(w http.ResponseWriter, r *http.Request) {
 // hubTaskFile handles GET and PUT /api/hub/tasks/{htid}/file on a runner:
 // the hub's todoFile and saveTodoFile for a task it sent here.
 func (s *Server) hubTaskFile(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.fromHub(w, r)
+	sv, t, ok := s.hubTaskFor(w, r)
 	if !ok {
-		return
-	}
-	t, ok := sv.hubTodo(r.PathValue("htid"))
-	if !ok {
-		writeErr(w, fmt.Errorf("%w: no such task from the hub", store.ErrNotFound))
 		return
 	}
 	if err := editableInReview(t); err != nil {

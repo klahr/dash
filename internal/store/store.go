@@ -819,6 +819,40 @@ func cleanIDs(ids []string) []string {
 
 // ---- Chat ----
 
+// copyChat is a copy of the chat m[owner], never nil.
+func copyChat(m map[string][]model.ChatMessage, owner string) []model.ChatMessage {
+	return append([]model.ChatMessage{}, m[owner]...)
+}
+
+// allChats are copies of every chat in m, in no order.
+func allChats(m map[string][]model.ChatMessage) [][]model.ChatMessage {
+	out := make([][]model.ChatMessage, 0, len(m))
+	for _, msgs := range m {
+		out = append(out, append([]model.ChatMessage(nil), msgs...))
+	}
+	return out
+}
+
+// appendChatLocked adds msgs to the end of the chat (*m)[owner] of the
+// given kind in org, in memory and in the database. The caller holds s.mu
+// for writing.
+func (s *Store) appendChatLocked(m *map[string][]model.ChatMessage, kind, owner string, org int64, msgs ...model.ChatMessage) error {
+	if *m == nil {
+		*m = map[string][]model.ChatMessage{}
+	}
+	prev := (*m)[owner]
+	next := append(slices.Clip(prev), msgs...)
+	(*m)[owner] = next
+	return s.writeLocked(func(tx *sql.Tx) error {
+		for i := len(prev); i < len(next); i++ {
+			if err := putChatMessage(tx, kind, owner, org, i, next[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // mainChatOwner is the owner_id of a user's general chat in an org.
 func mainChatOwner(org, user int64) string { return fmt.Sprintf("%d:%d", org, user) }
 
@@ -826,7 +860,7 @@ func mainChatOwner(org, user int64) string { return fmt.Sprintf("%d:%d", org, us
 func (s *Store) Chat(org, user int64) []model.ChatMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]model.ChatMessage{}, s.data.MainChats[mainChatOwner(org, user)]...)
+	return copyChat(s.data.MainChats, mainChatOwner(org, user))
 }
 
 // SetChat replaces user's general chat in org (nil clears it).
@@ -850,11 +884,7 @@ func (s *Store) SetChat(org, user int64, msgs []model.ChatMessage) error {
 func (s *Store) MainChats() [][]model.ChatMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([][]model.ChatMessage, 0, len(s.data.MainChats))
-	for _, msgs := range s.data.MainChats {
-		out = append(out, append([]model.ChatMessage(nil), msgs...))
-	}
-	return out
+	return allChats(s.data.MainChats)
 }
 
 // projectOrgLocked is the org of a project (0 if there is none).
@@ -868,7 +898,7 @@ func (s *Store) projectOrgLocked(projectID string) int64 {
 func (s *Store) TodoChat(todoID string) []model.ChatMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]model.ChatMessage{}, s.data.TodoChats[todoID]...)
+	return copyChat(s.data.TodoChats, todoID)
 }
 
 // SetTodoChat replaces the conversation about a todo (nil clears it).
@@ -900,13 +930,7 @@ func (s *Store) AppendTodoChat(todoID string, msg model.ChatMessage) error {
 	if !ok {
 		return ErrNotFound
 	}
-	org := s.projectOrgLocked(t.ProjectID)
-	if s.data.TodoChats == nil {
-		s.data.TodoChats = map[string][]model.ChatMessage{}
-	}
-	s.data.TodoChats[todoID] = append(s.data.TodoChats[todoID], msg)
-	seq := len(s.data.TodoChats[todoID]) - 1
-	return s.writeLocked(func(tx *sql.Tx) error { return putChatMessage(tx, chatTodo, todoID, org, seq, msg) })
+	return s.appendChatLocked(&s.data.TodoChats, chatTodo, todoID, s.projectOrgLocked(t.ProjectID), msg)
 }
 
 // projectChatOwner is the owner_id of user's chat about a project.
@@ -919,7 +943,7 @@ func projectChatOwner(projectID string, user int64) string {
 func (s *Store) ProjectChat(projectID string, user int64) []model.ChatMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]model.ChatMessage{}, s.data.ProjectChats[projectChatOwner(projectID, user)]...)
+	return copyChat(s.data.ProjectChats, projectChatOwner(projectID, user))
 }
 
 // AppendProjectChat adds msgs to the end of user's chat about a project. It
@@ -935,20 +959,7 @@ func (s *Store) AppendProjectChat(projectID string, user int64, msgs ...model.Ch
 	if !ok {
 		return ErrNotFound
 	}
-	owner := projectChatOwner(projectID, user)
-	if s.data.ProjectChats == nil {
-		s.data.ProjectChats = map[string][]model.ChatMessage{}
-	}
-	start := len(s.data.ProjectChats[owner])
-	s.data.ProjectChats[owner] = append(s.data.ProjectChats[owner], msgs...)
-	err := s.writeLocked(func(tx *sql.Tx) error {
-		for i, m := range msgs {
-			if err := putChatMessage(tx, chatProject, owner, p.OrgID, start+i, m); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	err := s.appendChatLocked(&s.data.ProjectChats, chatProject, projectChatOwner(projectID, user), p.OrgID, msgs...)
 	if err == nil {
 		s.projectChatChangedLocked(p, user)
 	}
@@ -992,11 +1003,7 @@ func orgOrNone(org int64) int64 {
 func (s *Store) ProjectChats() [][]model.ChatMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([][]model.ChatMessage, 0, len(s.data.ProjectChats))
-	for _, msgs := range s.data.ProjectChats {
-		out = append(out, append([]model.ChatMessage(nil), msgs...))
-	}
-	return out
+	return allChats(s.data.ProjectChats)
 }
 
 // clone copies a todo deeply enough that changing the copy (including the

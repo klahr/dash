@@ -8,7 +8,7 @@ import { attachBox, attachThumb } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { showView } from "./nav.js";
 import { projectKey } from "./events.js";
-import { chatPermCard, duration, permDecided, placeToolCall, toolCall, toolResult, toolSettled } from "./chatparts.js";
+import { chatCloseReason, chatPermCard, duration, permDecided, placeToolCall, sendStopButton, toolCall, toolResult, toolSettled } from "./chatparts.js";
 import { closeDetail } from "./detail.js";
 import { canRework, reworkLabel, reworkTodo, takeReviewNext } from "./drawmode.js";
 import { loadTodoChat, renderChatBadge, renderChatDots, renderChatPane, viewingChat } from "./chatpane.js";
@@ -375,8 +375,7 @@ function chatTurns(c, { stale, onState }) {
 // mode (see makeChat). It returns the button.
 function chatSendButton(c, form, mode, composing) {
   const sendBtn = form.querySelector("button:not([type=button])");
-  const sendLook = { html: sendBtn.innerHTML, label: sendBtn.getAttribute("aria-label") };
-  const stopLook = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>`;
+  const look = sendStopButton(sendBtn);
   c.busyButton = () => {
     // Once Claude has answered, the next message is a reply, not a first question.
     const m0 = mode(), m = m0?.reply && c.history.some((x) => x.role === "assistant") ? { ...m0, ...m0.reply } : m0;
@@ -384,13 +383,13 @@ function chatSendButton(c, form, mode, composing) {
     const replying = !!c.current && !m?.send;
     const stopping = replying && !composing();
     sendBtn.disabled = false;
-    sendBtn.classList.toggle("stop", stopping);
-    sendBtn.innerHTML = stopping ? stopLook : sendLook.html;
+    const what = c.current?.shell ? "command" : "reply";
+    look(stopping, {
+      label: stopping ? `Stop the ${what}` : replying ? "Queue the message" : m?.label || look.label,
+      title: stopping ? "Stop" : replying ? `Queue: sent when the ${what} is done` : m?.title || "",
+    });
     const text = sendBtn.querySelector(".send-text");
     if (text && m?.text) text.textContent = replying ? "Queue" : m.text;
-    const what = c.current?.shell ? "command" : "reply";
-    sendBtn.setAttribute("aria-label", stopping ? `Stop the ${what}` : replying ? "Queue the message" : m?.label || sendLook.label);
-    sendBtn.title = stopping ? "Stop" : replying ? `Queue: sent when the ${what === "reply" ? "reply" : "command"} is done` : m?.title || "";
   };
   return sendBtn;
 }
@@ -460,12 +459,13 @@ function chatSocket(c, { cwd, saved, resume, onRunner, onStream }) {
     };
     ws.onclose = (e) => {
       if (ws !== c.ws || !c.current) return;
-      if (e.code === 1009) {
+      const refused = chatCloseReason(e);
+      if (refused) {
         // The server refuses a conversation this long (see maxChatFrame).
         c.ws = null;
         c.current.el.classList.remove("pending");
         c.current.el.classList.add("error");
-        c.current.reply.textContent = "This conversation is too long to send. Clear it, or start a new one.";
+        c.current.reply.textContent = refused;
         c.history.pop();
         c.finish();
         return;

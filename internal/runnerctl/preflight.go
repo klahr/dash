@@ -3,8 +3,8 @@ package runnerctl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os/exec"
 	"runtime"
@@ -146,22 +146,22 @@ func (p Preflight) hub(ctx context.Context, server string) Check {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String()+"/runner/version", nil)
-	if err != nil {
-		c.Detail = err.Error()
-		return c
-	}
-	res, err := client.Do(req)
-	if err != nil {
-		c.Detail = "can't reach " + u.String() + ": " + err.Error()
-		c.Fix = "check the address, that this computer is online and that the hub runs with a valid certificate"
-		return c
-	}
-	defer res.Body.Close()
 	var v struct {
 		Version string `json:"version"`
 	}
-	_ = json.NewDecoder(io.LimitReader(res.Body, 4096)).Decode(&v)
+	if res, err := tunnel.HubJSON(ctx, client, u.String(), "", http.MethodGet, "/runner/version", nil, &v, 4096); err != nil {
+		if res != nil || errors.Is(err, tunnel.ErrRevoked) { // it answered, but not as a hub does
+			if errors.Is(err, tunnel.ErrRevoked) {
+				err = errors.New("401 Unauthorized")
+			}
+			c.Detail = u.String() + " answered: " + err.Error()
+			c.Fix = "check that the address is the Dash hub's and that the hub (and any proxy in front of it) is up"
+		} else {
+			c.Detail = "can't reach " + u.String() + ": " + err.Error()
+			c.Fix = "check the address, that this computer is online and that the hub runs with a valid certificate"
+		}
+		return c
+	}
 	c.OK, c.Detail = true, u.String()
 	if v.Version != "" {
 		c.Detail += " (Dash " + v.Version + ")"

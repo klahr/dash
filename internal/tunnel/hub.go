@@ -152,12 +152,6 @@ func (r Runner) Serves(p model.Project) bool {
 	return r.OrgID() != 0 && r.OrgID() == p.OrgID && !r.ClaudeOnly() && model.LabelsMatch(r.AllLabels(), p.RunnerLabels())
 }
 
-// HasAgent reports whether the runner can run agent provider name: it
-// has that agent's label (model.AgentLabel).
-func (r Runner) HasAgent(name string) bool {
-	return model.HasLabel(r.AllLabels(), model.AgentLabel(name))
-}
-
 // Deploys reports whether the runner runs hub project p's deploys to e:
 // it works on p and has every label e deploys on
 // (model.Environment.DeploysOn).

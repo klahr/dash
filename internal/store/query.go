@@ -83,3 +83,20 @@ func scanOne[T any](sc scanner) (T, error) {
 	err := sc.Scan(&v)
 	return v, err
 }
+
+// execer runs a statement: *sql.DB or *sql.Tx.
+type execer interface {
+	Exec(string, ...any) (sql.Result, error)
+}
+
+// execOne runs query (with args) and returns missing if it changed no row.
+func execOne(q execer, missing error, query string, args ...any) error {
+	res, err := q.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return missing
+	}
+	return nil
+}

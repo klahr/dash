@@ -799,31 +799,7 @@ func (a *app) setupHub() {
 		slog.Warn("UNSAFE: notification webhooks of this internet-facing hub may reach private, loopback and link-local addresses " +
 			"(-webhook-private=" + wp + "): whoever takes over an account can probe this hub's network")
 	}
-	perms := a.perms
-	notifier := &notify.Notifier{
-		Store:        st,
-		Origin:       linkOrigin(st, authn.Domains, o.publicURL, o.addr, a.useTLS),
-		AllowPrivate: allowPrivate,
-		Actions: notify.NewActions(func(id, decision, message string) error {
-			err := perms.Decide(id, decision, message)
-			if errors.Is(err, perm.ErrNotFound) && apiSrv.Dispatch != nil {
-				// A request of a hub's task, waiting on its runner.
-				dctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				defer cancel()
-				err = apiSrv.Dispatch.DecidePermission(dctx, id, decision, message, nil)
-			}
-			return err
-		}),
-	}
-	// Web Push to the browsers that turned notifications on, signed
-	// with the hub's VAPID key (made on first start, then kept).
-	if key, err := st.PushVAPIDKey(notify.NewVAPIDPrivateKey); err != nil {
-		slog.Warn("web push off: VAPID key", "err", err)
-	} else if notifier.VAPID, err = notify.ParseVAPIDKey(key); err != nil {
-		slog.Warn("web push off: VAPID key", "err", err)
-	} else {
-		notifier.Push = st
-	}
+	notifier := a.newNotifier(allowPrivate)
 	events.Observe = notifier.Observe
 	notifier.Start(ctx)
 	apiSrv.Notify = notifier
@@ -838,26 +814,7 @@ func (a *app) setupHub() {
 		go apiSrv.Summaries.Run(ctx)
 	}
 
-	// Claude's status page (status.claude.com): its webhooks, and reading
-	// its API when a platform admin turns polling on.
-	apiSrv.ClaudeStatus = &claudestatus.Service{Store: st, Publish: func(s claudestatus.Status) {
-		events.Publish(model.Event{Type: model.EvClaudeStatus, Data: s})
-	}}
-	go apiSrv.ClaudeStatus.Run(ctx)
-
-	// Projects whose board is an external tracker are synced with it, one
-	// worker each; a runner's projects are its hub's.
-	// Only dash's own end-to-end tests set it: a fake tracker to sync with.
-	if v := os.Getenv("DASH_TEST_TRACKER"); v != "" {
-		if err := registerTestTracker(v); err != nil {
-			fatal("test tracker", "err", err)
-		}
-	}
-	a.boards = &boardsync.Manager{Store: st, Kick: todos.Kick, PublicURL: o.publicURL}
-	a.storeEvents.chain(a.boards.Observe)
-	if err := a.boards.Start(ctx); err != nil {
-		slog.Warn("board backends", "err", err)
-	}
+	apiSrv.ClaudeStatus, a.boards = a.startClaudeStatusAndBoards()
 	apiSrv.Trackers = a.boards
 	if !allowPrivate {
 		slog.Info("notification webhooks may not reach private addresses (-webhook-private=on allows them)")
@@ -876,29 +833,7 @@ func (a *app) setupHub() {
 	dispatch.MigrateRunnerLinks(st, runners)
 	// Tasks of projects linked to runners go to them; the hub only
 	// coordinates.
-	todoLog := a.todoLog
-	d := &dispatch.Dispatcher{Store: st, Fleet: runners, Grace: o.runnerGrace, Kick: todos.Kick, Note: todoLog.Line, Pub: events}
-	// Runners do only their owner's work now, unless shared (an API key and
-	// no subscription login): those from before are settled as they report.
-	d.MigrateShared()
-	d.Undo = func(t model.Todo, files []string) {
-		nt, err := queue.UndoTodo(st, t, t.MergedCommit, files)
-		if err != nil {
-			todoLog.Line(t, "✖ revert: "+err.Error())
-			return
-		}
-		todoLog.Line(t, "⚠ reverting on the runner conflicts with later work in "+strings.Join(files, ", ")+"; queued \""+nt.Title+"\" for Claude")
-		todos.Kick()
-	}
-	runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
-	d.OnPreviews = apiSrv.RunnerPreviews // its tasks' previews on runners, as the runners report them
-	// "Follow weekly pace" is each Claude account's: the hub paces the
-	// runners on one account as one budget, and tells each how.
-	d.Pacer = &dispatch.Pacer{Runners: runners.ListBare}
-	if err := d.Pacer.Keep(filepath.Join(o.dataDir, "pace.json")); err != nil {
-		slog.Warn("read pace.json", "err", err)
-	}
-	runners.ReportReply = d.Reply
+	d := a.newDispatcher(runners)
 	todos.Remote, apiSrv.Dispatch = d, d
 	// While the hub doesn't run Claude, scans run their Claude part on
 	// a runner linked to the project (the hub keeps the runs and issues).
@@ -920,10 +855,98 @@ func (a *app) setupHub() {
 	go runners.RunUpdates(ctx, 5*time.Second, d.Working)
 }
 
+// newNotifier makes the hub's notifier: outgoing webhooks (to private
+// addresses only when allowPrivate), the actions in notifications, and Web
+// Push when the hub has its VAPID key.
+func (a *app) newNotifier(allowPrivate bool) *notify.Notifier {
+	o, st, ctx, apiSrv, perms := a.o, a.st, a.ctx, a.apiSrv, a.perms
+	notifier := &notify.Notifier{
+		Store:        st,
+		Origin:       linkOrigin(st, a.authn.Domains, o.publicURL, o.addr, a.useTLS),
+		AllowPrivate: allowPrivate,
+		Actions: notify.NewActions(func(id, decision, message string) error {
+			err := perms.Decide(id, decision, message)
+			if errors.Is(err, perm.ErrNotFound) && apiSrv.Dispatch != nil {
+				// A request of a hub's task, waiting on its runner.
+				dctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				err = apiSrv.Dispatch.DecidePermission(dctx, id, decision, message, nil)
+			}
+			return err
+		}),
+	}
+	// Web Push to the browsers that turned notifications on, signed
+	// with the hub's VAPID key (made on first start, then kept).
+	if key, err := st.PushVAPIDKey(notify.NewVAPIDPrivateKey); err != nil {
+		slog.Warn("web push off: VAPID key", "err", err)
+	} else if notifier.VAPID, err = notify.ParseVAPIDKey(key); err != nil {
+		slog.Warn("web push off: VAPID key", "err", err)
+	} else {
+		notifier.Push = st
+	}
+	return notifier
+}
+
+// startClaudeStatusAndBoards starts following Claude's status page and
+// syncing the projects whose board is an external tracker.
+func (a *app) startClaudeStatusAndBoards() (*claudestatus.Service, *boardsync.Manager) {
+	o, st, events, ctx := a.o, a.st, a.events, a.ctx
+	// Claude's status page (status.claude.com): its webhooks, and reading
+	// its API when a platform admin turns polling on.
+	status := &claudestatus.Service{Store: st, Publish: func(s claudestatus.Status) {
+		events.Publish(model.Event{Type: model.EvClaudeStatus, Data: s})
+	}}
+	go status.Run(ctx)
+
+	// Projects whose board is an external tracker are synced with it, one
+	// worker each; a runner's projects are its hub's.
+	// Only dash's own end-to-end tests set it: a fake tracker to sync with.
+	if v := os.Getenv("DASH_TEST_TRACKER"); v != "" {
+		if err := registerTestTracker(v); err != nil {
+			fatal("test tracker", "err", err)
+		}
+	}
+	boards := &boardsync.Manager{Store: st, Kick: a.todos.Kick, PublicURL: o.publicURL}
+	a.storeEvents.chain(boards.Observe)
+	if err := boards.Start(ctx); err != nil {
+		slog.Warn("board backends", "err", err)
+	}
+	return status, boards
+}
+
+// newDispatcher makes the dispatcher that sends tasks to runners and hears
+// back from them, hooked to runners' events. The caller starts it.
+func (a *app) newDispatcher(runners *tunnel.Hub) *dispatch.Dispatcher {
+	o, st, events, todos, todoLog := a.o, a.st, a.events, a.todos, a.todoLog
+	d := &dispatch.Dispatcher{Store: st, Fleet: runners, Grace: o.runnerGrace, Kick: todos.Kick, Note: todoLog.Line, Pub: events}
+	// Runners do only their owner's work now, unless shared (an API key and
+	// no subscription login): those from before are settled as they report.
+	d.MigrateShared()
+	d.Undo = func(t model.Todo, files []string) {
+		nt, err := queue.UndoTodo(st, t, t.MergedCommit, files)
+		if err != nil {
+			todoLog.Line(t, "✖ revert: "+err.Error())
+			return
+		}
+		todoLog.Line(t, "⚠ reverting on the runner conflicts with later work in "+strings.Join(files, ", ")+"; queued \""+nt.Title+"\" for Claude")
+		todos.Kick()
+	}
+	runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
+	d.OnPreviews = a.apiSrv.RunnerPreviews // its tasks' previews on runners, as the runners report them
+	// "Follow weekly pace" is each Claude account's: the hub paces the
+	// runners on one account as one budget, and tells each how.
+	d.Pacer = &dispatch.Pacer{Runners: runners.ListBare}
+	if err := d.Pacer.Keep(filepath.Join(o.dataDir, "pace.json")); err != nil {
+		slog.Warn("read pace.json", "err", err)
+	}
+	runners.ReportReply = d.Reply
+	return d
+}
+
 // setupRunner registers with the hub (or reads the registration) and tells
 // it of this computer's tasks, pushes, processes and permission requests.
 func (a *app) setupRunner() {
-	o, st, events, ctx, apiSrv, cli, merges := a.o, a.st, a.events, a.ctx, a.apiSrv, a.cli, a.merges
+	o, st, events, ctx, apiSrv, merges := a.o, a.st, a.events, a.ctx, a.apiSrv, a.merges
 	var err error
 	if apiSrv.GitHubProtocol, err = gitops.ParseGitHubProtocol(o.githubProtocol); err != nil {
 		slog.Error("runner: -github-protocol", "err", err)
@@ -946,14 +969,72 @@ func (a *app) setupRunner() {
 	apiSrv.HubBoard = func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error) {
 		return tunnel.Board(ctx, creds, hubTodo, hubProject, body)
 	}
-	// This computer's disk space: the hub hears of it with every report,
-	// warns when it runs low, and a runner too full starts no task. The
-	// thresholds, and the opt-in Go build cache limit, come from the hub.
+	disks := a.newDiskMonitor(creds.Name)
+	apiSrv.DiskRoom = disks.CanStart
+	// Whether the hub has Take other members' tasks on for this runner, as
+	// it last said.
+	var hubShared atomic.Bool
+	shared := a.newSharedWork(&hubShared)
+	apiSrv.Shared, a.todos.Shared, merges.Shared = shared, shared, shared
+	reporter := a.newReporter(creds, disks, &hubShared)
+	disks.Changed = reporter.Nudge
+	go disks.Run(ctx)
+	a.reporter = reporter
+	a.storeEvents.chain(reporter.Observe)
+	// Claude's progress on the hub's tasks goes to the hub's board too, as
+	// do its pushes (below) and its tasks' previews (the hub's board and
+	// Previews sheet show them).
+	toHub := &teePublisher{Publisher: events}
+	toHub.chain(reporter.Observe)
+	a.todoLog.Pub = toHub
+	// Pushes to origin go to the hub, which tells the project's other
+	// runners at once; and the hub hears which checkouts are behind.
+	merges.OnPushed = func(p model.Project, branch, sha string) {
+		if p.HubProjectID != "" {
+			reporter.Pushed(dispatch.Push{HubProjectID: p.HubProjectID, Branch: branch, SHA: sha})
+		}
+	}
+	merges.Remote.Pub = toHub
+	a.previews.Pub = toHub
+	reporter.Previews = a.previews.List
+	reporter.Checkouts = func() []dispatch.CheckoutState {
+		var out []dispatch.CheckoutState
+		for _, rs := range merges.Remote.Behind() {
+			if p, err := st.GetProject(rs.ProjectID); err == nil && p.HubProjectID != "" {
+				out = append(out, dispatch.CheckoutState{HubProjectID: p.HubProjectID, Branch: rs.Branch,
+					Behind: rs.Behind, Ahead: rs.Ahead, Stuck: rs.Stuck, DashOwned: p.DashOwnsCheckout()})
+			}
+		}
+		return out
+	}
+	// …and when its processes start or end, so its dashboards list them again.
+	a.procEvents.chain(reporter.Observe)
+	// Claude's permission requests in the hub's tasks are answered on
+	// the hub's board.
+	perms := a.perms
+	reporter.Perms = func() []perm.Request { return perms.Pending("") }
+	a.permEvents.chain(reporter.Observe)
+	go reporter.Run(ctx)
+	// The hub hears of its agents' versions, logins and warnings at once.
+	// Agent CLIs (Claude Code) update themselves: checked every hour.
+	a.agents.Run(ctx, time.Hour, func(p agent.Provider) {
+		for _, w := range agent.CheckerOf(p).CLIStatus().Warnings {
+			slog.Warn("agent cli", "agent", p.Name(), "warning", w)
+		}
+		reporter.Nudge()
+	})
+}
+
+// newDiskMonitor watches this computer's disk space: the hub hears of it
+// with every report, warns when it runs low, and a runner too full starts
+// no task. The thresholds, and the opt-in Go build cache limit, come from
+// the hub. The caller runs it.
+func (a *app) newDiskMonitor(name string) *disk.Monitor {
+	st, procs := a.st, a.procs
 	cacheDir, _ := os.UserCacheDir()
-	procs := a.procs
-	disks := &disk.Monitor{
-		Name: creds.Name,
-		Targets: []disk.Target{{Label: "projects", Path: o.projectRoot},
+	return &disk.Monitor{
+		Name: name,
+		Targets: []disk.Target{{Label: "projects", Path: a.o.projectRoot},
 			{Label: "worktrees", Path: a.merges.WorktreeRoot}, {Label: "cache", Path: cacheDir}},
 		CacheDir: cacheDir,
 		// Not under a running build: a task running or merging (its checks),
@@ -965,12 +1046,15 @@ func (a *app) setupRunner() {
 			return slices.ContainsFunc(procs.List(""), func(p model.Process) bool { return p.Running && p.Kind == model.ProcTask })
 		},
 	}
-	apiSrv.DiskRoom = disks.CanStart
-	// Other members' work: only while the hub's Take other members' tasks
-	// is on for this runner and Claude signs in with an API key alone; it
-	// then runs in a Claude config folder of its own, with the key only.
-	var hubShared atomic.Bool
-	shared := &queue.SharedWork{Dir: filepath.Join(o.dataDir, "shared-claude"), Check: func() error {
+}
+
+// newSharedWork runs other members' work: only while the hub's Take other
+// members' tasks is on for this runner (hubShared) and Claude signs in with
+// an API key alone; it then runs in a Claude config folder of its own, with
+// the key only.
+func (a *app) newSharedWork(hubShared *atomic.Bool) *queue.SharedWork {
+	ctx, cli := a.ctx, a.cli
+	return &queue.SharedWork{Dir: filepath.Join(a.o.dataDir, "shared-claude"), Check: func() error {
 		if !hubShared.Load() {
 			return errors.New("its hub doesn't have Take other members' tasks on for it")
 		}
@@ -986,9 +1070,14 @@ func (a *app) setupRunner() {
 		}
 		return nil
 	}}
-	apiSrv.Shared, a.todos.Shared, merges.Shared = shared, shared, shared
-	// The hub hears where its tasks are, and this computer's usage.
-	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli, Agents: a.agents.Statuses, Disk: disks.Status, EnvFiles: apiSrv.EnvFiles,
+}
+
+// newReporter tells the hub where its tasks are, and this computer's usage
+// and disk space; the hub's answers set the pace, disks' settings and
+// hubShared. The caller runs it.
+func (a *app) newReporter(creds tunnel.Credentials, disks *disk.Monitor, hubShared *atomic.Bool) *dispatch.Reporter {
+	o := a.o
+	return &dispatch.Reporter{Store: a.st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: a.cli, Agents: a.agents.Statuses, Disk: disks.Status, EnvFiles: a.apiSrv.EnvFiles,
 		// As shellAllowed: the hub's "!" commands run only for a known owner,
 		// in a chat that runs commands (agent.ReadOnlyChat).
 		ChatCommands: creds.UserID != 0 && o.chatBackend == "claude-code" && o.chatTools == agent.ChatShell,
@@ -1011,49 +1100,6 @@ func (a *app) setupRunner() {
 			}
 			return err
 		}}
-	disks.Changed = reporter.Nudge
-	go disks.Run(ctx)
-	a.reporter = reporter
-	a.storeEvents.chain(reporter.Observe)
-	// Claude's progress on the hub's tasks goes to the hub's board too.
-	a.todoLog.Pub = &teePublisher{Publisher: events, also: reporter.Observe}
-	// Pushes to origin go to the hub, which tells the project's other
-	// runners at once; and the hub hears which checkouts are behind.
-	merges.OnPushed = func(p model.Project, branch, sha string) {
-		if p.HubProjectID != "" {
-			reporter.Pushed(dispatch.Push{HubProjectID: p.HubProjectID, Branch: branch, SHA: sha})
-		}
-	}
-	merges.Remote.Pub = &teePublisher{Publisher: events, also: reporter.Observe}
-	// The hub's board and Previews sheet show the previews of its tasks.
-	a.previews.Pub = &teePublisher{Publisher: events, also: reporter.Observe}
-	reporter.Previews = a.previews.List
-	reporter.Checkouts = func() []dispatch.CheckoutState {
-		var out []dispatch.CheckoutState
-		for _, rs := range merges.Remote.Behind() {
-			if p, err := st.GetProject(rs.ProjectID); err == nil && p.HubProjectID != "" {
-				out = append(out, dispatch.CheckoutState{HubProjectID: p.HubProjectID, Branch: rs.Branch,
-					Behind: rs.Behind, Ahead: rs.Ahead, Stuck: rs.Stuck, DashOwned: p.DashOwnsCheckout()})
-			}
-		}
-		return out
-	}
-	// …and when its processes start or end, so its dashboards list them again.
-	a.procEvents.also = reporter.Observe
-	// Claude's permission requests in the hub's tasks are answered on
-	// the hub's board.
-	perms := a.perms
-	reporter.Perms = func() []perm.Request { return perms.Pending("") }
-	a.permEvents.also = reporter.Observe
-	go reporter.Run(ctx)
-	// The hub hears of its agents' versions, logins and warnings at once.
-	// Agent CLIs (Claude Code) update themselves: checked every hour.
-	a.agents.Run(ctx, time.Hour, func(p agent.Provider) {
-		for _, w := range agent.CheckerOf(p).CLIStatus().Warnings {
-			slog.Warn("agent cli", "agent", p.Name(), "warning", w)
-		}
-		reporter.Nudge()
-	})
 }
 
 // wireOwners makes every per-run MCP token act as its task's (or chat's)

@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // ---------------------------------------------------------------- Claude files
@@ -235,15 +236,7 @@ func markdownPreview(s string) string {
 			}
 		}
 	}
-	return clip(strings.Join(lines, "\n"), 240)
-}
-
-func clip(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	r := []rune(s)
-	return strings.TrimSpace(string(r[:n])) + "…"
+	return textutil.Clip(strings.Join(lines, "\n"), 240)
 }
 
 // mcpSummary names the servers a .mcp.json configures.
@@ -258,7 +251,7 @@ func mcpSummary(s string) string {
 		return "No servers"
 	}
 	names := slices.Sorted(maps.Keys(cfg.Servers))
-	return clip(plural(len(names), "server")+": "+strings.Join(names, ", "), 240)
+	return textutil.Clip(plural(len(names), "server")+": "+strings.Join(names, ", "), 240)
 }
 
 // settingsSummary says what a .claude/settings.json sets up: hooks by event
@@ -295,7 +288,7 @@ func settingsSummary(s string) string {
 	if len(parts) == 0 {
 		return "No hooks or permission rules"
 	}
-	return clip(strings.Join(parts, " · "), 240)
+	return textutil.Clip(strings.Join(parts, " · "), 240)
 }
 
 func plural(n int, word string) string {

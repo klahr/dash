@@ -4,15 +4,13 @@ import { ask, attempt, openSheet, railOf, toast } from "./dialogs.js";
 import { askPassword } from "./myaccount.js";
 import { copyBlock } from "./prefs.js";
 import { state } from "./state.js";
+import { ROLES, ROLE_LABEL, roleSelect } from "./roles.js";
 
 // The Admin sheet (account menu → Admin, platform admins only): every
 // account and organization on this Dash, a list with the chosen one's
 // detail in a pane beside it (full screen on a phone, with Back; Esc
 // closes it). The account actions (reset password, turn off two-factor,
 // sign out everywhere) are shared with Organization → Members (account.js).
-
-const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member", planner: "Planner" };
-const ROLES = ["owner", "admin", "member", "planner"];
 
 // ------------------------------------------------------------------ account actions
 // base is the account's route: /api/admin/users/{id} (platform admins) or
@@ -209,14 +207,13 @@ function renderUser({ user: u, events }, orgs) {
 
   // Memberships
   const memberRows = u.orgs.map((m) => {
-    const sel = h("select", { "aria-label": `Role of ${u.username} in ${m.name}` }, ...ROLES.map((r) => h("option", { value: r, selected: r === m.role }, ROLE_LABEL[r])));
-    sel.addEventListener("change", attempt(async () => {
-      const pw = await askPassword(`Make ${u.username} ${ROLE_LABEL[sel.value].toLowerCase()} of ${m.name}?`);
-      if (pw == null) { sel.value = m.role; return; }
-      try { await api("PUT", `${base}/orgs/${m.id}`, { role: sel.value, password: pw }, ""); } catch (err) { sel.value = m.role; throw err; }
-      toast(`${u.username} is now ${ROLE_LABEL[sel.value].toLowerCase()} of ${m.name}`, { tone: "ok" });
-      await refreshUser(u.id);
-    }));
+    const sel = roleSelect({
+      label: `Role of ${u.username} in ${m.name}`, current: m.role,
+      confirmText: (role) => `Make ${u.username} ${role} of ${m.name}?`,
+      doneText: (role) => `${u.username} is now ${role} of ${m.name}`,
+      save: (role, password) => api("PUT", `${base}/orgs/${m.id}`, { role, password }, ""),
+      after: () => refreshUser(u.id),
+    });
     return h("li", { class: "item-row" },
       h("span", { class: "runner-name" }, m.name, m.personal ? h("span", { class: "hint" }, " · personal workspace") : null),
       sel,
@@ -357,14 +354,13 @@ function renderOrg({ org: o, members }) {
     await refreshOrg(o.id);
   };
   const rows = members.map((m) => {
-    const sel = h("select", { "aria-label": `Role of ${m.username}` }, ...ROLES.map((r) => h("option", { value: r, selected: r === m.role }, ROLE_LABEL[r])));
-    sel.addEventListener("change", attempt(async () => {
-      const pw = await askPassword(`Make ${m.username} ${ROLE_LABEL[sel.value].toLowerCase()} of ${o.name}?`);
-      if (pw == null) { sel.value = m.role; return; }
-      try { await api("PUT", `/api/admin/users/${m.id}/orgs/${o.id}`, { role: sel.value, password: pw }, ""); } catch (err) { sel.value = m.role; throw err; }
-      toast(`${m.username} is now ${ROLE_LABEL[sel.value].toLowerCase()}`, { tone: "ok" });
-      await refreshOrg(o.id);
-    }));
+    const sel = roleSelect({
+      label: `Role of ${m.username}`, current: m.role,
+      confirmText: (role) => `Make ${m.username} ${role} of ${o.name}?`,
+      doneText: (role) => `${m.username} is now ${role}`,
+      save: (role, password) => api("PUT", `/api/admin/users/${m.id}/orgs/${o.id}`, { role, password }, ""),
+      after: () => refreshOrg(o.id),
+    });
     return h("li", { class: "item-row" },
       avatar(m, "member-avatar"),
       h("span", { class: "runner-name" }, m.username),

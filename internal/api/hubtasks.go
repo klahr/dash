@@ -52,20 +52,20 @@ func (s *Server) hubTaskRoutes(mux routeMux) {
 	mux.HandleFunc("POST "+dispatch.OriginMovedPath, s.hubOriginMoved)
 	mux.HandleFunc("POST /api/hub/tasks", s.hubTask)
 	mux.HandleFunc("PUT "+dispatch.UploadPath, s.hubUpload)
-	mux.HandleFunc("DELETE /api/hub/tasks/{htid}", s.hubTaskAction("delete"))
-	mux.HandleFunc("POST /api/hub/tasks/{htid}/approve", s.hubTaskAction("approve"))
-	mux.HandleFunc("POST /api/hub/tasks/{htid}/cancel", s.hubTaskAction("cancel"))
-	mux.HandleFunc("POST /api/hub/tasks/{htid}/revert", s.hubTaskAction("revert"))
-	mux.HandleFunc("POST /api/hub/tasks/{htid}/merge-pr", s.hubTaskAction("merge-pr"))
-	mux.HandleFunc("POST /api/hub/tasks/{htid}/test", s.hubTaskAction("test"))
-	mux.HandleFunc("POST /api/hub/tasks/{htid}/open", s.hubTaskAction("open"))
-	mux.HandleFunc("GET /api/hub/tasks/{htid}/diff", s.hubTaskAction("diff"))
-	mux.HandleFunc("GET /api/hub/tasks/{htid}/files", s.hubTaskAction("files"))
+	mux.HandleFunc("DELETE /api/hub/tasks/{htid}", s.hubForget)
+	mux.HandleFunc("POST /api/hub/tasks/{htid}/approve", s.hubApprove)
+	mux.HandleFunc("POST /api/hub/tasks/{htid}/cancel", s.hubCancel)
+	mux.HandleFunc("POST /api/hub/tasks/{htid}/revert", s.hubRevert)
+	mux.HandleFunc("POST /api/hub/tasks/{htid}/merge-pr", s.hubMergePR)
+	mux.HandleFunc("POST /api/hub/tasks/{htid}/test", s.hubRunTests)
+	mux.HandleFunc("POST /api/hub/tasks/{htid}/open", s.hubOpenWorktree)
+	mux.HandleFunc("GET /api/hub/tasks/{htid}/diff", s.hubDiff)
+	mux.HandleFunc("GET /api/hub/tasks/{htid}/files", s.hubFiles)
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/image", s.hubTaskImage)
-	mux.HandleFunc("GET /api/hub/tasks/{htid}/log", s.hubTaskAction("log"))
+	mux.HandleFunc("GET /api/hub/tasks/{htid}/log", s.hubLog)
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/file", s.hubTaskFile)
 	mux.HandleFunc("PUT /api/hub/tasks/{htid}/file", s.hubTaskFile)
-	mux.HandleFunc("GET /api/hub/tasks/{htid}/events", s.hubTaskAction("events"))
+	mux.HandleFunc("GET /api/hub/tasks/{htid}/events", s.hubEvents)
 	mux.HandleFunc("POST "+dispatch.PermissionPath, s.hubPermission)
 	mux.HandleFunc("GET "+dispatch.ScanPath, s.hubScan)
 	mux.HandleFunc("POST /api/hub/github/{hpid}", s.hubGitHub)
@@ -700,7 +700,7 @@ func (s *Server) hubOriginMoved(w http.ResponseWriter, r *http.Request) {
 // hubPermission handles POST dispatch.PermissionPath: the hub's user
 // answered a permission request of the hub's task {htid} on its board.
 func (s *Server) hubPermission(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.fromHub(w, r)
+	_, t, ok := s.hubTaskFor(w, r)
 	if !ok {
 		return
 	}
@@ -709,8 +709,7 @@ func (s *Server) hubPermission(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	t, ok := sv.hubTodo(r.PathValue("htid"))
-	if !ok || s.Perms == nil {
+	if s.Perms == nil {
 		writeErr(w, fmt.Errorf("%w: no such task from the hub", store.ErrNotFound))
 		return
 	}
@@ -868,116 +867,191 @@ func finished(s model.TodoStatus, rejoin bool) bool {
 	return false
 }
 
-// hubTaskAction handles what the hub does to a task it sent.
-func (s *Server) hubTaskAction(action string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		sv, ok := s.fromHub(w, r)
-		if !ok {
-			return
-		}
-		t, ok := sv.hubTodo(r.PathValue("htid"))
-		if !ok {
-			writeErr(w, fmt.Errorf("%w: no such task from the hub", store.ErrNotFound))
-			return
-		}
-		switch action {
-		case "approve":
-			t, err := sv.approve(t.ID)
-			if err != nil {
-				writeErr(w, err)
-				return
-			}
-			writeJSON(w, http.StatusAccepted, dispatch.StateOf(t))
-		case "merge-pr":
-			// The hub checked who may merge; the merge runs with this
-			// runner's gh, in its clone.
-			var req dispatch.MergePR
-			if err := decodeOptional(r, &req); err != nil {
-				writeErr(w, err)
-				return
-			}
-			res, err := sv.mergePR(r.Context(), t, req.Method)
-			if err != nil {
-				writeErr(w, err)
-				return
-			}
-			writeJSON(w, http.StatusOK, res)
-		case "revert":
-			if err := sv.revert(r.Context(), t); err != nil {
-				writeErr(w, err)
-				return
-			}
-			w.WriteHeader(http.StatusAccepted)
-		case "test":
-			// Its tests are a project command: someone else's run here
-			// only on a shared runner, with its API key alone.
-			shared, err := s.requestShared(r, "runs a task's tests")
-			if err != nil {
-				writeError(w, http.StatusForbidden, err.Error())
-				return
-			}
-			if err := sv.runTests(r.Context(), t, shared); err != nil {
-				writeErr(w, err)
-				return
-			}
-			w.WriteHeader(http.StatusAccepted)
-		case "open":
-			if err := s.openWorktree(t); err != nil {
-				writeErr(w, err)
-				return
-			}
-			w.WriteHeader(http.StatusAccepted)
-		case "cancel":
-			if _, _, err := sv.cancel(t.ID); err != nil {
-				writeErr(w, err)
-				return
-			}
-			w.WriteHeader(http.StatusAccepted)
-		case "delete":
-			// The hub forgot it: stop it and keep it as the runner's own.
-			// Deleting it there rejected it: its pull request closes.
-			s.Todos.Cancel(t.ID)
-			s.rejectPR(t)
-			if _, err := sv.data.UpdateTodo(t.ID, func(x *model.Todo) error { x.HubTodoID = ""; return nil }); err != nil {
-				writeErr(w, err)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-		case "diff":
-			if t.Worktree == nil {
-				writeText(w, "")
-				return
-			}
-			diff, err := sv.diff(r.Context(), t.ID)
-			if err != nil {
-				writeErr(w, err)
-				return
-			}
-			writeText(w, diff)
-		case "files":
-			// The files it changes, one per line, for the hub's active_work.
-			files, err := sv.workFiles(r.Context(), t)
-			if err != nil {
-				writeErr(w, err)
-				return
-			}
-			writeText(w, strings.Join(files, "\n"))
-		case "log":
-			log, err := sv.log(t.ID)
-			if err != nil {
-				writeErr(w, err)
-				return
-			}
-			writeText(w, log)
-		case "events":
-			evs, err := s.Todos.Log.Events(t.ID)
-			if err != nil {
-				writeErr(w, err)
-				return
-			}
-			writeJSON(w, http.StatusOK, evs)
-		}
+// hubTaskFor is the task from the hub that r names ({htid}), with the
+// service it is in; else it answers r (403 for a caller that isn't the
+// hub, 404 for a task the hub didn't send) and returns false.
+func (s *Server) hubTaskFor(w http.ResponseWriter, r *http.Request) (*service, model.Todo, bool) {
+	sv, ok := s.fromHub(w, r)
+	if !ok {
+		return nil, model.Todo{}, false
 	}
+	t, ok := sv.hubTodo(r.PathValue("htid"))
+	if !ok {
+		writeErr(w, fmt.Errorf("%w: no such task from the hub", store.ErrNotFound))
+		return nil, model.Todo{}, false
+	}
+	return sv, t, true
+}
+
+// hubApprove handles POST /api/hub/tasks/{htid}/approve.
+func (s *Server) hubApprove(w http.ResponseWriter, r *http.Request) {
+	sv, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	t, err := sv.approve(t.ID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, dispatch.StateOf(t))
+}
+
+// hubMergePR handles POST /api/hub/tasks/{htid}/merge-pr. The hub checked
+// who may merge; the merge runs with this runner's gh, in its clone.
+func (s *Server) hubMergePR(w http.ResponseWriter, r *http.Request) {
+	sv, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	var req dispatch.MergePR
+	if err := decodeOptional(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	res, err := sv.mergePR(r.Context(), t, req.Method)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// hubRevert handles POST /api/hub/tasks/{htid}/revert.
+func (s *Server) hubRevert(w http.ResponseWriter, r *http.Request) {
+	sv, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	if err := sv.revert(r.Context(), t); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// hubRunTests handles POST /api/hub/tasks/{htid}/test. Its tests are a
+// project command: someone else's run here only on a shared runner, with
+// its API key alone.
+func (s *Server) hubRunTests(w http.ResponseWriter, r *http.Request) {
+	sv, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	shared, err := s.requestShared(r, "runs a task's tests")
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if err := sv.runTests(r.Context(), t, shared); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// hubOpenWorktree handles POST /api/hub/tasks/{htid}/open.
+func (s *Server) hubOpenWorktree(w http.ResponseWriter, r *http.Request) {
+	_, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	if err := s.openWorktree(t); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// hubCancel handles POST /api/hub/tasks/{htid}/cancel.
+func (s *Server) hubCancel(w http.ResponseWriter, r *http.Request) {
+	sv, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	if _, _, err := sv.cancel(t.ID); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// hubForget handles DELETE /api/hub/tasks/{htid}: the hub forgot the task.
+// It stops and stays as the runner's own; deleting it there rejected it, so
+// its pull request closes.
+func (s *Server) hubForget(w http.ResponseWriter, r *http.Request) {
+	sv, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	s.Todos.Cancel(t.ID)
+	s.rejectPR(t)
+	if _, err := sv.data.UpdateTodo(t.ID, func(x *model.Todo) error { x.HubTodoID = ""; return nil }); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// hubDiff handles GET /api/hub/tasks/{htid}/diff.
+func (s *Server) hubDiff(w http.ResponseWriter, r *http.Request) {
+	sv, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	if t.Worktree == nil {
+		writeText(w, "")
+		return
+	}
+	diff, err := sv.diff(r.Context(), t.ID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeText(w, diff)
+}
+
+// hubFiles handles GET /api/hub/tasks/{htid}/files: the files the task
+// changes, one per line, for the hub's active_work.
+func (s *Server) hubFiles(w http.ResponseWriter, r *http.Request) {
+	sv, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	files, err := sv.workFiles(r.Context(), t)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeText(w, strings.Join(files, "\n"))
+}
+
+// hubLog handles GET /api/hub/tasks/{htid}/log.
+func (s *Server) hubLog(w http.ResponseWriter, r *http.Request) {
+	sv, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	log, err := sv.log(t.ID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeText(w, log)
+}
+
+// hubEvents handles GET /api/hub/tasks/{htid}/events.
+func (s *Server) hubEvents(w http.ResponseWriter, r *http.Request) {
+	_, t, ok := s.hubTaskFor(w, r)
+	if !ok {
+		return
+	}
+	evs, err := s.Todos.Log.Events(t.ID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, evs)
 }
 
 // followWorkBranch makes the runner's clone p start tasks from, and land

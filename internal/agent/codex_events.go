@@ -7,6 +7,7 @@ import (
 
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // The Codex CLI's `codex exec --json` output is JSON Lines, one event per
@@ -330,10 +331,7 @@ func (t *codexTranslator) use(id, tool string, input json.RawMessage) []ChatDelt
 
 // clipToolOutput caps a tool's output as the chat's are (maxToolOutput).
 func clipToolOutput(s string) string {
-	if len(s) > maxToolOutput {
-		return s[:maxToolOutput] + "\n[output truncated]"
-	}
-	return s
+	return textutil.ClipNote(s, maxToolOutput, "\n[output truncated]")
 }
 
 // runEvent is a delta as a task log's event; ok is false for one the log

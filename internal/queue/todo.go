@@ -1489,7 +1489,7 @@ func createFile(root, dst, content string) error {
 func (e *TodoEngine) prepareWorktree(ctx context.Context, t model.Todo, p model.Project, wt model.Worktree, log func(string)) error {
 	for _, f := range p.CopyFiles {
 		f = filepath.Clean(strings.TrimSpace(f))
-		if f == "" || f == "." || filepath.IsAbs(f) || strings.HasPrefix(f, "..") {
+		if f == "" || f == "." || !fsutil.RelInside(f) {
 			continue
 		}
 		if err := copyPath(filepath.Join(p.Path, f), filepath.Join(wt.Path, f)); err != nil {

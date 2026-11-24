@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/usage"
 )
 
@@ -487,9 +488,11 @@ func (f Fleet) Text(id, kind string, max int, tail bool) (string, error) {
 		return out, err
 	}
 	if tail {
-		return fmt.Sprintf("[…%d earlier characters omitted]\n", len(out)-max) + out[len(out)-max:], nil
+		end := textutil.ClipStart(out, max)
+		return fmt.Sprintf("[…%d earlier characters omitted]\n", len(out)-len(end)) + end, nil
 	}
-	return out[:max] + fmt.Sprintf("\n[…truncated, %d more characters]", len(out)-max), nil
+	start := textutil.ClipNote(out, max, "")
+	return start + fmt.Sprintf("\n[…truncated, %d more characters]", len(out)-len(start)), nil
 }
 
 // RESTComputer is a computer reached through the hub's REST API: Prefix is

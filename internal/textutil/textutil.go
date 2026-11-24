@@ -10,6 +10,12 @@ import (
 // Clip is s cut to at most n bytes, at a character boundary, with "…"
 // added when anything was cut.
 func Clip(s string, n int) string {
+	return ClipNote(s, n, "…")
+}
+
+// ClipNote is s cut to at most n bytes, at a character boundary, with note
+// added when anything was cut.
+func ClipNote(s string, n int, note string) string {
 	if len(s) <= n {
 		return s
 	}
@@ -19,7 +25,24 @@ func Clip(s string, n int) string {
 	for n > 0 && !utf8.RuneStart(s[n]) {
 		n--
 	}
-	return s[:n] + "…"
+	return s[:n] + note
+}
+
+// ClipStart is the end of s, at most n bytes of it, starting at a
+// character boundary: s with its start cut when it is longer than n. It
+// adds no marker; len(s)-len(ClipStart(s, n)) is how many bytes were cut.
+func ClipStart(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	if n < 0 {
+		n = 0
+	}
+	i := len(s) - n
+	for i < len(s) && !utf8.RuneStart(s[i]) {
+		i++
+	}
+	return s[i:]
 }
 
 // FirstLine is s's first line: s trimmed, cut at its first newline, and

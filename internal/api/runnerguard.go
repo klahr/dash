@@ -252,22 +252,31 @@ type commandFields struct {
 	PreviewKind *string `json:"preview_kind"`
 }
 
-// peekJSON decodes r's body into v exactly as the handler's decode will,
-// and puts the body back for the handler. A body decode would refuse is an
-// error here too, so the guard and the handler never read it differently.
-func peekJSON(r *http.Request, v any) error {
+// readJSON reads r's body, up to maxBody, and decodes it into v exactly as
+// the handler's decode would, returning the bytes it read: for a handler
+// that passes the body on (to a runner) once it has checked it. A body
+// decode would refuse is an error here too.
+func readJSON(r *http.Request, v any) ([]byte, error) {
 	var b []byte
 	if r.Body != nil {
 		var err error
 		b, err = io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 		r.Body.Close()
-		r.Body = io.NopCloser(bytes.NewReader(b))
 		if err != nil {
-			return err
+			return b, err
 		}
 	}
 	if len(b) > maxBody {
-		return errors.New("the request body is too large")
+		return b, errors.New("the request body is too large")
 	}
-	return decodeJSON(bytes.NewReader(b), v)
+	return b, decodeJSON(bytes.NewReader(b), v)
+}
+
+// peekJSON decodes r's body into v exactly as the handler's decode will
+// (readJSON), and puts the body back for the handler. So the guard and the
+// handler never read it differently.
+func peekJSON(r *http.Request, v any) error {
+	b, err := readJSON(r, v)
+	r.Body = io.NopCloser(bytes.NewReader(b))
+	return err
 }

@@ -3,7 +3,9 @@
 // Options come from the page's own URL: ?token= (a wall link, no sign-in),
 // ?project= (one project), ?privacy=1 (public mode: only what anyone may
 // see; a public wall token always has it).
-"use strict";
+// A module (wall.html) that imports only time.js, which, like this file, a
+// TV with a wall token and no session may load.
+import { clockText, resetText } from "./time.js";
 
 const params = new URLSearchParams(location.search);
 const POLL_MS = 5000;
@@ -39,25 +41,6 @@ function longAge(ms) {
   const m = Math.max(0, Math.floor(ms / 60000));
   if (m < 60) return m + " min";
   return Math.floor(m / 60) + " h " + (m % 60) + " min";
-}
-
-// elapsed: "21:00", "1:02:03"
-function elapsed(ms) {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  const hrs = Math.floor(s / 3600);
-  const mm = pad(Math.floor((s % 3600) / 60)), ss = pad(s % 60);
-  return hrs ? hrs + ":" + mm + ":" + ss : mm + ":" + ss;
-}
-
-function resetLabel(iso, now = new Date(Date.now() + skew)) {
-  const d = new Date(iso);
-  if (isNaN(d) || d.getFullYear() < 2000) return "";
-  const mins = Math.floor((d - now) / 60000);
-  if (mins < 1) return "resets now";
-  const days = Math.floor(mins / 1440), hrs = Math.floor((mins % 1440) / 60), m = mins % 60;
-  if (days) return "resets in " + days + "d" + (hrs ? " " + hrs + "h" : "");
-  if (hrs) return "resets in " + hrs + "h" + (m ? " " + m + "m" : "");
-  return "resets in " + m + "m";
 }
 
 // Counts the API leaves out when 0 (omitempty) arrive as undefined: show them as 0.
@@ -202,7 +185,7 @@ let minute = ""; // the clock's text, which changes once a minute
 
 function tick() {
   const now = Date.now() + skew;
-  for (const t of timers) setText(t.el, elapsed(now - t.since));
+  for (const t of timers) setText(t.el, clockText(t.since, now));
   document.documentElement.classList.toggle("blink"); // the pulsing dots (wall.html)
   const clock = hhmm(new Date(now));
   if (clock === minute) return;
@@ -263,7 +246,7 @@ function renderHeader(d) {
     const pct = Math.round(w.utilization * 100);
     const color = w.utilization >= 1 ? "var(--bad)" : w.utilization >= 0.7 ? "var(--run)" : "var(--ok)";
     setText(m.num, pct + "%");
-    setText(m.sub, resetLabel(w.resets_at));
+    setText(m.sub, resetText(w.resets_at, Date.now() + skew));
     const width = Math.min(100, pct) + "%";
     if (m.fill.style.width !== width) m.fill.style.width = width;
     if (m.fill.style.background !== color) m.fill.style.background = color;
@@ -389,7 +372,7 @@ function renderRunning(d) {
   // Fill the timers in before the panel is laid out, so they're measured
   // with their text.
   const now = Date.now() + skew;
-  for (const t of next) t.el.textContent = elapsed(now - t.since);
+  for (const t of next) t.el.textContent = clockText(t.since, now);
   fit(list, list.parentElement, "running");
   timers = next.filter((t) => t.el.isConnected);
   handoff = morph(list, before, { outcome });

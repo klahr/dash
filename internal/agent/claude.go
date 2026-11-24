@@ -185,6 +185,7 @@ func (c ClaudeCode) Prompt(ctx context.Context, req PromptRequest) (string, erro
 		"--tools", "", "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "",
 		"--system-prompt", req.System)
 	cmd.Dir = os.TempDir()
+	cmd.Env = localrun.Environ()
 	cmd.Stdin = strings.NewReader(req.Input)
 	// Don't wait on a grandchild that keeps stdout open past the timeout.
 	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)

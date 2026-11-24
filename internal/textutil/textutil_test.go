@@ -28,6 +28,56 @@ func TestClip(t *testing.T) {
 	}
 }
 
+func TestClipNote(t *testing.T) {
+	const note = "\n[output truncated]"
+	for _, c := range []struct {
+		s    string
+		n    int
+		want string
+	}{
+		{"short", 10, "short"},
+		{"exactly", 7, "exactly"},
+		{"abcdef", 3, "abc" + note},
+		{"åäö", 3, "å" + note},
+		{"åäö", 4, "åä" + note},
+		{"x", 0, note},
+		{"x", -1, note},
+	} {
+		got := ClipNote(c.s, c.n, note)
+		if got != c.want {
+			t.Errorf("ClipNote(%q, %d) = %q, want %q", c.s, c.n, got, c.want)
+		}
+		if !utf8.ValidString(got) {
+			t.Errorf("ClipNote(%q, %d) = %q is not valid UTF-8", c.s, c.n, got)
+		}
+	}
+}
+
+func TestClipStart(t *testing.T) {
+	for _, c := range []struct {
+		s    string
+		n    int
+		want string
+	}{
+		{"short", 10, "short"},
+		{"exactly", 7, "exactly"},
+		{"abcdef", 3, "def"},
+		{"åäö", 3, "ö"}, // the last 3 bytes start inside "ä"
+		{"åäö", 4, "äö"},
+		{"åäö", 1, ""},
+		{"x", 0, ""},
+		{"x", -1, ""},
+	} {
+		got := ClipStart(c.s, c.n)
+		if got != c.want {
+			t.Errorf("ClipStart(%q, %d) = %q, want %q", c.s, c.n, got, c.want)
+		}
+		if !utf8.ValidString(got) {
+			t.Errorf("ClipStart(%q, %d) = %q is not valid UTF-8", c.s, c.n, got)
+		}
+	}
+}
+
 func TestFirstLine(t *testing.T) {
 	for s, want := range map[string]string{
 		"":                  "",

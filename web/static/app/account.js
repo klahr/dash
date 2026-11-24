@@ -11,6 +11,7 @@ import { accountHooks, askPassword, logout, showAccountMenu } from "./myaccount.
 import { loadOrgSection } from "./accountsheet.js";
 import { renderTeamSetup } from "./teamsetup.js";
 import { EVENT_TEXT, resetPassword, showAdminEntry, signOutEverywhere, turnOff2FA } from "./admin.js";
+import { RANK, ROLES, ROLE_LABEL, roleSelect } from "./roles.js";
 
 // Your own account's sections (two-factor, Google, your data) are in
 // myaccount.js, shared with a planner's Planning page.
@@ -42,11 +43,6 @@ export async function loadMe() {
   }
 }
 
-const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member", planner: "Planner" };
-// RANK is who may grant what: admins grant up to admin, owners anything. A
-// planner (Planning only) ranks lowest here; what they may use is the
-// server's to say (internal/api/planner.go).
-const RANK = { planner: 0, member: 1, admin: 2, owner: 3 };
 const ROLE_ARTICLE = { owner: "an owner", admin: "an admin", member: "a member", planner: "a planner" };
 
 export async function openOrg() {
@@ -89,21 +85,17 @@ async function renderOrg() {
   }
   $("#org-role").textContent = `You are ${ROLE_ARTICLE[mine] || "a member"} of ${org.org.name}.` +
     (org.org.personal ? " This is your personal workspace: create an organization to work with others." : "");
-  const roleSelect = (m) => {
-    const sel = h("select", { "aria-label": `Role of ${m.username}`, class: "org-role-select" },
-      ...Object.keys(ROLE_LABEL).filter((r) => RANK[r] <= RANK[mine]).map((r) => h("option", { value: r, selected: r === m.role }, ROLE_LABEL[r])));
-    sel.addEventListener("change", attempt(async () => {
-      const pw = await askPassword(`Make ${m.username} ${ROLE_LABEL[sel.value].toLowerCase()}?`);
-      if (pw == null) { sel.value = m.role; return; }
-      try {
-        await api("PATCH", `/api/orgs/${org.org.id}/members/${m.id}`, { role: sel.value, password: pw });
-      } catch (err) { sel.value = m.role; throw err; }
-      toast(`${m.username} is now ${ROLE_LABEL[sel.value].toLowerCase()}`, { tone: "ok" });
+  const memberRole = (m) => roleSelect({
+    label: `Role of ${m.username}`, cls: "org-role-select", current: m.role,
+    roles: ROLES.filter((r) => RANK[r] <= RANK[mine]),
+    confirmText: (role) => `Make ${m.username} ${role}?`,
+    doneText: (role) => `${m.username} is now ${role}`,
+    save: (role, password) => api("PATCH", `/api/orgs/${org.org.id}/members/${m.id}`, { role, password }),
+    after: async () => {
       if (m.id === me.user.id) await loadMe();
       await renderOrg();
-    }));
-    return sel;
-  };
+    },
+  });
   // On a hub: how many runners each member has. A member's tasks run only
   // on their own runners (or a shared one), so one with none waits.
   const runners = Array.isArray(state.runners) ? state.runners : null;
@@ -121,7 +113,7 @@ async function renderOrg() {
       avatar(m, "member-avatar"),
       h("span", { class: "runner-name" }, m.username, self ? h("span", { class: "hint" }, " (you)") : null),
       h("span", { class: "item-sub hint" }, m.email || "", manage || org.org.require_2fa ? h("span", { class: `tfa-tag${m.totp_enabled ? " on" : ""}`, title: m.totp_enabled ? "Signs in with two factors" : "No two-factor sign-in yet" }, m.totp_enabled ? "2FA" : "no 2FA") : null, runnerTag(m)),
-      canEdit ? roleSelect(m) : h("span", { class: "org-role-tag" }, ROLE_LABEL[m.role]),
+      canEdit ? memberRole(m) : h("span", { class: "org-role-tag" }, ROLE_LABEL[m.role]),
       (canEdit && !self) ? memberAccountActions(org, m) : null,
       (canEdit || self) ? h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
         const pw = await askPassword(self ? `Leave ${org.org.name}?` : `Remove ${m.username}?`,

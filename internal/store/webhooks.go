@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
-	"unicode/utf8"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // ---- Webhooks ----
@@ -201,8 +201,8 @@ const WebhookHistory = 50
 // oldest beyond WebhookHistory) and makes it the webhook's last delivery.
 // A deleted webhook is no error.
 func (s *Store) RecordWebhookDelivery(d model.WebhookDelivery) error {
-	d.Error = clip(d.Error, 500)
-	d.Project, d.Subject = clip(d.Project, 200), clip(d.Subject, 200)
+	d.Error = textutil.ClipNote(d.Error, 500, "")
+	d.Project, d.Subject = textutil.ClipNote(d.Project, 200, ""), textutil.ClipNote(d.Subject, 200, "")
 	if d.Attempts < 1 {
 		d.Attempts = 1
 	}
@@ -239,16 +239,6 @@ func (s *Store) ListWebhookDeliveries(id string) ([]model.WebhookDelivery, error
 		return d, err
 	}, `SELECT id, webhook_id, at, event, delivery, project_id, project, subject, attempts, status, duration_ms, error
 		FROM webhook_deliveries WHERE webhook_id = ? ORDER BY id DESC LIMIT ?`, id, WebhookHistory)
-}
-
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
 }
 
 func boolInt(b bool) int {

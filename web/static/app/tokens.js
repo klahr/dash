@@ -5,7 +5,7 @@ import { state } from "./state.js";
 import { refreshMachines } from "./events.js";
 import { copyBlock } from "./prefs.js";
 import { askPassword } from "./myaccount.js";
-import { agoText } from "./branches.js";
+import { agoText } from "../time.js";
 import { accountSection } from "./accountsheet.js";
 
 // ------------------------------------------------------------------ tokens & connected apps

@@ -5,7 +5,7 @@ import { state } from "./state.js";
 import { projectKey } from "./events.js";
 import { showView } from "./nav.js";
 import { selectProject } from "./projects.js";
-import { agoText } from "./branches.js";
+import { agoText, untilText } from "../time.js";
 import { showRunnerNeeded } from "./runners.js";
 import { notifyOn } from "./notifications.js";
 import { openDetail } from "./detail.js";
@@ -165,15 +165,6 @@ function showRunTasks(run) {
 }
 
 
-// "in 5m", "in 3h", "in 2d"
-function until(iso) {
-  const s = (new Date(iso) - Date.now()) / 1000;
-  if (s < 60) return "soon";
-  if (s < 3600) return `in ${Math.round(s / 60)}m`;
-  if (s < 86400) return `in ${Math.round(s / 3600)}h`;
-  return `in ${Math.round(s / 86400)}d`;
-}
-
 // describeCron reads common cron expressions out; others stay as they are.
 function describeCron(expr) {
   const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -289,7 +280,7 @@ function scanCard(s) {
     h("div", { class: "scan-head" },
       h("div", { class: "scan-name" }, h("strong", {}, s.title), scanKind(s)),
       scanLine(s),
-      h("span", { class: `scan-when-sched${live ? " on" : ""}`, title: live ? `${sch.cron}${s.next_run ? `; next run ${until(s.next_run)}, ${dateTimeText(s.next_run)}` : ""}` : null },
+      h("span", { class: `scan-when-sched${live ? " on" : ""}`, title: live ? `${sch.cron}${s.next_run ? `; next run ${untilText(s.next_run)}, ${dateTimeText(s.next_run)}` : ""}` : null },
         ico("clock"), live ? describeCron(sch.cron) : "Not scheduled"),
       h("div", { class: "scan-btns" },
         running
@@ -313,7 +304,7 @@ function scanCard(s) {
           h("span", {}, "Scheduled")),
         h("button", { type: "button", class: "link scan-cron", title: sch.cron ? `${sch.cron} — change` : "Set a schedule", onclick: editCron },
           sch.cron ? describeCron(sch.cron) : "No schedule"),
-        sch.enabled && s.next_run ? h("span", { class: "scan-next", title: dateTimeText(s.next_run) }, `next ${until(s.next_run)}`) : null,
+        sch.enabled && s.next_run ? h("span", { class: "scan-next", title: dateTimeText(s.next_run) }, `next ${untilText(s.next_run)}`) : null,
         sch.custom ? h("button", { type: "button", class: "link scan-reset", title: `Back to the template's schedule${sch.default ? ` (${sch.default})` : ""}, off` , onclick: attempt(() => patch({ reset: true })) }, "Reset") : null,
         !sch.enabled && sch.cron && s.builtin && !sch.custom ? h("span", { class: "scan-hint" }, "suggested; off until turned on") : null),
       scanEarly(s, patch),

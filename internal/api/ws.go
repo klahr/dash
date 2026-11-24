@@ -317,6 +317,77 @@ func (s *Server) chatFor(p model.Project) agent.Chatter {
 	return s.Chat
 }
 
+// chatAsk is one chat message being resolved into a chatSetup (see
+// resolveChatTurn): what was asked, by whom, and how.
+type chatAsk struct {
+	ctx   context.Context
+	sv    *service
+	msg   chatRequest
+	shell bool
+	relay *chatRelay
+	// user is who the conversation is saved as writing its new questions.
+	user int64
+	// ownViaHub: a chat in one of this runner's own projects (made or
+	// added here, which the hub keeps no record of), opened through the
+	// hub at /peer/{runner}/…. It runs and is saved here, as on this
+	// runner, where the hub's UI reads it back from.
+	ownViaHub bool
+}
+
+// ownMode is mode, or the one the hub sent for this runner's own project.
+func (t *chatAsk) ownMode(mode string) string {
+	if t.ownViaHub && t.msg.Mode != "" && validChatMode(t.msg.Mode) {
+		return t.msg.Mode
+	}
+	return mode
+}
+
+// setPrompt gives ct the client's history, if its mode didn't set one, and
+// the prompt for it.
+func (t *chatAsk) setPrompt(ct *chatSetup) {
+	if ct.history == nil {
+		ct.history = t.sv.chatAttachments(t.msg.Messages)
+	}
+	ct.prompt = withAttachments(agent.WithShellText(ct.history))
+}
+
+// chatOnRunner is the chat on x, the caller's runner, unless finding it
+// failed (err) or the question has files, which a runner can't read.
+func (s *Server) chatOnRunner(t *chatAsk, x tunnel.Runner, err error, project, todo, mode string) (agent.Chatter, error) {
+	if err == nil {
+		err = noAttachments(t.msg.Messages)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return runnerChat{fleet: s.fleet(), runner: x, user: t.sv.c.User, relay: t.relay, project: project, todo: todo, mode: mode}, nil
+}
+
+// chatOnRunnerOrHere is chatOnRunner, except that where it fails on a Dash
+// that runs Claude itself (not a hub) it is nil and no error: the chat
+// stays here.
+func (s *Server) chatOnRunnerOrHere(t *chatAsk, x tunnel.Runner, err error, project, todo, mode string) (agent.Chatter, error) {
+	c, err := s.chatOnRunner(t, x, err, project, todo, mode)
+	if err != nil && !s.hub() {
+		return nil, nil
+	}
+	return c, err
+}
+
+// appendOnlySave is a chatSetup's save for a conversation kept append-only,
+// of which the first known messages are saved: it appends the messages
+// after those (if any) with appendFn and counts them as saved.
+func appendOnlySave(known int, appendFn func(...model.ChatMessage) error) func([]agent.ChatMessage) error {
+	return func(msgs []agent.ChatMessage) error {
+		if len(msgs) <= known {
+			return nil
+		}
+		err := appendFn(msgs[known:]...)
+		known = len(msgs)
+		return err
+	}
+}
+
 // resolveChatTurn works out where msg's turn runs and how it is saved: on
 // this Dash or on one of the caller's runners, in a scratch directory, a
 // project's checkout or a task's worktree. Its error is the client's to see.
@@ -332,29 +403,9 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 			return ct, errors.New("a planner's chat runs on their own runner, which connects to a hub; this Dash isn't one")
 		}
 	}
-	// Each conversation is saved with who wrote its new questions.
-	user := sv.c.User
-	ct.save = func(msgs []agent.ChatMessage) error {
-		return sv.data.SetChat(user, authored(sv.data.Chat(user), msgs, user))
-	}
-	// onRunner is the chat on x, the caller's runner, unless finding it
-	// failed or the question has files, which a runner can't read.
-	onRunner := func(x tunnel.Runner, err error, project, todo, mode string) (agent.Chatter, error) {
-		if err == nil {
-			err = noAttachments(msg.Messages)
-		}
-		if err != nil {
-			return nil, err
-		}
-		return runnerChat{fleet: s.fleet(), runner: x, user: sv.c.User, relay: relay, project: project, todo: todo, mode: mode}, nil
-	}
+	t := &chatAsk{ctx: ctx, sv: sv, msg: msg, shell: shell, relay: relay, user: sv.c.User}
 	// A chat for this runner's owner, asked through the hub.
 	ct.forHub = auth.FromHub(r.Context())
-	// ownViaHub: a chat in one of this runner's own projects (made or
-	// added here, which the hub keeps no record of), opened through the
-	// hub at /peer/{runner}/…. It runs and is saved here, as on this
-	// runner, where the hub's UI reads it back from.
-	ownViaHub := false
 	if ct.forHub {
 		if err := s.forOwner(r); err != nil {
 			return ct, err
@@ -368,187 +419,211 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 				if _, err := sv.ownProject(msg.Project); err != nil {
 					return ct, errors.New("this runner has no project with that id")
 				}
-				ct.forHub, ownViaHub = false, true
-				user = hubUser(r) // the runner's owner, checked above
+				ct.forHub, t.ownViaHub = false, true
+				t.user = hubUser(r) // the runner's owner, checked above
 			}
 		}
 	}
-	// ownMode is mode, or the one the hub sent for this runner's own project.
-	ownMode := func(mode string) string {
-		if ownViaHub && msg.Mode != "" && validChatMode(msg.Mode) {
-			return msg.Mode
-		}
-		return mode
-	}
-	if msg.Goal != "" && !ct.forHub && !ownViaHub {
+	var err error
+	switch {
+	case ct.forHub:
+		ct, err = s.resolveHubChat(t, ct)
+	case msg.Goal != "" && !t.ownViaHub:
 		return s.resolveGoalChat(ctx, sv, msg, shell, relay)
+	case msg.Goal != "":
+		return ct, errors.New("a goal's chat runs in the hub's project")
+	case msg.Todo != "":
+		ct, err = s.resolveTodoChat(t, ct)
+	case msg.Project != "":
+		ct, err = s.resolveProjectChat(t, ct)
+	default:
+		ct, err = s.resolveGeneralChat(t, ct)
 	}
+	if err != nil {
+		return ct, err
+	}
+	if ct.chatter == nil {
+		return ct, errChatUnavailable
+	}
+	return ct, nil
+}
+
+// resolveHubChat sets up a turn for this runner's owner, through the hub:
+// Claude runs here, in a scratch directory, the runner's clone of the hub's
+// project or its worktree of the hub's task, and the hub keeps the
+// conversation (with the task's context already in it).
+func (s *Server) resolveHubChat(t *chatAsk, ct chatSetup) (chatSetup, error) {
+	msg, sv := t.msg, t.sv
 	if msg.Goal != "" {
-		if !ct.forHub || msg.Project == "" || msg.Todo != "" {
+		if msg.Project == "" || msg.Todo != "" {
 			return ct, errors.New("a goal's chat runs in the hub's project")
 		}
-		if shell {
+		if t.shell {
 			return ct, fmt.Errorf("%w: commands don't run in a goal's chat", errBadRequest)
 		}
 		ct.goal = msg.Goal
 	}
+	if msg.Todo != "" && msg.Project == "" {
+		return ct, errors.New("the hub didn't say which project the task is in")
+	}
 	var runnerDiff, runnerBranch string // a hub task's changes, as this runner has them
-	switch {
-	case ct.forHub:
-		// This runner's owner, through the hub: Claude runs here, in a
-		// scratch directory, the runner's clone of the hub's project or
-		// its worktree of the hub's task, and the hub keeps the
-		// conversation (with the task's context already in it).
-		if msg.Todo != "" && msg.Project == "" {
-			return ct, errors.New("the hub didn't say which project the task is in")
-		}
-		if msg.Project != "" {
-			p, _ := sv.hubProject(msg.Project) // found above
-			ct.dir, ct.mode, ct.pid = p.Path, p.ChatPermissionMode, p.ID
-			ct.chatter = s.chatFor(p)
-			if validChatMode(msg.Mode) {
-				ct.mode = msg.Mode // the hub's project settings are the ones its users edit
-			}
-			if t, ok := sv.hubTodo(msg.Todo); ok && t.ProjectID == p.ID {
-				// Let Claude read the files as the task left them here.
-				var dir string
-				dir, runnerBranch, runnerDiff = s.taskWorktree(ctx, p, t, shell)
-				if dir != "" {
-					ct.dir = dir
-				}
-			}
-		} else {
-			var err error
-			if ct.dir, err = s.chatScratch(); err != nil {
-				return ct, err
-			}
-		}
-		ct.save = func([]agent.ChatMessage) error { return nil }
-	case ct.general && sv.c.User == 0:
-		return ct, errors.New("the general chat is a person's: sign in to use it")
-	case ct.general && s.hub():
-		// This hub doesn't run Claude: the caller's own runner does.
-		x, err := s.claudeRunner(sv.c, msg.Runner)
-		if ct.chatter, err = onRunner(x, err, "", "", ""); err != nil {
-			return ct, err
-		}
-	}
-	if msg.Project != "" && msg.Todo == "" && !ct.forHub {
-		p, err := sv.data.GetProject(msg.Project)
-		if err != nil {
-			return ct, err
-		}
-		ct.dir, ct.mode, ct.pid = p.Path, ownMode(p.ChatPermissionMode), p.ID
+	if msg.Project != "" {
+		p, _ := sv.hubProject(msg.Project) // found by resolveChatTurn
+		ct.dir, ct.mode, ct.pid = p.Path, p.ChatPermissionMode, p.ID
 		ct.chatter = s.chatFor(p)
-		// The server keeps the conversation: the turn continues the saved
-		// one with what the client added, and saves only what it adds.
-		stored, err := sv.data.ProjectChat(p.ID, user)
-		if err != nil {
+		if validChatMode(msg.Mode) {
+			ct.mode = msg.Mode // the hub's project settings are the ones its users edit
+		}
+		if task, ok := sv.hubTodo(msg.Todo); ok && task.ProjectID == p.ID {
+			// Let Claude read the files as the task left them here.
+			var dir string
+			dir, runnerBranch, runnerDiff = s.taskWorktree(t.ctx, p, task, t.shell)
+			if dir != "" {
+				ct.dir = dir
+			}
+		}
+	} else {
+		var err error
+		if ct.dir, err = s.chatScratch(); err != nil {
 			return ct, err
 		}
-		added, err := projectChatAdded(stored, msg)
-		if err != nil {
-			return ct, err
-		}
-		for i := range added {
-			added[i].CreatedBy = user
-		}
-		ct.history = append(slices.Clip(stored), sv.chatAttachments(added)...)
-		known := len(stored)
-		ct.save = func(msgs []agent.ChatMessage) error {
-			if len(msgs) <= known {
-				return nil
-			}
-			for i := range msgs[known:] {
-				if msgs[known+i].Role != "user" {
-					msgs[known+i].CreatedBy = 0
-				}
-			}
-			err := sv.data.AppendProjectChat(p.ID, user, msgs[known:]...)
-			known = len(msgs)
-			return err
-		}
-		org, pid := sv.c.Org, p.ID
-		ct.running = func(delta int) { s.projectTurn(org, user, pid, delta) }
-		if s.projectChatOnRunner(p) {
-			// Claude runs on the caller's runner, in its clone of the project.
-			x, err := s.projectChatRunner(sv.c, p, msg.Runner)
-			if err == nil {
-				err = sv.cloneForChat(ctx, x, p)
-			}
-			switch c, err := onRunner(x, err, p.ID, "", p.ChatPermissionMode); {
-			case err == nil:
-				ct.chatter = c
-			case s.hub():
-				return ct, err
-			}
-			// Else this Dash runs Claude itself and the chat stays here.
-		}
 	}
-	if ct.history == nil {
-		ct.history = sv.chatAttachments(msg.Messages)
-	}
-	ct.prompt = withAttachments(agent.WithShellText(ct.history))
-	if ct.forHub && msg.Todo != "" {
+	ct.save = func([]agent.ChatMessage) error { return nil }
+	t.setPrompt(&ct)
+	if msg.Todo != "" {
 		ct.prompt = withRunnerChanges(runnerBranch, runnerDiff, ct.prompt)
 	}
-	if msg.Project != "" && msg.Todo == "" && !ct.forHub && !shell {
-		// The user is trying the project in its Try terminal: the chat
-		// reads it and files what they find (see TryInstructions).
-		if p, err := sv.data.GetProject(msg.Project); err == nil {
-			ct.prompt = withTryContext(s.tryContext(ctx, sv.c, p), ct.prompt)
+	return ct, nil
+}
+
+// resolveGeneralChat sets up a turn of the caller's general chat: here, or
+// on a hub (which doesn't run Claude) on the caller's own runner.
+func (s *Server) resolveGeneralChat(t *chatAsk, ct chatSetup) (chatSetup, error) {
+	sv := t.sv
+	if sv.c.User == 0 {
+		return ct, errors.New("the general chat is a person's: sign in to use it")
+	}
+	if s.hub() {
+		x, err := s.claudeRunner(sv.c, t.msg.Runner)
+		if ct.chatter, err = s.chatOnRunner(t, x, err, "", "", ""); err != nil {
+			return ct, err
 		}
 	}
-	if msg.Todo != "" && !ct.forHub {
-		t, err := sv.data.GetTodo(msg.Todo)
-		if err == nil && ownViaHub && t.ProjectID != msg.Project {
-			err = errors.New("this runner has no task with that id in that project")
+	// Each conversation is saved with who wrote its new questions.
+	user := t.user
+	ct.save = func(msgs []agent.ChatMessage) error {
+		return sv.data.SetChat(user, authored(sv.data.Chat(user), msgs, user))
+	}
+	t.setPrompt(&ct)
+	return ct, nil
+}
+
+// resolveProjectChat sets up a turn of the caller's chat about a project.
+// The server keeps the conversation: the turn continues the saved one with
+// what the client added, and saves only what it adds.
+func (s *Server) resolveProjectChat(t *chatAsk, ct chatSetup) (chatSetup, error) {
+	msg, sv, user := t.msg, t.sv, t.user
+	p, err := sv.data.GetProject(msg.Project)
+	if err != nil {
+		return ct, err
+	}
+	ct.dir, ct.mode, ct.pid = p.Path, t.ownMode(p.ChatPermissionMode), p.ID
+	ct.chatter = s.chatFor(p)
+	stored, err := sv.data.ProjectChat(p.ID, user)
+	if err != nil {
+		return ct, err
+	}
+	added, err := projectChatAdded(stored, msg)
+	if err != nil {
+		return ct, err
+	}
+	for i := range added {
+		added[i].CreatedBy = user
+	}
+	ct.history = append(slices.Clip(stored), sv.chatAttachments(added)...)
+	ct.save = appendOnlySave(len(stored), func(msgs ...model.ChatMessage) error {
+		for i := range msgs {
+			if msgs[i].Role != "user" {
+				msgs[i].CreatedBy = 0
+			}
 		}
+		return sv.data.AppendProjectChat(p.ID, user, msgs...)
+	})
+	org, pid := sv.c.Org, p.ID
+	ct.running = func(delta int) { s.projectTurn(org, user, pid, delta) }
+	if s.projectChatOnRunner(p) {
+		// Claude runs on the caller's runner, in its clone of the project.
+		x, err := s.projectChatRunner(sv.c, p, msg.Runner)
+		if err == nil {
+			err = sv.cloneForChat(t.ctx, x, p)
+		}
+		c, err := s.chatOnRunnerOrHere(t, x, err, p.ID, "", p.ChatPermissionMode)
 		if err != nil {
 			return ct, err
 		}
-		var diff string
-		if p, err := sv.data.GetProject(t.ProjectID); err == nil {
-			ct.dir, ct.mode = p.Path, ownMode(p.ChatPermissionMode)
-			ct.chatter = s.chatFor(p)
-			runs := false
-			if s.todoChatOnRunner(p, t) {
-				// Claude runs on the caller's runner: the one that ran the
-				// task, in its worktree, else one linked to the project, in
-				// its clone. The runner adds the changes it has.
-				x, err := s.todoChatRunner(sv.c, p, t, msg.Runner)
-				switch c, err := onRunner(x, err, p.ID, t.ID, p.ChatPermissionMode); {
-				case err == nil:
-					ct.chatter, runs = c, true
-				case s.hub():
-					return ct, err
-				}
-				// Else this Dash runs Claude itself and the chat stays here.
-			}
-			if !runs {
-				// Let Claude read the files as the todo left them.
-				var dir string
-				if dir, _, diff = s.taskWorktree(ctx, p, t, shell); dir != "" {
-					ct.dir = dir
-				}
-			}
+		if c != nil {
+			ct.chatter = c
 		}
-		ct.save = func(msgs []agent.ChatMessage) error {
-			prev, _ := sv.data.TodoChat(t.ID)
-			return sv.data.SetTodoChat(t.ID, authored(prev, msgs, user))
-		}
-		ct.prompt = withTodoContext(t, diff, ct.prompt)
-		if ct.chatter == nil {
-			return ct, errChatUnavailable
-		}
-		if msg.Review && !shell {
-			if ct.endReview, err = s.beginReview(sv, t.ID); err != nil {
+	}
+	t.setPrompt(&ct)
+	if !t.shell {
+		// The user is trying the project in its Try terminal: the chat
+		// reads it and files what they find (see TryInstructions).
+		ct.prompt = withTryContext(s.tryContext(t.ctx, sv.c, p), ct.prompt)
+	}
+	return ct, nil
+}
+
+// resolveTodoChat sets up a turn of the chat about a task, which reads the
+// files as the task left them and is saved with the task.
+func (s *Server) resolveTodoChat(t *chatAsk, ct chatSetup) (chatSetup, error) {
+	msg, sv, user := t.msg, t.sv, t.user
+	t.setPrompt(&ct)
+	task, err := sv.data.GetTodo(msg.Todo)
+	if err == nil && t.ownViaHub && task.ProjectID != msg.Project {
+		err = errors.New("this runner has no task with that id in that project")
+	}
+	if err != nil {
+		return ct, err
+	}
+	var diff string
+	if p, err := sv.data.GetProject(task.ProjectID); err == nil {
+		ct.dir, ct.mode = p.Path, t.ownMode(p.ChatPermissionMode)
+		ct.chatter = s.chatFor(p)
+		runs := false
+		if s.todoChatOnRunner(p, task) {
+			// Claude runs on the caller's runner: the one that ran the
+			// task, in its worktree, else one linked to the project, in
+			// its clone. The runner adds the changes it has.
+			x, err := s.todoChatRunner(sv.c, p, task, msg.Runner)
+			c, err := s.chatOnRunnerOrHere(t, x, err, p.ID, task.ID, p.ChatPermissionMode)
+			if err != nil {
 				return ct, err
+			}
+			if c != nil {
+				ct.chatter, runs = c, true
+			}
+		}
+		if !runs {
+			// Let Claude read the files as the todo left them.
+			var dir string
+			if dir, _, diff = s.taskWorktree(t.ctx, p, task, t.shell); dir != "" {
+				ct.dir = dir
 			}
 		}
 	}
+	ct.save = func(msgs []agent.ChatMessage) error {
+		prev, _ := sv.data.TodoChat(task.ID)
+		return sv.data.SetTodoChat(task.ID, authored(prev, msgs, user))
+	}
+	ct.prompt = withTodoContext(task, diff, ct.prompt)
 	if ct.chatter == nil {
 		return ct, errChatUnavailable
+	}
+	if msg.Review && !t.shell {
+		if ct.endReview, err = s.beginReview(sv, task.ID); err != nil {
+			return ct, err
+		}
 	}
 	return ct, nil
 }
@@ -627,15 +702,11 @@ func (s *Server) resolveGoalChat(ctx context.Context, sv *service, msg chatReque
 	asked.CreatedBy = sv.c.author()
 	ct.history = append(slices.Clip(stored), asked)
 	ct.prompt = withAttachments(s.coordinatorPrompt(sv, g, stored, asked))
-	known := len(stored)
-	ct.save = func(msgs []agent.ChatMessage) error {
-		if len(msgs) <= known {
-			return nil
-		}
-		err := sv.data.AppendGoalChat(g.ID, msgs[known:]...)
+	ct.save = appendOnlySave(len(stored), func(msgs ...model.ChatMessage) error {
+		err := sv.data.AppendGoalChat(g.ID, msgs...)
 		s.goals().answered(sv.data, g.ID)
 		return err
-	}
+	})
 	return ct, nil
 }
 

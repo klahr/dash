@@ -460,14 +460,7 @@ func (a *Accounts) RemoveSSODomain(orgID int64, domain string, verifiedToo bool)
 	if !verifiedToo {
 		q += " AND verified = 0"
 	}
-	res, err := a.db.Exec(q, orgID, strings.ToLower(strings.TrimSpace(domain)))
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return execOne(a.db, ErrNotFound, q, orgID, strings.ToLower(strings.TrimSpace(domain)))
 }
 
 // PendingSSODomains are the claims waiting for verification, every org's.

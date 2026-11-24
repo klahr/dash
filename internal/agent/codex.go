@@ -477,6 +477,7 @@ func (c Codex) Prompt(ctx context.Context, req PromptRequest) (string, error) {
 	args, _ := o.args()
 	cmd := exec.CommandContext(ctx, c.bin(), args...)
 	cmd.Dir = os.TempDir()
+	cmd.Env = localrun.Environ()
 	cmd.Stdin = strings.NewReader(req.Input)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr

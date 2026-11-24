@@ -7,9 +7,10 @@ import { state } from "./state.js";
 import * as store from "./store.js";
 import { refreshMachines } from "./events.js";
 import { isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, selectProject, setMenu } from "./projects.js";
-import { agoText, renderBoard } from "./branches.js";
+import { renderBoard } from "./branches.js";
+import { agoText } from "../time.js";
 import { ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
-import { copyBlock, installCmd as install, installCmdWin as installWin, psq, shq } from "./install.js";
+import { copyBlock, installCmd, installCmdWin, installSteps, runnerNameInput, shq } from "./install.js";
 import { shortLabel } from "./usage.js";
 import { openSettings, syncSettingsRunners } from "./settings.js";
 import { ensureShell, forgetShellRefusal } from "./terminal.js";
@@ -29,14 +30,11 @@ const runnerInfo = { hub: location.origin, version: "", canUpdate: false };
 // so the one that registers with it can be told apart.
 let runnerAdd = null;
 
-// installCmd and installCmdWin: the installers (app/install.js) from this hub.
-const installCmd = (args) => install(runnerInfo.hub, args);
-const installCmdWin = (args) => installWin(runnerInfo.hub, args);
 // updateCmds shows how to update a runner by hand, on any system.
 const updateCmds = () => [
-  copyBlock(installCmd(), "Command copied", { pre: true }),
+  copyBlock(installCmd(runnerInfo.hub), "Command copied", { pre: true }),
   h("p", { class: "hint" }, "On Windows, in PowerShell:"),
-  copyBlock(installCmdWin(), "Command copied", { pre: true }),
+  copyBlock(installCmdWin(runnerInfo.hub), "Command copied", { pre: true }),
 ];
 
 // Runners run the org's tasks (`dash runner`), each with its owner's
@@ -330,7 +328,7 @@ export function renderSideRunners() {
     const st = runnerStatus(r), outdated = runnerOutdated(r);
     // In words, not only the dot's colour: offline, updating, paused, idle or busy, with its slots.
     const count = !r.online ? "offline" : r.update ? "updating" : r.paused ? "paused" : `${r.running ? "busy" : "idle"} ${r.running || 0}/${runnerSlots(r)}${runnerBoost(r) ? "⇡" : ""}`;
-    const update = outdated ? `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run on ${r.name}:\n${installCmd()}` : "";
+    const update = outdated ? `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run on ${r.name}:\n${installCmd(runnerInfo.hub)}` : "";
     const diskWarn = diskWarning(r);
     return h("li", {}, h("button", {
       type: "button", class: "side-runner", title: [`${r.name}: ${st.text}`, runnerOS(r)?.label, diskWarn, update].filter(Boolean).join("\n"),
@@ -1007,23 +1005,14 @@ async function addRunner() {
   if (hub) runnerInfo.hub = hub;
   runnerAdd = { known: new Set(before.runners.map((r) => r.id)) };
   const mins = Math.round((new Date(expires) - Date.now()) / 60000);
-  const name = h("input", { type: "text", placeholder: "its host name", autocomplete: "off", spellcheck: false, pattern: "[a-z0-9][a-z0-9-]{0,31}" });
+  const name = runnerNameInput();
   const dir = h("input", { type: "text", placeholder: "~/dash-projects", autocomplete: "off", spellcheck: false });
   const oneLine = h("div", {});
   const manual = h("div", { hidden: true });
   const render = () => {
     const n = name.value.trim().toLowerCase(), d = dir.value.trim();
-    let args = `--code ${code}`;
-    if (n) args += ` --name ${shq(n)}`;
-    if (d) args += ` --projects ${shq(d)}`;
-    let psArgs = `-Code ${code}`;
-    if (n) psArgs += ` -Name ${psq(n)}`;
-    if (d) psArgs += ` -Projects ${psq(d)}`;
     oneLine.replaceChildren(
-      h("p", {}, "On Linux or macOS, in a terminal:"),
-      copyBlock(installCmd(args), "Command copied", { pre: true }),
-      h("p", {}, "On Windows, in PowerShell (needs ", h("code", {}, "winget install Git.Git"), "):"),
-      copyBlock(installCmdWin(psArgs), "Command copied", { pre: true }),
+      ...installSteps(runnerInfo.hub, code, { name: n, projects: d }),
       h("p", { class: "hint" }, "It installs Dash", isRelease(runnerInfo.version) ? ` ${runnerInfo.version}` : "", " and starts the runner as a service. No sudo or admin rights. ",
         h("a", { href: "https://github.com/klahr/dash/blob/main/docs/several-computers.md#add-a-runner", target: "_blank", rel: "noopener" }, "What it does")));
     let flags = "";

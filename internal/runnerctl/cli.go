@@ -2,7 +2,6 @@ package runnerctl
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -459,21 +458,12 @@ func (c *CLI) update(ctx context.Context, args []string) error {
 
 // HubVersion asks the hub at server which Dash version it runs.
 func HubVersion(ctx context.Context, server string) (string, error) {
-	u, err := tunnel.CheckServer(server)
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String()+"/runner/version", nil)
-	if err != nil {
-		return "", err
-	}
-	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
 	var out struct{ Version string }
-	if res.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(res.Body, 1<<16)).Decode(&out) != nil || out.Version == "" {
+	res, err := tunnel.HubJSON(ctx, nil, server, "", http.MethodGet, "/runner/version", nil, &out, 1<<16)
+	if err != nil {
+		return "", err
+	}
+	if res.StatusCode != http.StatusOK || out.Version == "" {
 		return "", fmt.Errorf("unexpected answer: %s", res.Status)
 	}
 	return out.Version, nil

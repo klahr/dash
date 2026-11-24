@@ -1,5 +1,5 @@
 import { h } from "./dom.js";
-import { agoText } from "./branches.js";
+import { agoText } from "../time.js";
 
 // ------------------------------------------------------------------ GitHub repository lists
 //

@@ -32,14 +32,7 @@ func (a *Accounts) Requires2FA(uid int64) (bool, error) {
 // BeginTOTP keeps secret as uid's enrolment in progress, replacing any
 // earlier one, until ConfirmTOTP.
 func (a *Accounts) BeginTOTP(uid int64, secret string) error {
-	res, err := a.db.Exec("UPDATE users SET totp_pending = ? WHERE id = ? AND totp_secret IS NULL", secret, uid)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrTOTPEnabled
-	}
-	return nil
+	return execOne(a.db, ErrTOTPEnabled, "UPDATE users SET totp_pending = ? WHERE id = ? AND totp_secret IS NULL", secret, uid)
 }
 
 // PendingTOTP is the secret of uid's enrolment in progress.
@@ -56,13 +49,10 @@ func (a *Accounts) PendingTOTP(uid int64) (string, error) {
 // must still be secret), marks step used, and gives uid the recovery codes.
 func (a *Accounts) ConfirmTOTP(uid int64, secret string, step int64, codes []string) error {
 	return inTx(a.db, func(tx *sql.Tx) error {
-		res, err := tx.Exec(`UPDATE users SET totp_secret = totp_pending, totp_pending = NULL, totp_last_step = ?
+		err := execOne(tx, ErrNoPendingTOTP, `UPDATE users SET totp_secret = totp_pending, totp_pending = NULL, totp_last_step = ?
 			WHERE id = ? AND totp_secret IS NULL AND totp_pending = ?`, step, uid, secret)
 		if err != nil {
 			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return ErrNoPendingTOTP
 		}
 		return replaceCodes(tx, uid, codes)
 	})

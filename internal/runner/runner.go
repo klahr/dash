@@ -242,7 +242,7 @@ func (m *Manager) StartTask(projectID, dir, command string, o ...Origin) (model.
 func shell(dir, command string) *exec.Cmd {
 	cmd := exec.Command(localrun.Bash(), "-lc", command)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
+	cmd.Env = localrun.Environ()
 	ownGroup(cmd)
 	return cmd
 }
@@ -295,7 +295,7 @@ func (m *Manager) startPTY(projectID, dir, command, script string, env []string,
 	}
 	cmd := exec.Command(localrun.Bash(), "-lc", script)
 	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(), "TERM=xterm-256color"), env...)
+	cmd.Env = localrun.Environ(append([]string{"TERM=xterm-256color"}, env...)...)
 	if cols == 0 || rows == 0 {
 		cols, rows = 120, 32
 	}

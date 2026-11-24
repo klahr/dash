@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // GoalBoard is the board as one goal's coordinator may use it: the goal's
@@ -227,10 +228,11 @@ func GoalTools(b GoalBoard, o Options) []Tool {
 const maxGoalText = 200_000
 
 func clip(s string) string {
-	if len(s) <= maxGoalText {
+	end := textutil.ClipStart(s, maxGoalText)
+	if len(end) == len(s) {
 		return s
 	}
-	return "[… the first " + fmt.Sprint(len(s)-maxGoalText) + " bytes are cut]\n" + s[len(s)-maxGoalText:]
+	return "[… the first " + fmt.Sprint(len(s)-len(end)) + " bytes are cut]\n" + end
 }
 
 // planItems reads propose_plan's tasks argument.

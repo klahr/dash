@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/klahr/dash/internal/fsutil"
 )
 
 // Dash runs git as the runner's user in worktrees that Claude has written
@@ -59,7 +61,7 @@ func (g *Git) worktreeOf(dir string) (wt, projectID string, ok bool) {
 			continue
 		}
 		rel, err := filepath.Rel(root, abs)
-		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if err != nil || rel == "." || !fsutil.RelInside(rel) {
 			continue
 		}
 		parts := strings.SplitN(rel, string(filepath.Separator), 3)

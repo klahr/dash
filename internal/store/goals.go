@@ -173,7 +173,7 @@ func (s *Store) GoalOrg(goalID string) (int64, bool) {
 func (s *Store) GoalChat(goalID string) []model.ChatMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]model.ChatMessage{}, s.data.GoalChats[goalID]...)
+	return copyChat(s.data.GoalChats, goalID)
 }
 
 // AppendGoalChat adds messages to the conversation of a goal's coordinator.
@@ -187,21 +187,7 @@ func (s *Store) AppendGoalChat(goalID string, msgs ...model.ChatMessage) error {
 	if len(msgs) == 0 {
 		return nil
 	}
-	org := s.projectOrgLocked(g.ProjectID)
-	if s.data.GoalChats == nil {
-		s.data.GoalChats = map[string][]model.ChatMessage{}
-	}
-	prev := s.data.GoalChats[goalID]
-	next := append(slices.Clip(prev), msgs...)
-	s.data.GoalChats[goalID] = next
-	return s.writeLocked(func(tx *sql.Tx) error {
-		for i := len(prev); i < len(next); i++ {
-			if err := putChatMessage(tx, chatGoal, goalID, org, i, next[i]); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	return s.appendChatLocked(&s.data.GoalChats, chatGoal, goalID, s.projectOrgLocked(g.ProjectID), msgs...)
 }
 
 // emitGoal announces a change to a goal, without its log (which only grows;

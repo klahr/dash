@@ -31,9 +31,6 @@ func (s *Store) ForOrg(org int64) *OrgStore { return &OrgStore{s: s, org: org} }
 // personal records in it.
 func (o *OrgStore) AsUser(user int64) *OrgStore { return &OrgStore{s: o.s, org: o.org, user: user} }
 
-// OrgID is the org this view belongs to.
-func (o *OrgStore) OrgID() int64 { return o.org }
-
 // ownsProject reports whether projectID exists and belongs to the org.
 func (o *OrgStore) ownsProject(projectID string) bool {
 	org, ok := o.s.ProjectOrg(projectID)

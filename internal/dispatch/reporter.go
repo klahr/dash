@@ -15,6 +15,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/usage"
 )
 
@@ -208,9 +209,7 @@ func (r *Reporter) observeOutput(ev model.Event) {
 	case string:
 		l.line = d
 	case model.RunEvent:
-		if len(d.Text) > maxLiveText {
-			d.Text = d.Text[:maxLiveText] + "…"
-		}
+		d.Text = textutil.Clip(d.Text, maxLiveText)
 		if len(d.Input) > maxLiveText {
 			d.Input = nil
 		}
@@ -375,9 +374,7 @@ func shortInput(in json.RawMessage) json.RawMessage {
 	for k, v := range m {
 		switch x := v.(type) {
 		case string:
-			if len(x) > maxPermInputStr {
-				m[k] = x[:maxPermInputStr] + "…"
-			}
+			m[k] = textutil.Clip(x, maxPermInputStr)
 		case map[string]any, []any:
 			m[k] = "…"
 		}

@@ -95,14 +95,7 @@ func (s *Store) PushSubscriptionsForOrg(org int64) ([]model.PushSubscription, er
 
 // DeleteUserPushSubscription unsubscribes user's browser at endpoint.
 func (s *Store) DeleteUserPushSubscription(user int64, endpoint string) error {
-	res, err := s.db.Exec("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?", endpoint, user)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return execOne(s.db, ErrNotFound, "DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?", endpoint, user)
 }
 
 // DeletePushSubscription removes a subscription (the browser dropped it).

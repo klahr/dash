@@ -816,6 +816,7 @@ var public = map[string]bool{
 	"/manifest.webmanifest": true,
 	"/sw.js":                true, // service worker updates must not hit the login redirect
 	"/wall.js":              true, // the wall view's script: a TV with a wall token has no session
+	"/time.js":              true, // wall.js imports it
 	"/api/login":            true,
 	"/api/login/totp":       true, // the login's ticket is its credential
 	// An invitation link's token is its own credential.

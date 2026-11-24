@@ -28,6 +28,7 @@ import (
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/tunnel"
 	"github.com/klahr/dash/internal/usage"
 )
@@ -352,7 +353,7 @@ func (v *wallTally) reason(err string) string {
 	if v.privacy {
 		return "" // an error quotes commands, paths and output
 	}
-	return wallLine(err, 160)
+	return textutil.OneLine(textutil.FirstLine(err), 160)
 }
 
 // card counts t into d: its stage, and the running task or the need for a
@@ -417,7 +418,7 @@ func (v *wallTally) running(t model.Todo) wallRun {
 		run.CostUSD = &cost
 		if v.s.Hub != nil {
 			if ev, ok := v.s.Hub.Activity(t.ID); ok && (t.StartedAt == nil || !ev.At.Before(*t.StartedAt)) {
-				run.Activity = wallLine(strings.TrimPrefix(agent.Summary(ev), "🔧 "), 200)
+				run.Activity = textutil.OneLine(textutil.FirstLine(strings.TrimPrefix(agent.Summary(ev), "🔧 ")), 200)
 			}
 		}
 	}
@@ -659,19 +660,6 @@ func wallLetters(i int) string {
 		s = string(rune('A'+(i-1)%26)) + s
 	}
 	return s
-}
-
-// wallLine is s's first non-empty line, cut to max runes.
-func wallLine(s string, max int) string {
-	for _, l := range strings.Split(s, "\n") {
-		if l = strings.TrimSpace(l); l != "" {
-			if r := []rune(l); len(r) > max {
-				return string(r[:max-1]) + "…"
-			}
-			return l
-		}
-	}
-	return ""
 }
 
 // ---- wall tokens: an org admin's links for TVs ----

@@ -9,7 +9,7 @@ import { showView } from "./nav.js";
 import { setMenu } from "./projects.js";
 import { closeDetail } from "./detail.js";
 import { PV_ARROWS, PV_KEYS } from "./preview.js";
-import { agoText } from "./branches.js";
+import { agoText } from "../time.js";
 import { pane, renderTryBack, toggleChatPane } from "./chatpane.js";
 import { ensureShell, procTerminal, renderQuick } from "./terminal.js";
 

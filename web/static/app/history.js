@@ -12,6 +12,7 @@ import { diffImages, diffLines, isDiffImage, parseDiff } from "./drawmode.js";
 import { openRelease } from "./releases.js";
 import { deployCommit } from "./deploys.js";
 import { changed } from "./routes.js";
+import { agoText } from "../time.js";
 
 // ------------------------------------------------------------------ history
 // The default branch's commit graph: a dot per commit on coloured lanes, as
@@ -198,16 +199,6 @@ export function moveCommit(to) {
   if (onRow) $(`#graph li[data-hash="${to}"] .graph-commit`)?.focus({ preventScroll: true });
 }
 
-// "3 days ago", for an absolute date's tooltip.
-const relFmt = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-function relTime(iso) {
-  const s = (new Date(iso) - Date.now()) / 1000;
-  for (const [unit, n] of [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]]) {
-    if (Math.abs(s) >= n) return relFmt.format(Math.round(s / n), unit);
-  }
-  return relFmt.format(Math.round(s), "second");
-}
-
 // The commit as a release, Tag release… and Copy SHA know it.
 function commitRef() {
   const c = hist.byHash.get(cp.sha), d = cp.detail;
@@ -252,7 +243,7 @@ function renderCommit() {
   $("#cd-error").textContent = cp.error;
   renderMessage(d?.body || "");
   const person = (x) => h("span", { title: x.email }, x.name, " ", h("span", { class: "commit-email" }, `<${x.email}>`));
-  const when = (x) => h("time", { datetime: x.date, title: relTime(x.date) }, dateTimeText(x.date));
+  const when = (x) => h("time", { datetime: x.date, title: agoText(x.date) }, dateTimeText(x.date));
   const parent = (sha) => h("button", { type: "button", class: "link inline commit-parent", title: `Show ${sha}`, onclick: () => selectCommit(sha).catch(fail) },
     hist.byHash.get(sha)?.short || sha.slice(0, 7));
   const sameCommitter = d && d.committer.name === d.author.name && d.committer.email === d.author.email;

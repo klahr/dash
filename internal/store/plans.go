@@ -122,12 +122,5 @@ func (o *OrgStore) DeletePlan(id string) error {
 	}
 	o.s.mu.Lock()
 	defer o.s.mu.Unlock()
-	res, err := o.s.db.Exec("DELETE FROM plans WHERE id = ? AND org_id = ? AND user_id = ?", id, o.org, o.user)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return execOne(o.s.db, ErrNotFound, "DELETE FROM plans WHERE id = ? AND org_id = ? AND user_id = ?", id, o.org, o.user)
 }

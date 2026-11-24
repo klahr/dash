@@ -9,10 +9,10 @@
 import { $, docsLink, entering, fill, h, ib, ico, dateTimeText } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, fail, railOf, toast } from "./dialogs.js";
-import { copyBlock, installCmd, installCmdWin, psq, shq } from "./install.js";
+import { installSteps, runnerNameInput } from "./install.js";
 import { wsURL } from "./viewport.js";
 import { renderMarkdown } from "../editor.js";
-import { chatPermCard, permDecided, placeToolCall, toolCall, toolResult, toolSettled } from "./chatparts.js";
+import { chatCloseReason, chatPermCard, permDecided, placeToolCall, sendStopButton, toolCall, toolResult, toolSettled } from "./chatparts.js";
 
 const call = (method, path, body) => api(method, path, body, "");
 // onPage: this is planning.html. The app (app.js) imports this module too,
@@ -123,18 +123,10 @@ async function startAdd() {
   if (hub) cl.hub = hub;
   cl.adding = { known: new Set((cl.runners || []).map((r) => r.id)), expires: new Date(expires).getTime() };
   const mins = Math.round((cl.adding.expires - Date.now()) / 60000);
-  const name = h("input", { type: "text", placeholder: "its host name", autocomplete: "off", spellcheck: false, pattern: "[a-z0-9][a-z0-9-]{0,31}" });
+  const name = runnerNameInput();
   const cmds = h("div", {});
-  const render = () => {
-    const n = name.value.trim().toLowerCase();
-    fill(cmds,
-      h("p", {}, "On Linux or macOS, in a terminal:"),
-      copyBlock(installCmd(cl.hub, `--code ${code}${n ? ` --name ${shq(n)}` : ""}`), "Command copied", { pre: true }),
-      h("p", {}, "On Windows, in PowerShell:"),
-      copyBlock(installCmdWin(cl.hub, `-Code ${code}${n ? ` -Name ${psq(n)}` : ""}`), "Command copied", { pre: true }));
-  };
+  const render = () => fill(cmds, installSteps(cl.hub, code, { name: name.value.trim().toLowerCase() }));
   name.addEventListener("input", render);
-  name.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
   render();
   fill(pane,
     h("ol", { class: "steps" },
@@ -199,9 +191,12 @@ function socket() {
   if (ch.ws && ch.ws.readyState <= 1) return ch.ws;
   const ws = new WebSocket(wsURL("/ws/chat"));
   ws.onmessage = (e) => delta(JSON.parse(e.data));
-  ws.onclose = () => {
+  ws.onclose = (e) => {
     if (ch.ws === ws) ch.ws = null;
-    if (ch.cur) settle("The connection to Dash was lost. Send your message again.");
+    // settle takes the unanswered question back out of the conversation and
+    // puts it in the composer: after a refusal (too long to send), to send
+    // once the chat is cleared.
+    if (ch.cur) settle(chatCloseReason(e) || "The connection to Dash was lost. Send your message again.");
   };
   ch.ws = ws;
   return ws;
@@ -305,15 +300,11 @@ function stop() {
   busyButton();
 }
 
-const sendLook = { html: "" };
+// busyButton shows the send button as Stop while a reply streams.
+let sendLook = null;
 function busyButton() {
-  const b = $("#pl-chat-send");
-  sendLook.html ||= b.innerHTML;
-  const stopping = !!ch.cur;
-  b.classList.toggle("stop", stopping);
-  b.innerHTML = stopping ? `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>` : sendLook.html;
-  b.setAttribute("aria-label", stopping ? "Stop the reply" : "Send");
-  b.title = stopping ? "Stop" : "";
+  sendLook ||= sendStopButton($("#pl-chat-send"));
+  sendLook(!!ch.cur);
 }
 
 // askAbout starts a message about card c in the chat, for Claude to read

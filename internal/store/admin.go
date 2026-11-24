@@ -387,14 +387,7 @@ func (a *Accounts) SetPlatformAdmin(uid int64, on bool) error {
 				return ErrLastAdmin
 			}
 		}
-		res, err := tx.Exec("UPDATE users SET is_platform_admin = ? WHERE id = ?", on, uid)
-		if err != nil {
-			return err
-		}
-		if k, _ := res.RowsAffected(); k == 0 {
-			return ErrNotFound
-		}
-		return nil
+		return execOne(tx, ErrNotFound, "UPDATE users SET is_platform_admin = ? WHERE id = ?", on, uid)
 	})
 }
 

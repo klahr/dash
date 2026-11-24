@@ -470,15 +470,11 @@ func (r *recorder) Write(b []byte) (int, error) { return r.buf.Write(b) }
 // origin; the hub's project then lands its tasks there (every runner
 // follows it when the project is next linked).
 func (s *Server) switchBranchOnRunner(w http.ResponseWriter, r *http.Request, sv *service, p model.Project) {
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
-	if err != nil {
-		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
-		return
-	}
 	var req struct {
 		Branch string `json:"branch"`
 	}
-	if err := json.Unmarshal(body, &req); err != nil {
+	body, err := readJSON(r, &req)
+	if err != nil {
 		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}
@@ -583,13 +579,9 @@ func (s *Server) listProcessesOnRunners(w http.ResponseWriter, r *http.Request, 
 // runner of the caller's own (the runner checks it too, from
 // tunnel.UserHeader); the project's presets run for any member.
 func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv *service, p model.Project) {
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
-	if err != nil {
-		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
-		return
-	}
 	var req map[string]any
-	if err := json.Unmarshal(body, &req); err != nil {
+	body, err := readJSON(r, &req)
+	if err != nil {
 		writeErr(w, fmt.Errorf("%w: %w", errBadRequest, err))
 		return
 	}

@@ -39,3 +39,14 @@ func Within(root, path string) bool {
 	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
+
+// RelInside reports whether rel, a path relative to some root, stays at or
+// under that root once cleaned: it isn't absolute or rooted, and isn't ".."
+// or below it. Names that only start with dots ("..env") are inside.
+func RelInside(rel string) bool {
+	rel = filepath.Clean(rel)
+	if filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" || (rel != "" && os.IsPathSeparator(rel[0])) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}

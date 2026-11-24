@@ -4,7 +4,7 @@ import { ask, attempt, busy, copy, fail, openSheet, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
 import { state } from "./state.js";
 import { projectKey } from "./events.js";
-import { agoText } from "./branches.js";
+import { agoText } from "../time.js";
 import { duration } from "./activity.js";
 import { detailBackground, openDetail } from "./detail.js";
 import { openSettings } from "./settings.js";

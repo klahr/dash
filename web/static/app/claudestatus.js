@@ -5,7 +5,7 @@ import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { orgSection } from "./accountsheet.js";
 import { copyBlock } from "./prefs.js";
-import { agoText } from "./branches.js";
+import { agoText } from "../time.js";
 
 // ------------------------------------------------------------------ Claude's status
 // Claude's status page (status.claude.com) posts its incidents to this Dash's

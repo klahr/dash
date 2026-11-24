@@ -56,6 +56,91 @@ func CheckServer(raw string) (*url.URL, error) {
 	return u, nil
 }
 
+// hubDo sends a request to the hub at server: body (if any) to path, with
+// token (if any) as the bearer, the headers in hdr, through client (nil: one
+// that gives up after 30 seconds). A 401 is ErrRevoked; any other answer is
+// the caller's, who closes its body.
+func hubDo(ctx context.Context, client *http.Client, server, token, method, path string, body io.Reader, hdr http.Header) (*http.Response, error) {
+	u, err := CheckServer(server)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u.String()+path, body)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range hdr {
+		req.Header[k] = v
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode == http.StatusUnauthorized {
+		res.Body.Close()
+		return nil, ErrRevoked
+	}
+	return res, nil
+}
+
+// HubJSON sends in (nil: no body) as JSON to path on the hub at server and
+// decodes the answer into out (nil: not read), reading at most limit bytes
+// of it (<= 0: 1 MiB). client nil is one that gives up after 30 seconds;
+// token "" sends none. A 401 is ErrRevoked; another answer outside 2xx an
+// error with the hub's {"error": …} (or its status). A 204, or a 2xx with no
+// body, leaves out as it is. The answer is returned, its body closed, for
+// its status and headers.
+func HubJSON(ctx context.Context, client *http.Client, server, token, method, path string, in, out any, limit int64) (*http.Response, error) {
+	var body io.Reader
+	hdr := http.Header{"Accept": {"application/json"}}
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return nil, err
+		}
+		body = bytes.NewReader(b)
+		hdr.Set("Content-Type", "application/json")
+	}
+	res, err := hubDo(ctx, client, server, token, method, path, body, hdr)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if limit <= 0 {
+		limit = 1 << 20
+	}
+	r := io.LimitReader(res.Body, limit)
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		var e struct{ Error string }
+		_ = json.NewDecoder(r).Decode(&e)
+		if e.Error == "" {
+			e.Error = res.Status
+		}
+		return res, &HubError{Status: res.StatusCode, Message: e.Error}
+	}
+	if out == nil || res.StatusCode == http.StatusNoContent {
+		return res, nil
+	}
+	if err := json.NewDecoder(r).Decode(out); err != nil && !errors.Is(err, io.EOF) {
+		return res, fmt.Errorf("the hub's answer: %w", err)
+	}
+	return res, nil
+}
+
+// HubError is a hub's answer outside 2xx (but 401: ErrRevoked).
+type HubError struct {
+	Status  int    // the HTTP status
+	Message string // the hub's {"error": …}, or the status
+}
+
+func (e *HubError) Error() string { return e.Message }
+
 // Register swaps a registration code from the hub's Runners page for this
 // runner's credentials. prev is the token this computer was registered with before, if any: the
 // hub then replaces that runner instead of refusing its name.
@@ -64,28 +149,17 @@ func Register(ctx context.Context, server, code, name, prev string) (Credentials
 	if err != nil {
 		return Credentials{}, err
 	}
-	body, _ := json.Marshal(map[string]string{"code": code, "name": name, "previous": prev})
-	req, err := http.NewRequestWithContext(ctx, "POST", u.String()+"/runner/register", bytes.NewReader(body))
-	if err != nil {
-		return Credentials{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
-		return Credentials{}, err
-	}
-	defer res.Body.Close()
 	var out struct {
-		ID, Name, Token, Error string
-		OrgID                  int64 `json:"org_id"`
-		UserID                 int64 `json:"user_id"`
+		ID, Name, Token string
+		OrgID           int64 `json:"org_id"`
+		UserID          int64 `json:"user_id"`
 	}
-	_ = json.NewDecoder(res.Body).Decode(&out)
-	if res.StatusCode != http.StatusOK || out.Token == "" {
-		if out.Error == "" {
-			out.Error = res.Status
-		}
-		return Credentials{}, fmt.Errorf("register with %s: %s", u, out.Error)
+	in := map[string]string{"code": code, "name": name, "previous": prev}
+	if _, err := HubJSON(ctx, nil, u.String(), "", http.MethodPost, "/runner/register", in, &out, 0); err != nil {
+		return Credentials{}, fmt.Errorf("register with %s: %w", u, err)
+	}
+	if out.Token == "" {
+		return Credentials{}, fmt.Errorf("register with %s: the hub sent no token", u)
 	}
 	return Credentials{Server: u.String(), ID: out.ID, Name: out.Name, Token: out.Token, OrgID: out.OrgID, UserID: out.UserID}, nil
 }
@@ -218,42 +292,11 @@ func Report(ctx context.Context, creds Credentials, report any) error {
 // ReportReply is Report, decoding the hub's answer into reply (when the hub
 // gives one; an older hub answers 204 and reply is left as it is).
 func ReportReply(ctx context.Context, creds Credentials, report, reply any) error {
-	u, err := CheckServer(creds.Server)
-	if err != nil {
-		return err
+	_, err := HubJSON(ctx, nil, creds.Server, creds.Token, http.MethodPost, "/runner/report", report, reply, 1<<20)
+	if err != nil && !errors.Is(err, ErrRevoked) {
+		return fmt.Errorf("report to hub: %w", err)
 	}
-	b, err := json.Marshal(report)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", u.String()+"/runner/report", bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+creds.Token)
-	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode == http.StatusUnauthorized {
-		return ErrRevoked
-	}
-	if res.StatusCode >= 300 {
-		var e struct{ Error string }
-		_ = json.NewDecoder(res.Body).Decode(&e)
-		if e.Error == "" {
-			e.Error = res.Status
-		}
-		return fmt.Errorf("report to hub: %s", e.Error)
-	}
-	if reply != nil && res.StatusCode == http.StatusOK {
-		if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(reply); err != nil {
-			return fmt.Errorf("report to hub: its answer: %w", err)
-		}
-	}
-	return nil
+	return err
 }
 
 // BoardPath is where a runner sends the Dash board tool calls (MCP
@@ -283,32 +326,22 @@ func WithBoardGoal(ctx context.Context, hubGoal string) context.Context {
 // (or, without one, of a chat in the hub's project hubProject), to the hub
 // in creds. The caller closes the answer's body.
 func Board(ctx context.Context, creds Credentials, hubTodo, hubProject string, body []byte) (*http.Response, error) {
-	u, err := CheckServer(creds.Server)
-	if err != nil {
+	if _, err := CheckServer(creds.Server); err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", u.String()+BoardPath, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-	req.Header.Set("Authorization", "Bearer "+creds.Token)
+	hdr := http.Header{"Content-Type": {"application/json"}, "Accept": {"application/json, text/event-stream"}}
 	if hubTodo != "" {
-		req.Header.Set(BoardTodoHeader, hubTodo)
+		hdr.Set(BoardTodoHeader, hubTodo)
 	} else if hubProject != "" {
-		req.Header.Set(BoardProjectHeader, hubProject)
+		hdr.Set(BoardProjectHeader, hubProject)
 		if g, _ := ctx.Value(boardGoalKey{}).(string); g != "" {
-			req.Header.Set(BoardGoalHeader, g)
+			hdr.Set(BoardGoalHeader, g)
 		}
 	}
-	res, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
-	if err != nil {
+	// The answer may be a stream, passed on as it comes: hubDo, not HubJSON.
+	res, err := hubDo(ctx, &http.Client{Timeout: 2 * time.Minute}, creds.Server, creds.Token, http.MethodPost, BoardPath, bytes.NewReader(body), hdr)
+	if err != nil && !errors.Is(err, ErrRevoked) {
 		return nil, fmt.Errorf("the hub's board: %w", err)
 	}
-	if res.StatusCode == http.StatusUnauthorized {
-		res.Body.Close()
-		return nil, ErrRevoked
-	}
-	return res, nil
+	return res, err
 }

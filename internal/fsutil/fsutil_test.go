@@ -49,3 +49,28 @@ func TestWriteFileAtomicRemovesTempOnRenameError(t *testing.T) {
 		t.Errorf("temp file left behind: %v", err)
 	}
 }
+
+func TestRelInside(t *testing.T) {
+	cases := []struct {
+		rel  string
+		want bool
+	}{
+		{".", true},
+		{"", true}, // Clean makes it "."
+		{"a", true},
+		{"a/b", true},
+		{"..env", true},
+		{"...", true},
+		{"a/..", true},
+		{"a/../b", true},
+		{"..", false},
+		{"../a", false},
+		{"a/../../b", false},
+		{"/a", false},
+	}
+	for _, c := range cases {
+		if got := RelInside(filepath.FromSlash(c.rel)); got != c.want {
+			t.Errorf("RelInside(%q) = %v, want %v", c.rel, got, c.want)
+		}
+	}
+}

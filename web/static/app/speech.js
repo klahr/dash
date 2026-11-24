@@ -189,7 +189,6 @@ function chunks(text, max = 220) {
 // pressed while it is read.
 let queue = [];
 let current = null;
-export const speaking = () => !!current;
 
 function press(btn, on) {
   if (!btn) return;

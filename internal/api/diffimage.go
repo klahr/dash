@@ -149,13 +149,8 @@ func (s *Server) todoImage(w http.ResponseWriter, r *http.Request) {
 // hubTaskImage handles GET /api/hub/tasks/{htid}/image on a runner: the
 // hub's todoImage for a task it sent here.
 func (s *Server) hubTaskImage(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.fromHub(w, r)
+	sv, t, ok := s.hubTaskFor(w, r)
 	if !ok {
-		return
-	}
-	t, ok := sv.hubTodo(r.PathValue("htid"))
-	if !ok {
-		writeErr(w, fmt.Errorf("%w: no such task from the hub", store.ErrNotFound))
 		return
 	}
 	name, old, err := diffImageQuery(r)

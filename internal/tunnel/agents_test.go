@@ -85,9 +85,6 @@ func TestReportCarriesAgents(t *testing.T) {
 		if got := r.Serves(project(r, c.agent, model.LabelAny)); got != c.want {
 			t.Errorf("serves a project on %q: %v, want %v", c.agent, got, c.want)
 		}
-		if got := r.HasAgent(c.agent); got != c.want {
-			t.Errorf("HasAgent(%q) = %v", c.agent, got)
-		}
 	}
 	// Still no project without labels.
 	if r.Serves(project(r, "claude")) {

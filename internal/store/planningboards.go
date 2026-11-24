@@ -72,14 +72,6 @@ func defaultPlanningBoard(q execQuerier, org int64) (string, error) {
 	return id, err
 }
 
-// DefaultPlanningBoard is the org's default board's id.
-func (o *OrgStore) DefaultPlanningBoard() (string, error) {
-	if o.org == 0 {
-		return "", errNoOrg
-	}
-	return defaultPlanningBoard(o.s.db, o.org)
-}
-
 // PlanningBoards are the org's planning boards, in their order.
 func (o *OrgStore) PlanningBoards() ([]model.CardBoard, error) {
 	if o.org == 0 {

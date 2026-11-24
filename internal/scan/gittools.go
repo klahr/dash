@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mcptools"
@@ -261,7 +262,7 @@ func pathspecs(paths []string) ([]string, error) {
 			continue
 		}
 		clean := path.Clean(strings.ReplaceAll(p, "\\", "/"))
-		if strings.HasPrefix(p, "-") || path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") || strings.ContainsRune(p, 0) {
+		if strings.HasPrefix(p, "-") || !fsutil.RelInside(clean) || strings.ContainsRune(p, 0) {
 			return nil, fmt.Errorf("not a path in the repository: %q", p)
 		}
 		out = append(out, clean)

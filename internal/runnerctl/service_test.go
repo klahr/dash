@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -481,5 +482,20 @@ func TestServicePath(t *testing.T) {
 	list := func(dirs ...string) string { return strings.Join(dirs, string(os.PathListSeparator)) }
 	if got := ServicePath(list("/usr/bin", "", "/bin"), "/bin", "/opt/x", ""); got != list("/usr/bin", "/bin", "/opt/x") {
 		t.Errorf("got %s", got)
+	}
+}
+
+// A hub that answers with an error (a 404 at the wrong address, a 502 from
+// its proxy) fails the check.
+func TestPreflightHubErrorStatus(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusBadGateway} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}))
+		c := Preflight{}.hub(context.Background(), srv.URL)
+		srv.Close()
+		if c.OK || !strings.Contains(c.Detail, strconv.Itoa(status)) {
+			t.Errorf("%d: %+v", status, c)
+		}
 	}
 }

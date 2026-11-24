@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { projectKey } from "./events.js";
-import { agoText } from "./branches.js";
+import { agoText } from "../time.js";
 
 // ------------------------------------------------------------------ origin (background fetch)
 // Dash fetches origin's default branch when a project is selected and every

@@ -4,7 +4,8 @@ import { attempt, toast } from "./dialogs.js";
 import { saveField } from "./autosave.js";
 import { state } from "./state.js";
 import * as store from "./store.js";
-import { HOUR, aheadOfPace, paceMs, paceStateText, paceText, resetText } from "../usagetime.js";
+import { aheadOfPace, paceMs, paceStateText, paceText } from "../usagetime.js";
+import { HOUR, resetText } from "../time.js";
 
 // ------------------------------------------------------------------ usage & queue
 export async function loadUsage() {

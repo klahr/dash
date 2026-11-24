@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -230,9 +229,10 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 		servers[perm.ServerName] = perm.ServerConfig(c.PermURL, token)
 	}
 	cmd := exec.CommandContext(ctx, bin, c.args(dir, servers, coordinator)...)
+	cmd.Env = localrun.Environ()
 	if servers[perm.ServerName] != nil {
 		// Claude waits on the MCP tool while the user decides; don't let it time out first.
-		cmd.Env = append(os.Environ(), "MCP_TOOL_TIMEOUT=3600000")
+		cmd.Env = append(cmd.Env, "MCP_TOOL_TIMEOUT=3600000")
 	}
 	stdout, stderr, err := startChat(cmd, dir, c.Dir, history, emit)
 	if err != nil {
@@ -411,11 +411,7 @@ func (b contentBlock) delta() (ChatDelta, bool) {
 	case "tool_use":
 		return ChatDelta{Kind: "tool_use", ID: b.ID, Tool: b.Name, Input: b.Input}, true
 	case "tool_result":
-		text := b.resultText()
-		if len(text) > maxToolOutput {
-			text = text[:maxToolOutput] + "\n[output truncated]"
-		}
-		return ChatDelta{Kind: "tool_result", ID: b.ToolUseID, Text: text, IsError: b.IsError}, true
+		return ChatDelta{Kind: "tool_result", ID: b.ToolUseID, Text: clipToolOutput(b.resultText()), IsError: b.IsError}, true
 	}
 	return ChatDelta{}, false
 }

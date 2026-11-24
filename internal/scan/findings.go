@@ -294,7 +294,7 @@ func repoPath(p, root string) (string, error) {
 		p = rel
 	}
 	p = model.NormalizePath(p)
-	if p == ".." || strings.HasPrefix(p, "../") {
+	if !fsutil.RelInside(p) {
 		return "", fmt.Errorf("path %q is outside the repository", p)
 	}
 	return p, nil

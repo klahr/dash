@@ -1,4 +1,5 @@
 import { $, $$, avatar, dateTimeText, h, ib, ico, plural } from "./dom.js";
+import { ago, agoText, clockText } from "../time.js";
 import * as store from "./store.js";
 import { api } from "./api.js";
 import { EASE, art, ask, attempt, busy, reduceMotion, toast } from "./dialogs.js";
@@ -526,25 +527,6 @@ async function clearDone() {
   if (list.some((t) => t.id === state.detail)) closeDetail();
   const bad = res.filter((r) => r.status === "rejected").length;
   toast(bad ? `Deleted ${n - bad}, ${bad} failed` : `Deleted ${plural(n, "task")}`);
-}
-
-// "2m", "3h", "4d"
-export function ago(iso) {
-  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < DAY / 1000) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
-
-// "just now", "2m ago"
-export const agoText = (iso) => { const a = ago(iso); return a === "now" ? "just now" : `${a} ago`; };
-
-// "6:12", "1:02:09": how long since iso, as a ticking clock.
-export function clockText(iso) {
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso)) / 1000));
-  const mm = Math.floor(s / 60) % 60, ss = String(s % 60).padStart(2, "0");
-  return s < 3600 ? `${Math.floor(s / 60)}:${ss}` : `${Math.floor(s / 3600)}:${String(mm).padStart(2, "0")}:${ss}`;
 }
 
 // runClock is a running task's stopwatch on its card. One timer ticks every

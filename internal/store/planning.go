@@ -131,6 +131,35 @@ func (o *OrgStore) emitCard(id string, deleted bool) {
 	}
 }
 
+// cardTx runs fn on the org's card cardID in a transaction, under the
+// store's lock, and announces the change if fn succeeds. A card the org
+// doesn't have is ErrNotFound.
+func (o *OrgStore) cardTx(cardID string, fn func(tx *sql.Tx, c model.Card) error) error {
+	return o.cardTxThen(cardID, fn, nil)
+}
+
+// cardTxThen is cardTx that, when fn succeeds, also runs then (if not nil)
+// after the lock is released and before the change is announced.
+func (o *OrgStore) cardTxThen(cardID string, fn func(tx *sql.Tx, c model.Card) error, then func()) error {
+	o.s.mu.Lock()
+	err := inTx(o.s.db, func(tx *sql.Tx) error {
+		c, err := getCard(tx, o.org, cardID)
+		if err != nil {
+			return err
+		}
+		return fn(tx, c)
+	})
+	o.s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if then != nil {
+		then()
+	}
+	o.emitCard(cardID, false)
+	return nil
+}
+
 // The card's owner (model.Card.Owner) is kept in planning_cards.assignee,
 // the column a card's one assignee had before it had members (migration
 // 0031): NULL is nobody, and a deleted account leaves its cards without one.
@@ -689,50 +718,23 @@ var ErrTooManyFiles = fmt.Errorf("a card has at most %d files", model.MaxCardFil
 // after its other files. Attaching the same upload again is no change.
 func (o *OrgStore) AddCardFile(cardID string, f model.CardFile) (model.CardFile, error) {
 	f.AddedBy, f.AddedAt = o.user, time.Now().UTC().Truncate(time.Second)
-	o.s.mu.Lock()
-	err := inTx(o.s.db, func(tx *sql.Tx) error {
-		c, err := getCard(tx, o.org, cardID)
-		if err != nil {
-			return err
-		}
+	err := o.cardTx(cardID, func(tx *sql.Tx, c model.Card) error {
 		if len(c.Files) >= model.MaxCardFiles {
 			return ErrTooManyFiles
 		}
-		_, err = tx.Exec(`INSERT INTO planning_card_files (card_id, upload_id, name, type, size, added_by, added_at) VALUES (?, ?, ?, ?, ?, NULLIF(?, 0), ?)
+		_, err := tx.Exec(`INSERT INTO planning_card_files (card_id, upload_id, name, type, size, added_by, added_at) VALUES (?, ?, ?, ?, ?, NULLIF(?, 0), ?)
 			ON CONFLICT (card_id, upload_id) DO NOTHING`, cardID, f.ID, f.Name, f.Type, f.Size, f.AddedBy, f.AddedAt.Unix())
 		return err
 	})
-	o.s.mu.Unlock()
-	if err != nil {
-		return f, err
-	}
-	o.emitCard(cardID, false)
-	return f, nil
+	return f, err
 }
 
 // RemoveCardFile takes a file off a card. The upload stays until cleanup
 // finds nothing else uses it.
 func (o *OrgStore) RemoveCardFile(cardID, uploadID string) error {
-	o.s.mu.Lock()
-	err := inTx(o.s.db, func(tx *sql.Tx) error {
-		if _, err := getCard(tx, o.org, cardID); err != nil {
-			return err
-		}
-		res, err := tx.Exec("DELETE FROM planning_card_files WHERE card_id = ? AND upload_id = ?", cardID, uploadID)
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return ErrNotFound
-		}
-		return nil
+	return o.cardTx(cardID, func(tx *sql.Tx, _ model.Card) error {
+		return execOne(tx, ErrNotFound, "DELETE FROM planning_card_files WHERE card_id = ? AND upload_id = ?", cardID, uploadID)
 	})
-	o.s.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	o.emitCard(cardID, false)
-	return nil
 }
 
 // CardUploads are the ids of the uploads attached to any org's cards, for
@@ -771,11 +773,7 @@ func scanCount(sc scanner) (id string, n int, err error) {
 // cleaned (model.CleanComment) by the caller.
 func (o *OrgStore) AddCardComment(cardID, text string) (model.CardComment, error) {
 	m := model.CardComment{CardID: cardID, Author: o.user, Text: text, CreatedAt: time.Now().UTC().Truncate(time.Second)}
-	o.s.mu.Lock()
-	err := inTx(o.s.db, func(tx *sql.Tx) error {
-		if _, err := getCard(tx, o.org, cardID); err != nil {
-			return err
-		}
+	err := o.cardTx(cardID, func(tx *sql.Tx, _ model.Card) error {
 		res, err := tx.Exec("INSERT INTO planning_comments (card_id, author, text, created_at) VALUES (?, NULLIF(?, 0), ?, ?)",
 			cardID, o.user, text, m.CreatedAt.Unix())
 		if err != nil {
@@ -788,36 +786,14 @@ func (o *OrgStore) AddCardComment(cardID, text string) (model.CardComment, error
 		_ = tx.QueryRow("SELECT username FROM users WHERE id = ?", o.user).Scan(&m.AuthorName)
 		return nil
 	})
-	o.s.mu.Unlock()
-	if err != nil {
-		return m, err
-	}
-	o.emitCard(cardID, false)
-	return m, nil
+	return m, err
 }
 
 // DeleteCardComment deletes a comment of a card.
 func (o *OrgStore) DeleteCardComment(cardID string, id int64) error {
-	o.s.mu.Lock()
-	err := inTx(o.s.db, func(tx *sql.Tx) error {
-		if _, err := getCard(tx, o.org, cardID); err != nil {
-			return err
-		}
-		res, err := tx.Exec("DELETE FROM planning_comments WHERE id = ? AND card_id = ?", id, cardID)
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return ErrNotFound
-		}
-		return nil
+	return o.cardTx(cardID, func(tx *sql.Tx, _ model.Card) error {
+		return execOne(tx, ErrNotFound, "DELETE FROM planning_comments WHERE id = ? AND card_id = ?", id, cardID)
 	})
-	o.s.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	o.emitCard(cardID, false)
-	return nil
 }
 
 // CardComment is one comment of a card.
@@ -871,47 +847,18 @@ func (o *OrgStore) LinkCard(cardID, kind, workID string) error {
 	if !o.ownsWork(kind, workID) {
 		return ErrNotFound
 	}
-	o.s.mu.Lock()
-	err := inTx(o.s.db, func(tx *sql.Tx) error {
-		if _, err := getCard(tx, o.org, cardID); err != nil {
-			return err
-		}
+	return o.cardTxThen(cardID, func(tx *sql.Tx, _ model.Card) error {
 		_, err := tx.Exec(`INSERT INTO planning_links (card_id, kind, work_id, created_by, created_at) VALUES (?, ?, ?, NULLIF(?, 0), ?)
 			ON CONFLICT (card_id, kind, work_id) DO NOTHING`, cardID, kind, workID, o.user, time.Now().Unix())
 		return err
-	})
-	o.s.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	o.s.indexLink(kind, workID, cardID, o.org, true)
-	o.emitCard(cardID, false)
-	return nil
+	}, func() { o.s.indexLink(kind, workID, cardID, o.org, true) })
 }
 
 // UnlinkCard removes a card's link to a task or goal.
 func (o *OrgStore) UnlinkCard(cardID, kind, workID string) error {
-	o.s.mu.Lock()
-	err := inTx(o.s.db, func(tx *sql.Tx) error {
-		if _, err := getCard(tx, o.org, cardID); err != nil {
-			return err
-		}
-		res, err := tx.Exec("DELETE FROM planning_links WHERE card_id = ? AND kind = ? AND work_id = ?", cardID, kind, workID)
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return ErrNotFound
-		}
-		return nil
-	})
-	o.s.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	o.s.indexLink(kind, workID, cardID, o.org, false)
-	o.emitCard(cardID, false)
-	return nil
+	return o.cardTxThen(cardID, func(tx *sql.Tx, _ model.Card) error {
+		return execOne(tx, ErrNotFound, "DELETE FROM planning_links WHERE card_id = ? AND kind = ? AND work_id = ?", cardID, kind, workID)
+	}, func() { o.s.indexLink(kind, workID, cardID, o.org, false) })
 }
 
 // CardsLinkedTo are the org's cards that link to a task or goal.

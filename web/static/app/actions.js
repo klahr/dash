@@ -2,7 +2,8 @@ import { $, clockTime, dateTimeText, h, ib, timeLocale } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, busy, toast } from "./dialogs.js";
 import { projectFirst, state } from "./state.js";
-import { agoText, title } from "./branches.js";
+import { title } from "./branches.js";
+import { agoText } from "../time.js";
 import { openDetail } from "./detail.js";
 import { buildEtaText, buildProgress } from "../buildeta.js";
 

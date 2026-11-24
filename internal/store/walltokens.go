@@ -77,14 +77,7 @@ func (a *Accounts) WallTokens(org int64) ([]WallToken, error) {
 
 // RevokeWallToken deletes org's wall token id (ErrNotFound if it isn't org's).
 func (a *Accounts) RevokeWallToken(org, id int64) error {
-	res, err := a.db.Exec("DELETE FROM wall_tokens WHERE id = ? AND org_id = ?", id, org)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return execOne(a.db, ErrNotFound, "DELETE FROM wall_tokens WHERE id = ? AND org_id = ?", id, org)
 }
 
 // AuthenticateWall finds the wall token whose secret is secret

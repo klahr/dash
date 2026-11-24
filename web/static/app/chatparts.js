@@ -4,14 +4,10 @@
 // It wires up nothing on the page when it loads (bar the elapsed-time
 // ticker), so any page can import it.
 import { h, ib } from "./dom.js";
+import { SECOND, durationText } from "../time.js";
 
-// "8s", "1m 05s", "1h 02m"
-export function duration(ms) {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
-  return `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
-}
+// "8s", "1m 5s", "1h 2m"
+export const duration = (ms) => durationText(ms, SECOND);
 // Elapsed-time labels on whatever is still running tick once a second.
 setInterval(() => {
   if (document.hidden) return;
@@ -257,3 +253,28 @@ export function permDecided(log, d) {
   st?.replaceChildren(h("span", { class: "perm-status" }, permStatus(d.text)));
 }
 export const permStatus = (decision) => ({ allow: "Approved", deny: "Denied", timeout: "Not answered in time: denied" })[decision] || decision;
+
+// chatCloseReason says why the chat's websocket closed (its close event e)
+// when the user must do something other than send again: the server refuses
+// a conversation this long (close code 1009, see maxChatFrame in
+// internal/api/ws.go). Else it's "": the connection was just lost.
+export const chatCloseReason = (e) => e?.code === 1009 ? "This conversation is too long to send. Clear it, or start a new one." : "";
+
+// The stop square a chat's send button shows while a reply streams.
+const STOP_LOOK = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>`;
+
+// sendStopButton returns set(stopping, { label, title }), which shows a
+// chat's send button btn as is (Send) or, while a reply streams, as Stop.
+// label and title default to "Stop the reply" and "Stop" when stopping, and
+// to btn's own label and no title when not. set.label is btn's own label.
+export function sendStopButton(btn) {
+  const look = { html: btn.innerHTML, label: btn.getAttribute("aria-label") || "Send" };
+  const set = (stopping, { label = stopping ? "Stop the reply" : look.label, title = stopping ? "Stop" : "" } = {}) => {
+    btn.classList.toggle("stop", stopping);
+    btn.innerHTML = stopping ? STOP_LOOK : look.html;
+    btn.setAttribute("aria-label", label);
+    btn.title = title;
+  };
+  set.label = look.label;
+  return set;
+}

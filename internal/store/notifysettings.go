@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // ---- Notification settings, summaries and their activity ----
@@ -199,7 +200,7 @@ func (s *Store) RecordActivity(a model.Activity) error {
 		a.At = time.Now()
 	}
 	_, err := s.db.Exec("INSERT INTO notify_activity (project_id, at, kind, ref, title, url, severity, user_id, creator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		a.ProjectID, a.At.Unix(), a.Kind, a.Ref, clip(a.Title, 300), clip(a.URL, 2000), string(a.Severity), a.User, a.Creator)
+		a.ProjectID, a.At.Unix(), a.Kind, a.Ref, textutil.ClipNote(a.Title, 300, ""), textutil.ClipNote(a.URL, 2000, ""), string(a.Severity), a.User, a.Creator)
 	return err
 }
 

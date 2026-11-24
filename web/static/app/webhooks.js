@@ -4,7 +4,7 @@ import { ask, attempt, busy, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { accountSection } from "./accountsheet.js";
 import { copyBlock } from "./prefs.js";
-import { agoText } from "./branches.js";
+import { agoText } from "../time.js";
 
 // ------------------------------------------------------------------ notification webhooks
 // Outgoing webhooks: a project's, in its settings, and the user's personal

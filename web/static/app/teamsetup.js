@@ -5,7 +5,8 @@ import { state } from "./state.js";
 import { href } from "./routes.js";
 import { askPassword } from "./myaccount.js";
 import { orgSection } from "./accountsheet.js";
-import { agoText } from "./branches.js";
+import { RANK } from "./roles.js";
+import { agoText } from "../time.js";
 import { servesProject } from "../groups.js";
 
 // ------------------------------------------------------------------ set up your team
@@ -122,7 +123,6 @@ export function renderTeamSetup(org, mine) {
 // tokens and connected apps in this org, revocable. A member's own list is
 // Account → Tokens & apps (tokens.js); runners are in Runners.
 orgSection("tokens", loadOrgTokens);
-const RANK = { planner: 0, member: 1, admin: 2, owner: 3 };
 async function loadOrgTokens() {
   const area = $("#org-tokens-area");
   const org = state.me?.org;
