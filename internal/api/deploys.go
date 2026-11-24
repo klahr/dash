@@ -955,13 +955,12 @@ func (s *Server) followDeploy(ctx context.Context, p model.Project, id string, a
 			}
 			if st.Phase.Active() {
 				_, _ = s.Store.UpdateDeploy(id, func(x *model.Deploy) error {
-					if x.Status == st.Phase && x.Deployed == st.Deployed && len(x.Checks) == len(st.Checks) && (x.TestsPassed || !st.TestsPassed) {
+					steps := len(x.Phases)
+					catchUpPhases(x, st, time.Now())
+					if len(x.Phases) == steps && x.Deployed == st.Deployed && len(x.Checks) == len(st.Checks) && (x.TestsPassed || !st.TestsPassed) {
 						return errUnchanged
 					}
 					x.TestsPassed = x.TestsPassed || st.TestsPassed
-					if x.Status != st.Phase {
-						x.SetStatus(st.Phase, time.Now())
-					}
 					x.Deployed, x.Checks = st.Deployed, st.Checks
 					return nil
 				})
@@ -972,6 +971,42 @@ func (s *Server) followDeploy(ctx context.Context, p model.Project, id string, a
 			return
 		case <-time.After(s.deployPoll()):
 		}
+	}
+}
+
+// catchUpPhases records on x the steps the runner went through (st.Phases)
+// that x doesn't have yet, in order and at the runner's times, so a step
+// shorter than the hub's checks is kept too. A runner that doesn't list
+// its steps gives only the one it is at (st.Phase, at now).
+func catchUpPhases(x *model.Deploy, st deploy.State, now time.Time) {
+	steps := st.Phases
+	if len(steps) == 0 {
+		if st.Phase.Active() {
+			x.SetStatus(st.Phase, now)
+		}
+		return
+	}
+	// Those after the step x is at; all of them when x hasn't started yet.
+	i := slices.IndexFunc(steps, func(p model.DeployPhase) bool { return p.Status == x.Status })
+	switch {
+	case i >= 0:
+		steps = steps[i+1:]
+	case x.Status.Active() || x.Status.Done():
+		return // a step the runner doesn't list: leave x as it is
+	}
+	for _, p := range steps {
+		if !p.Status.Active() {
+			continue
+		}
+		at := p.At
+		// Kept in order and not in the future, whatever the runner's clock.
+		if n := len(x.Phases); n > 0 && at.Before(x.Phases[n-1].At) {
+			at = x.Phases[n-1].At
+		}
+		if at.After(now) {
+			at = now
+		}
+		x.SetStatus(p.Status, at)
 	}
 }
 
@@ -1002,6 +1037,9 @@ func (s *Server) finishDeploy(id string, st deploy.State, log string) {
 		}
 		x.Deployed, x.Checks = x.Deployed || st.Deployed, st.Checks
 		x.TestsPassed = x.TestsPassed || st.TestsPassed
+		if !x.Status.Done() {
+			catchUpPhases(x, deploy.State{Phases: st.Phases}, now)
+		}
 		if st.Phase == model.DeployLive {
 			x.SetStatus(model.DeployLive, now)
 		} else {

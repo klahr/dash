@@ -116,6 +116,14 @@ func TestRunBuildDeployVerify(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(dir, "built.txt")); strings.TrimSpace(string(b)) != "building abc123" {
 		t.Errorf("built: %q", b)
 	}
+	// It lists every step it went through, however short.
+	var steps []string
+	for _, p := range st.Phases {
+		steps = append(steps, string(p.Status))
+	}
+	if strings.Join(steps, ",") != "building,deploying,verifying" {
+		t.Errorf("phases: %v", steps)
+	}
 }
 
 // A failing build stops the deploy; a failing check fails it.

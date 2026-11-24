@@ -194,10 +194,14 @@ type State struct {
 	ID string `json:"id"`
 	// Phase is model.DeployBuilding, DeployDeploying or DeployVerifying
 	// while it runs, then DeployLive or DeployFailed.
-	Phase    model.DeployStatus `json:"phase"`
-	Running  bool               `json:"running"`
-	ExitCode *int               `json:"exit_code,omitempty"`
-	Error    string             `json:"error,omitempty"`
+	Phase model.DeployStatus `json:"phase"`
+	// Phases are the steps it went through while running (building,
+	// deploying, verifying), with when each began: the hub records each
+	// even when its checks missed a short one.
+	Phases   []model.DeployPhase `json:"phases,omitempty"`
+	Running  bool                `json:"running"`
+	ExitCode *int                `json:"exit_code,omitempty"`
+	Error    string              `json:"error,omitempty"`
 	// Log is its output so far, secrets masked, the newest
 	// model.MaxDeployLog of it.
 	Log string `json:"log"`
@@ -334,6 +338,7 @@ func (r *job) snapshot() State {
 		st.ExitCode = &c
 	}
 	st.Checks = slices.Clone(st.Checks)
+	st.Phases = slices.Clone(st.Phases)
 	for i := range st.Checks {
 		st.Checks[i].Detail = Mask(st.Checks[i].Detail, r.secrets)
 	}
@@ -361,6 +366,9 @@ func (r *job) Write(b []byte) (int, error) {
 
 func (r *job) phase(p model.DeployStatus) {
 	r.mu.Lock()
+	if r.state.Phase != p {
+		r.state.Phases = append(r.state.Phases, model.DeployPhase{Status: p, At: time.Now()})
+	}
 	r.state.Phase = p
 	r.mu.Unlock()
 }
