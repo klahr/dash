@@ -104,4 +104,23 @@ func TestPlanInputWithProject(t *testing.T) {
 	if c := big.clip(5000); len(c.ClaudeMD)+len(c.Readme) > 5000 || len(c.Files) != 0 {
 		t.Errorf("clipped small: %d + %d bytes, %d files", len(c.ClaudeMD), len(c.Readme), len(c.Files))
 	}
+
+	// JSON writes each <, > and & as six bytes, so an HTML-heavy README
+	// grows far past the margin; the input still fits.
+	html := &PlanContext{Project: "web", ClaudeMD: strings.Repeat("<&>\n", 5000), Readme: strings.Repeat(`<a href="x"><img src="y"></a>`+"\n", 1000), Files: files}
+	p.Brief = ""
+	p.Idea = strings.Repeat("idea ", 10000)
+	in = PlanInputWith(p, html)
+	if len(in) > MaxPlanInput {
+		t.Errorf("HTML-heavy input of %d bytes, more than %d", len(in), MaxPlanInput)
+	}
+	if !strings.Contains(in, `"project": {`) {
+		t.Errorf("project left out though some of it fits")
+	}
+	// A plan that leaves no room for even the project's name goes without it.
+	p.Idea = ""
+	p.Idea = strings.Repeat("i", MaxPlanInput-len(PlanInputWith(p, nil))-10)
+	if in = PlanInputWith(p, html); len(in) > MaxPlanInput || strings.Contains(in, `"project"`) {
+		t.Errorf("no room: %d bytes, project in it: %v", len(in), strings.Contains(in, `"project"`))
+	}
 }

@@ -182,16 +182,30 @@ func PlanInputWith(p model.Plan, pc *PlanContext) string {
 	if len(p.Rounds) > 0 {
 		do = "Update the brief with the latest answers, then ask the next questions, or none if the brief is enough to start."
 	}
+	head := do + "\n\nThe plan so far:\n"
 	if pc != nil {
 		// What the plan leaves of MaxPlanInput, less a margin for JSON's
-		// escapes, goes to the project.
+		// escapes, goes to the project. Escapes can grow text far more than
+		// the margin allows (each <, > and & is six bytes), so the project
+		// is cut smaller until the whole input fits, or left out.
 		b, _ := json.MarshalIndent(in, "", " ")
-		room := (MaxPlanInput-len(do)-len(b))*3/4 - 200
-		c := pc.clip(max(0, room))
-		in.Project = &c
+		room := max(0, (MaxPlanInput-len(head)-len(b))*3/4-200)
+		for {
+			c := pc.clip(room)
+			in.Project = &c
+			b, _ = json.MarshalIndent(in, "", " ")
+			if len(head)+len(b) <= MaxPlanInput {
+				break
+			}
+			if room == 0 {
+				in.Project = nil
+				break
+			}
+			room /= 2
+		}
 	}
 	b, _ := json.MarshalIndent(in, "", " ")
-	return do + "\n\nThe plan so far:\n" + string(b)
+	return head + string(b)
 }
 
 // Plan runs one round of the interview of a plan of kind (model.PlanKinds;
