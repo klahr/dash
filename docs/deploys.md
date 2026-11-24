@@ -200,6 +200,9 @@ list. Dash looks at the tag's GitHub Actions runs every 15 seconds:
   deploy.
 - When no workflow ran for the tag, when Dash finds no build of it within 15 minutes, or when the
   build doesn't finish within 6 hours, it doesn't deploy either, and says why.
+- When a newer deploy to the environment is waiting, queued, running or live, the older one is
+  cancelled ("superseded by 1.4.1, a newer deploy to production"). An older release never goes out
+  after a newer one.
 
 A waiting deploy survives a restart of Dash. **Cancel** in its pane takes it off. Turning the
 setting off lets the waiting deploys go at once. Only deploys a release tag triggers wait: a deploy

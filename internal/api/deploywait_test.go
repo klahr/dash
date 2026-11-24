@@ -148,6 +148,69 @@ func TestReleaseDeployWaitsForBuild(t *testing.T) {
 	}
 }
 
+// A waiting release deploy that a newer deploy to its environment
+// supersedes is cancelled, not deployed after it: an older release whose
+// build passes last, or one waiting while someone deploys by hand.
+func TestWaitingDeploySuperseded(t *testing.T) {
+	s, _, p := boardServer(t)
+	holdDeploys(s)
+	s.CI = &ci.Watcher{Store: raw(s)}
+	p = withEnvs(t, s, p,
+		model.Environment{Name: "staging", DeployCommand: "true", Trigger: model.EnvTriggerRelease, WaitForBuild: true})
+	owner := testOwner(t, s)
+	sha := func(c string) string { return strings.Repeat(c, 40) }
+	build := func(tag, commit, state string) {
+		t.Helper()
+		if err := raw(s).PutReleaseBuild(model.ReleaseBuild{ProjectID: p.ID, Tag: tag, SHA: commit, State: state, Pushed: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	release := func(tag, commit string) model.Deploy {
+		t.Helper()
+		time.Sleep(time.Millisecond) // a later CreatedAt
+		s.deployRelease(p, tag, commit, Caller{Org: owner.Org, User: owner.User})
+		return raw(s).ListDeploys(p.ID, "staging")[0]
+	}
+	get := func(id string) model.Deploy {
+		t.Helper()
+		d, err := raw(s).GetDeploy(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+
+	// 1.0 and 1.1 both wait; 1.1's build passes first and goes. 1.0's
+	// passes later: it is superseded, not queued.
+	build("1.0", sha("a"), ci.ReleaseBuilding)
+	build("1.1", sha("b"), ci.ReleaseBuilding)
+	old, cur := release("1.0", sha("a")), release("1.1", sha("b"))
+	s.checkBuildWaits(time.Now())
+	if d := get(old.ID); d.Status != model.DeployFailed || !d.Cancelled || !strings.Contains(d.Error, "superseded by 1.1") {
+		t.Fatalf("1.0 while 1.1 waits: %+v", d)
+	}
+	build("1.1", sha("b"), ci.ReleasePublished)
+	build("1.0", sha("a"), ci.ReleasePublished)
+	s.checkBuildWaits(time.Now())
+	if d := get(cur.ID); d.Status != model.DeployQueued {
+		t.Fatalf("1.1: %+v", d)
+	}
+
+	// 1.2 waits while someone deploys 1.3 by hand: 1.2 never goes.
+	build("1.2", sha("c"), ci.ReleaseBuilding)
+	waiting := release("1.2", sha("c"))
+	time.Sleep(time.Millisecond)
+	if _, err := raw(s).CreateDeploy(model.Deploy{ProjectID: p.ID, Environment: "staging", Ref: sha("d"), Tag: "1.3",
+		Trigger: model.DeployByUser, By: owner.User, Status: model.DeployQueued}); err != nil {
+		t.Fatal(err)
+	}
+	build("1.2", sha("c"), ci.ReleasePublished)
+	s.checkBuildWaits(time.Now())
+	if d := get(waiting.ID); d.Status != model.DeployFailed || !d.Cancelled || !strings.Contains(d.Error, "superseded by 1.3") {
+		t.Fatalf("1.2 after a hand deploy of 1.3: %+v", d)
+	}
+}
+
 // A deploy waiting for its release build doesn't run, isn't done, and may
 // be cancelled.
 func TestWaitingBuildStatus(t *testing.T) {

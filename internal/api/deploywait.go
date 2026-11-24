@@ -11,7 +11,9 @@ package api
 // passed, the deploy goes on as any deploy does (the requirements, the
 // freezes, an approval, the queue); if it failed, none ran, or it took too
 // long, the deploy fails with why, and so is notified like a failed deploy.
-// The record is the wait: a restart picks it up again.
+// A newer deploy to the environment (waiting, queued, on its way or live)
+// supersedes it: it is cancelled, so an older release never goes out after
+// a newer one. The record is the wait: a restart picks it up again.
 //
 // The Deploy… picker shows each release tag's build too (tagBuild), and a
 // person deploying a tag whose build failed or still runs is asked first,
@@ -88,12 +90,17 @@ func (s *Server) releaseBuildOf(projectID, tag string) (model.ReleaseBuild, erro
 func (s *Server) checkBuildWaits(now time.Time) {
 	s.buildWaits.Lock()
 	defer s.buildWaits.Unlock()
-	for _, d := range s.Store.ListDeploys("", "") {
+	all := s.Store.ListDeploys("", "")
+	for _, d := range all {
 		if d.Status != model.DeployWaitingBuild {
 			continue
 		}
 		p, err := s.deployProject(d.ProjectID)
 		if err != nil {
+			continue
+		}
+		if newer, ok := newerDeploy(all, d); ok {
+			s.supersedeWaiting(p, d, newer)
 			continue
 		}
 		goes, why := s.buildVerdict(p, d, now)
@@ -104,6 +111,40 @@ func (s *Server) checkBuildWaits(now time.Time) {
 			s.failWaiting(p, d, why)
 		}
 	}
+}
+
+// newerDeploy is a deploy among all to d's environment created after d that
+// still goes, is on its way or is live: deploying d once its build passed
+// would put the environment back on an older release.
+func newerDeploy(all []model.Deploy, d model.Deploy) (model.Deploy, bool) {
+	for _, x := range all {
+		if x.ID == d.ID || x.ProjectID != d.ProjectID || x.Environment != d.Environment || !x.CreatedAt.After(d.CreatedAt) {
+			continue
+		}
+		if !x.Status.Done() || x.Status == model.DeployLive {
+			return x, true
+		}
+	}
+	return model.Deploy{}, false
+}
+
+// supersedeWaiting takes d, waiting for its release build, off because
+// newer, a later deploy to its environment, replaces it. It is cancelled,
+// not failed: nothing went wrong, so it isn't notified as a failure.
+func (s *Server) supersedeWaiting(p model.Project, d, newer model.Deploy) {
+	what := cmp.Or(newer.Tag, gitops.ShortSHA(newer.Ref), "a newer deploy")
+	why := fmt.Sprintf("superseded by %s, a newer deploy to %s, so it didn't deploy", what, d.Environment)
+	if _, err := s.Store.UpdateDeploy(d.ID, func(x *model.Deploy) error {
+		if x.Status != model.DeployWaitingBuild {
+			return errUnchanged
+		}
+		x.Error, x.Cancelled = why, true
+		x.SetStatus(model.DeployFailed, time.Now())
+		return nil
+	}); err != nil {
+		return
+	}
+	slog.Info("deploy: superseded while waiting for the release build", "project", p.Name, "environment", d.Environment, "tag", d.Tag, "id", d.ID, "by", newer.ID)
 }
 
 // buildVerdict says what becomes of d, waiting for its release build, now:
