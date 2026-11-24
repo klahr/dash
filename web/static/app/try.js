@@ -377,7 +377,7 @@ async function openTryCommits() {
     tryState.pending = { ref, runner };
     openTry();
   };
-  const row = (label, meta, ref, active, extra = null) => h("li", {},
+  const row = (label, meta, ref, active, extra = null) => h("li", { role: "none" },
     h("button", { type: "button", class: `try-commit-row${active ? " active" : ""}`, role: "option", "aria-selected": String(!!active), onclick: () => pick(ref) },
       extra, h("span", { class: "try-commit-text" }, h("span", { class: "try-commit-subject" }, label), meta ? h("span", { class: "try-commit-meta" }, meta) : null)));
   const render = (commits, q) => {
@@ -410,7 +410,7 @@ async function openTryCommits() {
     if (shown.length === 1 && q) pick(shown[0].sha);
     else if (q) pick(q);
   });
-  list.replaceChildren(h("li", { class: "try-commit-loading" }, h("div", { class: "spinner", "aria-hidden": "true" })));
+  list.replaceChildren(h("li", { class: "try-commit-loading", role: "none" }, h("div", { class: "spinner", "aria-hidden": "true" })));
   if (desktop.matches) search.focus();
   await load("", true);
 }
