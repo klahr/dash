@@ -211,6 +211,100 @@ func TestHubPreviewsATaskOnItsRunner(t *testing.T) {
 	}
 }
 
+// A runner's report keeps only its previews of the hub's tasks it ran: one
+// for another runner's task, for an id the hub didn't send it, or for a task
+// the hub doesn't have is dropped, so it is neither listed nor served.
+func TestHubPreviewsIgnoreOtherRunnersTasks(t *testing.T) {
+	parallel(t)
+
+	hub, _, _ := boardServer(t)
+	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
+	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}
+	hub.Previews = preview.New(nil, hub.Hub, raw(hub), "preview.dash.test")
+	hub.Previews.Remote = rh
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := httptest.NewServer(hub.Routes())
+	defer srv.Close()
+
+	owner := testOwner(t, hub)
+	online := func(name string) tunnel.Runner {
+		t.Helper()
+		code, _, err := rh.NewCode(owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		creds, err := tunnel.Register(ctx, srv.URL, code, name, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		client := &tunnel.Client{Creds: creds, Handler: http.NotFoundHandler(), MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
+		go func() { _ = client.Run(ctx) }()
+		var r tunnel.Runner
+		eventually(t, name+" to come online", func() bool { r, _ = rh.Get(creds.ID); return r.Online })
+		return r
+	}
+	a, b := online("laptop"), online("desktop")
+
+	hp, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, DefaultBranch: "main", RunsOn: []string{"any"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ht := reviewTodo(t, raw(hub), hp.ID)
+	if _, err := raw(hub).UpdateTodo(ht.ID, func(x *model.Todo) error { x.Runner, x.RemoteID = a.ID, "r1"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hub.mux().ServeHTTP(w, asOwner(t, hub, r)) })
+	list := func() []model.Preview {
+		t.Helper()
+		w := do(t, h, "GET", "/api/previews", "")
+		var out []model.Preview
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+			t.Fatalf("list: %d %s", w.Code, w.Body)
+		}
+		return out
+	}
+	running := func(todo string) dispatch.PreviewState {
+		return dispatch.PreviewState{HubTodoID: ht.ID, Preview: model.Preview{TodoID: todo, Kind: model.PreviewWeb, State: model.PreviewLive}}
+	}
+	served := func() bool {
+		_, okA := hub.hubPreviewTask("r1-" + a.Name)
+		_, okB := hub.hubPreviewTask("r1-" + b.Name)
+		return okA || okB
+	}
+
+	// Runner B reports runner A's task, by its right remote id.
+	hub.RunnerPreviews(b, []dispatch.PreviewState{running("r1")})
+	// Runner A reports the task under an id the hub didn't send it, and
+	// a task the hub doesn't have.
+	hub.RunnerPreviews(a, []dispatch.PreviewState{running("other"),
+		{HubTodoID: "no-such-task", Preview: model.Preview{TodoID: "r1", Kind: model.PreviewWeb, State: model.PreviewLive}}})
+	if got := list(); len(got) != 0 {
+		t.Fatalf("listed a preview the reporting runner doesn't have: %+v", got)
+	}
+	if served() {
+		t.Fatal("serves a preview the reporting runner doesn't have")
+	}
+
+	// Runner A's honest report is kept, by the hub's id.
+	hub.RunnerPreviews(a, []dispatch.PreviewState{running("r1")})
+	if got := list(); len(got) != 1 || got[0].TodoID != ht.ID {
+		t.Fatalf("listed after an honest report: %+v", got)
+	}
+	if id, ok := hub.hubPreviewTask("r1-" + a.Name); !ok || id != ht.ID {
+		t.Fatalf("served after an honest report: %q %v", id, ok)
+	}
+	// B's report of it again changes nothing.
+	hub.RunnerPreviews(b, []dispatch.PreviewState{running("r1")})
+	if _, ok := hub.hubPreviewTask("r1-" + b.Name); ok {
+		t.Fatal("serves another runner's task under the reporting runner's host")
+	}
+	if got := list(); len(got) != 1 {
+		t.Fatalf("listed after another runner's report: %+v", got)
+	}
+}
+
 // A note sent back with Rework… on the hub goes to the runner with its
 // attached files (Draw's picture): the runner keeps a copy, and the note
 // names it there.
