@@ -3,182 +3,217 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0d131d">
+<meta name="theme-color" content="#0b1019">
 <meta name="color-scheme" content="dark">
 <meta name="description" content="Queue tasks, let Claude Code work on them in parallel on your own computers, review the diffs and merge. {{if .IndividualPrice}}{{.IndividualPrice}} for one person, free if you can&#39;t pay.{{else}}Free for one person.{{end}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
-<title>{{.Name}}: run ten Claude Code agents at once</title>
+<title>{{.Name}}: run Claude Code agents in parallel</title>
 <style>
-:root{--bg:#0d131d;--bg2:#101722;--surface:#151e2c;--raised:#1c2738;--line:#243246;--line2:#2f405a;--text:#e8edf5;--muted:#8e9db3;--faint:#7a89a1;
+:root{--bg:#0b1019;--bg2:#0f1520;--surface:#131b28;--raised:#1a2433;--line:#1f2b3d;--line2:#2b3a52;--text:#ecf0f7;--muted:#97a5ba;--faint:#76859d;
 --accent:#8aa4ff;--accent2:#b3c3ff;--running:#f2b84b;--review:#5ec8e5;--merged:#6fd39a;
---ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;--r:14px}
+--ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;--r:16px;--sec:120px}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
-@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
 body{margin:0;background:var(--bg);color:var(--text);font:400 16px/1.6 var(--ui);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-a{color:var(--accent)}
+a{color:var(--accent);text-underline-offset:3px}
 img{display:block;max-width:100%;height:auto}
-.wrap{width:min(1160px,100%);margin:0 auto;padding:0 24px}
+strong{font-weight:600}
+.wrap{width:min(1180px,100%);margin:0 auto;padding:0 28px}
 
 /* Header */
-header.top{position:sticky;top:0;z-index:5;background:rgba(13,19,29,.78);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid transparent}
+header.top{position:sticky;top:0;z-index:5;background:rgba(11,16,25,.72);-webkit-backdrop-filter:saturate(1.5) blur(14px);backdrop-filter:saturate(1.5) blur(14px);border-bottom:1px solid rgba(43,58,82,.55)}
 header.top .wrap{display:flex;align-items:center;gap:10px;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:12px}
-.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;color:var(--text);text-decoration:none;margin-right:auto;min-width:0}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:-.01em;color:var(--text);text-decoration:none;margin-right:auto;min-width:0}
 .brand img{width:28px;height:28px;border-radius:7px;flex:none}
 .brand span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nav{display:flex;gap:4px;margin-right:8px}
-.nav a{color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;padding:8px 12px;border-radius:8px}
-.nav a:hover{color:var(--text);background:var(--surface)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 18px;border-radius:10px;font-weight:600;font-size:15px;text-decoration:none;border:1px solid var(--line2);color:var(--text);background:rgba(255,255,255,.02);white-space:nowrap;transition:background .15s,border-color .15s}
-.btn:hover{background:var(--surface);border-color:#3b4f6e}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#0b1020}
-.btn.primary:hover{background:var(--accent2);border-color:var(--accent2)}
-.btn.lg{min-height:48px;padding:0 22px;font-size:16px}
+.nav{display:flex;gap:2px;margin-right:10px}
+.nav a{color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;padding:7px 12px;border-radius:8px;transition:color .15s,background .15s}
+.nav a:hover{color:var(--text);background:rgba(255,255,255,.04)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:0 16px;border-radius:10px;font-weight:600;font-size:14.5px;text-decoration:none;border:1px solid var(--line2);color:var(--text);background:rgba(255,255,255,.03);white-space:nowrap;transition:background .15s,border-color .15s,box-shadow .15s,transform .15s}
+.btn:hover{background:rgba(255,255,255,.06);border-color:#3b4f6e}
+.btn.primary{background:linear-gradient(180deg,#9db3ff,var(--accent));border-color:transparent;color:#0a0f1e;box-shadow:0 1px 0 rgba(255,255,255,.35) inset,0 8px 24px -8px rgba(138,164,255,.6)}
+.btn.primary:hover{background:linear-gradient(180deg,#c3d0ff,var(--accent2));box-shadow:0 1px 0 rgba(255,255,255,.4) inset,0 10px 30px -8px rgba(138,164,255,.75)}
+.btn.lg{min-height:50px;padding:0 24px;font-size:16px;border-radius:12px}
+.btn .arr{transition:transform .15s}
+.btn:hover .arr{transform:translateX(3px)}
 .btn:focus-visible,.nav a:focus-visible,.brand:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* Hero */
-.hero{position:relative;padding:72px 0 0;text-align:center;overflow:hidden}
-.hero::before{content:"";position:absolute;inset:0 0 auto;height:900px;z-index:-1;pointer-events:none;
-  background:radial-gradient(900px 480px at 50% 18%,rgba(138,164,255,.16),transparent 72%),radial-gradient(640px 400px at 85% 62%,rgba(94,200,229,.08),transparent 72%),radial-gradient(640px 400px at 15% 66%,rgba(111,211,154,.06),transparent 72%)}
-.hero{isolation:isolate}
-.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--muted);border:1px solid var(--line2);background:rgba(21,30,44,.7);padding:5px 12px;border-radius:999px;margin-bottom:22px}
+.hero{position:relative;padding:88px 0 0;text-align:center;overflow:hidden;isolation:isolate}
+.hero::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(1000px 520px at 50% 8%,rgba(138,164,255,.17),transparent 70%),radial-gradient(700px 420px at 88% 58%,rgba(94,200,229,.08),transparent 72%),radial-gradient(700px 420px at 12% 62%,rgba(111,211,154,.06),transparent 72%)}
+.hero::after{content:"";position:absolute;inset:0 0 auto;height:720px;z-index:-1;pointer-events:none;opacity:.5;
+  background-image:linear-gradient(rgba(138,164,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(138,164,255,.07) 1px,transparent 1px);background-size:56px 56px;
+  -webkit-mask-image:radial-gradient(ellipse 60% 70% at 50% 0%,#000 30%,transparent 75%);mask-image:radial-gradient(ellipse 60% 70% at 50% 0%,#000 30%,transparent 75%)}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--muted);border:1px solid var(--line2);background:rgba(19,27,40,.75);padding:5px 14px 5px 10px;border-radius:999px;margin-bottom:26px}
 .eyebrow i{width:7px;height:7px;border-radius:50%;background:var(--merged);box-shadow:0 0 0 3px rgba(111,211,154,.18)}
-h1{font-size:clamp(36px,6.2vw,64px);line-height:1.04;letter-spacing:-.035em;font-weight:750;margin:0 auto 20px;max-width:15ch}
-h1 em{font-style:normal;background:linear-gradient(100deg,var(--accent2),var(--review));-webkit-background-clip:text;background-clip:text;color:transparent}
-.lede{font-size:clamp(17px,2.2vw,20px);line-height:1.55;color:var(--muted);max-width:38em;margin:0 auto 32px}
+h1{font-size:clamp(40px,6.6vw,72px);line-height:1.02;letter-spacing:-.04em;font-weight:760;margin:0 auto 24px;max-width:16ch;text-wrap:balance}
+h1 em{font-style:normal;background:linear-gradient(100deg,var(--accent2) 10%,var(--review) 90%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{font-size:clamp(17px,2.1vw,20px);line-height:1.55;color:var(--muted);max-width:36em;margin:0 auto 36px;text-wrap:pretty}
+.lede strong{color:var(--text);font-weight:500}
 .cta{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
-.lanes{display:flex;justify-content:center;flex-wrap:wrap;gap:6px 14px;margin:28px 0 0;padding:0;list-style:none;font-size:13px;color:var(--faint);font-family:var(--mono)}
+.fine{margin:18px 0 0;font-size:14px;color:var(--faint)}
+.lanes{display:inline-flex;justify-content:center;flex-wrap:wrap;gap:6px 18px;margin:36px 0 0;padding:8px 18px;list-style:none;font-size:12.5px;color:var(--muted);font-family:var(--mono);border:1px solid var(--line);border-radius:999px;background:rgba(15,21,32,.6)}
 .lanes li{display:flex;align-items:center;gap:7px}
-.lanes li::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c)}
+.lanes li::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--c)}
 
 /* Screenshots */
-.shot{margin:0;border-radius:var(--r);overflow:hidden;border:1px solid var(--line2);background:var(--bg2);
-  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,0 30px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(0,0,0,.3)}
-.window{margin:56px auto 0;max-width:1120px;position:relative}
-.window::after{content:"";position:absolute;inset:auto 0 -1px;height:22%;background:linear-gradient(to bottom,transparent,var(--bg));pointer-events:none;border-radius:0 0 var(--r) var(--r)}
-.bar{display:flex;align-items:center;gap:7px;padding:11px 14px;border-bottom:1px solid var(--line);background:#121a27}
-.bar i{width:11px;height:11px;border-radius:50%;background:#2b384c}
+.shot{margin:0;border-radius:var(--r);overflow:hidden;border:1px solid var(--line2);background:var(--bg2);position:relative;
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 40px 100px -30px rgba(0,0,0,.8),0 0 0 1px rgba(0,0,0,.35)}
+.glow{position:relative;isolation:isolate}
+.glow::before{content:"";position:absolute;inset:6% 4% -2%;z-index:-1;border-radius:40px;background:radial-gradient(closest-side,rgba(138,164,255,.28),rgba(94,200,229,.10) 60%,transparent);filter:blur(40px);pointer-events:none}
+.window{margin:64px auto 0;max-width:1140px;padding:8px;border-radius:22px;background:linear-gradient(180deg,rgba(138,164,255,.22),rgba(43,58,82,.25) 40%,rgba(43,58,82,0));}
+.window .shot{border-radius:15px}
+.window::after{content:"";position:absolute;inset:auto -8px -1px;height:26%;background:linear-gradient(to bottom,transparent,var(--bg) 92%);pointer-events:none}
+.bar{display:flex;align-items:center;gap:7px;padding:11px 14px;border-bottom:1px solid var(--line);background:#111824}
+.bar i{width:11px;height:11px;border-radius:50%;background:#2a364a}
 .bar span{margin:0 auto;font:12px var(--mono);color:var(--faint);padding-right:40px}
 
 /* Sections */
-section{padding:96px 0;scroll-margin-top:64px}
-section + section{border-top:1px solid var(--line)}
-.kicker{font:600 13px var(--mono);color:var(--accent);letter-spacing:.02em;margin:0 0 12px}
-h2{font-size:clamp(28px,3.8vw,40px);line-height:1.12;letter-spacing:-.025em;font-weight:720;margin:0 0 16px;max-width:22ch}
-.sub{color:var(--muted);font-size:17px;margin:0 0 36px;max-width:40em}
+section{padding:var(--sec) 0;scroll-margin-top:56px;position:relative}
+section + section::before{content:"";position:absolute;top:0;left:50%;width:min(1124px,calc(100% - 56px));transform:translateX(-50%);height:1px;background:linear-gradient(90deg,transparent,var(--line2) 20%,var(--line2) 80%,transparent)}
+.kicker{display:inline-flex;align-items:center;gap:8px;font:600 12.5px var(--mono);color:var(--accent);letter-spacing:.06em;text-transform:uppercase;margin:0 0 16px}
+.kicker::before{content:"";width:18px;height:1px;background:currentColor;opacity:.7}
+.center .kicker::after{content:"";width:18px;height:1px;background:currentColor;opacity:.7}
+h2{font-size:clamp(30px,4vw,46px);line-height:1.08;letter-spacing:-.03em;font-weight:730;margin:0 0 18px;max-width:20ch;text-wrap:balance}
+h3{text-wrap:balance}
+.sub{color:var(--muted);font-size:18px;line-height:1.6;margin:0 0 48px;max-width:38em;text-wrap:pretty}
+.sub strong{color:var(--text)}
 .center{text-align:center}.center h2,.center .sub{margin-left:auto;margin-right:auto}
+.head{margin-bottom:56px}.head .sub{margin-bottom:0}
+
+/* Why: before and after */
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.col{border:1px solid var(--line);border-radius:var(--r);padding:8px 26px 10px;background:rgba(19,27,40,.45)}
+.col.with{border-color:rgba(111,211,154,.32);background:linear-gradient(180deg,rgba(111,211,154,.07),rgba(19,27,40,.5) 70%);box-shadow:0 20px 60px -30px rgba(111,211,154,.25)}
+.col h3{margin:0;padding:16px 0 14px;font:600 12.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);border-bottom:1px solid var(--line)}
+.col.with h3{color:var(--merged)}
+.col ul{list-style:none;margin:0;padding:0}
+.col li{position:relative;padding:15px 0 15px 30px;border-top:1px solid var(--line);color:var(--muted)}
+.col li:first-child{border-top:0}
+.col.with li{color:var(--text)}
+.col li::before{content:"";position:absolute;left:2px;top:22px;width:12px;height:2px;border-radius:2px;background:var(--faint);opacity:.7}
+.col.with li::before{left:5px;top:19px;width:5px;height:10px;border:solid var(--merged);border-width:0 2px 2px 0;border-radius:0;background:none;transform:rotate(45deg);opacity:1}
 
 /* How it works: steps beside a screenshot */
-.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:56px;align-items:center}
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:72px;align-items:center}
 .split.flip{grid-template-columns:minmax(0,.8fr) minmax(0,1fr)}
-.steps{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-.steps li{display:grid;grid-template-columns:36px 1fr;gap:14px;padding:16px;border-radius:12px;border:1px solid transparent}
-.steps li:hover{background:var(--surface);border-color:var(--line)}
-.steps b{display:block;font-size:17px;margin-bottom:2px}
-.steps p{margin:0;color:var(--muted);font-size:15px}
-.dot{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--raised);border:1px solid var(--line2)}
-.dot i{width:10px;height:10px;border-radius:50%;border:2.5px solid var(--c)}
+.steps{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px;counter-reset:s;position:relative}
+.steps li{display:grid;grid-template-columns:40px 1fr;gap:18px;padding:16px 18px 16px 0;position:relative}
+.steps li:not(:last-child)::after{content:"";position:absolute;left:19px;top:60px;bottom:-4px;width:2px;background:linear-gradient(var(--line2),transparent)}
+.steps b{display:block;font-size:17px;font-weight:650;margin:7px 0 4px;letter-spacing:-.01em}
+.steps p{margin:0;color:var(--muted);font-size:15.5px;max-width:34em}
+.dot{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--raised);border:1px solid var(--line2);box-shadow:0 0 0 4px var(--bg),0 0 24px -6px var(--c);position:relative;z-index:1}
+.dot i{width:11px;height:11px;border-radius:50%;border:2.5px solid var(--c)}
 
-/* Phone */
-.phone{justify-self:center;width:min(320px,100%);padding:10px;border-radius:44px;background:linear-gradient(160deg,#2a3548,#141b27);box-shadow:0 30px 80px -20px rgba(0,0,0,.7),0 0 0 1px #33415a inset}
-.phone img{border-radius:34px}
-.ticks{list-style:none;margin:0;padding:0;display:grid;gap:12px}
-.ticks li{position:relative;padding-left:30px;color:var(--muted)}
-.ticks li strong{color:var(--text);font-weight:600}
-.ticks li::before{content:"";position:absolute;left:0;top:5px;width:18px;height:18px;border-radius:50%;background:rgba(111,211,154,.14)}
-.ticks li::after{content:"";position:absolute;left:6px;top:9px;width:6px;height:9px;border:solid var(--merged);border-width:0 2px 2px 0;transform:rotate(45deg)}
+/* Point lists */
+.ticks{list-style:none;margin:0;padding:0;display:grid;gap:18px}
+.ticks li{position:relative;padding-left:34px;color:var(--muted);font-size:16px}
+.ticks li strong{color:var(--text)}
+.ticks li::before{content:"";position:absolute;left:0;top:3px;width:22px;height:22px;border-radius:50%;background:rgba(111,211,154,.13);border:1px solid rgba(111,211,154,.25)}
+.ticks li::after{content:"";position:absolute;left:8px;top:8px;width:5px;height:9px;border:solid var(--merged);border-width:0 2px 2px 0;transform:rotate(45deg)}
 
 /* Cards */
 .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
-.box{background:linear-gradient(180deg,var(--surface),rgba(21,30,44,.5));border:1px solid var(--line);border-radius:var(--r);padding:24px}
-.box h3{margin:0 0 8px;font-size:17px;letter-spacing:-.01em}
+.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.box{background:var(--surface);box-shadow:0 1px 0 rgba(255,255,255,.04) inset;border:1px solid var(--line);border-radius:var(--r);padding:26px;transition:border-color .2s}
+.box:hover{border-color:var(--line2)}
+.box h3{margin:0 0 8px;font-size:17px;font-weight:650;letter-spacing:-.01em}
 .box p{margin:0;color:var(--muted);font-size:15px}
-.box p b{color:var(--text);font-weight:600}
-.box code{font:600 14px var(--mono);color:var(--text);background:var(--raised);border:1px solid var(--line2);border-radius:5px;padding:0 5px}
-.icon{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:var(--raised);border:1px solid var(--line2);margin-bottom:16px;color:var(--accent)}
+.box p strong{color:var(--text)}
+.icon{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:var(--raised);border:1px solid var(--line2);margin-bottom:18px;color:var(--c,var(--accent));box-shadow:0 8px 24px -10px var(--c,var(--accent))}
 .icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.features{grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
-.features .box{border:0;border-radius:0;background:none;box-shadow:1px 0 0 var(--line),0 1px 0 var(--line)}
-pre{margin:28px 0 0;background:#0a0f17;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font:13.5px/1.7 var(--mono);color:var(--text);overflow-x:auto}
+pre{margin:28px 0 0;background:#080c13;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font:13.5px/1.7 var(--mono);color:var(--text);overflow-x:auto}
 pre .dim{color:var(--faint)}
 pre .p{color:var(--merged);user-select:none}
 
+/* Productivity: a point with its own screenshot */
+.point{margin-top:112px;scroll-margin-top:80px}
+.point h3,.split h3{font-size:clamp(24px,2.6vw,30px);line-height:1.15;letter-spacing:-.02em;font-weight:700;margin:0 0 12px}
+.point .sub{margin-bottom:40px}
+.wide{max-width:1140px;margin:0 auto}
+
+/* Phone */
+.phone{justify-self:center;width:min(320px,100%);padding:10px;border-radius:46px;background:linear-gradient(160deg,#2c384c,#121925);box-shadow:0 40px 90px -30px rgba(0,0,0,.85),0 0 0 1px #34435c inset,0 0 80px -20px rgba(94,200,229,.25)}
+.phone img{border-radius:36px}
+
+/* Teams */
+.wall-shot{margin:56px auto 0;max-width:1000px}
+.wall-shot figcaption{padding:13px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;background:#111824}
+
 /* Pricing */
-.plans{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;max-width:880px;margin:0 auto}
-.plan{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:28px;display:flex;flex-direction:column;text-align:left}
-.plan.team{border-color:rgba(138,164,255,.55);background:linear-gradient(180deg,rgba(138,164,255,.08),var(--surface) 55%)}
-.plan h3{margin:0;font-size:15px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-.price{font-size:34px;font-weight:750;letter-spacing:-.02em;margin:10px 0 18px}
-.price.text{font-size:20px;font-weight:650}
-.price-note{margin:-10px 0 18px;color:var(--muted);font-size:14px}
-.plan ul{margin:0;padding:0;list-style:none;display:grid;gap:10px;color:var(--muted)}
-.plan li{position:relative;padding-left:24px}
-.plan li::before{content:"";position:absolute;left:3px;top:6px;width:5px;height:9px;border:solid var(--accent);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.plans{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;max-width:900px;margin:0 auto}
+.plan{position:relative;background:linear-gradient(180deg,var(--surface),rgba(19,27,40,.55));border:1px solid var(--line);border-radius:20px;padding:32px;display:flex;flex-direction:column;text-align:left}
+.plan.team{border-color:rgba(138,164,255,.45);background:linear-gradient(180deg,rgba(138,164,255,.10),var(--surface) 60%);box-shadow:0 30px 80px -40px rgba(138,164,255,.45)}
+.plan h3{margin:0;font:600 12.5px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.plan.team h3{color:var(--accent2)}
+.price{font-size:40px;line-height:1.1;font-weight:760;letter-spacing:-.03em;margin:14px 0 6px}
+.price.text{font-size:22px;font-weight:650;letter-spacing:-.01em;line-height:1.4}
+.price-note{margin:0 0 4px;color:var(--muted);font-size:14.5px}
+.plan ul{margin:22px 0 0;padding:22px 0 0;border-top:1px solid var(--line);list-style:none;display:grid;gap:12px;color:var(--muted);font-size:15.5px}
+.plan li{position:relative;padding-left:28px}
+.plan li::before{content:"";position:absolute;left:5px;top:5px;width:5px;height:10px;border:solid var(--accent);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.plans-note{margin:24px auto 0;color:var(--faint);font-size:14px;max-width:44em}
 
 /* Self-host */
-.selfhost{display:flex;gap:32px;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:36px}
-.selfhost h2{margin-bottom:10px}
+.selfhost{display:flex;gap:40px;align-items:center;justify-content:space-between;background:linear-gradient(120deg,var(--surface),rgba(19,27,40,.5));border:1px solid var(--line);border-radius:20px;padding:40px 44px}
+.selfhost h2{margin-bottom:10px;font-size:clamp(26px,3vw,34px)}
 .selfhost p{margin:0;color:var(--muted);max-width:40em}
 
-/* Goals: text above a wide screenshot */
-.goals-head{align-items:end;margin-bottom:40px}
-.goals-head .sub{margin-bottom:0}
-.wide{max-width:1120px;margin:0 auto}
-.note{color:var(--muted);font-size:15px;margin:20px 0 0;max-width:46em}
-.wall-shot{margin:40px auto 0;max-width:960px}
-.wall-shot figcaption{padding:12px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center}
-
-/* Hero: the line under the buttons */
-.fine{margin:16px 0 0;font-size:14px;color:var(--faint)}
-
-/* Why: before and after */
-.compare{width:100%;max-width:960px;border-collapse:separate;border-spacing:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;font-size:16px}
-.compare th,.compare td{padding:16px 20px;text-align:left;vertical-align:top;border-top:1px solid var(--line)}
-.compare thead th{border-top:0;background:var(--surface);font:600 13px var(--mono);color:var(--muted)}
-.compare thead th + th{color:var(--merged)}
-.compare td{color:var(--muted);width:50%}
-.compare td + td{color:var(--text);background:rgba(111,211,154,.04);border-left:1px solid var(--line)}
-.compare thead th + th{border-left:1px solid var(--line)}
-
-/* Productivity: a point with its own screenshot */
-.point{margin-top:72px;scroll-margin-top:80px}
-.point h3,.split h3{font-size:22px;letter-spacing:-.015em;margin:0 0 10px}
-
 /* FAQ */
-.faq{max-width:800px;border-top:1px solid var(--line)}
-.faq details{border-bottom:1px solid var(--line)}
-.faq summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:16px;padding:18px 4px;font-weight:600;font-size:17px}
+.faq-layout{display:grid;grid-template-columns:minmax(0,.7fr) minmax(0,1.3fr);gap:72px;align-items:start}
+.faq{display:grid;gap:10px}
+.faq details{border:1px solid var(--line);border-radius:14px;background:rgba(19,27,40,.45);transition:border-color .2s,background .2s}
+.faq details:hover{border-color:var(--line2)}
+.faq details[open]{background:var(--surface);border-color:var(--line2)}
+.faq summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 22px;font-weight:600;font-size:16.5px}
 .faq summary::-webkit-details-marker{display:none}
-.faq summary::after{content:"+";flex:none;color:var(--accent);font:600 20px/1 var(--mono)}
+.faq summary::after{content:"+";flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:8px;border:1px solid var(--line2);color:var(--accent);font:500 17px/1 var(--mono)}
 .faq details[open] summary::after{content:"−"}
-.faq summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
-.faq p{margin:0;padding:0 4px 20px;color:var(--muted);max-width:44em}
-.final pre{max-width:640px;margin:36px auto 0;text-align:left}
+.faq summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:14px}
+.faq p{margin:0;padding:0 22px 20px;color:var(--muted);max-width:44em}
+
+/* Final call to action */
+.final{padding-bottom:var(--sec)}
+.final-card{position:relative;overflow:hidden;isolation:isolate;border:1px solid rgba(138,164,255,.35);border-radius:28px;padding:80px 32px;
+  background:radial-gradient(700px 320px at 50% 0%,rgba(138,164,255,.22),transparent 70%),radial-gradient(500px 260px at 90% 100%,rgba(94,200,229,.10),transparent 70%),var(--bg2);box-shadow:0 40px 120px -50px rgba(138,164,255,.5)}
+.final-card::after{content:"";position:absolute;inset:0;z-index:-1;opacity:.45;background-image:linear-gradient(rgba(138,164,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(138,164,255,.07) 1px,transparent 1px);background-size:44px 44px;
+  -webkit-mask-image:radial-gradient(ellipse 70% 80% at 50% 0%,#000 20%,transparent 75%);mask-image:radial-gradient(ellipse 70% 80% at 50% 0%,#000 20%,transparent 75%)}
+.final h2{font-size:clamp(32px,4.6vw,54px);max-width:20ch}
+.final .sub{margin-bottom:34px}
+.final pre{max-width:680px;margin:40px auto 0;text-align:left}
 
 .site-footer{padding:32px 0 calc(32px + env(safe-area-inset-bottom));border-top:1px solid var(--line);color:var(--faint);font-size:14px;text-align:center}
 .site-footer a{color:var(--muted)}
 
 @media (max-width:900px){
-  .split,.split.flip{grid-template-columns:1fr;gap:36px}
+  :root{--sec:96px}
+  .split,.split.flip,.faq-layout{grid-template-columns:1fr;gap:40px}
   .split.flip .phone{order:2}
-  .grid,.features{grid-template-columns:1fr 1fr}
-  .selfhost{flex-direction:column;align-items:flex-start}
+  .grid{grid-template-columns:1fr 1fr}
+  .selfhost{flex-direction:column;align-items:flex-start;gap:24px}
 }
 @media (max-width:640px){
+  :root{--sec:72px}
   .wrap{padding:0 18px}
   .nav{display:none}
-  .hero{padding-top:44px}
-  .window{margin-top:40px}
+  .hero{padding-top:52px}
+  .lanes{gap:4px 12px;padding:8px 14px;border-radius:14px}
+  .window{margin-top:44px;padding:5px;border-radius:16px}
+  .window .shot{border-radius:12px}
   .bar{padding:8px 10px}.bar i{width:8px;height:8px}.bar span{display:none}
-  section{padding:64px 0}
-  .grid,.features,.plans{grid-template-columns:1fr}
+  .sub{font-size:17px;margin-bottom:36px}
+  .head{margin-bottom:40px}
+  .compare,.grid,.grid.two,.plans{grid-template-columns:1fr}
+  .col{padding:4px 20px 6px}
   header.top .btn{padding:0 12px;min-height:38px;font-size:14px}
   .cta .btn{flex:1}
-  .selfhost{padding:24px}
-  .compare{font-size:15px}
-  .compare th,.compare td{padding:12px}
-  .point{margin-top:56px}
+  .plan{padding:26px}
+  .selfhost{padding:28px 24px}
+  .point{margin-top:80px}
+  .final-card{padding:56px 20px;border-radius:22px}
 }
 @media (max-width:380px){header.top .login{display:none}}
 </style>
@@ -197,17 +232,17 @@ pre .p{color:var(--merged);user-select:none}
   <div class="hero">
     <div class="wrap">
       <div class="eyebrow"><i></i>For Claude Code and Codex</div>
-      <h1>Ten agents working. <em>You just review.</em></h1>
-      <p class="lede">{{.Name}} turns Claude Code into a work queue. Describe the work and it runs in parallel, each task in its own git worktree on your own computers. You read the diff, try the change live and approve. {{.Name}} merges it.</p>
+      <h1>Many agents working. <em>You just review.</em></h1>
+      <p class="lede">{{.Name}} turns Claude Code into a work queue. Describe the work and it runs in parallel, <strong>as many tasks at once as your machines allow</strong>, each in its own git worktree on your own computers. You read the diff, try the change live and approve. {{.Name}} merges it.</p>
       <div class="cta">
-        {{if .Signup}}<a class="btn primary lg" href="/login.html#signup">Start free</a>{{else}}<a class="btn primary lg" href="/login.html">Log in</a>{{end}}
+        {{if .Signup}}<a class="btn primary lg" href="/login.html#signup">Start free <span class="arr" aria-hidden="true">→</span></a>{{else}}<a class="btn primary lg" href="/login.html">Log in <span class="arr" aria-hidden="true">→</span></a>{{end}}
         <a class="btn lg" href="#how">See how it works</a>
       </div>
       <p class="fine">{{if .IndividualPrice}}{{.IndividualPrice}} for one person, free if you can&#39;t pay.{{else}}Free for one person.{{end}} Your machines, your Claude subscription, no open ports.</p>
       <ul class="lanes" aria-label="Where a task goes">
         <li style="--c:var(--faint)">draft</li><li style="--c:var(--accent)">queued</li><li style="--c:var(--running)">running</li><li style="--c:var(--review)">review</li><li style="--c:var(--merged)">merged</li>
       </ul>
-      <div class="window">
+      <div class="window glow">
         <figure class="shot">
           <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>{{.Name}} · acme-shop</span></div>
           <picture><source media="(max-width:640px)" srcset="/img/landing/board-crop.webp" width="1100" height="670"><img src="/img/landing/board.webp" width="2400" height="1429" alt="The {{.Name}} board for the acme-shop project: two drafts, three queued tasks, three running, three ready for review and four done, some tagged with their goal. The sidebar shows the runner busy with 3 of 3 tasks and the Claude usage meters for the 5-hour and 7-day windows."></picture>
@@ -218,18 +253,25 @@ pre .p{color:var(--merged);user-select:none}
 
   <section id="why" aria-labelledby="why-h">
     <div class="wrap">
-      <p class="kicker">Why</p>
-      <h2 id="why-h">One agent at a time is the new bottleneck.</h2>
-      <p class="sub">Claude Code writes code faster than you can. Then you wait: one terminal, one task, one branch. If you run more, you juggle branches, untangle conflicts and stop trusting your main branch.</p>
-      <table class="compare">
-        <thead><tr><th scope="col">Without {{.Name}}</th><th scope="col">With {{.Name}}</th></tr></thead>
-        <tbody>
-          <tr><td>You wait for one agent to finish</td><td>Ten tasks run while you do something else</td></tr>
-          <tr><td>You check out branches to see a change</td><td>A live preview opens next to the diff</td></tr>
-          <tr><td>You resolve conflicts by hand</td><td>The merge queue lands tasks one at a time, and Claude fixes the conflicts</td></tr>
-          <tr><td>&quot;Is it done yet?&quot;</td><td>The board shows it, on your desk, your phone or the office TV</td></tr>
-        </tbody>
-      </table>
+      <div class="head">
+        <p class="kicker">Why</p>
+        <h2 id="why-h">One agent at a time is the new bottleneck.</h2>
+        <p class="sub">Claude Code writes code faster than you can. Then you wait: one terminal, one task, one branch. Run more by hand and you juggle branches, untangle conflicts and stop trusting your main branch.</p>
+      </div>
+      <div class="compare">
+        <div class="col"><h3>Without {{.Name}}</h3><ul>
+          <li>You wait for one agent to finish</li>
+          <li>You check out branches to see a change</li>
+          <li>You resolve conflicts by hand</li>
+          <li>&quot;Is it done yet?&quot;</li>
+        </ul></div>
+        <div class="col with"><h3>With {{.Name}}</h3><ul>
+          <li>Tasks run side by side while you do something else</li>
+          <li>A live preview opens next to the diff</li>
+          <li>The merge queue lands approved tasks in order, and Claude fixes the conflicts</li>
+          <li>The board shows it, on your desk, your phone or the office TV</li>
+        </ul></div>
+      </div>
     </div>
   </section>
 
@@ -239,66 +281,70 @@ pre .p{color:var(--merged);user-select:none}
         <p class="kicker">How it works</p>
         <h2 id="how-h">You write the tasks. Claude does them. You decide what lands.</h2>
         <ol class="steps">
-          <li><span class="dot" style="--c:var(--accent)"><i></i></span><div><b>Queue</b><p>Write what you want, as you would in a chat. Queue as many tasks as you like.</p></div></li>
-          <li><span class="dot" style="--c:var(--running)"><i></i></span><div><b>Claude works</b><p>Each task gets its own branch and worktree. Your test command checks the result before you see it.</p></div></li>
+          <li><span class="dot" style="--c:var(--accent)"><i></i></span><div><b>Queue</b><p>Write what you want, as you would in a chat. Queue as many tasks as you like; each runner slot takes the next one.</p></div></li>
+          <li><span class="dot" style="--c:var(--running)"><i></i></span><div><b>Claude works</b><p>Each task gets its own branch and worktree. Your test command, if you set one, checks the result before you see it.</p></div></li>
           <li><span class="dot" style="--c:var(--review)"><i></i></span><div><b>Review</b><p>Read the diff, click through the live preview, or draw on it and send it back.</p></div></li>
-          <li><span class="dot" style="--c:var(--merged)"><i></i></span><div><b>Approve</b><p>{{.Name}} merges approved tasks one at a time, once the tests pass on the merged code. Or it opens a pull request.</p></div></li>
+          <li><span class="dot" style="--c:var(--merged)"><i></i></span><div><b>Approve</b><p>{{.Name}} merges approved tasks through the merge queue, once the tests pass on the merged code. Or it opens a pull request.</p></div></li>
         </ol>
       </div>
-      <figure class="shot"><img src="/img/landing/review.webp" width="1140" height="1500" loading="lazy" decoding="async" alt="The task &quot;Add discount codes at checkout&quot; ready for review in the detail pane: tests pass, the token use of its one run, and the diff of src/checkout.js, with Rework and Approve buttons."></figure>
+      <div class="glow"><figure class="shot"><img src="/img/landing/review.webp" width="1140" height="1500" loading="lazy" decoding="async" alt="The task &quot;Add discount codes at checkout&quot; ready for review in the detail pane: tests pass, the token use of its one run, and the diff of src/checkout.js, with Rework and Approve buttons."></figure></div>
     </div>
   </section>
 
   <section id="productivity" aria-labelledby="productivity-h">
     <div class="wrap">
-      <div class="split goals-head">
-        <div>
-          <p class="kicker">Productivity</p>
-          <h2 id="productivity-h">Your job becomes deciding, not typing.</h2>
-        </div>
-        <ul class="ticks">
-          <li><strong>Stop waiting.</strong> Parallel tasks mean there&#39;s always a finished diff ready for you.</li>
-          <li><strong>Stop merging by hand.</strong> The merge queue brings in the default branch, sends conflicts back to Claude, and closes duplicate work as &quot;already on main&quot;.</li>
-          <li><strong>Review in minutes.</strong> Diff, test results and a running app on one screen. <strong>Rework…</strong> continues the same Claude session, so nothing starts over.</li>
-          <li><strong>Upkeep runs on its own.</strong> Scheduled scans for security, test gaps, docs drift and dead code fill your issue list. Turn an issue into a task with one click.</li>
-        </ul>
+      <div class="head center">
+        <p class="kicker">Productivity</p>
+        <h2 id="productivity-h">Your job becomes deciding, not typing.</h2>
+        <p class="sub">The waiting, the merging and the upkeep move off your plate. What&#39;s left is the part that needs you.</p>
       </div>
+      <div class="grid two">
+        <div class="box"><div class="icon" style="--c:var(--running)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h3>Stop waiting</h3><p>Tasks run in parallel, so there&#39;s usually a finished diff ready for you.</p></div>
+        <div class="box"><div class="icon" style="--c:var(--merged)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6.5c5 0 7 2 7.3 3.3"/></svg></div><h3>Stop merging by hand</h3><p>The merge queue brings in the default branch, sends conflicts and red tests back to Claude, and closes work that&#39;s already on main.</p></div>
+        <div class="box"><div class="icon" style="--c:var(--review)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></div><h3>Review in minutes</h3><p>Diff, test results and a running app on one screen. <strong>Rework…</strong> continues the same Claude session, so nothing starts over.</p></div>
+        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></div><h3>Upkeep on a schedule</h3><p>Scans for security, test gaps, docs drift, dead code and more run on a schedule. Each finding becomes a draft task on the board.</p></div>
+      </div>
+
       <div class="point" id="goals">
-        <h3>Hand over bigger work.</h3>
-        <p class="sub">Give a goal like &quot;checkout in under 2 seconds&quot;. A coordinator plans the tasks, dispatches them and reviews them within a budget you set.</p>
-        <figure class="shot wide"><picture><source media="(max-width:640px)" srcset="/img/landing/goals-crop.webp" width="1100" height="1341"><img src="/img/landing/goals.webp" width="2400" height="1429" loading="lazy" decoding="async" alt="The Goals page: three goals, one waiting for you, one working and one done. The goal &quot;Checkout in under 2 seconds&quot; is open beside the list with its plan of four tasks (merged, ready for review, running and queued), its budget of tasks and weekly share, and the coordinator&#39;s log."></picture></figure>
+        <div class="center">
+          <h3>Hand over bigger work.</h3>
+          <p class="sub">Give a goal like &quot;checkout in under 2 seconds&quot;. A coordinator plans the tasks, dispatches them and reviews what each one did, within a budget you set.</p>
+        </div>
+        <div class="glow"><figure class="shot wide"><picture><source media="(max-width:640px)" srcset="/img/landing/goals-crop.webp" width="1100" height="1341"><img src="/img/landing/goals.webp" width="2400" height="1429" loading="lazy" decoding="async" alt="The Goals page: three goals, one waiting for you, one working and one done. The goal &quot;Checkout in under 2 seconds&quot; is open beside the list with its plan of four tasks (merged, ready for review, running and queued), its budget of tasks and weekly share, and the coordinator&#39;s log."></picture></figure></div>
       </div>
+
       <div class="point split flip">
         <div class="phone"><img src="/img/landing/phone.webp" width="780" height="1280" loading="lazy" decoding="async" alt="{{.Name}} on a phone: the Review lane with three tasks, each with Review, Ask Claude and Approve buttons."></div>
         <div>
           <h3>Unblock from anywhere.</h3>
-          <p class="sub">Approve a fix or answer a permission prompt from your phone, so a run doesn&#39;t stall.</p>
+          <p class="sub">Approve a fix or answer a permission prompt from your phone, so a run doesn&#39;t stall while you&#39;re away from your desk.</p>
         </div>
       </div>
     </div>
   </section>
 
   <section id="control" aria-labelledby="control-h">
-    <div class="wrap split goals-head">
+    <div class="wrap split">
       <div>
         <p class="kicker">Safe by default</p>
         <h2 id="control-h">Fast, not reckless.</h2>
+        <p class="sub">Parallel work only helps if you can trust what lands. {{.Name}} keeps a person and your tests in the loop.</p>
       </div>
       <ul class="ticks">
         <li><strong>A person decides what merges.</strong> Goals never approve or merge, and every task waits for your <strong>Approve</strong> unless you turn on automatic approval for its project.</li>
         <li><strong>Tests guard main.</strong> A red build goes back to Claude, not onto your branch.</li>
-        <li><strong>Your code stays home.</strong> Runners work on your computers and connect out over HTTPS. Nothing listens on your network.</li>
+        <li><strong>Your repositories stay home.</strong> Runners work on your computers and connect out over HTTPS. Nothing listens on your network.</li>
         <li><strong>Sandboxed runs</strong> if you want them, two-factor sign-in that owners can require, and usage budgets on goals.</li>
       </ul>
     </div>
   </section>
 
   <section id="teams" aria-labelledby="teams-h">
-    <div class="wrap">
+    <div class="wrap center">
       <p class="kicker">Teams</p>
       <h2 id="teams-h">One board for the whole team.</h2>
       <p class="sub">Each developer brings their own runners. Product owners start work from <strong>Planning</strong> cards and follow it in plain words. The wall view shows the office what&#39;s running, what needs a person and today&#39;s merges.</p>
-      <figure class="shot wall-shot"><img src="/img/landing/wall.webp" width="1920" height="1080" loading="lazy" decoding="async" alt="The wall view on a TV: the queue running with 3 of 3 slots busy, Claude usage for 5 hours and 7 days, counts for each stage, three running tasks with their timers and current commands, three tasks that need a human, the runner, and today&#39;s merges and spend."><figcaption>The wall view, for a TV in the office.</figcaption></figure>
+      <div class="glow"><figure class="shot wall-shot"><img src="/img/landing/wall.webp" width="1920" height="1080" loading="lazy" decoding="async" alt="The wall view on a TV: the queue running with 3 of 3 slots busy, Claude usage for 5 hours and 7 days, counts for each stage, three running tasks with their timers and current commands, three tasks that need a human, the runner, and today&#39;s merges and spend."><figcaption>The wall view, for a TV in the office.</figcaption></figure></div>
     </div>
   </section>
 
@@ -306,7 +352,8 @@ pre .p{color:var(--merged);user-select:none}
 
   <section id="pricing" aria-labelledby="pricing-h">
     <div class="wrap center">
-      <h2 id="pricing-h">Pricing</h2>
+      <p class="kicker">Pricing</p>
+      <h2 id="pricing-h">Simple pricing</h2>
       <p class="sub">The board is the same for everyone. You bring the machines and the Claude subscription.</p>
       <div class="plans">
         <div class="plan">
@@ -337,14 +384,17 @@ pre .p{color:var(--merged);user-select:none}
   </section>
 
   <section id="faq" aria-labelledby="faq-h">
-    <div class="wrap">
-      <p class="kicker">FAQ</p>
-      <h2 id="faq-h">Questions</h2>
+    <div class="wrap faq-layout">
+      <div>
+        <p class="kicker">FAQ</p>
+        <h2 id="faq-h">Questions</h2>
+      </div>
       <div class="faq">
         <details><summary>Doesn&#39;t Claude Code already do this?</summary><p>Claude Code runs one session. {{.Name}} adds parallel runs, isolated worktrees, a merge queue, a review screen and a board the team can see.</p></details>
+        <details><summary>How many tasks run at once?</summary><p>As many as your runners have slots. Add a computer, or give a runner more slots, to run more. A project can set its own limit, and the queue pauses when your Claude usage window runs out.</p></details>
         <details><summary>Will AI merge broken code into main?</summary><p>No. By default every merge needs a person&#39;s approval, and the tests check the merged code before it lands.</p></details>
-        <details><summary>Do I need an API key?</summary><p>No. Runners use the Claude Code or Codex login you already have. You don&#39;t get a second bill for the model.</p></details>
-        <details><summary>Where does my code go?</summary><p>It stays on your runners. It leaves only when you push.</p></details>
+        <details><summary>Do I need an API key?</summary><p>No. A runner on your computer uses the Claude Code or Codex login you already have, so you don&#39;t get a second bill for the model. Only a runner the whole team shares needs an API key.</p></details>
+        <details><summary>Where does my code go?</summary><p>Your repositories and checkouts stay on your runners. The hub shows the diffs, logs and previews they send it and keeps the run logs, but never stores your repositories. Claude Code sends code to Anthropic under your own account.</p></details>
         <details><summary>Can I leave?</summary><p>Yes. It&#39;s AGPL-licensed, your work is ordinary git commits, and deploys use your own scripts.</p></details>
       </div>
     </div>
@@ -352,13 +402,15 @@ pre .p{color:var(--merged);user-select:none}
 
   <section class="final" aria-labelledby="final-h">
     <div class="wrap center">
-      <h2 id="final-h">Queue your first ten tasks today.</h2>
-      <p class="sub">Install a runner, add a repository and see your first task merge in minutes.</p>
-      <div class="cta">
-        {{if .Signup}}<a class="btn primary lg" href="/login.html#signup">Start free</a>{{else}}<a class="btn primary lg" href="/login.html">Log in</a>{{end}}
-      </div>
-      <pre><span class="dim"># on the computer that should run tasks, with the command from the Runners page</span>
+      <div class="final-card">
+        <h2 id="final-h">Queue your first tasks today.</h2>
+        <p class="sub">Install a runner, add a repository and watch your first task go from queued to merged.</p>
+        <div class="cta">
+          {{if .Signup}}<a class="btn primary lg" href="/login.html#signup">Start free <span class="arr" aria-hidden="true">→</span></a>{{else}}<a class="btn primary lg" href="/login.html">Log in <span class="arr" aria-hidden="true">→</span></a>{{end}}
+        </div>
+        <pre><span class="dim"># on the computer that should run tasks, with the command from the Runners page</span>
 <span class="p">$ </span>curl -fsSL {{.Origin}}/runner/install.sh | sh -s -- --code …</pre>
+      </div>
     </div>
   </section>
 </main>

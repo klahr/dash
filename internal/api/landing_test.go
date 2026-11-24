@@ -75,6 +75,15 @@ func TestLandingOn(t *testing.T) {
 			t.Errorf("landing page lacks %q", want)
 		}
 	}
+	// There is no limit of ten agents: runner slots set how many run at once.
+	if !strings.Contains(body, "<title>Acme Agents: run Claude Code agents in parallel</title>") {
+		t.Error("landing page title doesn't say agents run in parallel")
+	}
+	for _, bad := range []string{"ten agents", "Ten agents", "ten tasks", "Ten tasks", "ten Claude"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("landing page claims a limit: %q", bad)
+		}
+	}
 	// Signup is off here: no Start free button, Log in instead.
 	if strings.Contains(body, "#signup") || strings.Contains(body, "Start free") {
 		t.Error("landing page offers signup while it's closed")
