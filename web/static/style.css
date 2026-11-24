@@ -2025,6 +2025,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .toast-icon .ico { width: 16px; height: 16px; }
 .toast-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 4px; line-height: 1.35; }
 .toast-body strong { font-weight: 600; }
+.toast-where { color: var(--muted); font-size: var(--fs-xs); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toast-body strong + span { color: var(--muted); font-size: var(--fs-m); }
 .toast-action {
   flex: none; align-self: center; padding: 6px 12px; border-radius: var(--r-s); cursor: pointer; font: inherit; font-size: var(--fs-m); color: var(--text);

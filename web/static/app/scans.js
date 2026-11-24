@@ -2,7 +2,7 @@ import { $, $$, dateTimeText, h, ib, ico, plural, setModelField } from "./dom.js
 import { api, here, on } from "./api.js";
 import { ask, attempt, copy, toast } from "./dialogs.js";
 import { state } from "./state.js";
-import { projectKey } from "./events.js";
+import { projectKey, projectName } from "./events.js";
 import { showView } from "./nav.js";
 import { selectProject } from "./projects.js";
 import { agoText, untilText } from "../time.js";
@@ -112,22 +112,22 @@ export function onScanRun(ev) {
 // scanFinished tells about a run that just ended: always for one started by
 // hand, and for a scheduled or resumed one when it found new critical or
 // high issues.
-export function scanFinished(run, p, where = "") {
+export function scanFinished(run, p, where = projectName(p)) {
   if (run.status === "running" || !run.finished_at) return;
   const go = p ? { label: "Show", run: async () => { if (projectKey(state.project) !== projectKey(p)) await selectProject(p); showRunTasks(run); } } : null;
-  const head = `${scanLabel(run.scan)}${where ? ` · ${where}` : ""}`;
+  const head = scanLabel(run.scan);
   if (run.trigger !== "manual") {
     if (run.status !== "succeeded" || !run.urgent) return;
     const msg = `${plural(run.urgent, "new critical or high draft")} · ${scanSummary(run)}`;
-    toast(msg, { tone: "error", icon: "bug", head, action: go, ms: 12000 });
+    toast(msg, { tone: "error", icon: "bug", where, head, action: go, ms: 12000 });
     if (notifyOn() && "Notification" in window && Notification.permission === "granted" && !(document.visibilityState === "visible" && document.hasFocus())) {
-      const n = new Notification(head, { body: msg, tag: `dash-scan-${run.id}` });
+      const n = new Notification(head, { body: [where, msg].filter(Boolean).join("\n"), tag: `dash-scan-${run.id}` });
       n.onclick = () => { window.focus(); go?.run(); n.close(); };
     }
     return;
   }
-  if (run.status === "failed") toast(run.error, { tone: "error", head: `${head} failed` });
-  else if (run.status === "succeeded" || run.status === "skipped") toast(scanSummary(run), { tone: "ok", head, action: run.status === "succeeded" && runTasks(run).length ? go : null });
+  if (run.status === "failed") toast(run.error, { tone: "error", where, head: `${head} failed` });
+  else if (run.status === "succeeded" || run.status === "skipped") toast(scanSummary(run), { tone: "ok", where, head, action: run.status === "succeeded" && runTasks(run).length ? go : null });
 }
 
 const scanLabel = (name) => scans.list.find((s) => s.name === name)?.title || name;

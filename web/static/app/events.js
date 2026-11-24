@@ -207,17 +207,17 @@ function onEvent(ev, m = { name: "" }) {
           renderDetail(); // the open task's "waiting for" line
         }
         if (prev && prev.status !== ev.data.status) {
-          if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data, "", !here(), "task.review"); speakStatus("Ready for review", ev.data); }
-          if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error, !here(), "task.failed"); speakStatus("Task failed", ev.data); }
-          if (ev.data.status === "merged" && closedNoChanges(ev.data)) { toast(title(ev.data), { tone: "ok", head: "Closed · no changes", icon: "check" }); notify("Closed", ev.data); speakStatus("Task finished with no changes", ev.data); }
-          else if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); speakStatus("Task finished and merged", ev.data); }
+          if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", where: projectName(state.project), head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data, "", !here(), "task.review"); speakStatus("Ready for review", ev.data); }
+          if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", where: projectName(state.project), head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error, !here(), "task.failed"); speakStatus("Task failed", ev.data); }
+          if (ev.data.status === "merged" && closedNoChanges(ev.data)) { toast(title(ev.data), { tone: "ok", where: projectName(state.project), head: "Closed · no changes", icon: "check" }); notify("Closed", ev.data); speakStatus("Task finished with no changes", ev.data); }
+          else if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", where: projectName(state.project), head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); speakStatus("Task finished and merged", ev.data); }
         }
         if (prev && prev.revert?.commit !== ev.data.revert?.commit) loadUnpushed().catch(fail);
         if (prev && !prev.revert && ev.data.revert) {
           const url = ev.data.revert.pr_url;
-          toast(title(ev.data), { tone: "pr", icon: "undo", head: url ? "Revert pull request opened" : "Reverted", action: url ? { label: "View", run: () => window.open(url, "_blank", "noopener") } : openTodo(ev.todo_id) });
+          toast(title(ev.data), { tone: "pr", icon: "undo", where: projectName(state.project), head: url ? "Revert pull request opened" : "Reverted", action: url ? { label: "View", run: () => window.open(url, "_blank", "noopener") } : openTodo(ev.todo_id) });
         }
-        if (prev && !prev.pr && ev.data.pr) toast(title(ev.data), { tone: "pr", head: `Pull request #${ev.data.pr.number} opened`, action: { label: "View", run: () => window.open(ev.data.pr.url, "_blank", "noopener") } });
+        if (prev && !prev.pr && ev.data.pr) toast(title(ev.data), { tone: "pr", where: projectName(state.project), head: `Pull request #${ev.data.pr.number} opened`, action: { label: "View", run: () => window.open(ev.data.pr.url, "_blank", "noopener") } });
       }
       break;
     case "project.chat":
@@ -277,7 +277,7 @@ function onEvent(ev, m = { name: "" }) {
       if (!ev.data.decision) {
         state.perms.push(ev.data);
         const t = state.todos.get(ev.data.todo_id);
-        toast(t ? `${permLine(ev.data)} · ${title(t)}` : permLine(ev.data), { tone: "approval", head: permHead(ev.data), action: t ? { label: isQuestion(ev.data) ? "Answer" : "Review", run: () => openDetail(t.id) } : null });
+        toast(t ? `${permLine(ev.data)} · ${title(t)}` : permLine(ev.data), { tone: "approval", where: projectName(state.project), head: permHead(ev.data), action: t ? { label: isQuestion(ev.data) ? "Answer" : "Review", run: () => openDetail(t.id) } : null });
         if (t) notify(permNote(ev.data), t, describePerm(ev.data).detail, !here(), "permission.needed");
         speakApproval(ev.data);
       }
@@ -296,10 +296,10 @@ function onEvent(ev, m = { name: "" }) {
     case "ci.updated":
       if (!mine) break;
       if (state.ci?.state && state.ci.state !== "failing" && ev.data.state === "failing") {
-        toast(ev.data.todo_id ? "Claude is on it" : "", { tone: "error", head: `Build failing on ${ev.data.branch}`, action: ev.data.todo_id ? openTodo(ev.data.todo_id) : null });
+        toast(ev.data.todo_id ? "Claude is on it" : "", { tone: "error", where: projectName(state.project), head: `Build failing on ${ev.data.branch}`, action: ev.data.todo_id ? openTodo(ev.data.todo_id) : null });
         notify(`Build failing on ${ev.data.branch}`, { title: state.project.name, prompt: "" }, "", !here(), "build.failing");
       }
-      if (state.ci?.state === "failing" && ev.data.state === "passing") toast("", { tone: "ok", head: `Build passing again on ${ev.data.branch}` });
+      if (state.ci?.state === "failing" && ev.data.state === "passing") toast("", { tone: "ok", where: projectName(state.project), head: `Build passing again on ${ev.data.branch}` });
       releaseNews(state.ci?.release, ev.data.release);
       state.ci = ev.data;
       renderCI();
@@ -353,20 +353,20 @@ export const projectStatus = (p) => {
 const seen = new Map(); // "machine/todo" → last status
 function elsewhere(ev, m) {
   const p = (state.projects || []).find((x) => x.id === ev.project_id && x.machine === m.name);
-  const where = p ? (grouped() ? `${p.name} on ${projectWhere(p)}` : p.name) : m.name;
+  const where = p ? projectName(p) : m.name;
   if (ev.type === "todo.updated") {
     const key = `${m.name}/${ev.todo_id}`;
     const prev = seen.get(key);
     seen.set(key, ev.data.status);
     if (!prev || prev === ev.data.status) return;
     const go = p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.todo_id); } } : null;
-    if (ev.data.status === "review") { toast(`${title(ev.data)} · ${where}`, { tone: "review", head: "Ready for review", action: go }); notify("Ready for review", ev.data, "", false, "task.review", p || null, where); speakStatus("Ready for review", ev.data, where); }
+    if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", where, head: "Ready for review", action: go }); notify("Ready for review", ev.data, "", false, "task.review", p || null, where); speakStatus("Ready for review", ev.data, where); }
     if (ev.data.status === "failed") { notify("Failed", ev.data, ev.data.error, false, "task.failed", p || null, where); speakStatus("Task failed", ev.data, where); }
   }
   if (ev.type === "scan.run" && ev.data.trigger !== "manual") scanFinished(ev.data, p, where);
   if (ev.type === "goal.updated") goalElsewhere(ev.data, p, m, where);
   if (ev.type === "permission.updated" && !ev.data.decision) {
-    toast(`${permLine(ev.data)} · ${where}`, { tone: "approval", head: permHead(ev.data), action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
+    toast(permLine(ev.data), { tone: "approval", where, head: permHead(ev.data), action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
     notify(permNote(ev.data), { title: where, prompt: "" }, describePerm(ev.data).detail, false, "permission.needed", p || null, where);
     speakApproval(ev.data, where);
   }
@@ -384,8 +384,15 @@ function goalElsewhere(g, p, m, where) {
   const head = { waiting_for_you: "Goal waits for you", blocked: "Goal can't run", done: "Goal done", out_of_budget: "Goal out of budget" }[status];
   if (!head) return;
   const go = p ? { label: "Go", run: async () => { await selectProject(p); await showGoal(g.id); } } : null;
-  toast(`${g.title} · ${where}`, { tone: status === "out_of_budget" || status === "blocked" ? "error" : status === "done" ? "ok" : "review", head, icon: "target", action: go });
+  toast(g.title, { where, tone: status === "out_of_budget" || status === "blocked" ? "error" : status === "done" ? "ok" : "review", head, icon: "target", action: go });
   notifyGoal(head, g, "", p || null, where);
+}
+
+// projectName names project p in a toast: with its machine when the sidebar
+// groups projects by machine.
+export function projectName(p) {
+  if (!p) return "";
+  return grouped() ? `${p.name} on ${projectWhere(p)}` : p.name;
 }
 
 export function projectKey(p) { return p ? `${p.machine}/${p.id}` : ""; }

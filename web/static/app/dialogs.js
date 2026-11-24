@@ -12,18 +12,19 @@ export function leave(el, cls, done, ms = 180) {
   setTimeout(() => { el.classList.remove(cls); done(); }, ms);
 }
 
-// toast(msg) for info, toast(msg, true) for errors, or toast(msg, { tone, head, action: { label, run } }).
+// toast(msg) for info, toast(msg, true) for errors, or toast(msg, { tone, head, where, action: { label, run } }).
+// where names the project the toast is about, on a small line above its head.
 // Hovering or focusing a toast pauses its countdown.
 const TOAST_ICONS = { info: "bell", ok: "check", error: "x", review: "eye", approval: "flag", pr: "merge" };
 export function toast(msg, opts = {}) {
   if (typeof opts === "boolean") opts = { tone: opts ? "error" : "info" };
-  const { tone = "info", head, action, icon = TOAST_ICONS[tone] || "bell" } = opts;
+  const { tone = "info", head, where, action, icon = TOAST_ICONS[tone] || "bell" } = opts;
   const ms = opts.ms ?? (tone === "error" || action ? 7000 : 3500);
   let timer, start, left = ms, held = 0, gone = false;
   const close = () => { if (gone) return; gone = true; clearTimeout(timer); leave(t, "leaving", () => t.remove()); };
   const t = h("div", { class: `toast ${tone}`, role: tone === "error" ? "alert" : "status", style: `--ms: ${ms}ms` },
     h("span", { class: "toast-icon" }, ico(icon)),
-    h("div", { class: "toast-body" }, head ? h("strong", {}, head) : null, msg ? h("span", {}, msg) : null),
+    h("div", { class: "toast-body" }, where ? h("small", { class: "toast-where" }, where) : null, head ? h("strong", {}, head) : null, msg ? h("span", {}, msg) : null),
     action ? h("button", { class: "toast-action", type: "button", onclick: () => { close(); attempt(action.run)(); } }, action.label) : null,
     ib({ class: "toast-close", type: "button", "aria-label": "Dismiss", title: "Dismiss", onclick: close }, "x"),
     h("span", { class: "toast-bar" }));

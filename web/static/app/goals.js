@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
 import { statusLabel, projectFirst, state } from "./state.js";
-import { eventFor, latest, projectKey } from "./events.js";
+import { eventFor, latest, projectKey, projectName } from "./events.js";
 import { renderBoard, title } from "./branches.js";
 import { agoText } from "../time.js";
 import { detailBackground, openDetail, renderDetail } from "./detail.js";
@@ -231,16 +231,16 @@ function announce(prev, g) {
   if (!prev || (shownStatus(prev) === shownStatus(g) && prev.waiting_for === g.waiting_for)) return;
   const go = { label: "Open", run: () => showGoal(g.id) };
   if (goalBlocked(g)) {
-    toast(g.title, { tone: "error", head: "Goal can't run", icon: "target", action: go });
+    toast(g.title, { tone: "error", head: "Goal can't run", where: projectName(state.project), icon: "target", action: go });
     notifyGoal("Goal can't run", g, g.blocked);
   } else if (g.status === "waiting_for_you") {
-    toast(g.title, { tone: "review", head: "Goal waits for you", icon: "target", action: go });
+    toast(g.title, { tone: "review", head: "Goal waits for you", where: projectName(state.project), icon: "target", action: go });
     notifyGoal("Goal waits for you", g, waitText(g));
   } else if (g.status === "done") {
-    toast(g.title, { tone: "ok", head: "Goal done", icon: "target", action: go });
+    toast(g.title, { tone: "ok", head: "Goal done", where: projectName(state.project), icon: "target", action: go });
     notifyGoal("Goal done", g, g.note);
   } else if (g.status === "out_of_budget") {
-    toast(g.title, { tone: "error", head: "Goal out of budget", icon: "target", action: go });
+    toast(g.title, { tone: "error", head: "Goal out of budget", where: projectName(state.project), icon: "target", action: go });
     notifyGoal("Goal out of budget", g, g.note);
   }
 }
