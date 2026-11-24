@@ -441,4 +441,17 @@ func TestRenameOrg(t *testing.T) {
 	if got, _ := a.acc.Org(org.ID); got.Name != "Contoso" || got.Slug != org.Slug {
 		t.Fatalf("after rename: %+v", got)
 	}
+	// Changing the slug is the owner's alone, with or without a new name.
+	admin := signIn(t, h, "ada", "pw-ada-long")
+	for _, body := range []string{
+		`{"slug":"fabrikam","password":"pw-ada-long"}`,
+		`{"name":"Fabrikam","slug":"fabrikam","password":"pw-ada-long"}`,
+	} {
+		if w := admin.do("PATCH", path, body); w.Code != http.StatusForbidden {
+			t.Fatalf("admin slug %s: %d %s", body, w.Code, w.Body)
+		}
+		if got, _ := a.acc.Org(org.ID); got.Name != "Contoso" || got.Slug != org.Slug {
+			t.Fatalf("after admin slug %s: %+v", body, got)
+		}
+	}
 }
