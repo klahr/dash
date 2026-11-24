@@ -672,3 +672,47 @@ func TestMemberWithoutARunnerIsToldToAddOne(t *testing.T) {
 		t.Errorf("a local-only project on someone else's runner, with one's own: %d %s", w.Code, body)
 	}
 }
+
+// A hub's task names only attachments the hub sent first (hubUpload), under
+// the same name: anything else is refused, so a task can't point the agent
+// at other files on the runner, and no task is made.
+func TestHubTaskRefusesAttachmentsNotSentFirst(t *testing.T) {
+	s, h, remote := runnerSide(t, 7)
+	s.UploadRoot = t.TempDir()
+	b, _ := json.Marshal(dispatch.Link{Name: "Shared App", RemoteURL: remote, DefaultBranch: "main", OrgID: 7})
+	if w := send(h, "PUT", "/api/hub/projects/hub-p1", string(b)); w.Code != http.StatusCreated {
+		t.Fatalf("link: %d %s", w.Code, w.Body)
+	}
+	const id = "0123456789ab"
+	task := func(name string) *httptest.ResponseRecorder {
+		t.Helper()
+		b, _ := json.Marshal(dispatch.Task{For: []int64{runnerOwnerID}, HubTodoID: "hub-t1", HubProjectID: "hub-p1",
+			Title: "t", Prompt: "do it", Attachments: []model.Attachment{{ID: id, Name: name}}})
+		return send(h, "POST", "/api/hub/tasks", string(b))
+	}
+	refused := func(what string, w *httptest.ResponseRecorder) {
+		t.Helper()
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "wasn't sent first") {
+			t.Errorf("%s: %d %s", what, w.Code, w.Body)
+		}
+		if n := len(raw(s).ListTodos("")); n != 0 {
+			t.Errorf("%s: %d tasks made", what, n)
+		}
+	}
+	refused("an attachment never sent", task("x.png"))
+
+	if w := send(h, "PUT", dispatch.UploadPathFor(id, "other.png"), "png bytes"); w.Code != http.StatusCreated {
+		t.Fatalf("upload: %d %s", w.Code, w.Body)
+	}
+	refused("an attachment sent under another name", task("x.png"))
+
+	w := task("other.png")
+	var acc dispatch.Accepted
+	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &acc) != nil {
+		t.Fatalf("task with the attachment sent first: %d %s", w.Code, w.Body)
+	}
+	if td, err := raw(s).GetTodo(acc.ID); err != nil || len(td.Attachments) != 1 || td.Attachments[0].ID != id ||
+		!strings.HasPrefix(td.Attachments[0].Path, s.UploadRoot) {
+		t.Errorf("the task's attachments: %+v %v", td.Attachments, err)
+	}
+}
