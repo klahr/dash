@@ -1776,7 +1776,7 @@
     <form method="dialog">
       <header class="sheet-head"><h2 id="ask-title" tabindex="-1" autofocus></h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p id="ask-body" class="hint"></p>
-      <textarea id="ask-input" rows="4" hidden></textarea>
+      <textarea id="ask-input" rows="4" aria-labelledby="ask-title" aria-describedby="ask-body" hidden></textarea>
       <div class="attach" id="ask-attach" data-attach hidden></div>
       <footer class="sheet-actions">
         <button class="btn primary" value="ok" id="ask-ok" data-icon="check">OK</button>
