@@ -445,6 +445,33 @@ func TestOrgTokens(t *testing.T) {
 	if w := withBearer(h, evaSecret, "GET", "/api/me", ""); w.Code != http.StatusUnauthorized {
 		t.Errorf("revoked token: %d", w.Code)
 	}
+	// An admin may revoke another admin's: an equal role.
+	addUser(t, a, org, "bob", store.RoleAdmin)
+	bob := signIn(t, h, "bob", "pw-bob-long")
+	_, bobTok := bob.newToken(org, `["read"]`, "pw-bob-long")
+	if w := ada.do("DELETE", fmt.Sprintf("%s/%d", path, bobTok.ID), `{"password":"pw-ada-long"}`); w.Code != http.StatusNoContent {
+		t.Errorf("admin revokes admin's token: %d %s", w.Code, w.Body)
+	}
+	// A former member's isn't listed, nor can it be revoked.
+	_, evaTok2 := eva.newToken(org, `["read"]`, "pw-eva-long")
+	evaID := eva.me().User.ID
+	if err := a.acc.RemoveMember(me.User.ID, org, evaID); err != nil {
+		t.Fatal(err)
+	}
+	list = nil
+	w = ada.do("GET", path, "")
+	decode(t, w, &list)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list after removing eva: %d %s", w.Code, w.Body)
+	}
+	for _, mt := range list {
+		if mt.ID == evaTok2.ID || mt.UserID == evaID {
+			t.Errorf("a former member's token is listed: %+v", mt)
+		}
+	}
+	if w := owner.do("DELETE", fmt.Sprintf("%s/%d", path, evaTok2.ID), `{"password":"s3cret"}`); w.Code != http.StatusNotFound {
+		t.Errorf("revoke a former member's token: %d %s", w.Code, w.Body)
+	}
 	// A token can't use it.
 	secret, _ := owner.newToken(org, `["read","write"]`, "s3cret")
 	if w := withBearer(h, secret, "GET", path, ""); w.Code != http.StatusForbidden {
