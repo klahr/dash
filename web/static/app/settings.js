@@ -383,8 +383,10 @@ function renderRunsOnPreview() {
     return h("div", { class: `runner-pick ${ok ? "on" : ""}` },
       h("span", { class: `runner-dot ${r.online ? "on" : ""}`, "aria-hidden": "true" }),
       h("span", { class: "runner-name" }, r.name),
-      h("span", { class: "hint" }, ok ? `works on it · ${r.mine ? "yours" : r.owner?.username || ""}`
-        : want.runs_on.length ? `lacks ${missing.join(", ")}` : "no labels: runs nothing"));
+      // The dot's colour alone doesn't say it: the hint names the state in words.
+      h("span", { class: "hint" }, `${r.online ? "online" : "offline"} · `
+        + (ok ? `works on it · ${r.mine ? "yours" : r.owner?.username || ""}`
+          : want.runs_on.length ? `lacks ${missing.join(", ")}` : "no labels: runs nothing")));
   }));
   renderEnvHints();
   renderAgentHint();
