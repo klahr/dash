@@ -134,10 +134,45 @@ func TestReleaseDeployWaitsForBuild(t *testing.T) {
 		t.Fatalf("cancelled: %+v", d)
 	}
 
+	// A freeze started while it waited: once the build passed, the deploy
+	// is checked as a new one is, and fails with why.
+	envs := p.Environments
+	build("1.0.8", sha("3"), ci.ReleaseBuilding)
+	release("1.0.8", sha("3"))
+	frozen := append([]model.Environment(nil), envs...)
+	for i := range frozen {
+		if frozen[i].Name == "staging" {
+			frozen[i].Freezes = []model.Freeze{{From: "2000-01-01 00:00", To: "2999-01-01 00:00", Note: "code freeze"}}
+		}
+	}
+	p = withEnvs(t, s, p, frozen...)
+	build("1.0.8", sha("3"), ci.ReleasePublished)
+	s.checkBuildWaits(time.Now())
+	if d := newest("staging"); d.Tag != "1.0.8" || d.Status != model.DeployFailed || !strings.Contains(d.Error, "frozen") || !strings.Contains(d.Error, "code freeze") {
+		t.Fatalf("frozen meanwhile: %+v", d)
+	}
+
+	// The environment was removed while it waited.
+	p = withEnvs(t, s, p, envs...)
+	build("1.0.9", sha("4"), ci.ReleaseBuilding)
+	release("1.0.9", sha("4"))
+	var kept []model.Environment
+	for _, e := range envs {
+		if e.Name != "staging" {
+			kept = append(kept, e)
+		}
+	}
+	p = withEnvs(t, s, p, kept...)
+	s.checkBuildWaits(time.Now())
+	if d := newest("staging"); d.Tag != "1.0.9" || d.Status != model.DeployFailed || d.Error != "the environment was removed while it waited" {
+		t.Fatalf("removed meanwhile: %+v", d)
+	}
+	p = withEnvs(t, s, p, envs...)
+
 	// Turning the setting off lets a waiting deploy go.
 	build("1.0.7", sha("2"), ci.ReleaseBuilding)
 	release("1.0.7", sha("2"))
-	envs := p.Environments
+	envs = p.Environments
 	for i := range envs {
 		envs[i].WaitForBuild = false
 	}
