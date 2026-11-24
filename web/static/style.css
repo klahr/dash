@@ -3647,7 +3647,9 @@ button.goal-task-open:hover { background: var(--raised); }
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); box-shadow: var(--shadow-2);
 }
 .pl-filter-list [role=option] { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; border-radius: var(--r-s); color: var(--text); cursor: pointer; }
-.pl-filter-list [role=option]:hover, .pl-filter-list [role=option]:focus { background: var(--raised); outline: none; }
+.pl-filter-list [role=option]:hover { background: var(--raised); }
+.pl-filter-list [role=option]:focus { outline: none; }
+.pl-filter-list [role=option]:focus-visible { background: var(--raised); box-shadow: inset 0 0 0 2px var(--accent); }
 .pl-filter-list [role=option] .pl-filter-name { flex: 1; }
 .pl-filter-list [role=option] > .ico:last-child:not(:first-child) { color: var(--accent); }
 .pl-intro { margin: 0; padding: 0 var(--pad-x) 12px; }
