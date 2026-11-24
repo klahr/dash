@@ -2369,8 +2369,11 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   html:has(.app.chat-open) .toasts { top: calc(max(var(--vv-top, 0px), var(--top-h)) + 60px); bottom: auto; right: 12px; }
   /* Over a sheet (moved into it, see raiseToasts): at the top, clear of the
      sheet's buttons; the FAB and chat are under the backdrop (this beats
-     the chat-open rule above, which still matches by :has). */
-  html .sheet[open] > .toasts { top: calc(var(--vv-top, 0px) + env(safe-area-inset-top, 0px) + 12px); bottom: auto; right: 12px; }
+     the chat-open rule above, which still matches by :has). A tall toast
+     reaches the head of a tall sheet: they stop left of its Close button
+     (44px, inset by the sheet's padding), which a toast held open by a
+     hover would otherwise cover. */
+  html .sheet[open] > .toasts { top: calc(var(--vv-top, 0px) + env(safe-area-inset-top, 0px) + 12px); bottom: auto; right: calc(44px + var(--sp-4) + 12px); }
 }
 
 /* ---------- tablet ---------- */
