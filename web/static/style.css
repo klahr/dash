@@ -3714,8 +3714,9 @@ button.goal-task-open:hover { background: var(--raised); }
 /* The drop line lies in the middle of the gap between two cards. */
 .pl-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--raised); color: var(--muted); }
 .pl-chip .ico { width: 12px; height: 12px; }
-/* What a chip is (Priority, Target, Tag), in words before its value: on a desktop. */
-@media (min-width: 1024px) { .pl-chip[data-kind]::before { content: attr(data-kind); font-weight: 400; opacity: .75; } }
+/* What a chip is (Priority, Target, Tag), in words before its value: on a desktop. It keeps
+   the chip's full colour (no opacity), which is ≥4.5:1 on every chip background (WCAG 1.4.3). */
+@media (min-width: 1024px) { .pl-chip[data-kind]::before { content: attr(data-kind); font-weight: 400; } }
 .pl-comments .ico { width: 14px; height: 14px; }
 .pl-chip.p-high { color: var(--failed); background: color-mix(in srgb, var(--failed) 14%, transparent); }
 .pl-chip.p-medium { color: var(--review); background: color-mix(in srgb, var(--review) 14%, transparent); }
