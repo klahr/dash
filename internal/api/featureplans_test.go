@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -234,6 +235,99 @@ func TestFeaturePlanLaunch(t *testing.T) {
 	// A project's plan doesn't launch as a feature.
 	pp := decodePlan(t, send(h, "POST", "/api/plans", `{"idea":"A project"}`), http.StatusCreated)
 	launch(pp, "task", http.StatusBadRequest)
+}
+
+// A launch while another of the same plan is under way is refused, and
+// starts nothing: no task, no new card, the plan still a draft.
+func TestFeaturePlanLaunchOneAtATime(t *testing.T) {
+	s, p, h, _ := featureServer(t)
+	pl := decodePlan(t, send(h, "POST", "/api/plans", `{"kind":"feature","project":"`+p.ID+`","idea":"Export"}`), http.StatusCreated)
+	pl = decodePlan(t, send(h, "POST", "/api/plans/"+pl.ID+"/interview", `{}`), http.StatusOK)
+	cards := len(decodeCards(t, send(h, "GET", "/api/planning/cards", "")))
+
+	launching.Store(pl.ID, true) // the first launch, still running
+	w := send(h, "POST", "/api/plans/"+pl.ID+"/feature", `{"start":"task"}`)
+	launching.Delete(pl.ID)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("a second launch: %d %s", w.Code, w.Body)
+	}
+	if n := len(raw(s).ListTodos(p.ID)); n != 0 {
+		t.Errorf("tasks after a refused launch: %d", n)
+	}
+	if n := len(decodeCards(t, send(h, "GET", "/api/planning/cards", ""))); n != cards {
+		t.Errorf("cards after a refused launch: %d, want %d", n, cards)
+	}
+	if got := decodePlan(t, send(h, "GET", "/api/plans/"+pl.ID, ""), http.StatusOK); got.LaunchedAt != nil || got.TaskID != "" {
+		t.Errorf("plan after a refused launch: %+v", got)
+	}
+
+	// Once the first is done, the plan launches (and the guard is let go).
+	if w := send(h, "POST", "/api/plans/"+pl.ID+"/feature", `{"start":"task"}`); w.Code != http.StatusOK {
+		t.Fatalf("launch after the first: %d %s", w.Code, w.Body)
+	}
+	if _, busy := launching.Load(pl.ID); busy {
+		t.Error("the plan is still marked launching")
+	}
+	if n := len(raw(s).ListTodos(p.ID)); n != 1 {
+		t.Errorf("tasks after the launch: %d", n)
+	}
+}
+
+// When the work can't be started after the brief is on the card, the
+// launch fails and the plan stays a draft with that card, to start again.
+func TestFeaturePlanLaunchFailsAfterTheCard(t *testing.T) {
+	serial(t) // it swaps startFeatureWork
+	s, p, h, _ := featureServer(t)
+	pl := decodePlan(t, send(h, "POST", "/api/plans", `{"kind":"feature","project":"`+p.ID+`","idea":"Export"}`), http.StatusCreated)
+	pl = decodePlan(t, send(h, "POST", "/api/plans/"+pl.ID+"/interview", `{}`), http.StatusOK)
+	// The plan's card goes, so the launch puts the brief on a new one,
+	// which the plan must keep though the launch fails.
+	if w := send(h, "DELETE", "/api/planning/cards/"+pl.CardID, ""); w.Code != http.StatusNoContent {
+		t.Fatalf("delete card: %d %s", w.Code, w.Body)
+	}
+	start := startFeatureWork
+	t.Cleanup(func() { startFeatureWork = start })
+	startFeatureWork = func(*service, string, string, string, int64, int64) (string, error) {
+		return "", fmt.Errorf("%w: no task today", errBadRequest)
+	}
+
+	if w := send(h, "POST", "/api/plans/"+pl.ID+"/feature", `{"start":"task"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "no task today") {
+		t.Fatalf("launch that can't start a task: %d %s", w.Code, w.Body)
+	}
+	got := decodePlan(t, send(h, "GET", "/api/plans/"+pl.ID, ""), http.StatusOK)
+	if got.LaunchedAt != nil || got.TaskID != "" || got.CardID == "" || got.CardID == pl.CardID || got.Step == "start" {
+		t.Fatalf("plan after a failed launch: launched %v, task %q, card %q (was %q), step %q", got.LaunchedAt, got.TaskID, got.CardID, pl.CardID, got.Step)
+	}
+	if c := decodeCard(t, send(h, "GET", "/api/planning/cards/"+got.CardID, "")); !strings.HasPrefix(c.Description, "# CSV export") || len(c.Links) != 0 || c.Column != model.CardIdeas {
+		t.Errorf("the plan's card: %+v %+v", c.Card, c.Links)
+	}
+	if w := send(h, "GET", "/api/plans", ""); !strings.Contains(w.Body.String(), pl.ID) {
+		t.Errorf("the plan left the drafts: %s", w.Body)
+	}
+	if n := len(raw(s).ListTodos(p.ID)); n != 0 {
+		t.Errorf("tasks after a failed launch: %d", n)
+	}
+	if _, busy := launching.Load(pl.ID); busy {
+		t.Error("the plan is still marked launching")
+	}
+	cards := len(decodeCards(t, send(h, "GET", "/api/planning/cards", "")))
+
+	// Started again, it launches from the same card.
+	startFeatureWork = start
+	w := send(h, "POST", "/api/plans/"+pl.ID+"/feature", `{"start":"task"}`)
+	var out struct {
+		Plan model.Plan `json:"plan"`
+		Card cardView   `json:"card"`
+	}
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+		t.Fatalf("launch again: %d %s", w.Code, w.Body)
+	}
+	if out.Card.ID != got.CardID || out.Plan.LaunchedAt == nil || out.Plan.TaskID == "" {
+		t.Errorf("launched again: card %q (want %q), plan %+v", out.Card.ID, got.CardID, out.Plan)
+	}
+	if n := len(decodeCards(t, send(h, "GET", "/api/planning/cards", ""))); n != cards {
+		t.Errorf("cards after launching again: %d, want %d", n, cards)
+	}
 }
 
 // A planner's guide runs on their own runner, so on a Dash that isn't a

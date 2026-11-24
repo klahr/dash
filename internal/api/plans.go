@@ -765,6 +765,11 @@ var errFeatureLaunch = fmt.Errorf("%w: a feature brief goes onto its card: POST 
 // (a second would start the same work twice).
 var launching sync.Map
 
+// startFeatureWork starts a launched brief's task or goal from its card:
+// startCard, here so a (serial) test can make it fail after the brief is
+// on the card.
+var startFeatureWork = (*service).startCard
+
 // launchFeature handles POST /api/plans/{id}/feature: {"start": "task",
 // "goal" or "planned"}. The brief becomes the plan's card's description (a
 // new card in Ideas if the card is gone), and then the card's Start makes a
@@ -825,7 +830,7 @@ func (s *Server) launchFeature(w http.ResponseWriter, r *http.Request) {
 	if req.Start == string(model.CardPlanned) {
 		err = sv.planCard(cardID)
 	} else {
-		work, err = sv.startCard(cardID, p.ProjectID, req.Start, 0, 0)
+		work, err = startFeatureWork(sv, cardID, p.ProjectID, req.Start, 0, 0)
 	}
 	if err != nil && work == "" {
 		// The card has the brief: the plan stays a draft, to start it again.
