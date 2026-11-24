@@ -106,3 +106,59 @@ func readEnv(t *testing.T, dir string) string {
 	}
 	return "\n" + string(b)
 }
+
+// Codex work for another member (ExecRequest.Shared) signs in with the
+// runner's API key only, from a config folder of its own (CODEX_HOME,
+// private to the runner's user), never the owner's Codex login.
+func TestCodexSharedRunGetsTheKeyAndItsOwnHome(t *testing.T) {
+	t.Setenv(CodexKeyEnv, "sk-codex-test")
+	t.Setenv("CODEX_HOME", "/home/owner/.codex")
+	bin, dir := fakeCodex(t, "task.jsonl", 0, "")
+	shared := filepath.Join(t.TempDir(), "shared-codex")
+
+	if _, err := (Codex{Bin: bin}).Run(context.Background(), ExecRequest{Dir: t.TempDir(), Prompt: "hi", Shared: shared}, func(model.RunEvent) {}); err != nil {
+		t.Fatal(err)
+	}
+	env := readEnv(t, dir)
+	if !strings.Contains(env, "\n"+CodexKeyEnv+"=sk-codex-test\n") {
+		t.Error("the shared run lacks the API key")
+	}
+	if !strings.Contains(env, "\nCODEX_HOME="+shared+"\n") || strings.Contains(env, "/home/owner/.codex") {
+		t.Errorf("the shared run's config folder isn't its own: %s", env)
+	}
+	fi, err := os.Stat(shared)
+	if err != nil || !fi.IsDir() {
+		t.Fatalf("the shared config folder wasn't made: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o700 {
+		t.Errorf("the shared config folder's mode is %o, want 700", perm)
+	}
+
+	// The owner's own work: their Codex home, as it is.
+	if _, err := (Codex{Bin: bin}).Run(context.Background(), ExecRequest{Dir: t.TempDir(), Prompt: "hi"}, func(model.RunEvent) {}); err != nil {
+		t.Fatal(err)
+	}
+	if env := readEnv(t, dir); !strings.Contains(env, "\nCODEX_HOME=/home/owner/.codex\n") || strings.Contains(env, shared) {
+		t.Errorf("the owner's run lost their Codex home: %s", env)
+	}
+}
+
+// Without the runner's API key, Codex work for another member stops before
+// Codex starts, rather than run on the owner's Codex login.
+func TestCodexSharedRunStopsWithoutTheKey(t *testing.T) {
+	for name, key := range map[string]string{"unset": "", "blank": "  "} {
+		t.Setenv(CodexKeyEnv, key)
+		bin, dir := fakeCodex(t, "task.jsonl", 0, "")
+		shared := filepath.Join(t.TempDir(), "shared-codex")
+		_, err := (Codex{Bin: bin}).Run(context.Background(), ExecRequest{Dir: t.TempDir(), Prompt: "hi", Shared: shared}, func(model.RunEvent) {})
+		if err == nil || !strings.Contains(err.Error(), "runner's API key") || !strings.Contains(err.Error(), CodexKeyEnv) {
+			t.Errorf("%s: err = %v, want it stopped for the API key", name, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "args")); err == nil {
+			t.Errorf("%s: codex was started with no API key", name)
+		}
+		if _, err := os.Stat(shared); err == nil {
+			t.Errorf("%s: the shared config folder was made for a run that stopped", name)
+		}
+	}
+}
