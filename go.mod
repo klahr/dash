@@ -12,7 +12,7 @@ require (
 	github.com/chromedp/chromedp v0.23.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/creack/pty v1.1.24
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/muesli/cancelreader v0.2.2
 	github.com/yeqown/go-qrcode/v2 v2.3.0
 	go.yaml.in/yaml/v3 v3.0.6
@@ -59,6 +59,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.33.0 // indirect
 	go.opentelemetry.io/otel/trace v1.33.0 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
