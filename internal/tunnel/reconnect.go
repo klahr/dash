@@ -17,9 +17,17 @@ const stableUptime = 30 * time.Second
 // runners don't all knock at once after a hub restart. what names the
 // connection in the log. It returns ctx.Err() or the fatal error.
 func reconnect(ctx context.Context, what string, minB, maxB time.Duration, dial func(context.Context) error, fatal func(error) bool) error {
+	return reconnectClock(ctx, what, minB, maxB, dial, fatal, time.Now, time.After)
+}
+
+// reconnectClock is reconnect with its clock passed in: now reads the time
+// and after waits, as time.Now and time.After do. Tests use it to record the
+// waits and fake how long a connection stayed up.
+func reconnectClock(ctx context.Context, what string, minB, maxB time.Duration, dial func(context.Context) error, fatal func(error) bool,
+	now func() time.Time, after func(time.Duration) <-chan time.Time) error {
 	backoff := minB
 	for {
-		start := time.Now()
+		start := now()
 		err := dial(ctx)
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -27,7 +35,7 @@ func reconnect(ctx context.Context, what string, minB, maxB time.Duration, dial 
 		if fatal != nil && fatal(err) {
 			return err
 		}
-		if time.Since(start) > stableUptime {
+		if now().Sub(start) > stableUptime {
 			backoff = minB // it was up for a while: this is a fresh outage
 		}
 		wait := backoff/2 + rand.N(backoff/2+1)
@@ -35,7 +43,7 @@ func reconnect(ctx context.Context, what string, minB, maxB time.Duration, dial 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(wait):
+		case <-after(wait):
 		}
 		backoff = min(backoff*2, maxB)
 	}
