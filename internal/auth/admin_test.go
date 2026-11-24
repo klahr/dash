@@ -423,9 +423,37 @@ func TestOrgAdminMemberAccounts(t *testing.T) {
 	if w := bea.do("GET", "/api/me", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("bea: %d", w.Code)
 	}
+	// cal has an API token and a session in each org; only this org's go.
+	var revoked []store.Token
+	e.a.OnRevoke = func(tk store.Token) { revoked = append(revoked, tk) }
+	calHere := e.as(t, "cal")
+	if m := calHere.me(); m.Org == nil || m.Org.ID != e.org {
+		t.Fatalf("cal's session works in %+v, want org %d", m.Org, e.org)
+	}
+	calTwo := e.as(t, "cal")
+	if w := calTwo.do("POST", "/api/auth/switch-org", fmt.Sprintf(`{"org_id":%d}`, e.two)); w.Code != http.StatusOK {
+		t.Fatalf("cal switches to Two: %d %s", w.Code, w.Body)
+	}
+	hereSecret, hereTok := calHere.newToken(e.org, `["read"]`, "pw-cal-long")
+	twoSecret, _ := calHere.newToken(e.two, `["read"]`, "pw-cal-long")
 	w = ada.do("POST", fmt.Sprintf("/api/orgs/%d/members/%d/sign-out", e.org, e.cal), `{"password":"pw-ada-long"}`)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"everywhere":false`) {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"everywhere":false`) || !strings.Contains(w.Body.String(), `"tokens":1`) {
 		t.Fatalf("sign out cal: %d %s", w.Code, w.Body)
+	}
+	if w := withBearer(e.h, hereSecret, "GET", "/api/me", ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("cal's token in this org: %d", w.Code)
+	}
+	if w := withBearer(e.h, twoSecret, "GET", "/api/me", ""); w.Code != http.StatusOK {
+		t.Errorf("cal's token in Two: %d %s", w.Code, w.Body)
+	}
+	if w := calHere.do("GET", "/api/me", ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("cal's session in this org: %d", w.Code)
+	}
+	if m := calTwo.me(); m.Org == nil || m.Org.ID != e.two {
+		t.Errorf("cal's session in Two: %+v", m.Org)
+	}
+	if len(revoked) != 1 || revoked[0].ID != hereTok.ID {
+		t.Errorf("OnRevoke got %+v, want only token %d", revoked, hereTok.ID)
 	}
 
 	// An account that signs in only with Google has no password to reset.
