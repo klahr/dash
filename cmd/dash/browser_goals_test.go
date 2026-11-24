@@ -53,6 +53,11 @@ func TestBrowserDeleteGoal(t *testing.T) {
 	del(wide)
 
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	// The sidebar turns into the closed drawer at once: sliding out, it
+	// covered the page and took the next click (Shell, Add project).
+	if hidden, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`getComputedStyle(document.querySelector("#menu")).visibility === "hidden"`)); err != nil || !hidden {
+		b.fail("the drawer hidden at once", fmt.Errorf("hidden: %v, err: %v", hidden, err))
+	}
 	del(phone)
 
 	// Deleted elsewhere while open here.

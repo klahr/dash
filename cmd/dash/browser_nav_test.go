@@ -97,7 +97,7 @@ func TestBrowserNavigation(t *testing.T) {
 		.map((e) => e.querySelector("span").textContent).join() === "Board,Chat,Planning,Goals"`)
 	b.until("open Goals", `document.querySelector('.nav > button[data-view=goals][aria-current=page].active') && document.querySelector("#view-goals.active")`,
 		chromedp.Click(chromedp.CSS(`.nav > button[data-view=goals]`)))
-	b.until("open the menu", `document.querySelector(".app").classList.contains("menu-open")`, chromedp.Click(chromedp.ID("menu-open")))
+	b.openDrawer("")
 	b.waitJS("Shell and Files in the drawer, Goals and Planning not", `[...document.querySelectorAll(".menu-views .menu-view")].filter((e) => e.offsetHeight > 0)
 		.map((e) => e.dataset.view).join() === "scans,run,history,deploys,files"`)
 	b.until("open the Shell from the drawer", `document.querySelector("#view-run.active") && document.querySelector('.menu-view[data-view=run][aria-current=page]') && !document.querySelector(".app").classList.contains("menu-open")`,

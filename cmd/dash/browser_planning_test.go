@@ -162,9 +162,8 @@ func TestBrowserPlannerShell(t *testing.T) {
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("no bottom nav, the drawer closed", `!matchMedia("(min-width: 1024px)").matches &&
 		!document.querySelector('.nav > button[data-view=planning]').offsetWidth && !document.querySelector(".app").classList.contains("menu-open")`)
-	b.until("open the drawer", `document.querySelector(".app").classList.contains("menu-open") && document.querySelector("#planning-main").inert &&
-		document.querySelector(".menu-view[data-view=planning]").offsetWidth > 0 && document.querySelector("#foot-menu").offsetWidth > 0`,
-		chromedp.Click(chromedp.CSS(`#menu-open`)))
+	b.openDrawer(`document.querySelector("#planning-main").inert &&
+		document.querySelector(".menu-view[data-view=planning]").offsetWidth > 0 && document.querySelector("#foot-menu").offsetWidth > 0`)
 	b.until("Esc closes it", `!document.querySelector(".app").classList.contains("menu-open") && !document.querySelector("#planning-main").inert`,
 		chromedp.KeyEvent(kb.Escape))
 }

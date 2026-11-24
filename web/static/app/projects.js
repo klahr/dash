@@ -1002,11 +1002,18 @@ export function setSideCollapsed(on) {
   store.setFlag("dash.sideCollapsed", on);
   syncMenuBtn();
 }
+let menuClosing = 0;
 export function setMenu(open) {
   open = open && !desktop.matches;
   const wasOpen = menuOpen();
-  const menu = $("#menu");
-  $(".app").classList.toggle("menu-open", open);
+  const menu = $("#menu"), app = $(".app");
+  app.classList.toggle("menu-open", open);
+  if (open !== wasOpen) {
+    // style.css: the drawer slides out only while this class is on.
+    clearTimeout(menuClosing);
+    app.classList.toggle("menu-closing", !open);
+    if (!open) menuClosing = setTimeout(() => app.classList.remove("menu-closing"), 300);
+  }
   $("#menu-scrim").hidden = !open;
   $("#project-switch").setAttribute("aria-expanded", String(open));
   if (open !== wasOpen) {
@@ -1092,12 +1099,12 @@ $("#menu-open").addEventListener("click", () => desktop.matches ? setSideCollaps
 $("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open").focus(); });
 $("#menu-scrim").addEventListener("click", () => setMenu(false));
 desktop.addEventListener("change", () => {
-  // Crossing to a phone's width turns the sidebar into the closed drawer at
-  // once: sliding out, it would cover the page for a moment and take taps.
-  const app = $(".app");
-  app.classList.add("layout-switch");
-  requestAnimationFrame(() => requestAnimationFrame(() => app.classList.remove("layout-switch")));
-  setMenu(false); $("#project-picker").hidden = true; renderProjectBranch();
+  // Crossing to a phone's width shows the closed drawer at once (style.css:
+  // .menu-closing). This event comes on a frame after the new width's first
+  // style, so it can come after the drawer was opened there: only crossing
+  // to a desktop's width closes it (a desktop has no drawer to be open).
+  if (desktop.matches) setMenu(false);
+  $("#project-picker").hidden = true; renderProjectBranch();
 });
 $("#side-new-project").addEventListener("click", () => openNewProject());
 $("#pm-settings").addEventListener("click", openSettings);

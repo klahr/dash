@@ -106,8 +106,7 @@ func TestBrowserPlannerClaude(t *testing.T) {
 	// On a phone: Chat in the drawer, the chat full screen.
 	b.run("close the card", `document.querySelector("#pd-close")?.click(); true`)
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
-	b.until("open the drawer", `document.querySelector(".app").classList.contains("menu-open") && document.querySelector(".menu-view[data-view=chat]").offsetWidth > 0`,
-		chromedp.Click(chromedp.CSS(`#menu-open`)))
+	b.openDrawer(`document.querySelector(".menu-view[data-view=chat]").offsetWidth > 0`)
 	b.until("Chat", `!document.querySelector("#chat-main").hidden && !document.querySelector(".app").classList.contains("menu-open")`,
 		chromedp.Click(chromedp.CSS(`.menu-view[data-view=chat]`)))
 	b.waitJS("the chat fills the screen, its composer in view", `(() => {

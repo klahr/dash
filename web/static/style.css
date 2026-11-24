@@ -2307,10 +2307,14 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
     display: flex; flex-direction: column; gap: 2px; overflow-y: auto;
     padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 0;
     background: var(--surface); border-right: 1px solid var(--line);
-    transform: translateX(-100%); visibility: hidden; transition: transform .25s var(--ease), visibility 0s .25s;
+    transform: translateX(-100%); visibility: hidden;
   }
   .app.menu-open .menu { transform: none; visibility: visible; transition: transform .25s var(--ease); }
-  .app.layout-switch .menu { transition: none; } /* projects.js: no slide when the layout changes */
+  /* Only closing the drawer slides it out (projects.js: setMenu). Crossing to
+     a phone's width hides it at once: a slide would cover the page for a
+     moment and take taps, and the media query's change event comes too late
+     to stop one. */
+  .app.menu-closing .menu { transition: transform .25s var(--ease), visibility 0s .25s; }
   .menu-head { order: 0; display: flex; align-items: center; justify-content: space-between; padding-left: 10px; font-weight: 700; font-size: var(--fs-xl); }
   .side-projects { flex: none; min-height: 0; margin-top: 4px; }
   .side-bottom { padding-bottom: calc(var(--safe-b) + 12px); }

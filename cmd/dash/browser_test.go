@@ -308,7 +308,7 @@ func TestBrowserNotificationSettings(t *testing.T) {
 	open := func(b *browser, phone bool) {
 		if phone {
 			// On a phone the account menu is in the drawer, off screen until Menu opens it.
-			b.until("open the drawer", `document.querySelector(".app").classList.contains("menu-open")`, chromedp.Click(chromedp.ID("menu-open")))
+			b.openDrawer("")
 		}
 		b.until("open the account menu", `document.querySelector("#foot-menu").open || document.querySelector("#account-sheet").open`,
 			chromedp.Click(chromedp.CSS(`#foot-menu > summary`)))
@@ -811,12 +811,15 @@ func (b *browser) try(what string, wait time.Duration, step chromedp.Action[chro
 }
 
 // until runs step until a JavaScript expression is true: for a click a
-// re-render may swallow, where a second one does no harm.
+// re-render may swallow, where a second one does no harm. It gives up after
+// 20 tries or a minute, as waitJS does: a click waits for its node to show,
+// so on a page where it won't (another view, a sheet over it) each try
+// takes its whole 10s.
 func (b *browser) until(what, expr string, step chromedp.Action[chromedp.Void]) {
 	b.t.Helper()
 	start := time.Now()
 	var last error
-	for range 20 {
+	for i := 0; i < 20 && time.Since(start) < time.Minute; i++ {
 		if err := b.try(what, 10*time.Second, step); err != nil {
 			last = err
 		}
@@ -827,7 +830,7 @@ func (b *browser) until(what, expr string, step chromedp.Action[chromedp.Void]) 
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
-	err := fmt.Errorf("still false after 20 tries in %s: %s", time.Since(start).Round(time.Second), expr)
+	err := fmt.Errorf("still false after %s: %s", time.Since(start).Round(time.Second), expr)
 	if last != nil {
 		err = fmt.Errorf("%w (the last failed try: %v)", err, last)
 	}
@@ -943,10 +946,33 @@ func (b *browser) fail(what string, err error) {
 			b.t.Logf("screenshot: %s", shot)
 		}
 	}
+	// What a step may have hit instead: the view, a sheet over it, the focus.
+	if state, err := chromedp.Run(ctx, chromedp.Evaluate[string](`(() => {
+		const desc = (e) => e ? e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + (typeof e.className === "string" && e.className ? "." + e.className.trim().split(/\s+/).join(".") : "") : "none";
+		const a = document.activeElement;
+		return "view: " + desc(document.querySelector(".view.active")) +
+			", open dialogs: " + ([...document.querySelectorAll("dialog[open]")].map(desc).join(" ") || "none") +
+			", focus: " + desc(a) + ("value" in (a || {}) && typeof a.value === "string" ? " " + JSON.stringify(a.value) : "");
+	})()`)); err == nil {
+		b.t.Logf("the page: %s", state)
+	}
 	if text, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.body?.innerText ?? ""`)); err == nil {
 		b.t.Logf("the page's text:\n%s", text)
 	}
 	b.t.Fatalf("%s: %v", what, err)
+}
+
+// openDrawer opens the phone's drawer with Menu, until it is open and expr
+// (if any) is true, and waits for it to finish sliding in: a click into it
+// while it moves can land on the scrim behind it and close it.
+func (b *browser) openDrawer(expr string) {
+	b.t.Helper()
+	open := `document.querySelector(".app").classList.contains("menu-open")`
+	if expr != "" {
+		open += " && " + expr
+	}
+	b.until("open the drawer", open, chromedp.Click(chromedp.ID("menu-open")))
+	b.waitJS("the drawer slid in", `!document.querySelector("#menu").getAnimations().length`)
 }
 
 func cardSel(id string) string { return fmt.Sprintf(`#board .todo[data-id=%q]`, id) }
