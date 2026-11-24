@@ -94,6 +94,8 @@ export function renderGraph(res) {
         h("span", { class: dot, style: `--x:${col * LANE_W + LANE_W / 2}px;--c:var(--lane-${color})` })),
       h("span", { class: "graph-commit", role: "button", tabindex: "0", "aria-controls": "commit-detail", "aria-current": selected ? "true" : null, onclick: open, onkeydown: open },
         h("span", { class: "sr-only" }, "Commit "), h("code", { class: "graph-sha" }, c.short),
+        // The hollow dot and the row's title are for the eye and the mouse: say it here too.
+        isPushed ? null : h("span", { class: "sr-only" }, " (not pushed yet)"),
         ...(c.refs || []).map(graphRef),
         ...liveRefs(c.hash),
         h("span", { class: "graph-subject" }, c.subject),
