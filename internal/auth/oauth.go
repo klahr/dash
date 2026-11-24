@@ -648,7 +648,7 @@ body{font:16px system-ui,sans-serif;background:#111;color:#eee;display:flex;just
 main{max-width:24rem;width:100%}h1{font-size:1.4rem}p{color:#bbb;line-height:1.4}
 label{display:block;margin:.8rem 0 .3rem}input,select{width:100%;box-sizing:border-box;padding:.6rem;border-radius:6px;border:1px solid #444;background:#1c1c1c;color:#eee;font-size:1rem}
 .err{color:#f77}.row{display:flex;gap:.6rem;margin-top:1.2rem}button{flex:1;padding:.7rem;border-radius:6px;border:0;font-size:1rem;cursor:pointer}
-.allow{background:#d97757;color:#fff}.deny{background:#333;color:#eee}
+.allow{background:#d97757;color:#111}.deny{background:#333;color:#eee}
 .site-footer{margin-top:2rem;font-size:.85rem;color:#888;text-align:center}.site-footer a{color:#aaa}
 </style></head><body><main>
 <h1>Connect {{if .ClientName}}“{{.ClientName}}”{{else}}an app{{end}} to {{.Brand.Name}}?</h1>
