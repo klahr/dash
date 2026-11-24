@@ -135,6 +135,39 @@ func TestCodexTranslateFailed(t *testing.T) {
 	}
 }
 
+// TestCodexCreatedTask: a create_todo call that worked carries the task it
+// made, read from the whole result even when the chat's copy is cut; other
+// tools' results and failed calls carry none.
+func TestCodexCreatedTask(t *testing.T) {
+	long := strings.Repeat("x", 2*maxToolOutput)
+	task, _ := json.Marshal(map[string]string{"id": "t42", "title": "Fix login", "prompt": long, "status": "draft"})
+	text, _ := json.Marshal(string(task))
+	lines := []string{
+		`{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"dash_board","tool":"create_todo","arguments":{"title":"Fix login"},"result":{"content":[{"type":"text","text":` + string(text) + `}]},"error":null,"status":"completed"}}`,
+		`{"type":"item.completed","item":{"id":"item_2","type":"mcp_tool_call","server":"dash_board","tool":"get_todo","arguments":{"todo":"t42"},"result":{"content":[{"type":"text","text":"{\"id\":\"t42\"}"}]},"error":null,"status":"completed"}}`,
+		`{"type":"item.completed","item":{"id":"item_3","type":"mcp_tool_call","server":"dash_board","tool":"create_todo","arguments":{},"result":null,"error":{"message":"title or prompt is required"},"status":"failed"}}`,
+	}
+	tr := &codexTranslator{}
+	tasks := map[string]*model.ChatTask{}
+	for _, l := range lines {
+		ev, ok := parseCodexLine(l)
+		if !ok {
+			t.Fatalf("unparsed %s", l)
+		}
+		for _, d := range tr.Translate(ev) {
+			if d.Kind == "tool_result" {
+				tasks[d.ID] = d.Task
+			}
+		}
+	}
+	if got := tasks["item_1"]; got == nil || got.ID != "t42" || got.Title != "Fix login" {
+		t.Errorf("create_todo's task: %+v", got)
+	}
+	if len(tasks) != 3 || tasks["item_2"] != nil || tasks["item_3"] != nil {
+		t.Errorf("tasks on other results: %+v", tasks)
+	}
+}
+
 func TestCodexTranslateUnknown(t *testing.T) {
 	tr, out := codexFixture(t, "unknown.jsonl")
 	var warns []string

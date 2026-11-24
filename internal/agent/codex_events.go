@@ -271,6 +271,11 @@ func (t *codexTranslator) item(phase string, it codexItem) []ChatDelta {
 		if !failed && it.Server == mcptools.ServerName && it.Tool == mcptools.ShowImageTool {
 			d.Image = ShownImage(input)
 		}
+		// The task create_todo made, read from the whole result (the
+		// chat's copy may be cut short).
+		if !failed && it.Server == mcptools.ServerName && it.Tool == "create_todo" {
+			d.Task = CreatedTask(text)
+		}
 		return append(out, d)
 	case "web_search":
 		if !done {
