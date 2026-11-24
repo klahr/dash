@@ -170,8 +170,8 @@ pre .p{color:var(--merged);user-select:none}
 .faq details[open]{background:var(--surface);border-color:var(--line2)}
 .faq summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 22px;font-weight:600;font-size:16.5px}
 .faq summary::-webkit-details-marker{display:none}
-.faq summary::after{content:"+";flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:8px;border:1px solid var(--line2);color:var(--accent);font:500 17px/1 var(--mono)}
-.faq details[open] summary::after{content:"−"}
+.faq summary::after{content:"+";content:"+" / "";flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:8px;border:1px solid var(--line2);color:var(--accent);font:500 17px/1 var(--mono)}
+.faq details[open] summary::after{content:"−";content:"−" / ""}
 .faq summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:14px}
 .faq p{margin:0;padding:0 22px 20px;color:var(--muted);max-width:44em}
 
