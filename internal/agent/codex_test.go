@@ -229,6 +229,54 @@ func TestCodexRun(t *testing.T) {
 	}
 }
 
+// TestCodexRunInSandbox: with a sandbox, Dash starts it with its own
+// arguments, then codex and codex's, in the worktree, and tells it which
+// worktree that is. A run that changes the worktree's git metadata is
+// refused.
+func TestCodexRunInSandbox(t *testing.T) {
+	bin, dir := fakeCodex(t, "task.jsonl", 0, "")
+	wrap := filepath.Join(dir, "sandbox")
+	testbin.Write(t, wrap, "#!/bin/sh\n"+
+		`echo "$PWD|$DASH_WORKTREE|$@" > "`+dir+`/seen"`+"\n"+
+		`if [ -n "$TAMPER" ]; then echo 'gitdir: /elsewhere' > "$DASH_WORKTREE/.git"; fi`+"\n"+
+		"shift\nexec \"$@\"\n")
+	newWorktree := func() string {
+		wt, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		gd := filepath.Join(t.TempDir(), "gitdir")
+		if err := os.MkdirAll(gd, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+gd+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return wt
+	}
+	c := Codex{Bin: bin, Sandbox: []string{wrap, "--as"}}
+
+	wt := newWorktree()
+	res, err := c.Run(context.Background(), ExecRequest{Dir: wt, Prompt: "hi"}, func(model.RunEvent) {})
+	if err != nil || res.SessionID != "0199a213-81c0-7800-8aa1-bbab2a035a53" {
+		t.Fatalf("run: %v, session %q", err, res.SessionID)
+	}
+	seen := strings.TrimSpace(strings.Join(readLines(t, dir+"/seen"), "\n"))
+	if want := wt + "|" + wt + "|--as " + bin + " exec --json "; !strings.HasPrefix(seen, want) {
+		t.Fatalf("sandbox saw\n%s\nwant it to start with\n%s", seen, want)
+	}
+	if args := readLines(t, dir+"/args"); args[0] != "exec" || args[1] != "--json" {
+		t.Errorf("codex args %q", args)
+	}
+
+	// The sandboxed run rewrites <wt>/.git: Dash refuses the result.
+	wt = newWorktree()
+	_, err = c.Run(context.Background(), ExecRequest{Dir: wt, Prompt: "hi", Env: []string{"TAMPER=1"}}, func(model.RunEvent) {})
+	if err == nil || !strings.Contains(err.Error(), "changed the worktree's git metadata") {
+		t.Fatalf("err %v, want the git-metadata refusal", err)
+	}
+}
+
 func TestCodexRunFailed(t *testing.T) {
 	bin, _ := fakeCodex(t, "failed.jsonl", 1, "")
 	var evs []model.RunEvent
