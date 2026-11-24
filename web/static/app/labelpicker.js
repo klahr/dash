@@ -140,7 +140,8 @@ export function matchList(el, runners, { lead = "Matches", none = "No runner has
   el.classList.add("label-match");
   el.classList.toggle("warn", !runners.length);
   el.replaceChildren(...(runners.length
-    ? [`${lead}: `, ...runners.map((r) => h("span", { class: "label-match-runner", title: r.online ? "Online" : "Offline" },
-      h("span", { class: `runner-dot${r.online ? " on" : ""}`, "aria-hidden": "true" }), r.name))]
+    ? [`${lead}: `, ...runners.map((r) => h("span", { class: "label-match-runner" },
+      h("span", { class: `runner-dot${r.online ? " on" : ""}`, "aria-hidden": "true" }), r.name,
+      r.online ? null : h("span", { class: "hint" }, "(offline)")))]
     : [none]));
 }
