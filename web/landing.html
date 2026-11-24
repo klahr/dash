@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b1019">
 <meta name="color-scheme" content="dark">
-<meta name="description" content="Queue tasks, let Claude Code work on them in parallel on your own computers, review the diffs and merge. {{if .IndividualPrice}}{{.IndividualPrice}} for one person, free if you can&#39;t pay.{{else}}Free for one person.{{end}}">
+<meta name="description" content="Queue tasks, let Claude Code work on them in parallel on your own computers, review the diffs and merge. {{if .IndividualPrice}}{{.IndividualPrice}} for one person, or free if you can&#39;t afford it.{{else}}Free for one person.{{end}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <title>{{.Name}}: run Claude Code agents in parallel</title>
@@ -224,7 +224,7 @@ pre .p{color:var(--merged);user-select:none}
     <a class="brand" href="/"><img src="{{.Logo}}" alt="" width="28" height="28"><span>{{.Name}}</span></a>
     <nav class="nav" aria-label="Sections"><a href="#how">How it works</a><a href="#why">Why</a><a href="#teams">Teams</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a></nav>
     <a class="btn login" href="/login.html">Log in</a>
-    {{if .Signup}}<a class="btn primary" href="/login.html#signup">Start free</a>{{end}}
+    {{if .Signup}}<a class="btn primary" href="/login.html#signup">Get started</a>{{end}}
   </div>
 </header>
 
@@ -235,10 +235,10 @@ pre .p{color:var(--merged);user-select:none}
       <h1>Many agents working. <em>You just review.</em></h1>
       <p class="lede">{{.Name}} turns Claude Code into a work queue. Describe the work and it runs in parallel, <strong>as many tasks at once as your machines allow</strong>, each in its own git worktree on your own computers. You read the diff, try the change live and approve. {{.Name}} merges it.</p>
       <div class="cta">
-        {{if .Signup}}<a class="btn primary lg" href="/login.html#signup">Start free <span class="arr" aria-hidden="true">→</span></a>{{else}}<a class="btn primary lg" href="/login.html">Log in <span class="arr" aria-hidden="true">→</span></a>{{end}}
+        {{if .Signup}}<a class="btn primary lg" href="/login.html#signup">Get started <span class="arr" aria-hidden="true">→</span></a>{{else}}<a class="btn primary lg" href="/login.html">Log in <span class="arr" aria-hidden="true">→</span></a>{{end}}
         <a class="btn lg" href="#how">See how it works</a>
       </div>
-      <p class="fine">{{if .IndividualPrice}}{{.IndividualPrice}} for one person, free if you can&#39;t pay.{{else}}Free for one person.{{end}} Your machines, your Claude subscription, no open ports.</p>
+      <p class="fine">{{if .IndividualPrice}}{{.IndividualPrice}} for one person, or free if you can&#39;t afford it.{{else}}Free for one person.{{end}} Your machines, your Claude subscription, no open ports.</p>
       <ul class="lanes" aria-label="Where a task goes">
         <li style="--c:var(--faint)">draft</li><li style="--c:var(--accent)">queued</li><li style="--c:var(--running)">running</li><li style="--c:var(--review)">review</li><li style="--c:var(--merged)">merged</li>
       </ul>
@@ -359,7 +359,7 @@ pre .p{color:var(--merged);user-select:none}
         <div class="plan">
           <h3>Individuals</h3>
           {{if .IndividualPrice}}<div class="price">{{.IndividualPrice}}</div>
-          <p class="price-note">Can&#39;t pay? Use it free, no questions asked.</p>{{else}}<div class="price">Free</div>{{end}}
+          <p class="price-note">Can&#39;t afford it? Use it for free. No questions asked, no form to fill in.</p>{{else}}<div class="price">Free</div>{{end}}
           <ul><li>Your own workspace, or an organization with one member</li><li>Unlimited projects, tasks and goals</li><li>Runners on your own computers</li></ul>
         </div>
         <div class="plan team">
@@ -394,6 +394,7 @@ pre .p{color:var(--merged);user-select:none}
         <details><summary>How many tasks run at once?</summary><p>As many as your runners have slots. Add a computer, or give a runner more slots, to run more. A project can set its own limit, and the queue pauses when your Claude usage window runs out.</p></details>
         <details><summary>Will AI merge broken code into main?</summary><p>No. By default every merge needs a person&#39;s approval, and the tests check the merged code before it lands.</p></details>
         <details><summary>Do I need an API key?</summary><p>No. A runner on your computer uses the Claude Code or Codex login you already have, so you don&#39;t get a second bill for the model. Only a runner the whole team shares needs an API key.</p></details>
+        {{if .IndividualPrice}}<details><summary>What if I can&#39;t afford {{.IndividualPrice}}?</summary><p>Then use it for free. Choose <strong>I can&#39;t pay right now</strong> in <strong>Organization → Billing</strong> and you won&#39;t be asked again. We&#39;d rather you use it than not.</p></details>{{end}}
         <details><summary>Where does my code go?</summary><p>Your repositories and checkouts stay on your runners. The hub shows the diffs, logs and previews they send it and keeps the run logs, but never stores your repositories. Claude Code sends code to Anthropic under your own account.</p></details>
         <details><summary>Can I leave?</summary><p>Yes. It&#39;s AGPL-licensed, your work is ordinary git commits, and deploys use your own scripts.</p></details>
       </div>
@@ -406,7 +407,7 @@ pre .p{color:var(--merged);user-select:none}
         <h2 id="final-h">Queue your first tasks today.</h2>
         <p class="sub">Install a runner, add a repository and watch your first task go from queued to merged.</p>
         <div class="cta">
-          {{if .Signup}}<a class="btn primary lg" href="/login.html#signup">Start free <span class="arr" aria-hidden="true">→</span></a>{{else}}<a class="btn primary lg" href="/login.html">Log in <span class="arr" aria-hidden="true">→</span></a>{{end}}
+          {{if .Signup}}<a class="btn primary lg" href="/login.html#signup">Get started <span class="arr" aria-hidden="true">→</span></a>{{else}}<a class="btn primary lg" href="/login.html">Log in <span class="arr" aria-hidden="true">→</span></a>{{end}}
         </div>
         <pre><span class="dim"># on the computer that should run tasks, with the command from the Runners page</span>
 <span class="p">$ </span>curl -fsSL {{.Origin}}/runner/install.sh | sh -s -- --code …</pre>

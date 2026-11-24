@@ -212,7 +212,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.StringVar(&o.contactEmail, "contact-email", "", "address people can write to, in the footer and emails (or $DASH_CONTACT_EMAIL)")
 	f.StringVar(&o.logo, "logo", "", "image file shown instead of Dash's mark on the pages (or $DASH_LOGO)")
 	f.BoolVar(&o.landing, "landing", false, "show a landing page at / to visitors who aren't signed in, instead of the sign-in page (or DASH_LANDING=1)")
-	f.StringVar(&o.teamPrice, "team-price", "", "the team plan's price on the landing page, as shown, e.g. \"€8 per seat / month\" (or $DASH_TEAM_PRICE)")
+	f.StringVar(&o.teamPrice, "team-price", "", "the team plan's price on the landing page, as shown, e.g. \"€5 per seat / month\" (or $DASH_TEAM_PRICE)")
 	f.StringVar(&o.individualPrice, "individual-price", "", "the individual price on the landing page and in Billing, as shown, e.g. \"€5 / month\" (or $DASH_INDIVIDUAL_PRICE)")
 	f.StringVar(&o.pricingURL, "pricing-url", "", "where the landing page's \"see pricing\" links to when -team-price isn't set (or $DASH_PRICING_URL)")
 	// Removed flags, still accepted so an old start command keeps working.

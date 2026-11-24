@@ -35,7 +35,7 @@ type Config struct {
 	TermsFile, PrivacyFile string
 
 	Landing   bool   // show the landing page at / to visitors who aren't signed in
-	TeamPrice string // the team plan's price as shown, e.g. "€8 per seat / month" (optional)
+	TeamPrice string // the team plan's price as shown, e.g. "€5 per seat / month" (optional)
 	// IndividualPrice is the individual price as shown, e.g. "€5 / month"
 	// (optional): without it the landing page says individuals are free.
 	IndividualPrice string

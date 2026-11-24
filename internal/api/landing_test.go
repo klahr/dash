@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/klahr/dash/internal/branding"
+	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/web"
 )
 
@@ -44,21 +46,58 @@ func TestLandingIndividualPrice(t *testing.T) {
 
 	_, h := brandedServer(t, branding.Config{Landing: true})
 	body := get(t, h, "/").Body.String()
-	if !strings.Contains(body, `<div class="price">Free</div>`) || strings.Contains(body, "Use it free") {
+	if !strings.Contains(body, `<div class="price">Free</div>`) || strings.Contains(body, "Use it for free") ||
+		strings.Contains(body, "afford") || !strings.Contains(body, "Free for one person. Your machines") {
 		t.Error("without an individual price, individuals aren't shown as free")
 	}
 	_, h = brandedServer(t, branding.Config{Landing: true, IndividualPrice: " €5 / month "})
 	body = get(t, h, "/").Body.String()
-	if !strings.Contains(body, `<div class="price">€5 / month</div>`) || !strings.Contains(body, "Use it free, no questions asked") ||
+	if !strings.Contains(body, `<div class="price">€5 / month</div>`) ||
+		!strings.Contains(body, "Use it for free. No questions asked, no form to fill in.") ||
 		strings.Contains(body, `<div class="price">Free</div>`) {
 		t.Error("the individual price isn't on the landing page, with the free way out")
+	}
+	// The hero fine print and the FAQ say it's free if you can't afford it,
+	// and name the button Billing shows.
+	for _, want := range []string{
+		"€5 / month for one person, or free if you can&#39;t afford it. Your machines",
+		"What if I can&#39;t afford €5 / month?",
+		"I can&#39;t pay right now",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("landing page lacks %q", want)
+		}
+	}
+}
+
+// noMail is a mail sender that drops what it's given.
+type noMail struct{}
+
+func (noMail) Send(context.Context, mail.Message) error { return nil }
+
+// With open signup, every signup button says Get started: "Start free"
+// sounded like a trial that ends.
+func TestLandingGetStarted(t *testing.T) {
+	parallel(t)
+
+	s, h := brandedServer(t, branding.Config{Landing: true})
+	s.Auth.SetMail(noMail{}, "https://dash.example.com/")
+	if err := s.Auth.EnableSignup(); err != nil {
+		t.Fatal(err)
+	}
+	body := get(t, h, "/").Body.String()
+	if n := strings.Count(body, `href="/login.html#signup">Get started`); n != 3 {
+		t.Errorf("%d Get started buttons, want 3 (header, hero, end)", n)
+	}
+	if strings.Contains(body, "Start free") {
+		t.Error("landing page still says Start free")
 	}
 }
 
 func TestLandingOn(t *testing.T) {
 	parallel(t)
 
-	_, h := brandedServer(t, branding.Config{Name: "Acme Agents", Landing: true, TeamPrice: "€8 per seat / month",
+	_, h := brandedServer(t, branding.Config{Name: "Acme Agents", Landing: true, TeamPrice: "€5 per seat / month",
 		TermsURL: "https://acme.example/terms", PrivacyURL: "https://acme.example/privacy"})
 	w := get(t, h, "/")
 	if w.Code != http.StatusOK {
@@ -67,7 +106,7 @@ func TestLandingOn(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		"<title>Acme Agents: ", "no open ports", `id="how"`, `href="#how"`, `id="faq"`, "Without Acme Agents",
-		"€8 per seat / month", "AGPL",
+		"€5 per seat / month", "AGPL",
 		`href="` + branding.DefaultSourceURL + `"`, "Source code on GitHub",
 		`href="https://acme.example/terms"`, `href="https://acme.example/privacy"`, `href="/login.html"`,
 	} {
@@ -84,8 +123,8 @@ func TestLandingOn(t *testing.T) {
 			t.Errorf("landing page claims a limit: %q", bad)
 		}
 	}
-	// Signup is off here: no Start free button, Log in instead.
-	if strings.Contains(body, "#signup") || strings.Contains(body, "Start free") {
+	// Signup is off here: no Get started button, Log in instead.
+	if strings.Contains(body, "#signup") || strings.Contains(body, "Get started") {
 		t.Error("landing page offers signup while it's closed")
 	}
 	// Nothing from other sites: no fonts, scripts or trackers.

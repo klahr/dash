@@ -22,7 +22,7 @@ footer.
 | `DASH_CONTACT_EMAIL`  | `-contact-email` | an address people can write to: a **Contact** link in the footer, and a line at the end of every email |
 | `DASH_LOGO`           | `-logo`          | an image file on the server (SVG, PNG, WebP, …) shown instead of Dash's mark next to the name |
 | `DASH_LANDING`        | `-landing`       | `1` shows the landing page at `/` to visitors who aren't signed in (off by default) |
-| `DASH_TEAM_PRICE`     | `-team-price`    | the team plan's price on the landing page, exactly as shown, e.g. `€8 per seat / month` |
+| `DASH_TEAM_PRICE`     | `-team-price`    | the team plan's price on the landing page, exactly as shown, e.g. `€5 per seat / month` |
 | `DASH_INDIVIDUAL_PRICE` | `-individual-price` | the individual price on the landing page and in **Organization → Billing**, exactly as shown, e.g. `€5 / month` |
 | `DASH_PRICING_URL`    | `-pricing-url`   | where the landing page's **see pricing** links to when there's no price  |
 
@@ -57,18 +57,25 @@ compares working with and without it, shows how a task goes from queued to merge
 time comes back, what keeps it safe, and what teams get. It has screenshots of the board, a
 task in review, the **Goals** page, the phone layout and the wall view. Then come the pricing,
 that the software is free to host yourself under the AGPL (with a link to `DASH_SOURCE_URL`),
-a short FAQ and the runner install command. Its buttons are **Log in**, and **Start free** when
+a short FAQ and the runner install command. Its buttons are **Log in**, and **Get started** when
 [open signup](signup.md) is on (it opens the sign-in page's signup form). Without open
 signup, the page's main button is **Log in**.
 
 The pricing shows individuals (and organizations with one member) and teams of two or more,
 as [billing](billing.md) charges them:
 
-- **Individuals**: with `DASH_INDIVIDUAL_PRICE`, that string and "Can't pay? Use it free, no
-  questions asked." Without it, **Free**. Set it when you set `STRIPE_INDIVIDUAL_PRICE_ID`
-  (see [Individuals](billing.md#individuals)), and leave it unset when you don't.
+- **Individuals**: with `DASH_INDIVIDUAL_PRICE`, that string and "Can't afford it? Use it for
+  free. No questions asked, no form to fill in." Without it, **Free**. Set it when you set
+  `STRIPE_INDIVIDUAL_PRICE_ID` (see [Individuals](billing.md#individuals)), and leave it unset
+  when you don't.
 - **Teams**: per seat. With `DASH_TEAM_PRICE`, that string. Otherwise "see pricing", linked to
   `DASH_PRICING_URL` (or to the contact address, or plain text if neither is set).
+
+With `DASH_INDIVIDUAL_PRICE`, the line under the main button reads "€5 / month for one person,
+or free if you can't afford it." (with your string), and the FAQ gets "What if I can't afford
+€5 / month?": choose **I can't pay right now** in **Organization → Billing**. Without it, the
+line reads "Free for one person." Both lines end "Your machines, your Claude subscription, no
+open ports."
 
 Dash doesn't bill anyone from these; they are words on a page.
 
@@ -85,7 +92,7 @@ A hosted Dash, with [open signup](signup.md):
     DASH_SIGNUP=1
     DASH_BRAND_NAME="Example Agents"
     DASH_LANDING=1
-    DASH_TEAM_PRICE="€8 per seat / month"
+    DASH_TEAM_PRICE="€5 per seat / month"
     DASH_INDIVIDUAL_PRICE="€5 / month"
     DASH_TERMS_URL=https://example.com/terms
     DASH_PRIVACY_URL=https://example.com/privacy
