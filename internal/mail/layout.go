@@ -71,7 +71,7 @@ var partTmpl = template.Must(template.New("parts").Parse(
 		`font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px">{{.Label}}</a></td></tr></table>{{end}}` +
 		`{{define "spelled"}}<p style="margin:0 0 16px;font-size:13px;color:` + colMuted + `">Or copy this link into your browser:<br>` +
 		`<a href="{{.URL}}" style="color:` + colAccent + `;word-break:break-all">{{.URL}}</a></p>{{end}}` +
-		`{{define "link"}}<a href="{{.URL}}" style="color:` + colAccent + `;text-decoration:none">{{.Label}}</a>{{end}}` +
+		`{{define "link"}}<a href="{{.URL}}" style="color:` + colAccent + `;text-decoration:underline">{{.Label}}</a>{{end}}` +
 		`{{define "rule"}}<hr style="border:0;border-top:1px solid ` + colLine + `;margin:24px 0">{{end}}`))
 
 func part(name string, data any) template.HTML {

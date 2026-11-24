@@ -65,6 +65,11 @@ func TestNotice(t *testing.T) {
 			t.Errorf("HTML lacks %q:\n%s", want, m.HTML)
 		}
 	}
+	// An inline link sits in grey text of about the same lightness, so the
+	// underline, not the colour, has to mark it (WCAG 1.4.1).
+	if a := string(A("x", "https://example.com")); !strings.Contains(a, "text-decoration:underline") {
+		t.Errorf("inline link is not underlined: %s", a)
+	}
 	if strings.Contains(string(A("x", "javascript:alert(1)")), "javascript:") {
 		t.Error("a javascript: link got through")
 	}
