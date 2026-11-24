@@ -1567,7 +1567,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 #settings-runners { display: grid; gap: 8px; margin-top: 10px; }
 #settings-runners .runner-pick { align-items: center; cursor: default; }
 #settings-runners .runner-pick.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
-#settings-runners .runner-pick:not(.on) { opacity: .7; }
+#settings-runners .runner-pick:not(.on) { border-style: dashed; }
+#settings-runners .runner-pick:not(.on) .runner-name { color: var(--muted); }
 #settings-runners .runner-pick .runner-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #settings-runners .runner-pick .hint { flex: 1; min-width: 0; margin: 0; text-align: right; font-size: var(--fs-s); overflow-wrap: anywhere; }
 #settings-runners-hint { margin-top: 8px; }
