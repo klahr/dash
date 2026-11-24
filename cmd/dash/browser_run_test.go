@@ -33,6 +33,9 @@ func TestBrowserRunButton(t *testing.T) {
 	b.until("click the greyed Run", `document.querySelector("#settings-sheet").open`, chromedp.Click(chromedp.ID("run-main")))
 	b.waitJS("at Commands", `document.querySelector('#settings-sheet .rail-section[data-section="commands"]').classList.contains("current")`)
 	b.until("close the settings", `!document.querySelector("#settings-sheet").open`, chromedp.KeyEvent(kb.Escape))
+	// Closing the sheet goes Back (router.js) a moment later; navigating before
+	// that lands has Chrome abort the load (net::ERR_ABORTED).
+	b.waitJS("the sheet gone from the address", `!new URLSearchParams(location.search).has("sheet")`)
 	h.api.must("PATCH", "/api/projects/"+pid, map[string]any{"preview_kind": "terminal", "preview_command": "echo run-button-ok; exec sh"}, http.StatusOK, nil)
 
 	for _, size := range []struct {
