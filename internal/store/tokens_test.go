@@ -223,6 +223,42 @@ func TestGrantRefreshRotationAndReplay(t *testing.T) {
 	}
 }
 
+// A disabled account's grant can't be refreshed, but is kept: once the
+// account is enabled again the same refresh token works.
+func TestGrantRefreshRefusedWhileDisabled(t *testing.T) {
+	t.Parallel()
+
+	_, acc, admin, org1, _ := tokenAccounts(t)
+	bea := addMember(t, acc, admin, org1, "bea", RoleMember)
+	now := time.Now()
+	if err := acc.CreateOAuthClient(OAuthClient{ID: "c1", Name: "Claude", RedirectURIs: []string{"https://claude.ai/cb"}, AuthMethod: "none", Created: now}, 10, now); err != nil {
+		t.Fatal(err)
+	}
+	p, err := acc.CreateGrant(Grant{ClientID: "c1", UserID: bea, OrgID: org1, Scopes: []string{"read"}}, time.Hour, 24*time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acc.SetDisabled(bea, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acc.RefreshGrant(p.Refresh, "c1", time.Hour, 24*time.Hour, now); !errors.Is(err, ErrTokenInvalid) {
+		t.Fatalf("refreshed while disabled: %v", err)
+	}
+	if n := acc.ConnectedClients(now); n != 1 {
+		t.Fatalf("grant not kept while disabled: connected %d", n)
+	}
+	if _, err := acc.SetDisabled(bea, false, now); err != nil {
+		t.Fatal(err)
+	}
+	p2, err := acc.RefreshGrant(p.Refresh, "c1", time.Hour, 24*time.Hour, now)
+	if err != nil {
+		t.Fatalf("refresh once enabled: %v", err)
+	}
+	if _, _, err := acc.Authenticate(p2.Access, now, TokenOAuth); err != nil {
+		t.Fatalf("new access token once enabled: %v", err)
+	}
+}
+
 func TestOAuthClientLimit(t *testing.T) {
 	t.Parallel()
 
