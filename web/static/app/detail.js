@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
 import { statusLabel, state } from "./state.js";
-import { approvable, buildsOnMeta, busyTodos, closable, closeTodo, closedNoChanges, canMergePR, whileBusy, doneMeta, conflictMeta, mergePR, depMeta, hasPriority, prChecksEl, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
+import { approvable, buildsOnMeta, busyTodos, closable, closeTodo, closedNoChanges, canMergePR, whileBusy, doneMeta, conflictMeta, mergePR, depMeta, hasPriority, prChecksEl, prChecksTitle, prReviewTag, prStatus, prTone, waitsOnGitHub } from "./branches.js";
 import { goalChip } from "./goals.js";
 import { editable, openTodoForm } from "./todos.js";
 import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.js";
@@ -152,7 +152,6 @@ let promptFold = ""; // the task and fold state the prompt was last opened or fo
 export function renderDetail() {
   const t = state.todos.get(state.detail);
   if (!t) return;
-  $("#d-title").textContent = title(t);
   $("#d-meta").replaceChildren(...[
     h("span", { class: `status s-${t.status}` }, statusLabel(t)),
     t.worktree ? h("span", { class: "branch" }, t.worktree.branch) : null,

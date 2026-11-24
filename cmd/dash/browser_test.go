@@ -1441,10 +1441,13 @@ func TestBrowserInlineEdit(t *testing.T) {
 	paneOpen := `!document.querySelector("#detail").hidden`
 
 	// The title: Esc cancels (the pane stays), Enter saves.
+	// The heading holds a real button, so a screen reader hears a rename control.
+	b.waitJS("the rename button", `document.querySelector("#d-title > button.title-edit[aria-describedby='d-title-hint']")?.textContent === "Rename me"`)
 	b.until("edit the title", `!document.querySelector("#d-title-input").hidden`, chromedp.Click(chromedp.ID("d-title")))
 	b.do("type and cancel", chromedp.KeyEvent("Nope"), chromedp.KeyEvent(kb.Escape))
-	b.waitJS("the title back", paneOpen+` && document.querySelector("#d-title-input").hidden && document.querySelector("#d-title").textContent === "Rename me"`)
-	b.until("edit the title again", `!document.querySelector("#d-title-input").hidden`, chromedp.Click(chromedp.ID("d-title")))
+	b.waitJS("the title back, focused", paneOpen+` && document.querySelector("#d-title-input").hidden && document.querySelector("#d-title").textContent === "Rename me" &&
+		document.activeElement === document.querySelector("#d-title .title-edit")`)
+	b.until("edit the title again from the keyboard", `!document.querySelector("#d-title-input").hidden`, chromedp.KeyEvent("\r"))
 	b.do("type and save", chromedp.KeyEvent("Renamed\r"))
 	b.waitJS("the new title", `document.querySelector("#d-title-input").hidden && document.querySelector("#d-title").textContent === "Renamed"`)
 	if get(); td.Title != "Renamed" {

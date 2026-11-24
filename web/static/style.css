@@ -2645,6 +2645,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 /* ---- editing a task in its detail pane (desktop; app/inlineedit.js) ---- */
 .detail-titles h2.editable { cursor: text; border-radius: var(--r-s); margin: -2px -6px; padding: 2px 6px; }
 .detail-titles h2.editable:hover { background: var(--raised); }
+.detail-titles .title-edit { all: unset; cursor: text; display: block; overflow-wrap: anywhere; }
+.detail-titles .title-edit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-s); }
 .detail-titles .title-input { font-size: var(--fs-xl); font-weight: 700; line-height: 1.3; padding: 2px 6px; margin: -3px -7px; width: calc(100% + 14px); }
 .meta-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; font-size: var(--fs-s); color: var(--muted); }
 .meta-ctl { display: inline-flex; align-items: center; gap: 6px; }

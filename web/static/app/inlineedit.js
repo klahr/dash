@@ -44,7 +44,7 @@ function endTitle(refocus = false) {
   titleFor = null;
   titleIn.hidden = true;
   titleEl.hidden = false;
-  if (refocus && had) titleEl.focus();
+  if (refocus && had) titleEl.querySelector(".title-edit")?.focus();
 }
 async function saveTitle(refocus) {
   const t = state.todos.get(titleFor);
@@ -55,12 +55,12 @@ async function saveTitle(refocus) {
   endTitle(refocus);
   refresh();
 }
-titleEl.addEventListener("click", editTitle);
+// While editable, the heading holds a real button (named by the title, described as
+// "Rename"), so a screen reader hears a control rather than just a heading.
+titleEl.addEventListener("click", (e) => { if (e.target.closest(".title-edit")) editTitle(); });
 titleEl.addEventListener("keydown", (e) => {
-  if ((e.key !== "Enter" && e.key !== " ") || !inlineEdits(cur())) return;
-  e.preventDefault();
-  e.stopPropagation();
-  editTitle();
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.stopPropagation(); // not the app's keys; the button's own click opens the field
 });
 titleIn.addEventListener("keydown", (e) => {
   if (e.isComposing) return;
@@ -300,7 +300,16 @@ export function renderInline(t) {
   if (titleFor && (titleFor !== t.id || !on)) endTitle();
   if (promptFor && promptFor !== t.id) cancelPrompt();
   titleEl.classList.toggle("editable", on);
-  if (on) { titleEl.tabIndex = 0; titleEl.title = "Click to rename (Enter saves, Esc cancels)"; } else { titleEl.removeAttribute("tabindex"); titleEl.removeAttribute("title"); }
+  // The heading's text; while editable, inside the rename button (kept across renders so
+  // it keeps focus after a save).
+  let btn = titleEl.querySelector(".title-edit");
+  if (on) {
+    if (!btn) {
+      btn = h("button", { type: "button", class: "title-edit", title: "Click to rename (Enter saves, Esc cancels)", "aria-describedby": "d-title-hint" });
+      titleEl.replaceChildren(btn);
+    }
+    btn.textContent = title(t);
+  } else titleEl.textContent = title(t);
   renderMeta(t);
   const editing = promptFor === t.id;
   $("#d-prompt").hidden = editing;
