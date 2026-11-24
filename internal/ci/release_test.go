@@ -194,3 +194,72 @@ func TestReleaseBuildSurvivesRestart(t *testing.T) {
 		t.Fatalf("saved: %v %+v", err, b)
 	}
 }
+
+// A followed release whose runs GitHub listed before stays as it is when a
+// poll briefly lists none: a glitch, not "no build".
+func TestReleaseKeepsRunsWhenGitHubListsNone(t *testing.T) {
+	releaseEvery, noBuildAfter = time.Hour, 0
+	defer func() { noBuildAfter = 3 * time.Minute }()
+	w, p, setRuns := newWatcher(t, false)
+	ctx := context.Background()
+	w.WatchRelease(p.ID, "v1.0.0", "ccc")
+	setRuns(runs(tagRun(31, "ccc", "in_progress", "")))
+	if st, _ := w.Refresh(ctx, p.ID); st.Release == nil || st.Release.State != ReleaseBuilding || len(st.Release.Runs) != 1 {
+		t.Fatalf("building: %+v", st.Release)
+	}
+	setRuns(runs())
+	st, _ := w.Refresh(ctx, p.ID)
+	if st.Release == nil || st.Release.State != ReleaseBuilding || len(st.Release.Runs) != 1 || st.Release.Runs[0].ID != 31 {
+		t.Fatalf("after an empty list: %+v", st.Release)
+	}
+	if b, err := w.Store.ReleaseBuild(p.ID, "v1.0.0"); err != nil || b.State != ReleaseBuilding || len(b.Runs) != 1 {
+		t.Fatalf("saved: %v %+v", err, b)
+	}
+}
+
+// When a release tag moved to another commit, only the newest commit's runs
+// say how its build went, even for a workflow the newest commit has no run of.
+func TestMovedReleaseTagCountsNewestCommit(t *testing.T) {
+	releaseEvery = time.Hour
+	w, p, setRuns := newWatcher(t, false)
+	setPush := pushRuns(t, w, p)
+	setRuns(runs(run(60, "CI", "aaa", "completed", "success")))
+	setPush(runs(
+		runOf(81, "Release", "1.4.0", "new", "completed", "success", "2026-11-06T12:00:00Z"),
+		runOf(80, "Build", "1.4.0", "old", "completed", "failure", "2026-11-06T11:00:00Z"),
+	))
+	st, _ := w.Refresh(context.Background(), p.ID)
+	rel := st.Release
+	if rel == nil || rel.Tag != "1.4.0" || rel.SHA != "new" || rel.State != ReleasePublished || len(rel.Runs) != 1 || rel.Runs[0].ID != 81 {
+		t.Fatalf("moved tag: %+v", rel)
+	}
+	if b, err := w.Store.ReleaseBuild(p.ID, "1.4.0"); err != nil || b.SHA != "new" || b.State != ReleasePublished {
+		t.Fatalf("saved: %v %+v", err, b)
+	}
+}
+
+// Asked twice to follow the same tag on the same commit (a hub and its
+// runner), Dash keeps the first push time; another commit is a new push.
+func TestWatchReleaseTwiceKeepsFirstPush(t *testing.T) {
+	releaseEvery = time.Hour
+	w, p, _ := newWatcher(t, false)
+	w.WatchRelease(p.ID, "v1.0.0", "ccc")
+	first, err := w.Store.ReleaseBuild(p.ID, "v1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	w.WatchRelease(p.ID, "v1.0.0", "ccc")
+	if rel := w.Status(p.ID).Release; rel == nil || !rel.Pushed.Equal(first.Pushed) {
+		t.Fatalf("second watch: %+v, first pushed %v", rel, first.Pushed)
+	}
+	if b, err := w.Store.ReleaseBuild(p.ID, "v1.0.0"); err != nil || !b.Pushed.Equal(first.Pushed) {
+		t.Fatalf("saved: %v %+v", err, b)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	w.WatchRelease(p.ID, "v1.0.0", "ddd") // the tag moved
+	if rel := w.Status(p.ID).Release; rel == nil || rel.SHA != "ddd" || !rel.Pushed.After(first.Pushed) {
+		t.Fatalf("moved tag: %+v, first pushed %v", rel, first.Pushed)
+	}
+}
