@@ -168,6 +168,53 @@ func TestCodexCreatedTask(t *testing.T) {
 	}
 }
 
+// TestCodexShownImage: a dash_board show_image call that worked carries the
+// image; a failed, errored or declined call and another server's show_image
+// carry none, though each names a file that is there.
+func TestCodexShownImage(t *testing.T) {
+	img := filepath.Join(t.TempDir(), "chart.png")
+	png := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+	if err := os.WriteFile(img, []byte(png), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args, _ := json.Marshal(map[string]string{"path": img})
+	call := func(id, server, rest string) string {
+		return `{"type":"item.completed","item":{"id":"` + id + `","type":"mcp_tool_call","server":"` + server + `","tool":"show_image","arguments":` + string(args) + `,` + rest + `}}`
+	}
+	ok := `"result":{"content":[{"type":"text","text":"The user sees chart.png in your reply."}]},"error":null,"status":"completed"`
+	lines := []string{
+		call("item_1", "dash_board", ok),
+		call("item_2", "dash_board", `"result":null,"error":null,"status":"failed"`),
+		call("item_3", "dash_board", `"result":null,"error":{"message":"there is no file"},"status":"completed"`),
+		call("item_4", "dash_board", `"result":null,"error":null,"status":"declined"`),
+		call("item_5", "other", ok),
+	}
+	tr := &codexTranslator{}
+	images := map[string]*mcptools.Image{}
+	for _, l := range lines {
+		ev, ok := parseCodexLine(l)
+		if !ok {
+			t.Fatalf("unparsed %s", l)
+		}
+		for _, d := range tr.Translate(ev) {
+			if d.Kind == "tool_result" {
+				images[d.ID] = d.Image
+			}
+		}
+	}
+	if got := images["item_1"]; got == nil || got.Name != "chart.png" || got.Type != "image/png" || string(got.Data) != png {
+		t.Errorf("show_image's image: %+v", got)
+	}
+	if len(images) != len(lines) {
+		t.Errorf("results %v", images)
+	}
+	for _, id := range []string{"item_2", "item_3", "item_4", "item_5"} {
+		if images[id] != nil {
+			t.Errorf("%s carries an image", id)
+		}
+	}
+}
+
 func TestCodexTranslateUnknown(t *testing.T) {
 	tr, out := codexFixture(t, "unknown.jsonl")
 	var warns []string
