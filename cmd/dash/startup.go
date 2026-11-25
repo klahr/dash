@@ -272,6 +272,19 @@ func (o *options) resolveEnv() {
 	o.metricsAddr = envOr(o.metricsAddr, "DASH_METRICS_ADDR")
 	o.githubProtocol = envOr(o.githubProtocol, "DASH_GITHUB_PROTOCOL")
 	o.claudeSandbox = envOr(o.claudeSandbox, "DASH_CLAUDE_SANDBOX")
+	// Branding (docs/branding.md).
+	o.brandName = envOr(o.brandName, "DASH_BRAND_NAME")
+	o.sourceURL = envOr(o.sourceURL, "DASH_SOURCE_URL")
+	o.termsURL = envOr(o.termsURL, "DASH_TERMS_URL")
+	o.privacyURL = envOr(o.privacyURL, "DASH_PRIVACY_URL")
+	o.termsFile = envOr(o.termsFile, "DASH_TERMS_FILE")
+	o.privacyFile = envOr(o.privacyFile, "DASH_PRIVACY_FILE")
+	o.contactEmail = envOr(o.contactEmail, "DASH_CONTACT_EMAIL")
+	o.logo = envOr(o.logo, "DASH_LOGO")
+	o.landing = o.landing || envBool("DASH_LANDING")
+	o.teamPrice = envOr(o.teamPrice, "DASH_TEAM_PRICE")
+	o.individualPrice = envOr(o.individualPrice, "DASH_INDIVIDUAL_PRICE")
+	o.pricingURL = envOr(o.pricingURL, "DASH_PRICING_URL")
 }
 
 // sandbox is the command that runs Claude for tasks and scans
@@ -566,10 +579,19 @@ func (a *app) configureOAuthTLS() {
 	}
 }
 
-// buildServices makes the task queue, merges, previews, scans and the API
-// server.
+// buildServices makes git and processes, the agents, the task queue and
+// merges, scans and the API server, each step from what the one before made.
 func (a *app) buildServices() {
-	o, st, events, ctx := a.o, a.st, a.events, a.ctx
+	a.newGit()
+	a.newAgents()
+	a.newQueue()
+	a.newScans()
+	a.newAPIServer()
+}
+
+// newGit makes git, the process manager and live previews.
+func (a *app) newGit() {
+	o, st, events := a.o, a.st, a.events
 	a.git = gitops.New(events)
 	a.git.SignCommits = o.signCommits
 	// Claude writes in these worktrees, perhaps as another user: Dash's git
@@ -592,7 +614,12 @@ func (a *app) buildServices() {
 	if a.previews.Domain != "" {
 		slog.Info("live previews", "hosts", "<task>."+a.previews.Domain)
 	}
+}
 
+// newAgents makes the usage tracker, the agent CLIs and the permission
+// broker.
+func (a *app) newAgents() {
+	o, st, events := a.o, a.st, a.events
 	a.tracker = usage.New(events)
 	if err := a.tracker.Keep(filepath.Join(o.dataDir, "usage.json")); err != nil {
 		slog.Warn("read usage.json", "err", err)
@@ -623,10 +650,15 @@ func (a *app) buildServices() {
 	a.permEvents = &teePublisher{Publisher: events}
 	a.perms = perm.NewBroker(a.permEvents)
 	a.perms.Saved = st
+}
+
+// newQueue makes the task log, the merge queue, the task engine and the
+// short calls (titles, summaries).
+func (a *app) newQueue() {
+	o, st, events := a.o, a.st, a.events
 	a.todoLog = &queue.TodoLog{Pub: events, Root: filepath.Join(o.dataDir, "logs"), MaxBytes: int64(max(o.logMaxMB, 0)) << 20}
 	a.merges = queue.NewMergeQueue(st, a.git, events, a.todoLog, 1024)
-	uploads := filepath.Join(o.dataDir, "uploads")
-	a.merges.WorktreeRoot, a.merges.UploadRoot = filepath.Join(o.dataDir, "worktrees"), uploads
+	a.merges.WorktreeRoot, a.merges.UploadRoot = filepath.Join(o.dataDir, "worktrees"), filepath.Join(o.dataDir, "uploads")
 	if o.cleanupDays > 0 {
 		a.merges.CleanupAfter, a.merges.CleanupEvery = time.Duration(o.cleanupDays)*24*time.Hour, 24*time.Hour
 	}
@@ -636,7 +668,7 @@ func (a *app) buildServices() {
 	a.todos = queue.NewTodoEngine(&queue.TodoEngine{
 		Store:        st,
 		Git:          a.git,
-		Exec:         prov,
+		Exec:         a.agent,
 		Pub:          events,
 		Log:          a.todoLog,
 		Merges:       a.merges,
@@ -653,17 +685,16 @@ func (a *app) buildServices() {
 	if o.autoTitles && o.runnerMode {
 		a.todos.Summarizer = a.small
 	}
-	var titler interface {
-		Title(ctx context.Context, prompt string) (string, error)
-	}
-	if o.autoTitles {
-		titler = a.small
-	}
+}
+
+// newScans makes the scan runner and its scheduler, and the CI watcher.
+func (a *app) newScans() {
+	o, st, ctx := a.o, a.st, a.ctx
 	// Scans read a throwaway checkout and file issues; their runs are
 	// unattended, with their own read-only tools, not -claude-args.
 	a.scans = &scan.Runner{
 		Store: st, Git: a.git, Context: ctx,
-		Exec:        prov,
+		Exec:        a.agent,
 		Root:        filepath.Join(o.dataDir, "scans"),
 		RunTimeout:  o.scanTimeout,
 		GitTools:    &scan.GitMCP{Pin: a.git.PinnedEnv},
@@ -682,13 +713,24 @@ func (a *app) buildServices() {
 	a.scans.Cleanup(ctx)
 	a.scans.PruneLogs()
 	a.scheduler = &scan.Scheduler{Store: st, Runner: a.scans, Usage: a.tracker}
-	a.builds = &ci.Watcher{Store: st, Git: a.git, Pub: events, Kick: a.todos.Kick, Every: time.Minute}
+	a.builds = &ci.Watcher{Store: st, Git: a.git, Pub: a.events, Kick: a.todos.Kick, Every: time.Minute}
+}
+
+// newAPIServer makes the API server from the services built before it.
+func (a *app) newAPIServer() {
+	o := a.o
+	var titler interface {
+		Title(ctx context.Context, prompt string) (string, error)
+	}
+	if o.autoTitles {
+		titler = a.small
+	}
 	// Try sessions' worktrees (a runner's): none outlives Dash, so those a
 	// stopped Dash left are removed (git forgets them at the next prune).
 	tryRoot := filepath.Join(o.dataDir, "try")
 	_ = os.RemoveAll(tryRoot)
 	a.apiSrv = &api.Server{
-		Store: st, Git: a.git, Hub: events, Todos: a.todos, Merges: a.merges, Procs: a.procs, Previews: a.previews,
+		Store: a.st, Git: a.git, Hub: a.events, Todos: a.todos, Merges: a.merges, Procs: a.procs, Previews: a.previews,
 		Auth:        a.authn,
 		Perms:       a.perms,
 		Board:       &mcptools.Tokens{},
@@ -697,7 +739,7 @@ func (a *app) buildServices() {
 		Scans:       a.scans,
 		Scheduler:   a.scheduler,
 		Editor:      o.editor,
-		UploadRoot:  uploads,
+		UploadRoot:  a.merges.UploadRoot,
 		TryRoot:     tryRoot,
 		DeployRoot:  filepath.Join(o.dataDir, "deploys"),
 		CI:          a.builds,
@@ -707,13 +749,13 @@ func (a *app) buildServices() {
 		Static:      web.Static,
 		PublicURL:   strings.TrimRight(o.publicURL, "/"),
 		Brand: branding.Config{
-			Name: envOr(o.brandName, "DASH_BRAND_NAME"), SourceURL: envOr(o.sourceURL, "DASH_SOURCE_URL"),
-			TermsURL: envOr(o.termsURL, "DASH_TERMS_URL"), PrivacyURL: envOr(o.privacyURL, "DASH_PRIVACY_URL"),
-			TermsFile: envOr(o.termsFile, "DASH_TERMS_FILE"), PrivacyFile: envOr(o.privacyFile, "DASH_PRIVACY_FILE"),
-			Contact: envOr(o.contactEmail, "DASH_CONTACT_EMAIL"), Logo: envOr(o.logo, "DASH_LOGO"),
-			Landing: o.landing || envBool("DASH_LANDING"), TeamPrice: envOr(o.teamPrice, "DASH_TEAM_PRICE"),
-			IndividualPrice: envOr(o.individualPrice, "DASH_INDIVIDUAL_PRICE"),
-			PricingURL:      envOr(o.pricingURL, "DASH_PRICING_URL"),
+			Name: o.brandName, SourceURL: o.sourceURL,
+			TermsURL: o.termsURL, PrivacyURL: o.privacyURL,
+			TermsFile: o.termsFile, PrivacyFile: o.privacyFile,
+			Contact: o.contactEmail, Logo: o.logo,
+			Landing: o.landing, TeamPrice: o.teamPrice,
+			IndividualPrice: o.individualPrice,
+			PricingURL:      o.pricingURL,
 		}.WithDefaults(),
 	}
 }
