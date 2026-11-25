@@ -6,6 +6,7 @@ import { projectFirst, state } from "./state.js";
 import { showView } from "./nav.js";
 import { isHub } from "./projects.js";
 import { servesProject } from "../groups.js";
+import { clockText } from "../time.js";
 import { closeDetail } from "./detail.js";
 import { loadProcs, renderProcs } from "./try.js";
 import { setMode } from "./vim.js";
@@ -342,8 +343,7 @@ export function testStatus() {
   const ok = proc && !running && proc.exit_code === 0;
   const bad = proc && !running && proc.exit_code != null && proc.exit_code !== 0;
   const cut = proc && !running && proc.exit_code == null;
-  const secs = proc ? Math.max(0, Math.floor((Date.now() - new Date(proc.started_at)) / 1000)) : 0;
-  const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  const elapsed = proc ? clockText(proc.started_at) : "0:00";
   return {
     state: running ? "running" : ok ? "ok" : bad ? "bad" : "",
     label: running ? `Testing ${elapsed}` : "Run tests",
