@@ -596,11 +596,7 @@ func (n *Notifier) newlyStuck(pid string, cs []model.Checkout) string {
 		if who == "" {
 			who = "The checkout"
 		}
-		s := "s"
-		if c.Behind == 1 {
-			s = ""
-		}
-		lines = append(lines, fmt.Sprintf("%s: %s is %d commit%s behind origin (%s)", who, c.Branch, c.Behind, s, c.Stuck))
+		lines = append(lines, fmt.Sprintf("%s: %s is %s behind origin (%s)", who, c.Branch, textutil.Count(c.Behind, "commit", "commits"), c.Stuck))
 	}
 	for k := range n.stuck {
 		if k[0] == pid && !stuckNow[k] {

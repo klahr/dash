@@ -32,6 +32,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // How long a deploy waits for its release build: waitNoBuild for Dash to
@@ -196,9 +197,9 @@ func (s *Server) buildVerdict(p model.Project, d model.Deploy, now time.Time) (b
 // waitText says d in words: "15 minutes", "6 hours".
 func waitText(d time.Duration) string {
 	if d >= time.Hour && d%time.Hour == 0 {
-		return plural(int(d/time.Hour), "hour")
+		return textutil.Count(int(d/time.Hour), "hour", "hours")
 	}
-	return plural(int(d/time.Minute), "minute")
+	return textutil.Count(int(d/time.Minute), "minute", "minutes")
 }
 
 // releaseWaiting moves d on once its release build passed: checked as a

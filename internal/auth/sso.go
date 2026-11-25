@@ -6,11 +6,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Single sign-on settings (see google.go for the sign-in itself):
@@ -533,16 +533,8 @@ func (a *Auth) signOutMember(w http.ResponseWriter, r *http.Request, id *Identit
 	}
 	a.revoked(toks)
 	a.audit(r, store.AuthEvent{OrgID: m.ID, UserID: uid, Actor: id.User.ID, Kind: "member.signed_out",
-		Detail: plural(n, "session") + ", " + plural(len(toks), "token")})
+		Detail: textutil.Count(n, "session", "sessions") + ", " + textutil.Count(len(toks), "token", "tokens")})
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": n, "tokens": len(toks), "everywhere": false})
-}
-
-func plural(n int, what string) string {
-	s := strconv.Itoa(n) + " " + what
-	if n != 1 {
-		s += "s"
-	}
-	return s
 }
 
 // googleAvailable reports whether id may sign in with Google: the

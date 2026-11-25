@@ -134,3 +134,14 @@ func TestOneLine(t *testing.T) {
 		}
 	}
 }
+
+func TestCount(t *testing.T) {
+	for _, c := range []struct {
+		n    int
+		want string
+	}{{0, "0 branches"}, {1, "1 branch"}, {2, "2 branches"}} {
+		if got := Count(c.n, "branch", "branches"); got != c.want {
+			t.Errorf("Count(%d) = %q, want %q", c.n, got, c.want)
+		}
+	}
+}

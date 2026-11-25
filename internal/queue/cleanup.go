@@ -12,6 +12,7 @@ import (
 
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 
 	"github.com/klahr/dash/internal/localrun"
 )
@@ -33,17 +34,11 @@ func (r CleanupReport) String() string {
 	}
 	var parts []string
 	for _, x := range []struct {
-		n    int
-		what string
-	}{{r.Worktrees, "worktree"}, {r.Branches, "branch"}, {r.Logs, "log"}, {r.Uploads, "upload"}} {
-		if x.n == 1 {
-			parts = append(parts, "1 "+x.what)
-		} else if x.n > 1 {
-			plural := x.what + "s"
-			if x.what == "branch" {
-				plural = "branches"
-			}
-			parts = append(parts, fmt.Sprintf("%d %s", x.n, plural))
+		n         int
+		one, many string
+	}{{r.Worktrees, "worktree", "worktrees"}, {r.Branches, "branch", "branches"}, {r.Logs, "log", "logs"}, {r.Uploads, "upload", "uploads"}} {
+		if x.n > 0 {
+			parts = append(parts, textutil.Count(x.n, x.one, x.many))
 		}
 	}
 	return fmt.Sprintf("removed %s (%s)", strings.Join(parts, ", "), disk.Size(uint64(r.Bytes)))

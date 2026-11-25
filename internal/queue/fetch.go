@@ -11,6 +11,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // RemoteStatus is how a project's default branch compares with origin's, as
@@ -393,20 +394,13 @@ func (r *RemoteSync) FastForward(ctx context.Context, p model.Project) string {
 		slog.Warn("fast-forward to origin", "project", p.Name, "err", err)
 		return note + "starting from local " + p.Base()
 	case moved > 0:
-		return note + fmt.Sprintf("⇣ fast-forwarded %s to origin (%s new)", p.Base(), commits(moved))
+		return note + fmt.Sprintf("⇣ fast-forwarded %s to origin (%s new)", p.Base(), textutil.Count(moved, "commit", "commits"))
 	case ahead > 0:
-		return note + fmt.Sprintf("local %s has %s origin doesn't; starting from it as is (the merge reconciles them)", p.Base(), commits(ahead))
+		return note + fmt.Sprintf("local %s has %s origin doesn't; starting from it as is (the merge reconciles them)", p.Base(), textutil.Count(ahead, "commit", "commits"))
 	case note != "":
 		return note + "starting from local " + p.Base()
 	}
 	return ""
-}
-
-func commits(n int) string {
-	if n == 1 {
-		return "1 commit"
-	}
-	return fmt.Sprintf("%d commits", n)
 }
 
 // ---------------------------------------------------------------- following origin
@@ -565,7 +559,7 @@ func (r *RemoteSync) whyNotForward(ctx context.Context, p model.Project, ahead i
 	case err != nil:
 		return "can't read the checkout: " + brief(err)
 	case ahead > 0:
-		return fmt.Sprintf("local %s has %s origin doesn't (diverged)", p.Base(), commits(ahead))
+		return fmt.Sprintf("local %s has %s origin doesn't (diverged)", p.Base(), textutil.Count(ahead, "commit", "commits"))
 	case branch == p.Base() && dirty:
 		return "uncommitted changes in " + p.Path
 	}

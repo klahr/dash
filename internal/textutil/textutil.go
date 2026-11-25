@@ -3,6 +3,7 @@
 package textutil
 
 import (
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -101,4 +102,13 @@ func Fence(text string) string {
 	}
 	f := strings.Repeat("`", n)
 	return f + "\n" + text + "\n" + f
+}
+
+// Count is n followed by one or many, as n calls for: "1 commit",
+// "3 commits". Taking many explicitly covers plurals like "branches".
+func Count(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.Itoa(n) + " " + many
 }

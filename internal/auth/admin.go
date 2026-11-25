@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Managing someone else's account (see docs/users.md#admin):
@@ -504,7 +505,7 @@ func (a *Auth) signOutEverywhere(w http.ResponseWriter, r *http.Request, id *Ide
 	}
 	a.revoked(toks)
 	a.audit(r, store.AuthEvent{OrgID: org, UserID: uid, Actor: id.User.ID, Kind: "admin.signed_out",
-		Detail: plural(n, "session") + ", " + plural(len(toks), "token")})
+		Detail: textutil.Count(n, "session", "sessions") + ", " + textutil.Count(len(toks), "token", "tokens")})
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": n, "tokens": len(toks), "everywhere": true})
 }
 

@@ -251,7 +251,7 @@ func mcpSummary(s string) string {
 		return "No servers"
 	}
 	names := slices.Sorted(maps.Keys(cfg.Servers))
-	return textutil.Clip(plural(len(names), "server")+": "+strings.Join(names, ", "), 240)
+	return textutil.Clip(textutil.Count(len(names), "server", "servers")+": "+strings.Join(names, ", "), 240)
 }
 
 // settingsSummary says what a .claude/settings.json sets up: hooks by event
@@ -289,11 +289,4 @@ func settingsSummary(s string) string {
 		return "No hooks or permission rules"
 	}
 	return textutil.Clip(strings.Join(parts, " · "), 240)
-}
-
-func plural(n int, word string) string {
-	if n == 1 {
-		return "1 " + word
-	}
-	return strconv.Itoa(n) + " " + word + "s"
 }
