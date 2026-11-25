@@ -82,7 +82,6 @@ import "./app/planningview.js";
 import "./app/terminal.js";
 import "./app/try.js";
 import "./app/history.js";
-import "./app/goals.js";
 import "./app/releaseform.js";
 import "./app/releases.js";
 import "./app/files.js";
