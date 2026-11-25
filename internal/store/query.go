@@ -1,6 +1,35 @@
 package store
 
-import "database/sql"
+import (
+	"database/sql"
+	"errors"
+	"time"
+)
+
+// singletonKey returns the col of table's one row (id = 1), made with gen
+// and saved the first time. table and col are code constants, never user
+// input: they are put into the SQL as they are.
+func (s *Store) singletonKey(table, col string, gen func() (string, error)) (string, error) {
+	sel := "SELECT " + col + " FROM " + table + " WHERE id = 1"
+	var key string
+	err := s.db.QueryRow(sel).Scan(&key)
+	if err == nil {
+		return key, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	if key, err = gen(); err != nil {
+		return "", err
+	}
+	// Another process may have won the race: keep whichever is stored.
+	if _, err := s.db.Exec("INSERT INTO "+table+" (id, "+col+", created_at) VALUES (1, ?, ?) ON CONFLICT (id) DO NOTHING",
+		key, time.Now().Unix()); err != nil {
+		return "", err
+	}
+	err = s.db.QueryRow(sel).Scan(&key)
+	return key, err
+}
 
 // scanner is a row to scan: *sql.Row or *sql.Rows.
 type scanner interface{ Scan(...any) error }

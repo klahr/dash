@@ -16,24 +16,7 @@ import (
 // PushVAPIDKey returns the hub's VAPID private key, made with gen and saved
 // the first time.
 func (s *Store) PushVAPIDKey(gen func() (string, error)) (string, error) {
-	var key string
-	err := s.db.QueryRow("SELECT private_key FROM push_vapid WHERE id = 1").Scan(&key)
-	if err == nil {
-		return key, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return "", err
-	}
-	if key, err = gen(); err != nil {
-		return "", err
-	}
-	// Another process may have won the race: keep whichever is stored.
-	if _, err := s.db.Exec("INSERT INTO push_vapid (id, private_key, created_at) VALUES (1, ?, ?) ON CONFLICT (id) DO NOTHING",
-		key, time.Now().Unix()); err != nil {
-		return "", err
-	}
-	err = s.db.QueryRow("SELECT private_key FROM push_vapid WHERE id = 1").Scan(&key)
-	return key, err
+	return s.singletonKey("push_vapid", "private_key", gen)
 }
 
 const pushCols = `id, user_id, org_id, endpoint, p256dh, auth, user_agent, created_at, last_at, last_error`

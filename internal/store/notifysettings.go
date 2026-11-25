@@ -242,22 +242,7 @@ func (s *Store) PruneActivity(before time.Time) error {
 // NotifyKey returns the key that signs unsubscribe links, made with gen
 // and saved the first time.
 func (s *Store) NotifyKey(gen func() (string, error)) (string, error) {
-	var key string
-	err := s.db.QueryRow("SELECT key FROM notify_key WHERE id = 1").Scan(&key)
-	if err == nil {
-		return key, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return "", err
-	}
-	if key, err = gen(); err != nil {
-		return "", err
-	}
-	if _, err := s.db.Exec("INSERT INTO notify_key (id, key, created_at) VALUES (1, ?, ?) ON CONFLICT (id) DO NOTHING", key, time.Now().Unix()); err != nil {
-		return "", err
-	}
-	err = s.db.QueryRow("SELECT key FROM notify_key WHERE id = 1").Scan(&key)
-	return key, err
+	return s.singletonKey("notify_key", "key", gen)
 }
 
 // ---- the org's view ----
