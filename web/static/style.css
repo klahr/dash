@@ -209,6 +209,16 @@ textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: 
 .run-at { min-width: 0; max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-s); text-decoration: none; }
 .run-at code { font-family: var(--mono); color: var(--text); }
 .run-at:hover { color: var(--text); text-decoration: underline; }
+/* ▾'s dot: a test run or build failed (red), one goes (pulsing), or commits wait to be pushed. */
+.run-pick { position: relative; }
+.run-pick[data-state]::after {
+  content: ""; position: absolute; top: 5px; right: 6px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--surface);
+}
+.run-pick[data-state="bad"]::after { background: var(--failed); }
+.run-pick[data-state="running"]::after { background: var(--running); animation: run-pick-pulse 1.6s ease-in-out infinite; }
+@keyframes run-pick-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .run-pick[data-state="running"]::after { animation: none; } }
 /* Phones: the icon alone (its name is its label), and the commit without the runner. */
 @media (max-width: 599px) {
   .run-split { gap: 6px; }
@@ -217,27 +227,6 @@ textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: 
   .run-at .run-at-on { display: none; }
 }
 .live { display: grid; place-items: center; width: 28px; height: 28px; }
-.quick-actions { order: 4; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.quick-actions > .side-projects-head { flex-basis: 100%; padding-bottom: 2px; }
-.quick-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; min-width: 36px; padding: 0 10px;
-  border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: var(--fs-s); font-weight: 600; white-space: nowrap; flex: 1 1 auto;
-}
-.quick-btn:hover { border-color: var(--accent); }
-.quick-btn:disabled { opacity: .55; cursor: not-allowed; }
-.quick-btn:disabled:hover { border-color: var(--line); }
-.quick-btn svg { width: 16px; height: 16px; color: var(--accent); flex: none; }
-.quick-btn span { font-variant-numeric: tabular-nums; }
-.quick-btn.running { border-color: var(--running); background: color-mix(in srgb, var(--running) 10%, var(--surface)); }
-.quick-btn.running svg { display: none; }
-.quick-btn.running::before {
-  content: ""; width: 12px; height: 12px; flex: none; border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--running) 30%, transparent); border-top-color: var(--running); animation: spin .8s linear infinite;
-}
-.quick-btn.ok svg { color: var(--merged); }
-.quick-btn.ok { border-color: color-mix(in srgb, var(--merged) 50%, var(--line)); }
-.quick-btn.bad svg { color: var(--failed); }
-.quick-btn.bad { border-color: var(--failed); background: color-mix(in srgb, var(--failed) 10%, var(--surface)); }
 .live-dot { background: var(--failed); box-shadow: 0 0 0 3px color-mix(in srgb, var(--failed) 25%, transparent); }
 .live.on .live-dot { background: var(--merged); box-shadow: 0 0 0 3px color-mix(in srgb, var(--merged) 22%, transparent); }
 
@@ -696,8 +685,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 }
 .composer textarea { flex: 1 1 0; width: auto; min-width: 0; resize: none; max-height: 40vh; padding: 11px 16px; }
 #pc-open[aria-pressed="true"], #pc-pin[aria-pressed="true"] { color: var(--accent); }
-#push-main:not(:disabled) { border-color: var(--accent); }
-#push-main:disabled { cursor: default; }
 #pc-pin[aria-pressed="true"] .ico { fill: currentColor; }
 /* Chat pane: a page between the top bar and the nav on mobile; see desktop for overlay and pinned. */
 .chat-pane {
@@ -2163,6 +2150,12 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .pop-menu button:disabled { opacity: .55; cursor: not-allowed; background: none; }
 .pop-menu .menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pop-menu .menu-note { font-style: normal; font-size: var(--fs-s); color: var(--muted); margin-left: auto; padding-left: 12px; }
+.pop-menu .menu-key { flex: none; margin-left: auto; font-weight: 500; color: var(--muted); }
+.pop-menu .menu-note + .menu-key { margin-left: 8px; }
+.pop-menu .tone-ok .ico, .pop-menu .tone-ok .menu-note { color: var(--merged); }
+.pop-menu .tone-bad .ico, .pop-menu .tone-bad .menu-note { color: var(--failed); }
+.pop-menu .tone-running .ico, .pop-menu .tone-running .menu-note { color: var(--running); }
+.pop-menu .tone-running .menu-label { font-variant-numeric: tabular-nums; }
 .pop-menu-head { padding: 6px 10px 4px; font-size: var(--fs-s); font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The account menu at the bottom of the sidebar: a full-width row with the username. */
 .account-menu { flex: 1 1 100%; margin-left: 0; }
@@ -2309,7 +2302,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .shared-mark .ico { width: 13px; height: 13px; }
 .project-name .shared-mark { margin-left: 6px; vertical-align: -1px; }
 .menu-btn { position: relative; margin-left: -10px; }
-.app:has(#pm-builds.bad:not([hidden]), .usage-pill.paused:not([hidden])) .menu-btn::after {
+.app:has(.usage-pill.paused:not([hidden])) .menu-btn::after {
   content: ""; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%;
   background: var(--failed); box-shadow: 0 0 0 2px var(--bg);
 }
@@ -2337,7 +2330,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .usage-fold { top: 0; right: 0; width: 44px; height: 44px; }
   .usage-box:has(.usage-fold:not([hidden])) #usage-pill .usage-head { padding-right: 34px; }
   .app:not(.side-collapsed) .usage-box.folded #usage-pill { padding-right: 48px; }
-  .quick-btn { min-height: 44px; }
   .foot-menu > summary { width: 44px; height: 44px; }
   .foot-menu.account-menu > summary { width: 100%; height: auto; min-height: 44px; }
   .foot-menu-list button { min-height: 44px; }
@@ -2466,7 +2458,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-collapsed :is(.nav > button, .menu-view) > span:not(.badge),
   .side-collapsed .side-projects-head, .side-collapsed .side-project-text, .side-collapsed .side-project-branch, .side-collapsed .shared-mark,
   .side-collapsed .side-machine, .side-collapsed .machine-empty,
-  .side-collapsed .side-new-project span, .side-collapsed .quick-btn span,
+  .side-collapsed .side-new-project span,
   .side-collapsed .side-runners .side-projects-head, .side-collapsed .side-runner > span:not(.side-runner-icon), .side-collapsed .side-runner-more,
   .side-collapsed .sidebar .usage-pill:not(#usage-pill), .side-collapsed .usage-fold, .side-collapsed .merge-status { display: none; }
   /* Collapsed to icons, the runners show as dots whether folded or not: there is no head to unfold them with. */
@@ -2492,8 +2484,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-collapsed .side-others-fold { justify-content: center; padding: 0; min-height: 40px; }
   .side-collapsed .side-other-list { gap: 4px; margin-top: 4px; }
   .side-collapsed .side-new-project svg { width: 26px; height: 26px; padding: 5px; }
-  .side-collapsed .quick-actions { flex-direction: column; }
-  .side-collapsed .quick-btn { padding: 0; min-height: 40px; }
   .side-collapsed .nav-foot { justify-content: center; padding: 0; }
   .side-collapsed .foot-menu { margin: 0; }
   .side-collapsed .nav-foot .foot-menu-list { right: auto; left: 0; min-width: 200px; }

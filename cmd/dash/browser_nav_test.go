@@ -31,8 +31,13 @@ func TestBrowserNavigation(t *testing.T) {
 		return sep?.textContent === "Organization"
 			&& els.map((e) => e.dataset.view || "|").join() === "board,scans,run,history,goals,deploys,files,|,planning";
 	})()`)
-	// Run is the top bar's and Deploy the Deploys page's: not in the sidebar's Actions too.
-	b.waitJS("no Run or Deploy in the Actions", `document.querySelector("#run-split") && !document.querySelector("#quick-actions [data-run='web:run'], #quick-actions [data-run='task:deploy'], #quick-server, #quick-deploy")`)
+	// The sidebar has no Actions: Run tests, Push and Builds… are in Run's ▾ menu, Deploy on the Deploys page.
+	b.waitJS("no Actions in the sidebar", `document.querySelector("#run-split") && !document.querySelector("#quick-actions, #quick-test, #push-main, #pm-builds")`)
+	b.until("open Run's ▾", `document.querySelector(".pop-menu") && document.querySelector("#run-pick").getAttribute("aria-expanded") === "true"`,
+		chromedp.Click(chromedp.ID("run-pick")))
+	// The app's project has no test command, pushes through its runner and has no builds yet: Run and Configure… only.
+	b.waitJS("Run, then Configure…", `[...document.querySelectorAll(".pop-menu .menu-label")].map((e) => e.textContent).join() === "Run,Configure…"`)
+	b.until("close it", `!document.querySelector(".pop-menu")`, chromedp.KeyEvent(kb.Escape))
 
 	// The Checklist's old link opens the board.
 	b.do("open the Checklist's old link", chromedp.Navigate(h.base+"/p/"+pid+"/checklist"))

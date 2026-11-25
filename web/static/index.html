@@ -39,12 +39,13 @@
       </div>
       <!-- Run (app/try.js): shown whenever a project is open. A terminal project runs the latest
            commit's preview command on a runner; a web project runs its run command, as the Shell
-           page's Run does. The main part runs (or, while it runs, terminates); ▾ picks the runner
-           and has Configure…. With nothing to run, the main part is greyed (aria-disabled, so a
+           page's Run does. The main part runs (or, while it runs, terminates); ▾ picks the runner,
+           and has Run tests, Push, Builds… and Configure…, with a dot when a test run or build
+           goes or failed. With nothing to run, the main part is greyed (aria-disabled, so a
            click still opens Configure… and the tooltip says why). -->
       <div class="run-split" id="run-split" role="group" aria-label="Run the latest commit" hidden>
         <button type="button" class="run-main" id="run-main"><span class="run-main-label">Run</span></button>
-        <button type="button" class="run-pick" id="run-pick" aria-label="Pick where to run it" title="Pick where to run it" aria-haspopup="menu" aria-expanded="false" data-icon="down"></button>
+        <button type="button" class="run-pick" id="run-pick" aria-label="Run, tests, push and builds" title="Run, tests, push and builds" aria-haspopup="menu" aria-expanded="false" data-icon="down"></button>
         <a class="run-at" id="run-at" hidden></a>
       </div>
       <div class="lane-chips" id="lane-chips" role="group" aria-label="Minimized columns"></div>
@@ -62,7 +63,7 @@
         <summary class="icon-btn" aria-label="Project menu" title="Project menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
         <!-- Managing the project, in groups: its setup, its queue, then housekeeping and
              deleting it. Running things are elsewhere: Run in the top bar, Deploy on the
-             Deploys page, Tests, Push and Builds in the sidebar's Actions; status is the
+             Deploys page, Run tests, Push and Builds… in Run's ▾ menu; status is the
              sidebar's pills. -->
         <div class="foot-menu-list">
           <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
@@ -104,7 +105,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Planning</span>
       </button>
-      <!-- Projects, project actions and status: part of the sidebar on desktop,
+      <!-- Projects and status: part of the sidebar on desktop,
            a drawer behind the menu button on mobile. -->
       <div class="menu-scrim" id="menu-scrim" hidden></div>
       <div class="menu" id="menu">
@@ -143,16 +144,6 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
             <span>Files</span>
           </button>
-        </div>
-        <!-- The project's actions: what runs on its code, each showing how it went. -->
-        <div class="quick-actions" id="quick-actions" role="group" aria-labelledby="quick-actions-title">
-          <h2 class="side-projects-head" id="quick-actions-title">Actions</h2>
-          <button class="quick-btn" data-run="task:test" id="quick-test" hidden title="Run tests (T on the Shell page)">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Run Tests</span>
-          </button>
-          <button class="quick-btn" id="push-main" type="button" data-icon="push" hidden><span>Push</span></button>
-          <button class="quick-btn" id="pm-builds" type="button" data-icon="checks" aria-haspopup="dialog" hidden><span>Builds</span></button>
         </div>
         <button class="usage-pill remote-pill" id="remote-pill" type="button" hidden title="The default branch compared with origin's"></button>
         <!-- GitHub rate limits the gh that reads this project's builds: Dash pauses its polls (app/actions.js). -->

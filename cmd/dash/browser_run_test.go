@@ -12,7 +12,7 @@ import (
 // the runner and opens its terminal, turning into ■ Terminate (the same
 // width, keeping focus) with the commit and runner beside it; Terminate stops
 // it and it is Run again. ▾ lists the runners, then Pick a commit…, and works
-// with the keyboard. On a wide screen and a phone's. A web project with no
+// with the keyboard; it stays while a run goes, and has Run tests with its key and how it went. On a wide screen and a phone's. A web project with no
 // run command shows it greyed, and clicking it opens Configure….
 func TestBrowserRunButton(t *testing.T) {
 	endToEnd(t)
@@ -77,7 +77,7 @@ func TestBrowserRunButton(t *testing.T) {
 		b.until(size.name+": Run", `document.querySelector("#run-main").classList.contains("stop")`, chromedp.Click(chromedp.ID("run-main")))
 		b.waitJS(size.name+": ■ Terminate", `(() => {
 			const m = document.querySelector("#run-main");
-			return m.textContent === "Terminate" && m.offsetWidth === window.runWidth && document.querySelector("#run-pick").hidden
+			return m.textContent === "Terminate" && m.offsetWidth === window.runWidth && !document.querySelector("#run-pick").hidden
 				&& document.activeElement === m;
 		})()`)
 		b.waitJS(size.name+": the terminal", `document.querySelector("#view-run.active.at-commit") && !document.querySelector("#try-term-wrap").hidden
@@ -86,6 +86,11 @@ func TestBrowserRunButton(t *testing.T) {
 			const a = document.querySelector("#run-at");
 			return !a.hidden && /^[0-9a-f]{7}/.test(a.textContent) && a.textContent.includes("on laptop") && a.getAttribute("href") === "/p/`+pid+`/try";
 		})()`)
+
+		// ▾ stays, for the project's other actions: Terminate first instead of the runners.
+		b.until(size.name+": ▾ while it runs", `!!document.querySelector(".pop-menu")`, chromedp.Click(chromedp.ID("run-pick")))
+		b.waitJS(size.name+": Terminate, then Configure…", `[...document.querySelectorAll(".pop-menu .menu-label")].map((e) => e.textContent).join() === "Terminate,Configure…"`)
+		b.until(size.name+": close ▾", `!document.querySelector(".pop-menu")`, chromedp.KeyEvent(kb.Escape))
 
 		// ■ Terminate: stopped, Run again, focus still on it.
 		b.until(size.name+": Terminate", `!document.querySelector("#run-main").classList.contains("stop")`, chromedp.Click(chromedp.ID("run-main")))
@@ -100,4 +105,17 @@ func TestBrowserRunButton(t *testing.T) {
 			t.Fatalf("%s: Terminate left the session running: %+v", size.name, st.Session)
 		}
 	}
+
+	// With a test command, ▾ has Run tests with its key; it runs them, and says how they went
+	// there and with a dot on ▾.
+	h.api.must("PATCH", "/api/projects/"+pid, map[string]any{"test_command": "exit 3"}, http.StatusOK, nil)
+	b.do("reload", chromedp.Reload())
+	b.until("open ▾", `[...document.querySelectorAll(".pop-menu .menu-label")].some((e) => e.textContent === "Run tests")`,
+		chromedp.Click(chromedp.ID("run-pick")))
+	b.waitJS("Run tests, with T", `[...document.querySelectorAll(".pop-menu button")].find((e) => e.textContent.includes("Run tests"))?.querySelector("kbd.menu-key")?.textContent === "T"`)
+	b.run("Run tests", `[...document.querySelectorAll(".pop-menu button")].find((e) => e.textContent.includes("Run tests")).click(); true`)
+	b.waitJS("a red dot on ▾", `document.querySelector("#run-pick").dataset.state === "bad" && document.querySelector("#run-pick").title.includes("Tests failed")`)
+	b.until("open ▾ again", `!!document.querySelector(".pop-menu")`, chromedp.Click(chromedp.ID("run-pick")))
+	b.waitJS("Run tests says failed", `document.querySelector(".pop-menu .tone-bad .menu-note")?.textContent === "failed"`)
+	b.until("close ▾", `!document.querySelector(".pop-menu")`, chromedp.KeyEvent(kb.Escape))
 }

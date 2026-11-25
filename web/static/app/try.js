@@ -11,7 +11,9 @@ import { closeDetail } from "./detail.js";
 import { PV_ARROWS, PV_KEYS } from "./preview.js";
 import { agoText } from "../time.js";
 import { pane, renderTryBack, toggleChatPane } from "./chatpane.js";
-import { ensureShell, procTerminal, renderQuick, serverRunning, toggleServer } from "./terminal.js";
+import { ensureShell, procTerminal, runTests, serverRunning, testStatus, toggleServer } from "./terminal.js";
+import { pushDone, pushStatus } from "./board.js";
+import { buildStatus, openCI } from "./actions.js";
 
 // ------------------------------------------------------------------ try: the project's CLI on a runner
 // (tryState is declared with state, near the top: views render before this runs.)
@@ -67,6 +69,8 @@ export function renderTryButton() {
 // its terminal. A web project with a run command runs it in its checkout, and
 // while it runs the button is ■ Stop (terminal.js: toggleServer). Any other project has nothing to run: ▶ Run is greyed
 // (aria-disabled, so it still takes clicks) and opens Configure….
+// ▾ also holds the project's other actions: Run tests, Push and Builds…, and a
+// dot on it says one needs a look (a test run or build going, or failed).
 const runKey = (pid) => `dash.run.runner.${pid}`;
 function lastRunner(pid) { try { return localStorage.getItem(runKey(pid)) || ""; } catch { return ""; } }
 function rememberRunner(pid, id) { try { localStorage.setItem(runKey(pid), id); } catch { /* private mode */ } }
@@ -104,9 +108,10 @@ function runRunner() {
 
 function renderRun() {
   const p = state.project, s = tryState.session;
-  const wrap = $("#run-split"), main = $("#run-main"), pick = $("#run-pick"), at = $("#run-at");
+  const wrap = $("#run-split"), main = $("#run-main"), at = $("#run-at");
   wrap.hidden = !p;
   if (wrap.hidden) return;
+  renderPickState();
   const why = noRunWhy(p);
   main.classList.toggle("off", !!why);
   if (why) main.setAttribute("aria-disabled", "true"); else main.removeAttribute("aria-disabled");
@@ -117,9 +122,6 @@ function renderRun() {
     setLabel(main, stop ? "stop" : "play", h("span", { class: "run-main-label" }, stop ? "Stop" : "Run"));
     main.disabled = false;
     main.title = why || (stop ? "Stop the server" : `Run ${p.run_command}`);
-    pick.hidden = stop;
-    pick.disabled = false;
-    pick.title = "Configure what Run runs";
     at.hidden = true;
     return;
   }
@@ -131,10 +133,6 @@ function renderRun() {
   const on = tryState.runners.find((r) => r.id === runRunner())?.name;
   const label = stop ? "Terminate the run" : on ? `Run the latest ${p.default_branch || "main"} on ${on}` : `Run the latest ${p.default_branch || "main"} on a runner`;
   main.title = none && !stop ? tryState.disabled || "No runner can run this project." : label;
-  if (stop && document.activeElement === pick) main.focus(); // ▾ hides: focus stays on the button
-  pick.hidden = stop;
-  pick.disabled = none && !tryState.candidates.length; // the list still says why each can't
-  pick.title = none ? main.title : "Pick where to run it";
   // What runs, and where: a link to its terminal.
   const what = s && !tryState.starting ? shortSHA(s.commit) : "";
   const where = s && !tryState.starting ? s.runner : tryState.runners.find((r) => r.id === (tryState.pending?.runner || tryState.runner))?.name || "";
@@ -144,6 +142,32 @@ function renderRun() {
     at.title = "Open its terminal";
     at.replaceChildren(what ? h("code", {}, what) : "starting", where ? h("span", { class: "run-at-on" }, ` on ${where}`) : "");
   }
+}
+
+// renderPickState marks ▾ with the most pressing of its actions' states: a failed
+// test run or build (red), one going (pulsing), or commits waiting to be pushed.
+function renderPickState() {
+  const pick = $("#run-pick"), t = testStatus(), b = buildStatus(), push = pushStatus();
+  const bad = [t?.state === "bad" && "Tests failed", b?.state === "bad" && b.note].filter(Boolean);
+  const going = [t?.state === "running" && t.label, b?.state === "running" && b.note].filter(Boolean);
+  const mark = bad.length ? "bad" : going.length ? "running" : push?.n ? "push" : "";
+  if (mark) pick.dataset.state = mark; else delete pick.dataset.state;
+  const say = bad.length ? bad : going.length ? going : push?.n ? [push.title] : [];
+  const label = ["Run, tests, push and builds", ...say].join(": ");
+  pick.title = label;
+  pick.setAttribute("aria-label", label);
+}
+// The menu's items are only read when it opens: a test run going counts its time there.
+setInterval(() => { if ($("#run-pick").dataset.state === "running" && !document.hidden) renderPickState(); }, 5000);
+
+// actionRows are Run ▾'s Run tests, Push and Builds…, each with its key (palette.js, vim.js).
+function actionRows() {
+  const t = testStatus(), push = pushStatus(), b = buildStatus();
+  return [
+    t && ["check", t.label, runTests, { note: t.note, tone: t.state, keys: "T", title: t.title }],
+    push && ["push", push.label, pushDone, { disabled: !push.n, keys: ":push", title: push.title }],
+    b && ["checks", "Builds…", openCI, { note: b.note, tone: b.state, keys: ":ci", title: "GitHub Actions on the default branch" }],
+  ].filter(Boolean);
 }
 
 // runOn starts the latest commit on runner and opens its terminal.
@@ -159,10 +183,17 @@ async function runOn(runner) {
 }
 
 // runMenu drops down the project's runners (those that can't run it greyed,
-// saying why), then "Pick a commit…" and "Configure…" (Project settings →
-// Commands, where the preview kind and command are).
+// saying why), then "Pick a commit…"; while a run goes, Terminate instead. A web
+// project's has Run (or Stop). Then the project's actions (actionRows) and
+// "Configure…" (Project settings → Commands, where the preview kind and command are).
 function runMenu() {
-  if (!tryProject()) return popMenu($("#run-pick"), [[["settings", "Configure…", configureRun]]], { heading: noRunWhy() ? "Nothing to run" : "Run" });
+  const conf = [["settings", "Configure…", configureRun]];
+  if (!tryProject()) {
+    const why = noRunWhy(), stop = !why && serverRunning();
+    const run = [stop ? "stop" : "play", stop ? "Stop" : "Run", clickRun, { disabled: !!why, title: why || (stop ? "Stop the server" : `Run ${state.project?.run_command}`) }];
+    return popMenu($("#run-pick"), [[run], actionRows(), conf], { heading: why ? "Nothing to run" : "Run" });
+  }
+  if (running()) return popMenu($("#run-pick"), [[["stop", "Terminate", clickRun, { title: "Terminate the run" }]], actionRows(), conf], { heading: "Run" });
   const cands = tryState.candidates.length ? tryState.candidates : tryState.runners.map((r) => ({ ...r, online: true }));
   const ok = new Set(tryState.runners.map((r) => r.id));
   const last = state.project ? lastRunner(state.project.id) : "";
@@ -174,7 +205,7 @@ function runMenu() {
   });
   if (!rows.length) rows.push(["computer", "No runner", () => {}, { disabled: true, title: tryState.disabled }]);
   return popMenu($("#run-pick"), [rows, [["log", "Pick a commit…", () => { tryState.runner ||= runRunner(); return pickCommit(); }]],
-    [["settings", "Configure…", configureRun]]], { heading: "Run on" });
+    actionRows(), conf], { heading: "Run on" });
 }
 
 async function clickRun() {
@@ -468,6 +499,6 @@ export async function loadProcs() {
 }
 
 export function renderProcs() {
-  renderQuick();
+  renderRun();
   ensureShell();
 }

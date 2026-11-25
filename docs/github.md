@@ -174,11 +174,11 @@ When the project is on GitHub, Dash follows the GitHub Actions runs on the defau
 - **Running**: a small pulsing ring shows beside the project's name in the sidebar. Hover it to
   see the branch ("Build running on main"), and click it to open the builds.
 - **Passing**: nothing shows.
-- **Failing**: the **Builds** action in the sidebar says **Build failing**, in red (on a phone,
-  the menu button gets a red dot).
+- **Failing**: the **▾** beside **Run** in the header gets a red dot, and **Builds…** in its menu
+  says **Build failing**, in red.
 
-**Builds**, in the sidebar's **Actions**, says how the latest build went (**Build passing**,
-**Build running**, in yellow with a spinner, **Build failing**) and opens the builds sheet: the latest runs,
+**Builds…**, in the **▾** menu beside **Run**, says how the latest build went (**Build passing**,
+**Build running**, in yellow, **Build failing**) and opens the builds sheet (`:ci` does too): the latest runs,
 **Re-run build**, and after a failure **Retry failed jobs** and **Ask Claude to fix it**.
 
 A running build in the sheet has a progress bar and says how long it has left ("about 3m left").
@@ -257,7 +257,7 @@ To tag the tip of the default branch and deploy it in one step, use **Deploys �
 **Tag release…** in History to tag an older commit.
 
 When the project is on GitHub, Dash then follows the workflow runs the tag started: the
-project's row in the sidebar shows the pulsing ring ("Building v1.2.3"), the **Builds** action says
+project's row in the sidebar shows the pulsing ring ("Building v1.2.3"), **Builds…** in the **Run ▾** menu says
 **Release v1.2.3 failed** for a failed release, and the **Builds** sheet shows it building, published (with a link
 to the GitHub release) or failed, with **Ask Claude to fix it** for a failure.
 

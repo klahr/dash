@@ -10,7 +10,7 @@ import { attempt, busy, fail, railOf, reduceMotion, toast } from "./dialogs.js";
 import { projectFirst, state } from "./state.js";
 import { projectView, showView } from "./nav.js";
 import { baseBranch, eventFor, latest, multi, projectKey, projectStatus, refreshLive } from "./events.js";
-import { loadTodos, pushDone, renderPushMain } from "./board.js";
+import { loadTodos } from "./board.js";
 import { renderBoard } from "./branches.js";
 import { ghMark, ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
 import { closeDetail } from "./detail.js";
@@ -28,8 +28,7 @@ import { loadCheckouts, loadRemote, renderCheckouts, renderRemote } from "./orig
 import { deployRunners, openSettings } from "./settings.js";
 import { labelPicker, matchList, setLabels } from "./labelpicker.js";
 import { renderChatPane } from "./chatpane.js";
-import { renderQuick } from "./terminal.js";
-import { loadProcs, loadTry, renderProcs } from "./try.js";
+import { loadProcs, loadTry, renderProcs, renderTryButton } from "./try.js";
 import { closeCommit, loadGraph, renderGraph } from "./history.js";
 import { loadFiles, renderFile, renderFileTree } from "./files.js";
 import { loadScans, resetScans } from "./scans.js";
@@ -166,8 +165,7 @@ export function renderProjectHeader() {
   $('meta[name="theme-color"]').content = p?.color || "#101722";
   renderProjectBranch();
   $("#project-menu").hidden = !p;
-  renderPushMain();
-  renderQuick();
+  renderTryButton(); // Run, and its ▾ menu's Run tests, Push and Builds…
   renderPaused(p);
   const warn = $("#sync-warn");
   warn.hidden = !p?.sync_error;
@@ -1109,7 +1107,6 @@ desktop.addEventListener("change", () => {
 $("#side-new-project").addEventListener("click", () => openNewProject());
 $("#pm-settings").addEventListener("click", openSettings);
 $("#pm-star").addEventListener("click", attempt(() => toggleStar()));
-$("#push-main").addEventListener("click", attempt(pushDone));
 $("#pm-pause").addEventListener("click", attempt(toggleProjectPause));
 // Project settings → General: the sheet is open for state.project, which cleanup cleans.
 $("#settings-cleanup").addEventListener("click", attempt((e) => busy(e.currentTarget, cleanup, { label: "Cleaning up…" })));

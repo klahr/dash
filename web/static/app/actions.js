@@ -6,6 +6,7 @@ import { title } from "./branches.js";
 import { agoText } from "../time.js";
 import { openDetail } from "./detail.js";
 import { buildEtaText, buildProgress } from "../buildeta.js";
+import { renderTryButton } from "./try.js";
 
 // ------------------------------------------------------------------ GitHub Actions
 const CI_LABEL = { passing: "Build passing", failing: "Build failing", running: "Build running", none: "No builds yet", unknown: "Builds unavailable" };
@@ -121,23 +122,27 @@ function renderLimit(st) {
 }
 $("#github-limit-pill").addEventListener("click", attempt(() => openCI()));
 
+// buildStatus says how the latest build went, for Builds… in the top bar's Run ▾ menu
+// (try.js): null while the project has no builds to show. state is "running", "ok", "bad" or "".
+export function buildStatus() {
+  const st = state.ci, rel = st?.release;
+  const has = !!(state.project?.remote_url && st && st.state !== "unknown" && st.state !== "none") || st?.state === "failing" || releaseShown(rel);
+  if (!has) return null;
+  const relFailed = releaseShown(rel) && rel.state === "failed";
+  const failing = relFailed || st?.state === "failing";
+  const running = !failing && (rel?.state === "building" || st?.state === "running");
+  return {
+    state: failing ? "bad" : running ? "running" : st?.state === "passing" ? "ok" : "",
+    note: relFailed ? `Release ${rel.tag} failed` : rel?.state === "building" ? `Building ${rel.tag}` : CI_LABEL[st?.state] || "",
+  };
+}
+
 export function renderCI() {
   const st = state.ci;
   renderLimit(st);
   const rel = st?.release;
-  // The project has builds to show: the sidebar's Builds action opens them,
-  // saying how the latest went (a running one is also the ring on the project's row).
-  const has = !!(state.project?.remote_url && st && st.state !== "unknown" && st.state !== "none") || st?.state === "failing" || releaseShown(rel);
-  const btn = $("#pm-builds");
-  btn.hidden = !has;
-  const relFailed = releaseShown(rel) && rel.state === "failed";
-  const failing = has && (relFailed || st?.state === "failing");
-  const running = has && !failing && (rel?.state === "building" || st?.state === "running");
-  btn.classList.toggle("bad", failing);
-  btn.classList.toggle("running", running);
-  btn.classList.toggle("ok", has && !failing && !running && st?.state === "passing");
-  btn.querySelector("span").textContent = relFailed ? `Release ${rel.tag} failed` : rel?.state === "building" && has ? `Building ${rel.tag}` : CI_LABEL[st?.state] || "Builds";
-  btn.title = "GitHub Actions on the default branch";
+  const has = !!buildStatus();
+  renderTryButton(); // Run ▾ lists Builds… with how the latest went
   const building = has && rel?.state === "building" ? `Building ${rel.tag}`
     : has && st?.state === "running" ? `Build running on ${st.branch || "the default branch"}` : "";
   ciBuilding.hidden = !building;
@@ -175,7 +180,6 @@ export async function openCI() {
   $("#ci-sheet").showModal();
   tickProgress();
 }
-$("#pm-builds").addEventListener("click", attempt(openCI));
 $("#ci-refresh").addEventListener("click", attempt(async () => {
   state.ci = await api("POST", `/api/projects/${state.project.id}/ci/refresh`);
   renderCI();

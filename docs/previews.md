@@ -67,6 +67,18 @@ A web project with a run command has the same button: **Run** runs the command i
 checkout and shows its output on the **Shell** page (`R` there does the same). The button is
 **Stop** while the server runs.
 
+**▾** also holds the project's other actions, with their keys:
+
+- **Run tests** (`T` on the **Shell** page) runs the project's **Test command** in its checkout. It
+  says **Testing 1:23** while it runs (click it to see the output), then **passed** or **failed**.
+- **Push** (`:push`) pushes the commits waiting on the default branch, for a project that pushes to
+  GitHub directly. It says how many wait.
+- **Builds…** (`:ci`) opens the builds sheet and says how the latest build went. See
+  [Builds](github.md#builds).
+
+A dot on **▾** says one of them needs a look: red when the last test run or build failed, pulsing
+yellow while one runs, and plain when commits wait to be pushed. Hover **▾** to see which.
+
 A project with nothing to run (a web project with no run command) still shows **Run**, greyed out.
 Hover it to see why. Click it, or **▾** then **Configure…**, to open **Project settings → Commands**
 and set the command.

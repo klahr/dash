@@ -6,6 +6,7 @@ import { baseBranch, eventFor, latest, projectKey } from "./events.js";
 import { renderBoard } from "./branches.js";
 import { renderDetail } from "./detail.js";
 import { scanTasksChanged } from "./scans.js";
+import { renderTryButton } from "./try.js";
 
 // ------------------------------------------------------------------ board
 export async function loadTodos() {
@@ -32,39 +33,33 @@ export const landsOnGitHub = (p) => p.merge_mode === "pr" || !!p.runs_on?.length
 
 export async function loadUnpushed() {
   const p = state.project;
-  if (!p?.remote_url || landsOnGitHub(p)) { state.unpushed = 0; renderPushMain(); return; }
+  if (!p?.remote_url || landsOnGitHub(p)) { state.unpushed = 0; renderTryButton(); return; }
   const { count, todos = [] } = await api("GET", `/api/projects/${p.id}/unpushed`);
   const same = (a, b) => a && a.size === b.length && b.every((id) => a.has(id));
   if (projectKey(state.project) !== projectKey(p) || (count === state.unpushed && same(state.unpushedTodos, todos))) return;
   state.unpushed = count;
   state.unpushedTodos = new Set(todos);
   renderBoard();
-  renderPushMain();
+  renderTryButton();
 }
 
 export async function pushDone() {
   const p = state.project;
-  const btn = $("#push-main");
-  btn.disabled = true;
-  try {
-    await api("POST", `/api/projects/${p.id}/push`);
-    toast(`Pushed ${baseBranch(p)}`);
-    await loadUnpushed();
-  } finally { renderPushMain(); }
+  await api("POST", `/api/projects/${p.id}/push`);
+  toast(`Pushed ${baseBranch(p)}`);
+  await loadUnpushed();
 }
 
-// The sidebar's Push action: shown for projects that push to GitHub directly,
-// saying how many commits wait (or that there are none).
-export function renderPushMain() {
+// pushStatus is Push in the top bar's Run ▾ menu (try.js), for projects that push to
+// GitHub directly, saying how many commits wait (or that there are none): null for others.
+export function pushStatus() {
   const p = state.project, n = state.unpushed;
-  const btn = $("#push-main");
-  btn.hidden = !p?.remote_url || landsOnGitHub(p);
-  if (btn.hidden) return;
-  const label = n ? `Push ${plural(n, "commit")} to ${baseBranch(p)}` : `${baseBranch(p)} is up to date with GitHub`;
-  btn.disabled = !n;
-  btn.title = label;
-  btn.setAttribute("aria-label", label);
-  btn.querySelector("span").textContent = n ? `Push ${n > 99 ? "99+" : n}` : "Pushed";
+  if (!p?.remote_url || landsOnGitHub(p)) return null;
+  return {
+    n,
+    label: n ? `Push ${plural(n, "commit")}` : "Pushed",
+    title: n ? `Push ${plural(n, "commit")} to ${baseBranch(p)}` : `${baseBranch(p)} is up to date with GitHub`,
+  };
 }
 
 export function pushBar() {

@@ -2,12 +2,12 @@ import { $, h } from "./dom.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
-import { state } from "./state.js";
+import { projectFirst, state } from "./state.js";
 import { showView } from "./nav.js";
-import { isHub, setMenu } from "./projects.js";
+import { isHub } from "./projects.js";
 import { servesProject } from "../groups.js";
 import { closeDetail } from "./detail.js";
-import { loadProcs, renderProcs, renderTryButton } from "./try.js";
+import { loadProcs, renderProcs } from "./try.js";
 import { setMode } from "./vim.js";
 import * as store from "./store.js";
 
@@ -256,17 +256,16 @@ export function ensureShell() {
   openShellOn(want);
 }
 
-// The sidebar's Run Tests: while a run goes, clicking it shows its output instead of
-// starting it again. Whatever opens a page closes the drawer on a phone, to show it.
-$("#quick-test").addEventListener("click", attempt(async () => {
-  if (!state.project) return;
-  setMenu(false);
+// Run tests, in the top bar's Run ▾ menu (try.js): while a run goes, it shows its output
+// instead of starting it again.
+export async function runTests() {
+  if (!state.project) throw new Error(projectFirst());
   const proc = quickProc("task:test");
   if (!proc?.running) return startProc({ kind: "task", preset: "test" });
   closeDetail();
   attach(proc);
   showView("run");
-}));
+}
 
 // The project's server (its run command, in its checkout), which the top bar's Run
 // starts and stops (try.js).
@@ -334,38 +333,25 @@ function quickProc(spec) {
     .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
 }
 
-// renderQuick shows Run Tests with how its last run went, and keeps the top bar's Run
-// (which starts and stops the server) current.
-export function renderQuick() {
-  const btn = $("#quick-test");
+// testStatus says how the project's last test run went, for the Run ▾ menu (try.js):
+// null with no test command and no run going. state is "running", "ok", "bad" or "".
+export function testStatus() {
   const proc = state.project ? quickProc("task:test") : null;
-  // Shown only with a command set, or while a run of it is still going.
-  btn.hidden = !state.project || !(quickCmd("task:test") || proc?.running);
+  if (!state.project || !(quickCmd("task:test") || proc?.running)) return null;
   const running = !!proc?.running;
   const ok = proc && !running && proc.exit_code === 0;
   const bad = proc && !running && proc.exit_code != null && proc.exit_code !== 0;
   const cut = proc && !running && proc.exit_code == null;
-  btn.classList.toggle("running", running);
-  btn.classList.toggle("ok", !!ok);
-  btn.classList.toggle("bad", !!bad);
   const secs = proc ? Math.max(0, Math.floor((Date.now() - new Date(proc.started_at)) / 1000)) : 0;
   const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-  btn.querySelector("span").textContent = running ? `Testing ${elapsed}` : "Run Tests";
-  btn.title = running ? `Testing… ${elapsed} — click to view output`
-    : ok ? "Last test run passed — click to run again"
-    : bad ? `Last test run failed (exit ${proc.exit_code}) — click to run again`
-    : cut ? "Last test run was interrupted by a Dash restart — click to run again"
-    : "Run Tests (T on the Shell page)";
-  renderTryButton();
-}
-setInterval(() => { if ($(".quick-btn.running")) renderQuick(); }, 1000);
-// The Actions group (and its heading) shows only while one of its buttons does.
-{
-  const box = $("#quick-actions");
-  const sync = () => {
-    const none = !box.querySelector(".quick-btn:not([hidden])");
-    if (box.hidden !== none) box.hidden = none;
+  return {
+    state: running ? "running" : ok ? "ok" : bad ? "bad" : "",
+    label: running ? `Testing ${elapsed}` : "Run tests",
+    note: running ? "" : ok ? "passed" : bad ? "failed" : cut ? "interrupted" : "",
+    title: running ? `Testing… ${elapsed}: click to view output`
+      : ok ? "Last test run passed: click to run again"
+      : bad ? `Last test run failed (exit ${proc.exit_code}): click to run again`
+      : cut ? "Last test run was interrupted by a Dash restart: click to run again"
+      : "Run the project's tests (T on the Shell page)",
   };
-  new MutationObserver(sync).observe(box, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
-  sync();
 }
