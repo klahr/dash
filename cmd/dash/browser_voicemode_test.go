@@ -80,7 +80,9 @@ func TestBrowserVoiceMode(t *testing.T) {
 	// A network error: it listens again (after a backoff), without a word.
 	b.waitJS("a network error", `(window.e2eFailed ||= (e2eEnd(), e2eRec().fail("network"), e2eRecs.length)) && e2eRecs.length > e2eFailed && e2eRec().state === "listening" && `+vm+`.open && document.querySelector("#vm-error").hidden`)
 	// The microphone not allowed: shown and said, and no more listening.
-	b.waitJS("not allowed", `(window.e2eDenied ||= (e2eRec().fail("not-allowed"), e2eRecs.length)) && !document.querySelector("#vm-error").hidden &&
+	// Each poll ends what Dash says: the task queued above can reach review
+	// at any time, and its "Ready for review" would hold the error back.
+	b.waitJS("not allowed", `(e2eEnd(), window.e2eDenied ||= (e2eRec().fail("not-allowed"), e2eRecs.length)) && !document.querySelector("#vm-error").hidden &&
 		`+text("#vm-error")+`.includes("microphone") && e2eHeard("Allow it in the browser") && `+st("off"))
 	b.until("Esc leaves", `!`+vm+`.open && e2eSaid.length > 0 && !window.speechSynthesis.speaking`, chromedp.KeyEvent(kb.Escape))
 	b.waitJS("nothing listens after", `e2eRecs.length === e2eDenied && e2eRecs.every((r) => r.state !== "listening")`)
