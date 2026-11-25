@@ -100,8 +100,8 @@ $("#wall-form").addEventListener("change", () => {
 });
 $("#org-sheet").addEventListener("close", () => { wall.secret = ""; $("#wall-token-secret").replaceChildren(); });
 
-export function openConnector() { return openAccount("connector"); }
-accountSection("connector", loadConnector);
+export function openConnector() { return openAccount("tokens"); }
+accountSection("tokens", loadConnector);
 async function loadConnector() {
   const c = await api("GET", "/api/connector");
   $("#connector-body").replaceChildren(...connectorSteps(c));

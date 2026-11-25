@@ -135,7 +135,7 @@ func tryRunners(fleet []tunnel.Runner, p model.Project, c Caller) (out []tryRunn
 	switch {
 	case len(out) > 0:
 	case linked == 0:
-		why = "No runner has the labels this project runs on: give one those labels in Runners, or change them in Project settings → Runners."
+		why = "No runner has the labels this project runs on: give one those labels in Runners, or change them in Project settings → Agent & runners."
 	case online == 0:
 		why = "No runner with this project is connected."
 	case terms == 0:

@@ -1594,7 +1594,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .webhook-history .wh-error { flex-basis: 100%; overflow-wrap: anywhere; }
 
 /* Project settings → Claude: repo files vs settings Dash stores. */
-.claude-scope + .claude-scope { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.claude-scope + .claude-scope, #settings-runners-hint + .claude-scope { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
 .claude-scope-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 4px; font-size: var(--fs-body); }
 .claude-scope-branch { font-size: var(--fs-s); font-weight: 400; color: var(--muted); }
 .scope-tag.repo, .scope-tag.tracked { border-color: color-mix(in srgb, var(--review) 55%, transparent); color: var(--review); }

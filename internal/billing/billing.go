@@ -34,7 +34,7 @@ const DefaultGrace = 3 * 24 * time.Hour
 
 var (
 	// ErrReadOnly is what a change to an unpaid org's board gets.
-	ErrReadOnly = errors.New("this organization's board is read-only until its subscription is active: an owner can subscribe in Organization → Billing")
+	ErrReadOnly = errors.New("this organization's board is read-only until its subscription is active: an owner can subscribe in Organization → Billing & usage")
 	// ErrSubscribed: the org has a subscription; change it in the portal.
 	ErrSubscribed = errors.New("this organization already has a subscription: manage it in the billing portal")
 	// ErrNoCustomer: the org has never subscribed, so there's no portal yet.
@@ -311,7 +311,7 @@ func (s *Service) ReadOnly(org int64) bool {
 // Hold is why org's queued tasks and scheduled scans don't start, or "".
 func (s *Service) Hold(org int64) string {
 	if s.ReadOnly(org) {
-		return "waiting for the organization's subscription: an owner can subscribe in Organization → Billing"
+		return "waiting for the organization's subscription: an owner can subscribe in Organization → Billing & usage"
 	}
 	return ""
 }

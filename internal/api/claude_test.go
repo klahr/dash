@@ -365,7 +365,7 @@ func TestHubRunsProjectChatOnTheUsersLinkedRunner(t *testing.T) {
 	}
 
 	// Not linked to the owner's runner yet.
-	if kinds, texts := turn(f.ownerWS); kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "Project settings → Runners") {
+	if kinds, texts := turn(f.ownerWS); kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "Project settings → Agent & runners") {
 		t.Fatalf("chat on an unlinked project: %v %q", kinds, texts)
 	}
 

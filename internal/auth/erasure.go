@@ -58,7 +58,7 @@ func (a *Auth) adminDeleteUser(w http.ResponseWriter, r *http.Request, id *Ident
 		return
 	}
 	if uid == id.User.ID {
-		writeError(w, http.StatusConflict, "to delete your own account, use Account → Your data")
+		writeError(w, http.StatusConflict, "to delete your own account, use Account → Profile")
 		return
 	}
 	if !a.confirmDelete(w, r) {

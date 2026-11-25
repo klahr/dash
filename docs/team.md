@@ -65,7 +65,7 @@ can't:
 
 - chat with Claude (general, project or task chat), or run `!` commands in a chat
 - open a terminal on a runner
-- **Split…** a task or **Clean up leftovers** (**Project settings → Repository**)
+- **Split…** a task or **Clean up leftovers** (**Project settings → General**)
 - get a title from Claude for a task without one (the task is named after its first line instead)
 
 See [Claude runs on each user's own runner](several-computers.md#claude-runs-on-each-users-own-runner).
@@ -76,7 +76,7 @@ Add each project with **+ Add project** on the hub, from GitHub or a remote URL.
 **shared project**: everyone in the org sees it and adds tasks to it.
 
 A shared project runs on **labels**, not on named runners. Set them in
-**Project settings → Runners → Runs on**. Every runner that has all of them clones the project.
+**Project settings → Agent & runners → Runs on**. Every runner that has all of them clones the project.
 `any` is every runner of the org. To use your own labels (for example `team`), give them to each
 runner on its page in **Runners → Labels**.
 
@@ -97,7 +97,7 @@ words.
 A planner who wants Claude installs a runner of their own: account menu → **Runners** → **Add a
 runner**. It uses their own Claude login and runs only their **Chat** and **Write a feature
 brief**, never the org's work. Without one, they use Planning as before. To keep the project's
-files out of their feature briefs, an owner turns that off in **Organization → Planners**. See
+files out of their feature briefs, an owner turns that off in **Organization → Members**. See
 [Planners](users.md#planners).
 
 **Start…** on a card makes a task or a goal in a project. A goal needs an **Owner**, a developer:
@@ -107,7 +107,7 @@ its coordinator runs on their runner, and they accept its plan. A task runs for 
 
 ## 6. See who spent what
 
-Owners and admins see what Claude cost in **Organization → Usage** (account menu →
+Owners and admins see what Claude cost in **Organization → Billing & usage** (account menu →
 Organization): by member and by project, per week or per month. Hover over an amount for its
 runs and tokens. **Download CSV** saves the same figures, one row per period, member and
 project, to open in a spreadsheet.

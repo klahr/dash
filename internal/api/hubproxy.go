@@ -43,7 +43,7 @@ var errNoRunnerOnline = errors.New("No runner is online for this project. Start 
 // one made on the hub before it ran nothing itself).
 //
 //lint:ignore ST1005 shown to the user verbatim as a sentence
-var errNoRunnerLinked = errors.New("No runner has the labels this project runs on: give one those labels in Runners, or change them in Project settings → Runners (start a runner with `dash runner`).")
+var errNoRunnerLinked = errors.New("No runner has the labels this project runs on: give one those labels in Runners, or change them in Project settings → Agent & runners (start a runner with `dash runner`).")
 
 // projectRunner picks the runner that does p's work for the hub: one of
 // p's runners, online, in p's org; prefer if it is one of them. It links p

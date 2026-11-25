@@ -37,7 +37,7 @@ func (d *Dispatcher) Scan(ctx context.Context, p model.Project, job scan.Job, h 
 	}
 	r, why, linked := d.scanRunner(p, []int64{job.For}, job.Account)
 	if !linked {
-		return scan.Outcome{}, fmt.Errorf("no runner works on %s: this hub runs Claude only on runners; give one the labels it runs on, or change them in Project settings → Runners", p.Name)
+		return scan.Outcome{}, fmt.Errorf("no runner works on %s: this hub runs Claude only on runners; give one the labels it runs on, or change them in Project settings → Agent & runners", p.Name)
 	}
 	if r == nil {
 		return scan.Outcome{}, &scan.WaitError{Reason: why}

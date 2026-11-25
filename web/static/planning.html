@@ -121,15 +121,15 @@
       <div class="rail-layout">
         <nav class="rail-nav" aria-label="Account sections">
           <div class="rail-group"><span class="rail-head">You</span>
-            <button type="button" class="rail-item" data-rail="picture">Profile picture</button>
-            <button type="button" class="rail-item" data-rail="notifications">Notifications</button>
-            <button type="button" class="rail-item" data-rail="twofactor">Two-factor sign-in</button>
-            <button type="button" class="rail-item" data-rail="google">Google account</button>
-            <button type="button" class="rail-item" data-rail="data">Your data</button>
+            <button type="button" class="rail-item" data-rail="profile" data-rail-also="picture data">Profile</button>
+            <button type="button" class="rail-item" data-rail="notifications" data-rail-also="notify webhooks">Notifications</button>
+            <button type="button" class="rail-item" data-rail="signin" data-rail-also="twofactor google">Sign-in</button>
           </div>
         </nav>
         <div class="rail-main">
-          <section class="rail-section" data-section="picture">
+          <!-- Profile: was Profile picture and Your data (old links to them come here) -->
+          <section class="rail-section" data-section="profile">
+            <h3 class="section-head">Profile picture</h3>
             <div class="avatar-row">
               <span class="avatar avatar-large" id="avatar-preview" aria-hidden="true"></span>
               <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
@@ -137,6 +137,13 @@
               <button class="btn small" type="button" id="avatar-clear">Remove</button>
             </div>
             <p class="hint">Shown in the account menu and to the members of your organizations. Dash crops it to a square and makes it small before saving it.</p>
+            <h3 class="section-head">Download your data</h3>
+            <p class="hint">A JSON file of what this Dash keeps about you: your account, organizations, sign-ins, sessions, tokens, devices, webhooks, notification settings, and the tasks and chat messages you wrote.</p>
+            <div><a class="btn small" id="account-export" href="/api/account/export" download data-icon="down">Download</a></div>
+            <h3 class="section-head">Delete your account</h3>
+            <p class="hint">Your account, sessions, tokens, devices, webhooks, notification settings and your chats with Claude are deleted at once, and so is each organization only you are in. Tasks and messages you wrote in other organizations stay there, without your name. Runners you registered stop connecting.</p>
+            <p class="hint" id="account-delete-hint" hidden></p>
+            <div><button class="btn small danger" type="button" id="account-delete" data-icon="trash">Delete account…</button></div>
           </section>
           <!-- Card news pushed to this browser (planning-page.js): a planner's only notifications -->
           <section class="rail-section" data-section="notifications">
@@ -149,21 +156,15 @@
               </div>
             </form>
           </section>
-          <section class="rail-section" data-section="twofactor">
+          <!-- Sign-in: was Two-factor sign-in and Google account (old links to them come here).
+               #google-area is hidden when this Dash has no Google sign-in. -->
+          <section class="rail-section" data-section="signin">
+            <h3 class="section-head">Two-factor sign-in</h3>
             <div class="twofactor-body" id="twofactor-body"></div>
-          </section>
-          <!-- Hidden when this Dash has no Google sign-in -->
-          <section class="rail-section" data-section="google">
-            <div class="twofactor-body" id="google-body"></div>
-          </section>
-          <section class="rail-section" data-section="data">
-            <h3 class="section-head">Download your data</h3>
-            <p class="hint">A JSON file of what this Dash keeps about you: your account, organizations, sign-ins, sessions, tokens, devices, webhooks, notification settings, and the tasks and chat messages you wrote.</p>
-            <div><a class="btn small" id="account-export" href="/api/account/export" download data-icon="down">Download</a></div>
-            <h3 class="section-head">Delete your account</h3>
-            <p class="hint">Your account, sessions, tokens, devices, webhooks, notification settings and your chats with Claude are deleted at once, and so is each organization only you are in. Tasks and messages you wrote in other organizations stay there, without your name. Runners you registered stop connecting.</p>
-            <p class="hint" id="account-delete-hint" hidden></p>
-            <div><button class="btn small danger" type="button" id="account-delete" data-icon="trash">Delete account…</button></div>
+            <div id="google-area">
+              <h3 class="section-head">Google account</h3>
+              <div class="twofactor-body" id="google-body"></div>
+            </div>
           </section>
         </div>
       </div>

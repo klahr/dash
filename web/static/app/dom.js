@@ -15,7 +15,7 @@ const serverTimeLocale = (() => {
   const l = document.querySelector('meta[name="dash-time-locale"]')?.content;
   try { return l && Intl.DateTimeFormat.supportedLocalesOf(l).length ? [l] : []; } catch { return []; }
 })();
-// The "Suggest what to say next" preference (Account → Chat): on unless turned off.
+// The "Suggest what to say next" preference (Account → General): on unless turned off.
 export const chatSuggestOn = () => store.get("dash.chatSuggest") !== "0";
 // The "Time format" preference: "24", "12" or "" (the locale decides).
 export const clockPref = () => store.get("dash.clock", "");

@@ -11,7 +11,7 @@ import (
 )
 
 // Voice commands (docs/dictation.md#voice-commands): off until turned on in
-// Account → Dictation; then a mic in the top bar or Ctrl-Shift-, listens for
+// Account → Voice; then a mic in the top bar or Ctrl-Shift-, listens for
 // commands, shows a bar while it does, runs "send" in the chat it was started
 // from with a toast of what it heard, opens sections, ignores other speech,
 // and stops on Esc and on "stop listening". While dictating, "send" said on
@@ -31,16 +31,16 @@ func TestBrowserVoiceCommands(t *testing.T) {
 	}
 	b.waitJS("no mic in the top bar while it is off", `!!document.querySelector("#voice-open") && !`+shown("#voice-open"))
 
-	// Turn voice commands and dictation on in Account → Dictation.
-	section := `#account-sheet [data-section=dictation]`
+	// Turn voice commands and dictation on in Account → Voice.
+	section := `#account-sheet [data-section=voice]`
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu summary`)))
 	b.until("open Account", `document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-open`)))
-	b.until("the Dictation section", `document.querySelector(`+jsq(section)+`).classList.contains("current")`,
-		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=dictation]`)))
+	b.until("the Voice section", `document.querySelector(`+jsq(section)+`).classList.contains("current")`,
+		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=voice]`)))
 	b.until("turn voice commands on", `localStorage.getItem("dash.voice") === "1"`,
-		chromedp.Click(chromedp.CSS(section+` label.toggle:has([name=voice])`)))
+		chromedp.Click(chromedp.CSS(section+` input[name=voice] + span`)))
 	b.until("turn dictation on", `localStorage.getItem("dash.dictation") === "1"`,
-		chromedp.Click(chromedp.CSS(section+` label.toggle:has([name=dictation])`)))
+		chromedp.Click(chromedp.CSS(section+` input[name=dictation] + span`)))
 	b.until("close Account", `!document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
 	b.waitJS("the mic in the top bar", shown("#voice-open"))
 

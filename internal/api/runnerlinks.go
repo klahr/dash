@@ -17,7 +17,7 @@ import (
 // org's shared projects it works on: those that run on labels it has (see
 // model.LabelsMatch). Projects never name runners, so the runner's labels,
 // set on its page, decide which projects it builds, and a project's labels
-// (Project settings → Runners) decide which runners build it. Picking a
+// (Project settings → Agent & runners) decide which runners build it. Picking a
 // GitHub repository that isn't a project yet makes the shared project, on
 // labels the runner has; only the runner's owner lists (and so adds) GitHub
 // repositories, with the runner's gh (see ghrepos.go).
@@ -126,7 +126,7 @@ func (s *Server) linkToRunner(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case err != nil:
 		case !res.Project.OnRunners():
-			err = fmt.Errorf("%w: %s runs on no runner labels: set them in its Project settings → Runners", errBadRequest, res.Project.Name)
+			err = fmt.Errorf("%w: %s runs on no runner labels: set them in its Project settings → Agent & runners", errBadRequest, res.Project.Name)
 		case !x.Serves(res.Project):
 			err = fmt.Errorf("%w: %s doesn't work on %s: it lacks the labels %s", errBadRequest, x.Name, res.Project.Name,
 				strings.Join(model.MissingLabels(x.AllLabels(), res.Project.RunnerLabels()), ", "))

@@ -101,7 +101,7 @@ export function renderTeamSetup(org, mine) {
       !projects.length ? "No projects yet." : unserved.length
         ? `No runner has the labels of ${names(unserved.map((p) => p.name))}: their work waits.`
         : "Every project has a runner with its labels.",
-      target && !target.prefix ? button(unserved[0] ? `${target.name}: runners` : "Project settings", () => goTo("settings", "runners", target)) : null);
+      target && !target.prefix ? button(unserved[0] ? `${target.name}: runners` : "Project settings", () => goTo("settings", "claude", target)) : null);
   }
 
   const waiting = (state.projects || []).filter((p) => !p.prefix && unapprovedCommands(p, me));
@@ -112,17 +112,17 @@ export function renderTeamSetup(org, mine) {
     cmdTarget && !cmdTarget.prefix ? button(waiting[0] ? `${cmdTarget.name}: commands` : "Project settings", () => goTo("settings", "commands", cmdTarget)) : null);
 
   add(null, "Review members' tokens", "API tokens and connected apps sign in as a member until revoked.",
-    button("Tokens", () => goTo("org", "tokens")));
+    button("Tokens", () => goTo("org", "signin")));
 
   $("#team-setup-list").replaceChildren(...steps);
   return done.every(Boolean);
 }
 
 // ------------------------------------------------------------------ members' tokens
-// Organization → Members' tokens (owners and admins): every member's API
+// Organization → Sign-in (owners and admins): every member's API
 // tokens and connected apps in this org, revocable. A member's own list is
-// Account → Tokens & apps (tokens.js); runners are in Runners.
-orgSection("tokens", loadOrgTokens);
+// Account → Apps & tokens (tokens.js); runners are in Runners.
+orgSection("signin", loadOrgTokens);
 async function loadOrgTokens() {
   const area = $("#org-tokens-area");
   const org = state.me?.org;

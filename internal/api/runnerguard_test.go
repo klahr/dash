@@ -372,7 +372,7 @@ func TestRunnerChatsInItsOwnProjectThroughTheHub(t *testing.T) {
 	}
 	// The hub's own chat in a hub project this runner has no clone of.
 	kinds, texts = runnerChatTurn(t, srv, "42", map[string]any{"project": "nope", "hub": true})
-	if kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "Project settings → Runners") {
+	if kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "Project settings → Agent & runners") {
 		t.Fatalf("hub chat in an unlinked project: %v %q", kinds, texts)
 	}
 	// A clone of a hub project is reached only by the hub's id, as before.

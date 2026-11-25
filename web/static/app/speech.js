@@ -10,13 +10,13 @@ import { listening } from "./dictation.js";
 // followed without looking. Everything happens in the browser; some voices
 // (Chrome's Google voices, Edge's online ones) are an online service the
 // browser sends the text to. It is a preference of this browser
-// (Account → Spoken replies), off by default, with a switch for each kind of
+// (Account → Voice), off by default, with a switch for each kind of
 // news; where the API is missing the setting is greyed out and nothing shows.
 //
 // What is read is plain prose: Markdown is stripped, a code block, diff or
 // table is named and counted ("A code block, 12 lines."), a long path is its
 // file name, a link its text and a bare URL its host. A long reply is read up to its first part,
-// then "There's more" (or in full: Account → Spoken replies → Long replies).
+// then "There's more" (or in full: Account → Voice → Long replies).
 // The speaker button on a reply reads all of it, or stops.
 //
 // Esc, sending a message or pressing a speaker button again stops it. Dash

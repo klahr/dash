@@ -75,7 +75,7 @@ exists, and five failed tries from an address lock it out for 15 minutes. Turn o
 
 ## Two-factor sign-in
 
-Anyone can turn on two-factor sign-in under **Two-factor sign-in** in the Account dialog (account menu → Account):
+Anyone can turn on two-factor sign-in under **Account → Sign-in** (account menu → Account):
 scan the QR code with an authenticator app (1Password, Google Authenticator, Authy, …)
 and type the code it shows to confirm. Dash then shows ten **recovery codes**, once.
 Each works once in place of a code, for when the phone is lost; they're stored only as
@@ -200,8 +200,7 @@ A planner can:
 - get [card news](notifications.md#planning-cards) pushed to their browser: they were mentioned
   or added to a card, or a card's work is ready for review, failed or merged
 - use their own account: the account menu at the bottom of the sidebar (in the menu on a phone)
-  switches orgs, and has **Account** (**Profile picture**, **Notifications**, **Two-factor
-  sign-in**, **Google account** and **Your data**), **Runners** and **Sign out**
+  switches orgs, and has **Account** (**Profile**, **Notifications** and **Sign-in**), **Runners** and **Sign out**
 - add, see, rename and remove their own runners in **Runners** (see
   [A planner's runner](several-computers.md#a-planners-runner))
 
@@ -212,7 +211,7 @@ With a runner of their own online, a planner also has:
   [Chat](chat.md#a-planners-chat).
 - **Write a feature brief** and **Ask in chat** on a card. Each interview round runs on their
   runner. It reads the project's `CLAUDE.md`, README and file tree, unless an owner turned that
-  off in **Organization → Planners**. Then it gets only the card and the project's name.
+  off in **Organization → Members**. Then it gets only the card and the project's name.
 
 Without one, **Chat** and the card say **Install a runner to use Claude here**, which opens the
 setup steps. Everything else works the same. A Claude subscription is one person's, so a
@@ -248,7 +247,7 @@ Don't mix these up:
 
 ## Profile picture
 
-Open **Account → Profile picture** and click **Choose picture…**. Dash crops the picture to a square
+Open **Account → Profile** and click **Choose picture…**. Dash crops the picture to a square
 in the middle and makes it small before saving it. It shows in the account menu, in the
 members list of **Organization**, on the board's cards you created and on the Planning cards
 you are a member of. Only members of your organizations see it. **Delete** goes back
@@ -267,7 +266,7 @@ more of its work, and their tunnels close within seconds.
 ## Tokens
 
 Besides browser sessions, Dash signs in with tokens, all kept in one table, hashed. **Account →
-Tokens & apps** lists API tokens and connected apps; **Runners → Overview → Runners you registered**
+Apps & tokens** lists API tokens and connected apps; **Runners → Overview → Runners you registered**
 lists runner tokens:
 
 - **API tokens** you create there, for scripts and MCP clients: `Authorization: Bearer dash_…`
@@ -289,7 +288,7 @@ a signed-in browser. While an org of yours requires two-factor sign-in that you 
 your API tokens and connectors are refused too (your runners keep working).
 
 Owners and admins see every member's API tokens and connected apps in the org under
-**Organization → Members' tokens**, with when each was last used. They can revoke those of members
+**Organization → Sign-in**, with when each was last used. They can revoke those of members
 whose role isn't above theirs; it asks for the password. Runner tokens are under **Runners**.
 
 The tokens Dash gives its own Claude runs (for the task tools and permission prompts) carry the
@@ -378,7 +377,7 @@ Google accounts are matched on Google's stable account id (`sub`), not the email
   is a verified domain of an org that account belongs to. Otherwise Dash asks for the account's
   password once to confirm the link, so whoever holds a Google account with someone's address
   can't take over their Dash account.
-- **Account → Google account** links or unlinks Google. An account made by signing in with Google
+- **Account → Sign-in** links or unlinks Google. An account made by signing in with Google
   has no password: it can't unlink until it chooses one (*Forgot password?*), and where Dash asks
   for the password before a change, a Google sign-in within the last 10 minutes confirms instead.
   Choosing a password from a reset link unlinks Google; link it again afterwards.
@@ -391,7 +390,7 @@ Dash checks with Google at every sign-in: someone suspended or removed in Google
 sign in with Google again, and an org that requires Google refuses an account no longer in its
 domain. **Sessions they already have last until they expire (7 days)**: end them with **Sign out**
 on the member (or remove the member, which takes effect at once). Their API tokens keep working
-until revoked or the member is removed: revoke them under **Organization → Members' tokens**.
+until revoked or the member is removed: revoke them under **Organization → Sign-in**.
 
 Removing a member, or a member leaving, moves their queued tasks in the org back to **Drafts**:
 a task runs only on its owner's runners or a shared one (see
@@ -402,7 +401,7 @@ they made stays theirs: queued again, it needs a shared runner. Dash's own tasks
 in other states stay as they are.
 
 To delete an account altogether, see [Your data](privacy.md): everyone can delete their own in
-**Account → Your data**, and platform admins can delete someone else's from the members list or
+**Account → Profile**, and platform admins can delete someone else's from the members list or
 in **Admin → Users**. To keep someone out without deleting anything, a platform admin disables
 the account in **Admin → Users**.
 

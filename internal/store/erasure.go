@@ -236,7 +236,7 @@ func (a *Accounts) PruneAuthEvents(before time.Time) (int64, error) {
 // ---- export ----
 
 // AccountExport is everything Dash keeps about one account, for them to
-// download (Account → Your data). Secrets (password and token hashes, the
+// download (Account → Profile). Secrets (password and token hashes, the
 // authenticator secret, push keys, webhook secrets) are left out: they
 // say nothing about the person, and can't be used anywhere else.
 type AccountExport struct {

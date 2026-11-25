@@ -1111,7 +1111,7 @@ $("#pm-settings").addEventListener("click", openSettings);
 $("#pm-star").addEventListener("click", attempt(() => toggleStar()));
 $("#push-main").addEventListener("click", attempt(pushDone));
 $("#pm-pause").addEventListener("click", attempt(toggleProjectPause));
-// Project settings → Repository: the sheet is open for state.project, which cleanup cleans.
+// Project settings → General: the sheet is open for state.project, which cleanup cleans.
 $("#settings-cleanup").addEventListener("click", attempt((e) => busy(e.currentTarget, cleanup, { label: "Cleaning up…" })));
 $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
 // The account menu shows who is logged in, the org they work in and the

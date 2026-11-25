@@ -14,7 +14,7 @@ It is off until you turn it on. It is a setting of this browser.
 
 ## Turn it on
 
-1. Open **Account → Dictation**.
+1. Open **Account → Voice**.
 2. Turn on **Dictation**.
 
 Chrome, Edge and Safari have it. Firefox doesn't, so the setting is greyed out there and no mic
@@ -39,7 +39,7 @@ turn them on, and are a setting of this browser.
 
 ### Turn them on
 
-1. Open **Account → Dictation**.
+1. Open **Account → Voice**.
 2. Turn on **Voice commands**.
 
 A mic shows in the top bar. Chrome, Edge and Safari have voice commands; Firefox doesn't.
@@ -103,7 +103,7 @@ Dash can read aloud, so you can follow a chat or a task without looking at the s
 
 ### Turn it on
 
-1. Open **Account → Spoken replies**.
+1. Open **Account → Voice**.
 2. Turn on **Spoken replies**. Dash says a short line in the voice it will use.
 3. Under **Read aloud**, choose what to hear:
    - **Replies**: Claude's answers in **Message Claude**, **Ask about this project** and the task

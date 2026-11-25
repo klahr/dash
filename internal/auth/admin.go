@@ -540,7 +540,7 @@ func (a *Auth) sendTOTPOff(u store.User, by string) {
 	n := a.notice("Two-factor sign-in was turned off", "Hello "+u.Username+",")
 	n.Before = []string{
 		"An administrator (" + by + ") turned off two-factor sign-in for your " + name + " account at " + a.baseURL + ".",
-		"You sign in with your password alone until you turn it on again under Account → Two-factor sign-in " +
+		"You sign in with your password alone until you turn it on again under Account → Sign-in " +
 			"(if an organization of yours requires it, you're asked to at your next sign-in).",
 	}
 	n.After = []string{"If you didn't ask for this, tell your administrator and change your password."}

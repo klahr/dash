@@ -73,7 +73,7 @@ export function askToPay(b) {
     title: "Support Dash?",
     body: [
       h("p", {}, `${individualPrice(b)} If you can, subscribe: it keeps Dash going.`),
-      h("p", { class: "hint" }, "Can't pay right now? Use it free, no questions asked: nothing is locked, and you can subscribe later in Organization → Billing."),
+      h("p", { class: "hint" }, "Can't pay right now? Use it free, no questions asked: nothing is locked, and you can subscribe later in Organization → Billing & usage."),
     ],
     footer: [
       h("button", { class: "btn", value: "free" }, "I can't pay right now"),

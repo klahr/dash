@@ -55,8 +55,8 @@ function syncSpeech() {
 document.addEventListener("dash:voices", () => { if ($("#account-sheet").open) syncSpeech(); });
 // The preferences are the Account sheet's first sections (Editors, Time, Chat, Dictation, Spoken replies), and
 // this browser's push switch in Notifications.
-export function openPrefs() { return openAccount("editors"); }
-for (const key of ["editors", "notifications", "clock", "chat", "dictation", "speech"]) accountSection(key, syncPrefs);
+export function openPrefs() { return openAccount("general"); }
+for (const key of ["general", "voice", "notifications"]) accountSection(key, syncPrefs);
 // Each saves as it changes, with "Saved" in the sheet's header.
 const pref = (name, fn) => $("#prefs-form")[name].addEventListener("change", (e) => saveField(e.target, async () => fn(e.target)));
 pref("vim", (el) => { if (el.checked !== vimOn()) toggleVim(); });

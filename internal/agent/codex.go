@@ -297,7 +297,7 @@ func (c Codex) RunArgs(req ExecRequest) (args, env []string) {
 // codexMissing is the error of a run on a computer without the Codex CLI.
 func codexMissing(bin string, err error) error {
 	return fmt.Errorf("the Codex CLI (%s) isn't installed on this computer: install it with `npm install -g @openai/codex`, "+
-		"sign in with `codex login`, or pick another agent in Project settings → Agent (%w)", bin, err)
+		"sign in with `codex login`, or pick another agent in Project settings → Agent & runners (%w)", bin, err)
 }
 
 // errCodexLoggedOut is the error of a run with a Codex CLI that isn't signed in.

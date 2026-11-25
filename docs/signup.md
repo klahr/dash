@@ -124,7 +124,7 @@ the account's email address and answers the same whether or not there is one. Th
 Choosing a new password signs the account out everywhere and stops its API tokens and
 connected apps (runners keep working), like any password change. It also unlinks Google
 sign-in: the link may be the first proof that whoever holds the address owns the account, so
-a Google account linked before it isn't trusted. Link Google again in **Account → Google account**
+a Google account linked before it isn't trusted. Link Google again in **Account → Sign-in**
 afterwards. It doesn't sign in:
 accounts with two-factor sign-in still need their code. The `DASH_USERNAME` account gets
 no reset link, because its password comes from `DASH_PASSWORD`; change it there.

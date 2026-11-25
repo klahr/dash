@@ -24,7 +24,7 @@ const fakeSpeech = `(() => {
 	window.e2eRec = () => window.e2eRecs.at(-1);
 })()`
 
-// Dictation (docs/dictation.md): off until turned on in Account → Dictation;
+// Dictation (docs/dictation.md): off until turned on in Account → Voice;
 // then a mic button on the task form's instructions and the chat types what
 // is said at the cursor, shows the interim words, stops on Esc without
 // closing the sheet, says why on an error, and fits a phone's composer.
@@ -43,15 +43,22 @@ func TestBrowserDictation(t *testing.T) {
 	}
 	b.waitJS("no mic button while it is off", `!!document.querySelector("#todo-form .dictate-btn") && !`+shown("#todo-form .dictate-btn"))
 
-	// Turn it on in Account → Dictation.
+	// Turn it on in Account → Voice.
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu summary`)))
 	b.until("open Account", `document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-open`)))
-	b.until("the Dictation section", `document.querySelector('#account-sheet [data-section=dictation]').classList.contains("current")`,
-		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=dictation]`)))
-	b.waitJS("the privacy note", `document.querySelector('#account-sheet [data-section=dictation]').textContent.includes("Chrome sends the audio to Google")`)
+	b.until("the Voice section", `document.querySelector('#account-sheet [data-section=voice]').classList.contains("current")`,
+		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=voice]`)))
+	b.waitJS("the privacy note", `document.querySelector('#account-sheet [data-section=voice]').textContent.includes("Chrome sends the audio to Google")`)
 	b.until("turn it on", `localStorage.getItem("dash.dictation") === "1"`,
-		chromedp.Click(chromedp.CSS(`#account-sheet [data-section=dictation] label.toggle`)))
+		chromedp.Click(chromedp.CSS(`#account-sheet [data-section=voice] input[name=dictation] + span`)))
 	b.until("close Account", `!document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
+	// A link to the old Spoken replies section (merged into Voice) opens Voice.
+	b.waitJS("an old link opens Voice", `(() => {
+		if (!window.e2eOldLink) { window.e2eOldLink = true; const a = document.createElement("a"); a.dataset.account = "speech"; document.body.append(a); a.click(); a.remove(); }
+		return document.querySelector("#account-sheet").open && document.querySelector('#account-sheet [data-section=voice]').classList.contains("current");
+	})()`)
+	b.waitJS("its URL names Voice", `new URLSearchParams(location.search).get("section") === "voice"`)
+	b.until("close Account again", `!document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
 
 	// The task form: the words go in after what is there, with a space.
 	b.until("open the new task sheet", `document.querySelector("#quick-sheet").open`, chromedp.Click(chromedp.ID("new-todo")))

@@ -54,7 +54,7 @@ reverse proxy's access logs, your host's backups, your mail provider).
 
 ## Download your data
 
-Open **Account → Your data** and click **Download**. You get a JSON file with:
+Open **Account → Profile** and click **Download**. You get a JSON file with:
 
 - your account: username, email address, when it was made, whether two-factor sign-in is on, your profile picture
 - your organizations and roles
@@ -71,7 +71,7 @@ secrets. With a session, the same file is at `GET /api/account/export`.
 
 ## Delete your account
 
-Open **Account → Your data** and click **Delete account…**. Type your username, then confirm with
+Open **Account → Profile** and click **Delete account…**. Type your username, then confirm with
 your password. An account that signs in with Google confirms with a Google sign-in from the last
 10 minutes instead.
 
@@ -92,7 +92,7 @@ Dash refuses, and says why, while:
   **Organization** first.
 - an organization only you are in still has projects. Delete each with
   **Project menu → Delete project…**.
-- an organization only you are in has a subscription. Cancel it in **Organization → Billing**.
+- an organization only you are in has a subscription. Cancel it in **Organization → Billing & usage**.
 
 The account `DASH_USERNAME` describes can't be deleted: Dash makes it again on every start. The
 last platform admin can't be deleted either.

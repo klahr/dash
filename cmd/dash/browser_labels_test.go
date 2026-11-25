@@ -45,8 +45,8 @@ func TestBrowserLabelChips(t *testing.T) {
 	// The project's Runs on: any, as it was made.
 	b.until("open the project menu", `document.querySelector("#project-menu").open`, chromedp.Click(chromedp.CSS(`#project-menu > summary`)))
 	b.until("open the settings", `document.querySelector("#settings-sheet").open`, chromedp.Click(chromedp.ID("pm-settings")))
-	b.until("show its runners", `document.querySelector('#settings-sheet .rail-section[data-section="runners"]').classList.contains("current")`,
-		chromedp.Click(chromedp.CSS(`#settings-sheet .rail-item[data-rail="runners"]`)))
+	b.until("show its runners, in Agent & runners", `document.querySelector('#settings-sheet .rail-section[data-section="claude"]').classList.contains("current")`,
+		chromedp.Click(chromedp.CSS(`#settings-sheet .rail-item[data-rail="claude"]`)))
 	const field = `#settings-runners-field`
 	b.waitJS("any picked", `[...document.querySelectorAll("`+field+` .label-chip")].map((c) => c.textContent).join() === "any" && !!document.querySelector("#settings-runners .runner-pick.on")`)
 	// The chips and offers are redrawn when the runners reload: clicks retry.

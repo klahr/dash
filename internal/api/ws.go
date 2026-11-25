@@ -414,7 +414,7 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 			if _, linked := sv.hubProject(msg.Project); !linked {
 				if msg.Hub {
 					// The hub's project, which this runner has no checkout of.
-					return ct, errors.New("this runner has no clone of that project: give it the labels the project runs on (Project settings → Runners), or, if it has them, cloning it failed (see the runner's log)")
+					return ct, errors.New("this runner has no clone of that project: give it the labels the project runs on (Project settings → Agent & runners), or, if it has them, cloning it failed (see the runner's log)")
 				}
 				if _, err := sv.ownProject(msg.Project); err != nil {
 					return ct, errors.New("this runner has no project with that id")

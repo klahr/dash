@@ -5,7 +5,7 @@ import { orgSection } from "./accountsheet.js";
 import { fmtTokens } from "./runstats.js";
 
 // ------------------------------------------------------------------ team usage
-// Organization → Usage, for owners and admins: what the org's Claude runs
+// Organization → Billing & usage, for owners and admins: what the org's Claude runs
 // used and cost by member and by project, per week or month
 // (GET /api/usage/team), and the same as a CSV.
 let period = "week";
@@ -67,4 +67,4 @@ async function loadUsage() {
 for (const b of $$("#org-usage .segmented button")) {
   b.addEventListener("click", attempt(async () => { period = b.dataset.period; await loadUsage(); }));
 }
-orgSection("usage", loadUsage);
+orgSection("billing", loadUsage);

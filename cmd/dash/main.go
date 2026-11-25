@@ -132,12 +132,12 @@ const shutdownWait = 20 * time.Second
 // warnUnlinked logs the hub's projects that run on no runner labels: made
 // on the hub before it stopped running anything itself. They stay, with
 // their tasks, and their files stay on disk; their work waits until they
-// run on labels (Project settings → Runners), and the dashboard says so.
+// run on labels (Project settings → Agent & runners), and the dashboard says so.
 func warnUnlinked(ps []model.Project) {
 	for _, p := range ps {
 		if !p.OnRunners() {
 			slog.Warn("project needs a runner: the hub runs nothing itself, so its tasks, git and commands wait until it runs on runner labels "+
-				"(Project settings → Runners), or remove it from the hub (its files stay) and add it on a runner with \"Add from this runner…\"",
+				"(Project settings → Agent & runners), or remove it from the hub (its files stay) and add it on a runner with \"Add from this runner…\"",
 				"project", p.Name, "path", p.Path)
 		}
 	}

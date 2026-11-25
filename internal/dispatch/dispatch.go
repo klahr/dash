@@ -494,7 +494,7 @@ func (d *Dispatcher) noRunnerFor(p model.Project, users []int64, notFor []string
 		}
 	}
 	if may {
-		fix = "give one that takes these tasks those labels in Runners, or change them in Project settings → Runners"
+		fix = "give one that takes these tasks those labels in Runners, or change them in Project settings → Agent & runners"
 	} else if len(model.MissingLabels(nil, p.RunsOn)) > 0 {
 		fix += ", and give it those labels"
 	}

@@ -12,7 +12,7 @@ import (
 )
 
 // Team usage: what the org's Claude runs used and cost, by member, project
-// and week or month, for its owners and admins (Organization → Usage).
+// and week or month, for its owners and admins (Organization → Billing & usage).
 // It adds up each task's runs (Todo.RunStats; a task from before those were
 // kept counts once, its whole cost, when it finished) and each scan run. A
 // task's runs count for its creator (Todo.WorkFor: for a task Dash made,

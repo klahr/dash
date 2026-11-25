@@ -11,7 +11,7 @@ import { accountSection } from "./accountsheet.js";
 // ------------------------------------------------------------------ tokens & connected apps
 // Everything that signs in as the user without a browser session: API
 // tokens and OAuth clients (claude.ai connectors) they allowed, in Account →
-// Tokens & apps, and runners they registered, in Runners' overview. Each is
+// Apps & tokens, and runners they registered, in Runners' overview. Each is
 // pinned to one org.
 accountSection("tokens", loadTokens);
 async function loadTokens() {

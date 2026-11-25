@@ -45,18 +45,18 @@ func TestBrowserSpokenReplies(t *testing.T) {
 		return err
 	}))
 	b.signIn(h)
-	section := `#account-sheet [data-section=speech]`
+	section := `#account-sheet [data-section=voice]`
 
-	// Turn it on in Account → Spoken replies.
+	// Turn it on in Account → Voice.
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu summary`)))
 	b.until("open Account", `document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-open`)))
-	b.until("the Spoken replies section", `document.querySelector(`+jsq(section)+`).classList.contains("current")`,
-		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=speech]`)))
+	b.until("the Voice section", `document.querySelector(`+jsq(section)+`).classList.contains("current")`,
+		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=voice]`)))
 	b.waitJS("off, its switches waiting", `!document.querySelector("#prefs-form").speech.checked && document.querySelector("#prefs-form").speechReplies.disabled`)
 	b.waitJS("the online note and the voices", `document.querySelector(`+jsq(section)+`).textContent.includes("online voice service") &&
 		!document.querySelector("#speech-voice-field").hidden && [...document.querySelector("#prefs-form").speechVoice.options].some((o) => o.textContent.includes("Cloud") && o.textContent.includes("online"))`)
 	b.until("turn it on", `localStorage.getItem("dash.speech") === "1" && !document.querySelector("#prefs-form").speechReplies.disabled && e2eHeard("This is how Dash")`,
-		chromedp.Click(chromedp.CSS(section+` label.toggle`)))
+		chromedp.Click(chromedp.CSS(section+` input[name=speech] + span`)))
 	b.waitJS("the sample ended", `(e2eEnd(), true)`)
 	b.until("close Account", `!document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
 
@@ -83,8 +83,8 @@ func TestBrowserSpokenReplies(t *testing.T) {
 	b.do("a wide screen", chromedp.EmulateViewport(1400, 900))
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu summary`)))
 	b.until("open Account", `document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-open`)))
-	b.until("the Spoken replies section", `document.querySelector(`+jsq(section)+`).classList.contains("current")`,
-		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=speech]`)))
+	b.until("the Voice section", `document.querySelector(`+jsq(section)+`).classList.contains("current")`,
+		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=voice]`)))
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("it fits across", `(() => { const s = document.querySelector(`+jsq(section)+`); return s.classList.contains("current") && s.scrollWidth <= s.clientWidth && s.getBoundingClientRect().right <= innerWidth; })()`)
 	b.until("close Account", `!document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))

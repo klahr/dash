@@ -196,6 +196,9 @@ export function openSheet({ title, cls = "", small = true, body = [], footer = n
 // Home and End move along the rail; only the chosen entry is a tab stop, so
 // Tab goes on into its section. railOf(id).show(key) picks one; the dialog
 // gets a "railchange" event (detail: the key) when the shown section changes.
+// A section merged into another keeps its old key working: the entry lists it
+// in data-rail-also (space-separated), and show(old) shows the merged one;
+// railOf(id).key(old) names it.
 const railLayouts = new Map();
 export const railOf = (id) => railLayouts.get(id);
 function railLayout(dialog) {
@@ -235,7 +238,9 @@ function railLayout(dialog) {
     if (changed && dialog.open) b.scrollIntoView({ block: "nearest", inline: "nearest" }); // the strip on a narrow screen
     if (changed) dialog.dispatchEvent(new CustomEvent("railchange", { detail: b.dataset.rail }));
   };
-  const show = (key, opts) => { wanted = key; apply(opts); };
+  const also = new Map(items.flatMap((b) => (b.dataset.railAlso || "").split(/\s+/).filter(Boolean).map((k) => [k, b.dataset.rail])));
+  const key = (k) => also.get(k) || k;
+  const show = (k, opts) => { wanted = key(k); apply(opts); };
   nav.addEventListener("click", (e) => {
     const b = e.target.closest(".rail-item");
     if (b) show(b.dataset.rail);
@@ -264,7 +269,7 @@ function railLayout(dialog) {
   new MutationObserver(() => apply()).observe(main, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
   dialog.addEventListener("close", () => { wanted = first; apply(); nav.scrollLeft = 0; });
   apply();
-  const rail = { show, get current() { return shown.dataset.rail; } };
+  const rail = { show, key, get current() { return shown.dataset.rail; } };
   railLayouts.set(dialog.id, rail);
   return rail;
 }

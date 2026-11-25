@@ -23,7 +23,7 @@ footer.
 | `DASH_LOGO`           | `-logo`          | an image file on the server (SVG, PNG, WebP, …) shown instead of Dash's mark next to the name |
 | `DASH_LANDING`        | `-landing`       | `1` shows the landing page at `/` to visitors who aren't signed in (off by default) |
 | `DASH_TEAM_PRICE`     | `-team-price`    | the team plan's price on the landing page, exactly as shown, e.g. `€5 per seat / month` |
-| `DASH_INDIVIDUAL_PRICE` | `-individual-price` | the individual price on the landing page and in **Organization → Billing**, exactly as shown, e.g. `€5 / month` |
+| `DASH_INDIVIDUAL_PRICE` | `-individual-price` | the individual price on the landing page and in **Organization → Billing & usage**, exactly as shown, e.g. `€5 / month` |
 | `DASH_PRICING_URL`    | `-pricing-url`   | where the landing page's **see pricing** links to when there's no price  |
 
 URLs must be `http(s)://…` and the contact a bare address (`help@example.com`). Dash
@@ -73,7 +73,7 @@ as [billing](billing.md) charges them:
 
 With `DASH_INDIVIDUAL_PRICE`, the line under the main button reads "€5 / month for one person,
 or free if you can't afford it." (with your string), and the FAQ gets "What if I can't afford
-€5 / month?": choose **I can't pay right now** in **Organization → Billing**. Without it, the
+€5 / month?": choose **I can't pay right now** in **Organization → Billing & usage**. Without it, the
 line reads "Free for one person." Both lines end "Your machines, your Claude subscription, no
 open ports."
 

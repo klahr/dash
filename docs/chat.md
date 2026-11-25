@@ -67,7 +67,7 @@ The guess is a short call to Haiku with the last few messages, on the same Claud
 chat (on a hub, your own runner). If it fails or no runner of yours is online, the box keeps its
 usual placeholder.
 
-To turn it off, open **Account → Chat** and clear **Suggest what to say next**. It's on by default
+To turn it off, open **Account → General** and clear **Suggest what to say next**. It's on by default
 and applies to this browser only. When it's off, no call is made.
 
 ## Pictures in the chat
@@ -91,10 +91,10 @@ other files don't load.
 
 ## Speak instead of typing
 
-Turn on **Account → Dictation** for a mic button on the message box. See
+Turn on **Account → Voice** for a mic button on the message box. See
 [Dictation](dictation.md).
 
-To hear Claude's replies read aloud, turn on **Account → Spoken replies**. See
+To hear Claude's replies read aloud, turn on **Account → Voice**. See
 [Spoken replies](dictation.md#spoken-replies).
 
 ## Shell commands with `!`

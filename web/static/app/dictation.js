@@ -6,7 +6,7 @@ import * as store from "./store.js";
 // A mic button on a prompt field that types what you say, with the browser's
 // Web Speech API. Everything happens in the browser: Chrome sends the audio to
 // Google to transcribe it, Safari may do it on the device. It is a preference
-// of this browser (Account → Dictation), off by default, and the button stays
+// of this browser (Account → Voice), off by default, and the button stays
 // hidden where the API is missing (Firefox).
 //
 // dictation(field, opts) attaches a button to a textarea, or to an mdEditor

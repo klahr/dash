@@ -1,7 +1,7 @@
 // The agent CLIs this Dash runs tasks on (GET /api/agents): Claude Code,
 // and any other registered provider, each with the optional features it
 // has ("resume", "mcp", "permission-hook", "tool-rules", "usage"). A project picks one in
-// Project settings → Runners; the task view leaves out what it can't do.
+// Project settings → Agent & runners; the task view leaves out what it can't do.
 import { api } from "./api.js";
 import { state } from "./state.js";
 import { DEFAULT_AGENT, projectAgent } from "../groups.js";

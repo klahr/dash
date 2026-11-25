@@ -638,7 +638,7 @@ $("#settings-approve-commands").addEventListener("click", (e) => queueSave(() =>
 })));
 
 // ------------------------------------------------------------------ repository
-// The Repository section of the project settings: what GitHub says about
+// Project settings → General, under Repository: what GitHub says about
 // origin (description, license, latest release, counts and the repository's
 // own settings), read with gh each time the settings open. Read-only: it is
 // changed on GitHub.

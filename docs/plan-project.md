@@ -117,7 +117,7 @@ default branch, cut to a fixed size. It doesn't ask what those already answer. T
 one of the project's runners; when none is online, the interview goes on without them. The
 interview itself runs on your own runner, as above; update Dash on it if it says it is from
 before feature briefs. A planner's rounds read the same, unless an owner turned that off in
-**Organization → Planners**: then they get only the card and the project's name.
+**Organization → Members**: then they get only the card and the project's name.
 
 On **Start**, pick one:
 

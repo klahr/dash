@@ -9,7 +9,7 @@ import (
 	"github.com/klahr/dash/internal/store"
 )
 
-// Profile pictures (Account → Profile picture):
+// Profile pictures (Account → Profile):
 //
 //	PUT    /api/account/avatar      the image as the body: PNG, JPEG, GIF or WebP, up to 1 MB
 //	DELETE /api/account/avatar      remove it

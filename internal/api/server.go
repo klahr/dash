@@ -62,7 +62,7 @@ type Server struct {
 	// (model.Project.AgentName). Nil, or nil for a project, is Chat.
 	ChatFor func(p model.Project) agent.Chatter
 	// Agents, if set, is what this runner found of each of its agent CLIs
-	// (agent.Set.Statuses), shown in Project settings → Agent.
+	// (agent.Set.Statuses), shown in Project settings → Agent & runners.
 	Agents    func() []model.AgentStatus
 	Auth      *auth.Auth
 	Perms     *perm.Broker

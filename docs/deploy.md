@@ -20,8 +20,7 @@ before you start. To watch it in production, see [Monitoring](#monitoring).
 
 Before you go live, on the production hub:
 
-1. **Turn on two-factor sign-in** for the admin account: account menu → **Account** →
-   **Two-factor sign-in**. Keep the recovery codes off the server.
+1. **Turn on two-factor sign-in** for the admin account: account menu → **Account → Sign-in**. Keep the recovery codes off the server.
 2. **Schedule backups** with `DASH_BACKUP_DIR` and copy them off the server
    ([Back up and restore](#back-up-and-restore)). Then **test a restore** once.
 3. **Alert** on `/healthz` and on the metrics, backups included ([Monitoring](#monitoring)).
@@ -622,7 +621,7 @@ computers. So:
   and the links in notification buttons, carry their own credential and aren't checked.
 
 - **Use a long random password** for `DASH_PASSWORD` (`openssl rand -base64 24`), and **turn on
-  two-factor sign-in** (account menu → Account → Two-factor sign-in). Org owners can require it of every
+  two-factor sign-in** (account menu → Account → Sign-in). Org owners can require it of every
   member; see [Users and organizations](users.md#two-factor-sign-in).
 - **Lockout:** after 5 failed logins from one IP address within 15 minutes, that address is locked
   out until the 15 minutes pass. Failed sign-ins through the claude.ai connector and wrong

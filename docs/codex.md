@@ -42,11 +42,11 @@ dash runner -codex-args "--model gpt-5.5"
 
 ## Pick Codex for a project
 
-1. Open **Project settings → Agent**.
+1. Open **Project settings → Agent & runners**.
 2. Choose **Codex** under **Agent**.
 
 The change saves at once. Queued tasks wait for a runner that has Codex installed and signed in.
-**Project settings → Agent** says when no online runner has it, or, on a runner's own page,
+**Project settings → Agent & runners** says when no online runner has it, or, on a runner's own page,
 when Codex isn't installed or signed in on that computer.
 
 ## What Codex does differently

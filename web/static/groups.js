@@ -152,7 +152,7 @@ export function runnerBadge(p, ctx = {}) {
   const rs = projectRunners(p, ctx);
   if (!rs.length) {
     if (!isShared(p) || !Array.isArray(ctx.runners)) return null;
-    return { kind: "none", label: "needs a runner", title: `No runner has the labels it runs on${p.runs_on?.length ? ` (${projectLabels(p).join(", ")})` : ""}: give one those labels in Runners, or change them in Project settings → Runners` };
+    return { kind: "none", label: "needs a runner", title: `No runner has the labels it runs on${p.runs_on?.length ? ` (${projectLabels(p).join(", ")})` : ""}: give one those labels in Runners, or change them in Project settings → Agent & runners` };
   }
   const up = rs.filter((r) => r.online).length;
   if (up === rs.length) return null;

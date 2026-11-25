@@ -45,7 +45,7 @@ async function upload(blob) {
   return data.avatar;
 }
 
-accountSection("picture", showOwnAvatar);
+accountSection("profile", showOwnAvatar);
 
 $("#avatar-pick").addEventListener("click", () => $("#avatar-file").click());
 $("#avatar-file").addEventListener("change", attempt(async (e) => {

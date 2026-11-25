@@ -1098,11 +1098,9 @@
       <div class="rail-layout">
         <nav class="rail-nav" aria-label="Settings sections">
           <div class="rail-group"><span class="rail-head">Project</span>
-            <button type="button" class="rail-item" data-rail="general">General</button>
+            <button type="button" class="rail-item" data-rail="general" data-rail-also="repository">General</button>
             <button type="button" class="rail-item" data-rail="commands">Commands</button>
-            <button type="button" class="rail-item" data-rail="repository">Repository</button>
-            <button type="button" class="rail-item" data-rail="claude">Agent</button>
-            <button type="button" class="rail-item" data-rail="runners">Runners</button>
+            <button type="button" class="rail-item" data-rail="claude" data-rail-also="runners">Agent &amp; runners</button>
             <button type="button" class="rail-item" data-rail="board">Board</button>
           </div>
           <div class="rail-group"><span class="rail-head">Delivery</span>
@@ -1129,6 +1127,13 @@
               <button class="btn small" type="button" id="settings-icon-clear">Delete</button>
               <input type="hidden" name="icon">
             </div>
+            <!-- Was its own Repository section (old links with section=repository come here) -->
+            <h3 class="section-head">Repository</h3>
+            <div id="settings-repo" class="repo-info" aria-live="polite"></div>
+            <!-- Disk space: the same cleanup as the palette's "Clean up leftovers" and :cleanup (app/projects.js) -->
+            <h3 class="section-head">Disk space</h3>
+            <p class="hint">Frees disk space by removing worktrees of old failed tasks, orphaned worktrees and <code>dash/</code> branches, logs of deleted tasks and unused uploads. Tasks and their merged work stay.</p>
+            <div><button class="btn small" type="button" id="settings-cleanup" data-icon="broom" title="Remove what finished tasks left behind: worktrees, branches, logs and uploads. Tasks and their work stay.">Clean up leftovers</button></div>
           </section>
           <section class="rail-section" data-section="commands">
             <div id="settings-approve" hidden>
@@ -1150,16 +1155,18 @@
             <h3 class="env-history-head" id="settings-env-history-head" hidden>History</h3>
             <ul class="env-history" id="settings-env-history" aria-labelledby="settings-env-history-head"></ul>
           </section>
-          <section class="rail-section" data-section="repository">
-            <div id="settings-repo" class="repo-info" aria-live="polite"></div>
-            <!-- Disk space: the same cleanup as the palette's "Clean up leftovers" and :cleanup (app/projects.js) -->
-            <h3 class="section-head">Disk space</h3>
-            <p class="hint">Frees disk space by removing worktrees of old failed tasks, orphaned worktrees and <code>dash/</code> branches, logs of deleted tasks and unused uploads. Tasks and their merged work stay.</p>
-            <div><button class="btn small" type="button" id="settings-cleanup" data-icon="broom" title="Remove what finished tasks left behind: worktrees, branches, logs and uploads. Tasks and their work stay.">Clean up leftovers</button></div>
-          </section>
           <section class="rail-section" data-section="claude">
             <label class="field" id="settings-agent-field"><span>Agent <em>the agent CLI that runs this project's tasks</em></span><select name="agent" id="settings-agent"></select></label>
             <p class="hint" id="settings-agent-hint" aria-live="polite"></p>
+            <!-- Which runners run the tasks: was its own Runners section (section=runners comes here) -->
+            <fieldset class="field choice" id="settings-runners-field" hidden>
+              <legend>Runs on <em>runners with every label</em></legend>
+              <input id="settings-runs-on" name="runs_on" type="hidden">
+              <p class="hint" id="settings-runs-on-help"><code>any</code> is any runner.</p>
+              <div id="settings-runners" aria-live="polite"></div>
+              <button class="link" type="button" id="settings-runners-manage" data-icon="computer">Manage runners…</button>
+            </fieldset>
+            <p class="hint" id="settings-runners-hint" hidden></p>
             <div class="claude-scope">
               <h3 class="claude-scope-head">In the repository <span class="scope-tag repo">repo files</span> <span class="claude-scope-branch" id="claude-files-branch"></span></h3>
               <div id="claude-files" class="claude-files" aria-live="polite"></div>
@@ -1181,16 +1188,6 @@
             </div>
             <p class="hint">Time waiting for your approval doesn't count.</p>
             </div>
-          </section>
-          <section class="rail-section" data-section="runners">
-            <fieldset class="field choice" id="settings-runners-field" hidden>
-              <legend>Runs on <em>runners with every label</em></legend>
-              <input id="settings-runs-on" name="runs_on" type="hidden">
-              <p class="hint" id="settings-runs-on-help"><code>any</code> is any runner.</p>
-              <div id="settings-runners" aria-live="polite"></div>
-              <button class="link" type="button" id="settings-runners-manage" data-icon="computer">Manage runners…</button>
-            </fieldset>
-            <p class="hint" id="settings-runners-hint" hidden></p>
           </section>
           <section class="rail-section" data-section="board">
             <label class="toggle"><input type="checkbox" name="close_no_changes"><span>Skip Review for tasks that change no files</span></label>
@@ -1308,32 +1305,27 @@
       <div class="rail-layout">
         <nav class="rail-nav" aria-label="Account sections">
           <div class="rail-group"><span class="rail-head">This browser</span>
-            <button type="button" class="rail-item" data-rail="editors">Editors</button>
-            <button type="button" class="rail-item" data-rail="clock">Time</button>
-            <button type="button" class="rail-item" data-rail="chat">Chat</button>
-            <button type="button" class="rail-item" data-rail="dictation">Dictation</button>
-            <button type="button" class="rail-item" data-rail="speech">Spoken replies</button>
+            <button type="button" class="rail-item" data-rail="general" data-rail-also="editors clock chat">General</button>
+            <button type="button" class="rail-item" data-rail="voice" data-rail-also="dictation speech">Voice</button>
           </div>
           <div class="rail-group"><span class="rail-head">You</span>
-            <button type="button" class="rail-item" data-rail="picture">Profile picture</button>
-            <button type="button" class="rail-item" data-rail="notifications">Notifications</button>
-            <button type="button" class="rail-item" data-rail="twofactor">Two-factor sign-in</button>
-            <button type="button" class="rail-item" data-rail="google">Google account</button>
-            <button type="button" class="rail-item" data-rail="data">Your data</button>
+            <button type="button" class="rail-item" data-rail="profile" data-rail-also="picture data">Profile</button>
+            <button type="button" class="rail-item" data-rail="notifications" data-rail-also="notify webhooks">Notifications</button>
+            <button type="button" class="rail-item" data-rail="signin" data-rail-also="twofactor google">Sign-in</button>
           </div>
           <div class="rail-group"><span class="rail-head">Connections</span>
-            <button type="button" class="rail-item" data-rail="connector">Connect Claude</button>
-            <button type="button" class="rail-item" data-rail="tokens">Tokens &amp; apps</button>
+            <button type="button" class="rail-item" data-rail="tokens" data-rail-also="connector">Apps &amp; tokens</button>
           </div>
         </nav>
         <div class="rail-main">
           <!-- Preferences (this browser only), a section per group. Their controls belong to
                #prefs-form (the form attribute), which app/prefs.js reads. -->
-          <section class="rail-section" data-section="editors">
+          <!-- General: was Editors, Time and Chat (old links to them come here) -->
+          <section class="rail-section" data-section="general">
+            <h3 class="section-head">Editors</h3>
             <label class="toggle"><input type="checkbox" name="vim" form="prefs-form"><span>Vim keys in the task and file editors</span></label>
             <label class="toggle"><input type="checkbox" name="invisibles" form="prefs-form"><span>Show invisible characters (spaces, tabs, trailing whitespace) in the editors</span></label>
-          </section>
-          <section class="rail-section" data-section="clock">
+            <h3 class="section-head">Time</h3>
             <label class="field"><span>Time format</span>
               <select name="clock" form="prefs-form">
                 <option value="">Automatic (from the locale)</option>
@@ -1341,11 +1333,13 @@
                 <option value="12">12-hour (6:00 PM)</option>
               </select>
             </label>
-          </section>
-          <section class="rail-section" data-section="chat">
+            <h3 class="section-head">Chat</h3>
             <label class="toggle"><input type="checkbox" name="chatSuggest" form="prefs-form"><span>Suggest what to say next</span></label>
           </section>
-          <section class="rail-section" data-section="dictation">
+          <!-- Voice: was Dictation and Spoken replies (old links to them come here).
+               Spoken replies (app/speech.js) read aloud with the browser's speechSynthesis. -->
+          <section class="rail-section" data-section="voice">
+            <h3 class="section-head">Dictation</h3>
             <label class="toggle"><input type="checkbox" name="dictation" form="prefs-form"><span>Dictation <em>a mic button on the task instructions, chats and comments</em></span></label>
             <p class="hint">The browser turns your speech into text. Chrome sends the audio to Google to transcribe it; Safari may do it on the device.
               <kbd><span data-mod>Ctrl</span>-Shift-.</kbd> starts or stops it in the field you are in.</p>
@@ -1354,11 +1348,9 @@
               Like dictation, the browser does the speech recognition: Chrome sends the audio to Google; Safari may do it on the device.
               <a data-docs="dictation.md#voice-commands" target="_blank" rel="noopener">The commands</a></p>
             <p class="hint warn" id="dictation-missing" hidden>This browser has no speech recognition (Firefox). Use your system's dictation instead: <a data-docs="dictation.md" target="_blank" rel="noopener">How</a>.</p>
-          </section>
-          <!-- Spoken replies (app/speech.js): read aloud with the browser's speechSynthesis. -->
-          <section class="rail-section" data-section="speech">
+            <h3 class="section-head">Spoken replies</h3>
             <label class="toggle"><input type="checkbox" name="speech" form="prefs-form"><span>Spoken replies <em>read Claude's replies, approval requests and task news aloud</em></span></label>
-            <h3 class="section-head">Read aloud</h3>
+            <h4 class="section-head">Read aloud</h4>
             <label class="toggle"><input type="checkbox" name="speechReplies" form="prefs-form"><span>Replies <em>in Message Claude, Ask about this project and the task chat</em></span></label>
             <label class="toggle"><input type="checkbox" name="speechApprovals" form="prefs-form"><span>Approval requests <em>what Claude wants to run, in short</em></span></label>
             <label class="toggle"><input type="checkbox" name="speechStatus" form="prefs-form"><span>Task status <em>ready for review, failed or finished, for the tasks you hear about in Notifications</em></span></label>
@@ -1384,14 +1376,23 @@
               Some browsers use an online voice service and send it the text: voices marked <em>online</em> do.</p>
             <p class="hint warn" id="speech-missing" hidden>This browser can't read aloud. Use your system's screen reader instead (VoiceOver, Narrator): <a data-docs="dictation.md" target="_blank" rel="noopener">How</a>.</p>
           </section>
-          <!-- The user's profile picture (app/avatar.js): shown in the account menu and members lists -->
-          <section class="rail-section" data-section="picture">
+          <!-- Profile: was Profile picture and Your data (old links to them come here).
+               The picture (app/avatar.js) shows in the account menu and members lists;
+               Your data downloads it all as JSON, or deletes the account (docs/privacy.md). -->
+          <section class="rail-section" data-section="profile">
+            <h3 class="section-head">Profile picture</h3>
             <div class="avatar-row">
               <span class="avatar avatar-large" id="avatar-preview" aria-hidden="true"></span>
               <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
               <button class="btn small" type="button" id="avatar-pick" data-icon="up">Choose picture…</button>
               <button class="btn small" type="button" id="avatar-clear">Delete</button>
             </div>
+            <h3 class="section-head">Download your data</h3>
+            <div><a class="btn small" id="account-export" href="/api/account/export" download data-icon="down">Download</a></div>
+            <h3 class="section-head">Delete your account</h3>
+            <p class="hint">Deletes your account, your chats and each organization only you are in; tasks and messages you wrote in other organizations stay, without your name. <a data-docs="privacy.md" target="_blank" rel="noopener">Learn more</a></p>
+            <p class="hint" id="account-delete-hint" hidden></p>
+            <div><button class="btn small danger" type="button" id="account-delete" data-icon="trash">Delete account…</button></div>
           </section>
           <!-- All of the user's own notifications (app/notifysettings.js): whose tasks, the summary (when,
                which projects, where it goes, what's in it), push (this browser's switch, a preference,
@@ -1474,34 +1475,29 @@
               <div><button class="btn small" type="button" id="me-webhook-add" data-icon="plus">Add webhook…</button></div>
             </div>
           </section>
-          <!-- Two-factor sign-in: set up, new recovery codes, turn off -->
-          <section class="rail-section" data-section="twofactor">
+          <!-- Sign-in: was Two-factor sign-in and Google account (old links to them come here).
+               Two-factor: set up, new recovery codes, turn off. Google: link, unlink
+               (#google-area is hidden when this Dash has no Google sign-in). -->
+          <section class="rail-section" data-section="signin">
+            <h3 class="section-head">Two-factor sign-in</h3>
             <div class="twofactor-body" id="twofactor-body"></div>
+            <div id="google-area">
+              <h3 class="section-head">Google account</h3>
+              <div class="twofactor-body" id="google-body"></div>
+            </div>
           </section>
-          <!-- The Google account linked to this one: link, unlink (hidden when this Dash has no Google sign-in) -->
-          <section class="rail-section" data-section="google">
-            <div class="twofactor-body" id="google-body"></div>
-          </section>
-          <!-- Your data: download it all as JSON, or delete the account (docs/privacy.md) -->
-          <section class="rail-section" data-section="data">
-            <h3 class="section-head">Download your data</h3>
-            <div><a class="btn small" id="account-export" href="/api/account/export" download data-icon="down">Download</a></div>
-            <h3 class="section-head">Delete your account</h3>
-            <p class="hint">Deletes your account, your chats and each organization only you are in; tasks and messages you wrote in other organizations stay, without your name. <a data-docs="privacy.md" target="_blank" rel="noopener">Learn more</a></p>
-            <p class="hint" id="account-delete-hint" hidden></p>
-            <div><button class="btn small danger" type="button" id="account-delete" data-icon="trash">Delete account…</button></div>
-          </section>
-          <!-- Connect Claude: guide to adding Dash as a claude.ai custom connector -->
-          <section class="rail-section" data-section="connector">
+          <!-- Apps & tokens: was Connect Claude and Tokens & apps (old links to them come here).
+               Connect Claude: guide to adding Dash as a claude.ai custom connector. Then the
+               user's credentials: API tokens and authorised OAuth clients (runners' are in Runners). -->
+          <section class="rail-section" data-section="tokens">
+            <h3 class="section-head">Connect Claude</h3>
             <p class="hint">Use Dash from the Claude apps on any device.</p>
             <div id="connector-body"></div>
-          </section>
-          <!-- The user's credentials: API tokens and authorised OAuth clients (runners' are in Runners) -->
-          <section class="rail-section" data-section="tokens">
+            <h3 class="section-head">Your tokens and apps</h3>
             <p class="hint">Each acts as you in one organization, but can't manage members, invitations or tokens.</p>
-            <h3 class="section-head">Connected apps</h3>
+            <h4 class="section-head">Connected apps</h4>
             <ul class="item-list" id="tokens-oauth"></ul>
-            <h3 class="section-head">API tokens</h3>
+            <h4 class="section-head">API tokens</h4>
             <ul class="item-list" id="tokens-api"></ul>
             <div class="org-invite">
               <input type="text" id="token-name" placeholder="Name, e.g. CI" autocomplete="off" maxlength="100" aria-label="Token name">
@@ -1528,17 +1524,14 @@
         <nav class="rail-nav" aria-label="Organization sections">
           <div class="rail-group"><span class="rail-head">People</span>
             <button type="button" class="rail-item" data-rail="setup">Set up your team</button>
-            <button type="button" class="rail-item" data-rail="members">Members</button>
-            <button type="button" class="rail-item" data-rail="signin">Sign-in</button>
-            <button type="button" class="rail-item" data-rail="tokens">Members' tokens</button>
-            <button type="button" class="rail-item" data-rail="planners">Planners</button>
+            <button type="button" class="rail-item" data-rail="members" data-rail-also="planners">Members</button>
+            <button type="button" class="rail-item" data-rail="signin" data-rail-also="tokens access sso">Sign-in</button>
           </div>
           <div class="rail-group"><span class="rail-head">Screens</span>
             <button type="button" class="rail-item" data-rail="wall">Wall view</button>
           </div>
           <div class="rail-group"><span class="rail-head">Billing</span>
-            <button type="button" class="rail-item" data-rail="billing">Billing</button>
-            <button type="button" class="rail-item" data-rail="usage">Usage</button>
+            <button type="button" class="rail-item" data-rail="billing" data-rail-also="usage">Billing &amp; usage</button>
           </div>
           <div class="rail-group" id="org-rail-dash" hidden><span class="rail-head">This Dash</span>
             <button type="button" class="rail-item" data-rail="claudestatus">Claude status</button>
@@ -1579,16 +1572,17 @@
               <h3 class="section-head" id="org-pending-head">Pending invitations</h3>
               <ul class="item-list" id="org-pending"></ul>
             </div>
-          </section>
-          <!-- Planners: what their feature briefs, on their own runners, are sent (owners; app/account.js) -->
-          <section class="rail-section" data-section="planners">
+            <!-- Planners: what their feature briefs, on their own runners, are sent (owners; app/account.js).
+                 Was its own section (section=planners comes here). -->
             <div id="org-planners" hidden>
+              <h3 class="section-head">Planners</h3>
               <p class="hint">Planners use Planning. With a runner of their own they also get the general chat and <strong>Write a feature brief</strong>, with their own Claude login. Their runners never run the organization's work. <a data-docs="users.md#planners" target="_blank" rel="noopener">Learn more</a></p>
               <label class="org-require-2fa"><input type="checkbox" id="org-planner-context"> Send planners' feature brief interviews the project's CLAUDE.md, README and file tree</label>
               <p class="hint">Off, each round gets only the card and the project's name.</p>
             </div>
           </section>
-          <!-- Sign-in: required two-factor, the org's address (with org subdomains) and Google sign-in -->
+          <!-- Sign-in: required two-factor, the org's address (with org subdomains), Google sign-in,
+               and members' tokens (was its own section: section=tokens comes here) -->
           <section class="rail-section" data-section="signin">
             <label class="org-require-2fa" id="org-require-2fa-row" hidden><input type="checkbox" id="org-require-2fa"> Require two-factor sign-in of every member</label>
             <div id="org-address" hidden>
@@ -1601,10 +1595,9 @@
               <p class="hint" id="org-slug-hint" hidden>The old address keeps leading here for 30 days.</p>
             </div>
             <div id="org-sso" hidden></div>
-          </section>
-          <!-- Members' API tokens and connected apps, for owners and admins (app/teamsetup.js). Runners are in Runners. -->
-          <section class="rail-section" data-section="tokens">
+            <!-- Members' API tokens and connected apps, for owners and admins (app/teamsetup.js). Runners are in Runners. -->
             <div id="org-tokens-area" hidden>
+              <h3 class="section-head">Members' tokens</h3>
               <p class="hint">What signs in as a member without a browser: API tokens and connected apps, in this organization. Each works until it's revoked, its member changes their password or leaves. Runners are under <strong>Runners</strong>.</p>
               <ul class="item-list" id="org-tokens"></ul>
             </div>
@@ -1633,10 +1626,10 @@
             <div id="org-billing" hidden>
               <div id="org-billing-body"></div>
             </div>
-          </section>
-          <!-- Owners and admins: Claude usage and cost by member, project and week or month, with CSV (app/teamusage.js) -->
-          <section class="rail-section" data-section="usage">
+            <!-- Owners and admins: Claude usage and cost by member, project and week or month, with CSV (app/teamusage.js).
+                 Was its own section (section=usage comes here). -->
             <div id="org-usage" hidden>
+              <h3 class="section-head">Usage</h3>
               <div class="usage-controls">
                 <div class="segmented" role="group" aria-label="Group by">
                   <button type="button" data-period="week" aria-pressed="true">Weeks</button>

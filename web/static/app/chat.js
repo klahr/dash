@@ -54,7 +54,7 @@ function usageLine(u) {
 // chat runs instead of going to Claude (see shellRunner).
 //
 // After a reply, the server may suggest the user's next message (with the
-// Account → Chat preference on): it shows as the empty composer's
+// Account → General preference on): it shows as the empty composer's
 // placeholder, Send (or Enter) sends it as it is, and Tab puts it in the
 // composer to edit. Writing hides it and emptying the composer again brings
 // it back; sending, a new turn or a new suggestion drops it.

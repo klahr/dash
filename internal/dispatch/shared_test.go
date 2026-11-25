@@ -479,7 +479,7 @@ func TestMemberWithoutARunnerIsToldSoFirst(t *testing.T) {
 	// Bob's own task, on his runner that lacks the label: only the labels.
 	td = fx.todo(t, p, func(x *model.Todo) { x.CreatedBy = bob })
 	_, _, err = fx.d.Dispatch(context.Background(), p, td)
-	if why := waitReasonOf(t, err); !strings.HasSuffix(why, "; give one that takes these tasks those labels in Runners, or change them in Project settings → Runners") || strings.Contains(why, "has no runner") {
+	if why := waitReasonOf(t, err); !strings.HasSuffix(why, "; give one that takes these tasks those labels in Runners, or change them in Project settings → Agent & runners") || strings.Contains(why, "has no runner") {
 		t.Errorf("wait reason: %q", why)
 	}
 }

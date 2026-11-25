@@ -50,7 +50,7 @@ Every project lives on runners, in one of two ways:
   (`<-projects>/<org>/<owner>/<repo>`), any of them can run its tasks, and work lands on the remote.
   It shows in the dashboard with a small "shared" mark (two people). Make one with **+ Add
   project** (see [Add project on the hub](#add-project-on-the-hub)). Change its labels in its
-  **Project settings → Runners**, or a runner's labels on its page in Runners (see
+  **Project settings → Agent & runners**, or a runner's labels on its page in Runners (see
   [A runner's projects](#a-runners-projects)). See [below](#shared-projects-tasks-on-runners).
 
 A project that is only ever worked on from one computer is simplest as that runner's own; share
@@ -117,7 +117,7 @@ The dot on a project's icon says Claude is working on it (yellow) or work waits 
 A project gets a badge only when its runners need attention:
 
 - **needs a runner**: no runner has the labels it runs on (give one those labels, or change them in
-  Project settings → Runners);
+  Project settings → Agent & runners);
 - **runner offline** / **all runners offline**: none of its runners is online;
 - **1/2 online** (and so on): some of its runners are offline.
 
@@ -474,11 +474,11 @@ project's work can go; whose tasks a runner then runs is the next section's rule
 - Its owner or an org admin gives it labels of its own on its page in **Runners → Labels**. A
   label is letters, digits and `- _ . : + /`, up to 64 characters. `any` can't be a runner's
   label. Each change is saved at once.
-- A project runs on the labels in its **Project settings → Runners → Runs on**. A runner works on
+- A project runs on the labels in its **Project settings → Agent & runners → Runs on**. A runner works on
   it when it has every one of them, whatever their case: `any` is any runner of the org,
   `macOS` and `ARM64` is Apple silicon Macs, `gpu` is the runners you labelled so. A project with
   no labels runs on no runner, and says it **needs a runner**.
-- A project also needs its agent's label. Pick the agent in **Project settings → Agent**; it is
+- A project also needs its agent's label. Pick the agent in **Project settings → Agent & runners**; it is
   Claude Code unless you change it. Its tasks then go only to runners where that agent is
   installed and logged in. If no online runner has it, the setting says so, and the tasks wait.
   Actions the agent can't do are grayed out on its tasks, with a tooltip saying why. To use
@@ -693,7 +693,7 @@ work. A team that wants shared runners needs one with an API key.
 
 A runner's page in Runners shows its labels and the projects it builds. **Shared projects…** lists
 the org's shared projects, each with the labels it runs on and whether the runner has them; it is
-the same as each project's **Project settings → Runners**, from the runner's side, and a change on one
+the same as each project's **Project settings → Agent & runners**, from the runner's side, and a change on one
 shows up on the other right away, in every open browser.
 
 - **Add labels** on a project the runner doesn't build gives the runner the labels it lacks (for
@@ -743,7 +743,7 @@ connection, to the clone of one of the project's runners that is online:
   runner, and only when its chat runs commands (`-chat-tools shell`; never with `-chat api`);
 - GitHub Actions: the hub's **CI** view, the automatic investigation of a failing build, and
   **Retry** read and re-run the builds with `gh` on a runner;
-- **Clean up leftovers** (**Project settings → Repository**, the palette or `:cleanup`) cleans the runner's clone.
+- **Clean up leftovers** (**Project settings → General**, the palette or `:cleanup`) cleans the runner's clone.
 
 When none of the project's runners is online these fail at once with "No runner is online for this
 project. Start one with `dash runner`." (the dashboard also says so above the board); nothing falls
@@ -762,7 +762,7 @@ startup it logs a warning for each project that runs on no runner labels (`proje
 the dashboard marks them **needs a runner**. Their work waits until you do one of these, per
 project:
 
-1. **Run it on runner labels** (Project settings → Runners → Runs on, e.g. `any`), if it
+1. **Run it on runner labels** (Project settings → Agent & runners → Runs on, e.g. `any`), if it
    has a git remote: the runners with them clone the remote and the project carries on as a shared
    project. A project without a remote can't run on runners: push it somewhere first (e.g. create the GitHub repository from the folder on disk with
    `gh repo create --source . --push`), then set up the project again as below.

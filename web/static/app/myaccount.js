@@ -30,8 +30,8 @@ export function showAccountMenu(me) {
   showOwnAvatar();
   $("#foot-menu summary").title = `Account menu · ${name}${me.org ? ` in ${me.org.name}` : ""}`;
   $("#foot-menu summary").setAttribute("aria-label", `${name}, account menu`);
-  // The Google section drops out of the Account sheet's rail.
-  $("#google-body").hidden = !me.google_available;
+  // The Google part of Account → Sign-in drops out.
+  $("#google-area").hidden = !me.google_available;
   const orgs = me.orgs || [];
   const sw = $("#org-switch");
   sw.hidden = orgs.length < 2;
@@ -87,7 +87,7 @@ export async function askPassword(title, body = "") {
 }
 
 // ---- the Google account linked to this one
-accountSection("google", () => renderGoogle());
+accountSection("signin", () => renderGoogle());
 
 async function renderGoogle() {
   const body = $("#google-body");
@@ -111,7 +111,7 @@ async function renderGoogle() {
 }
 
 // ---- your data: download it, or delete the account
-accountSection("data", () => {
+accountSection("profile", () => {
   // The env account is made again on every start: deleting it would be undone.
   const hint = $("#account-delete-hint");
   hint.hidden = !state.me?.env_account;
@@ -136,7 +136,7 @@ $("#account-delete").addEventListener("click", attempt(async () => {
 }));
 
 // ---- two-factor sign-in (the shared steps are in twofactor.js)
-accountSection("twofactor", () => renderTwoFactor());
+accountSection("signin", () => renderTwoFactor());
 
 async function renderTwoFactor() {
   const body = $("#twofactor-body");

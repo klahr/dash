@@ -65,7 +65,7 @@ async function renderOrg() {
   const manage = RANK[mine] >= RANK.admin;
   $("#org-title").textContent = org.org.name;
   $("#org-name-area").hidden = !manage;
-  $("#org-usage").hidden = !manage; // Organization → Usage (teamusage.js)
+  $("#org-usage").hidden = !manage; // Organization → Billing & usage (teamusage.js)
   $("#org-name").value = org.org.name;
   $("#org-require-2fa-row").hidden = mine !== "owner";
   $("#org-require-2fa").checked = !!org.org.require_2fa;
@@ -147,7 +147,7 @@ async function renderOrg() {
   }
   $("#org-new").hidden = !me.can_create_orgs;
   $("#org-invite-any-row").hidden = !me.google_available;
-  // Members' tokens (owners and admins): loads when picked (teamsetup.js).
+  // Members' tokens, in Sign-in (owners and admins): loads when picked (teamsetup.js).
   $("#org-tokens-area").hidden = !manage || !!org.org.personal;
   await renderOrgSSO(org.org, mine).catch((err) => toast(err.message, true));
   renderOrgBilling(await loadBilling().catch(() => null));
@@ -364,7 +364,7 @@ export async function setRequire2FA() {
 }
 
 // setPlannerContext turns sending planners' feature brief rounds the
-// project's context on or off (Organization → Planners, owners).
+// project's context on or off (Organization → Members, owners).
 async function setPlannerContext() {
   const box = $("#org-planner-context");
   try {

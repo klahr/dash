@@ -79,6 +79,11 @@ func TestBrowserLinks(t *testing.T) {
 	b.waitJS("the sheet at its section", `document.querySelector("#settings-sheet").open && document.querySelector("#settings-sheet .rail-item[aria-current]")?.dataset.rail === "board"`)
 	b.until("close the sheet", `!document.querySelector("#settings-sheet").open`, chromedp.KeyEvent(kb.Escape))
 	b.waitJS("the board's URL", path(board))
+	// An old link to a section merged into another (Runners, now in Agent & runners) opens that one.
+	b.do("open an old Project settings → Runners link", chromedp.Navigate(h.base+board+"?sheet=settings&section=runners"))
+	b.waitJS("the sheet at Agent & runners", `document.querySelector("#settings-sheet").open && document.querySelector("#settings-sheet .rail-item[aria-current]")?.dataset.rail === "claude"`)
+	b.until("close the sheet again", `!document.querySelector("#settings-sheet").open`, chromedp.KeyEvent(kb.Escape))
+	b.waitJS("the board's URL again", path(board))
 
 	// A commit on History: its own URL; Back closes the pane.
 	b.until("open History", `document.querySelector("#view-history.active")`, chromedp.Click(chromedp.CSS(`.nav [data-view=history]`)))

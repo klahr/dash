@@ -12,7 +12,7 @@ import { toggleChatPane } from "./chatpane.js";
 // ------------------------------------------------------------------ voice commands (docs/dictation.md)
 // Spoken commands that run what Dash's buttons and keys run, with the
 // browser's Web Speech API, like dictation (dictation.js). A preference of this
-// browser (Account → Dictation), off by default, hidden where the API is missing.
+// browser (Account → Voice), off by default, hidden where the API is missing.
 //
 // Command mode starts from the mic in the top bar or Ctrl/⌘-Shift-, and listens
 // until Esc, "stop listening", an error or the page is hidden. A bar in the

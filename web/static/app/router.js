@@ -11,7 +11,7 @@ import { closeDeploy, dp, loadDeploys, openDeploy } from "./deploys.js";
 import { closeCommit, selectCommit } from "./history.js";
 import { cardError, cardId, closeCard, openCard, planningFilters, setPlanningFilters } from "./planning.js";
 import { openSettings } from "./settings.js";
-import { ACCOUNT_MOVED, openAccount } from "./accountsheet.js";
+import { openAccount } from "./accountsheet.js";
 import { openOrg } from "./account.js";
 import { openRunners } from "./runners.js";
 
@@ -237,9 +237,10 @@ async function apply(r, { startup = false, settle = !startup } = {}) {
   else history.replaceState(history.state, "", url);
 }
 
-// Sections that moved to another place in the Organization sheet: from
-// Account (the wall view, Claude status) or merged into Sign-in.
-const ORG_MOVED = { wall: "wall", claudestatus: "claudestatus", access: "signin", sso: "signin" };
+// Sections that moved from Account to the Organization sheet (the wall view,
+// Claude status). Sections merged into another in the same sheet are named in
+// its rail entry's data-rail-also (dialogs.js), so their old links work too.
+const ORG_MOVED = { wall: "wall", claudestatus: "claudestatus" };
 
 // openSheet opens sheet k (one of SHEETS) at its section, if it names one.
 async function openSheet(k, section) {
@@ -254,9 +255,8 @@ async function openSheet(k, section) {
       await openOrg();
       railOf("org-sheet")?.show(ORG_MOVED[section]);
     } else if (k === "account") {
-      if (!d.open || (section && railOf(d.id)?.current !== (ACCOUNT_MOVED[section] || section))) await openAccount(section || undefined);
+      if (!d.open || (section && railOf(d.id)?.current !== railOf(d.id)?.key(section))) await openAccount(section || undefined);
     } else if (k === "org") {
-      section = ORG_MOVED[section] || section;
       if (!d.open) await openOrg();
       if (section) railOf(d.id)?.show(section);
     } else if (k === "runners") {

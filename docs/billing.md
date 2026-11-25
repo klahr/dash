@@ -68,7 +68,7 @@ Use test-mode keys (`sk_test_…`) and the Stripe CLI to try it out:
 
 ## What people see
 
-- **Organization → Billing** (owners only): the subscription's state, seats and renewal or
+- **Organization → Billing & usage** (owners only): the subscription's state, seats and renewal or
   trial end, with **Start trial** / **Subscribe** (Stripe Checkout) and **Manage billing**
   (the Stripe customer portal: card, invoices, VAT number, cancelling). Dash has no payment
   forms of its own.
@@ -85,15 +85,15 @@ Without `STRIPE_INDIVIDUAL_PRICE_ID`, individuals are free and never asked to pa
 With it, individuals are **paid by default, free on request**:
 
 - An individual that has never subscribed and hasn't said it can't pay is **asked**: in
-  **Organization → Billing**, and in a prompt when the owner opens the app (at most once a
+  **Organization → Billing & usage**, and in a prompt when the owner opens the app (at most once a
   day in a browser). Both offer **Subscribe** (Stripe Checkout, one at the individual price,
   no trial) and **I can't pay right now**.
 - **I can't pay right now** is one click and needs no reason. Dash remembers it for the
-  workspace and stops asking. **Subscribe** stays in **Organization → Billing** for when they
+  workspace and stops asking. **Subscribe** stays in **Organization → Billing & usage** for when they
   can.
 - Asking never blocks. Closing the prompt changes nothing, and it comes back another day.
   Individuals have no grace period, no read-only board and no limits, whether they pay or not.
-- A subscribed individual sees **Subscribed** in **Organization → Billing**, and **Manage
+- A subscribed individual sees **Subscribed** in **Organization → Billing & usage**, and **Manage
   billing** opens the customer portal to change the card or cancel. The subscription stays at
   one: it doesn't follow the members.
 - After cancelling, they are free again and aren't asked afresh: anyone who has subscribed
@@ -131,13 +131,13 @@ number of members: no banner, no read-only board, no prompt to subscribe when so
 
 1. Switch to the organization. For one you aren't a member of, use the
    [API](#api) instead.
-2. Open **Organization → Billing**. Platform admins see **Free override (platform admins)**
+2. Open **Organization → Billing & usage**. Platform admins see **Free override (platform admins)**
    there.
 3. Pick **Free forever**, or **Free until** and the last free day. Add a note on why if you
    like: only platform admins see it, with who set the override and when.
 4. Click **Make free**. **Clear** ends it.
 
-Members and owners see "Free forever" or "Free until <date>" in **Organization → Billing**
+Members and owners see "Free forever" or "Free until <date>" in **Organization → Billing & usage**
 instead of the subscribe button.
 
 When a date passes, or you clear the override, the usual rule applies again. If the
