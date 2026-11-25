@@ -194,122 +194,155 @@ func (e *TodoEngine) Run(ctx context.Context) {
 	}
 }
 
+// dispatch starts queued tasks while there is room, and on the hub hands
+// them to runners, until no queued task can go now.
 func (e *TodoEngine) dispatch(ctx context.Context) {
 	sent := map[string]bool{} // tasks offered to runners this round
 	for {
-		local := true   // a task may start here now
-		forced := false // a task with StartNow may: the queue only waits for the pace
-		limit := e.MaxParallel
-		if e.Usage != nil {
-			s := e.Usage.Snapshot()
-			if s.Paused {
-				local = false
-				forced = s.PaceOnly()
-			}
-			if s.Pace.Slots > 0 {
-				limit = s.Pace.Slots
-			}
-		}
-		e.mu.Lock()
-		free := limit - len(e.running)
-		e.mu.Unlock()
-		if free <= 0 {
-			local, forced = false, false
-		}
-		var next *model.Todo
-		var all []model.Todo     // loaded only when a queued todo has dependencies or builds on a task
-		busy := map[string]int{} // project id → its tasks in progress or being sent, counted when needed
-		for _, q := range e.Store.ListTodos("", model.StatusQueued) {
-			if q.Paused || sent[q.ID] || e.isSending(q.ID) {
-				continue
-			}
-			if q.MergeMain && e.conflictBusy(q.ProjectID) {
-				continue // waits until the conflict being fixed has landed
-			}
-			if len(q.DependsOn) > 0 || q.BuildsOn != "" {
-				if all == nil {
-					all = e.Store.ListTodos("")
-				}
-				if len(q.Blockers(all)) > 0 {
-					continue // waits until its dependencies are merged and the task it builds on is finished
-				}
-			}
-			p, err := e.Store.GetProject(q.ProjectID)
-			if err != nil {
-				continue
-			}
-			if p.Paused {
-				e.wait(q, ProjectPausedNote)
-				continue
-			}
-			if e.Hold != nil {
-				if why := e.Hold(p.OrgID); why != "" {
-					e.wait(q, why)
-					continue
-				}
-			}
-			if p.MaxParallel > 0 {
-				n, ok := busy[p.ID]
-				if !ok {
-					n = e.projectBusy(p.ID)
-					busy[p.ID] = n
-				}
-				if n >= p.MaxParallel {
-					e.wait(q, ProjectFullNote(p.MaxParallel))
-					continue
-				}
-			}
-			if e.Remote != nil {
-				// The hub: tasks go to runners, never run here.
-				if p.OnRunners() {
-					sent[q.ID] = true
-					e.sendToRunner(ctx, p, q)
-					delete(busy, p.ID) // counted afresh: it may be on its way now
-				} else {
-					e.wait(q, NoRunnerLinked)
-				}
-				continue
-			}
-			if !local && !(forced && q.StartNow) {
-				continue
-			}
-			next = &q
-			break
-		}
+		local, forced := e.capacity()
+		next := e.nextQueued(ctx, sent, local, forced)
 		if next == nil {
 			return
 		}
-		t, err := e.Store.SetStatus(next.ID, model.StatusInProgress, "") // uses StartNow up
-		if err != nil {
-			slog.Error("dispatch", "todo", next.ID, "err", err)
+		if !e.launch(ctx, *next, !local) {
 			return
 		}
-		if !local {
-			e.Log.Line(t, "▶ "+StartedNowNote)
-		}
-		wctx, cancel := context.WithCancel(ctx)
-		e.mu.Lock()
-		e.running[t.ID] = cancel
-		e.runCtxs[t.ID] = wctx
-		if t.MergeMain {
-			e.resolving[t.ID] = t.ProjectID
-		}
-		e.mu.Unlock()
-		e.workers.Add(1)
-		go func() {
-			defer e.workers.Done()
-			defer func() {
-				cancel()
-				e.mu.Lock()
-				delete(e.running, t.ID)
-				delete(e.runCtxs, t.ID)
-				delete(e.interrupted, t.ID)
-				e.mu.Unlock()
-				e.Kick()
-			}()
-			e.work(wctx, t)
-		}()
 	}
+}
+
+// capacity reports whether a task may start here now (local) and, when not,
+// whether a task with StartNow still may because the queue only waits for
+// the weekly pace (forced).
+func (e *TodoEngine) capacity() (local, forced bool) {
+	local = true
+	limit := e.MaxParallel
+	if e.Usage != nil {
+		s := e.Usage.Snapshot()
+		if s.Paused {
+			local = false
+			forced = s.PaceOnly()
+		}
+		if s.Pace.Slots > 0 {
+			limit = s.Pace.Slots
+		}
+	}
+	e.mu.Lock()
+	free := limit - len(e.running)
+	e.mu.Unlock()
+	if free <= 0 {
+		return false, false
+	}
+	return local, forced
+}
+
+// nextQueued walks the queued tasks and returns the first one that may start
+// here now, or nil. On the way it notes why skipped tasks wait and, on the
+// hub, sends tasks to runners (marking them in sent).
+func (e *TodoEngine) nextQueued(ctx context.Context, sent map[string]bool, local, forced bool) *model.Todo {
+	var all []model.Todo     // loaded only when a queued todo has dependencies or builds on a task
+	busy := map[string]int{} // project id → its tasks in progress or being sent, counted when needed
+	for _, q := range e.Store.ListTodos("", model.StatusQueued) {
+		if q.Paused || sent[q.ID] || e.isSending(q.ID) {
+			continue
+		}
+		if q.MergeMain && e.conflictBusy(q.ProjectID) {
+			continue // waits until the conflict being fixed has landed
+		}
+		if len(q.DependsOn) > 0 || q.BuildsOn != "" {
+			if all == nil {
+				all = e.Store.ListTodos("")
+			}
+			if len(q.Blockers(all)) > 0 {
+				continue // waits until its dependencies are merged and the task it builds on is finished
+			}
+		}
+		p, err := e.Store.GetProject(q.ProjectID)
+		if err != nil {
+			continue
+		}
+		if why := e.projectWait(p, busy); why != "" {
+			e.wait(q, why)
+			continue
+		}
+		if e.Remote != nil {
+			// The hub: tasks go to runners, never run here.
+			if !p.OnRunners() {
+				e.wait(q, NoRunnerLinked)
+				continue
+			}
+			sent[q.ID] = true
+			e.sendToRunner(ctx, p, q)
+			delete(busy, p.ID) // counted afresh: it may be on its way now
+			continue
+		}
+		if !local && !(forced && q.StartNow) {
+			continue
+		}
+		return &q
+	}
+	return nil
+}
+
+// projectWait says why a queued task of project p can't start now (the
+// project is paused, held, or at its own parallel limit), or "" if it may.
+// busy caches each project's count of busy tasks for this walk.
+func (e *TodoEngine) projectWait(p model.Project, busy map[string]int) string {
+	if p.Paused {
+		return ProjectPausedNote
+	}
+	if e.Hold != nil {
+		if why := e.Hold(p.OrgID); why != "" {
+			return why
+		}
+	}
+	if p.MaxParallel > 0 {
+		n, ok := busy[p.ID]
+		if !ok {
+			n = e.projectBusy(p.ID)
+			busy[p.ID] = n
+		}
+		if n >= p.MaxParallel {
+			return ProjectFullNote(p.MaxParallel)
+		}
+	}
+	return ""
+}
+
+// launch moves queued task q to in progress and runs it in a worker
+// goroutine. startedNow notes in the task log that it started despite the
+// weekly pace. It reports false if the status could not be set.
+func (e *TodoEngine) launch(ctx context.Context, q model.Todo, startedNow bool) bool {
+	t, err := e.Store.SetStatus(q.ID, model.StatusInProgress, "") // uses StartNow up
+	if err != nil {
+		slog.Error("dispatch", "todo", q.ID, "err", err)
+		return false
+	}
+	if startedNow {
+		e.Log.Line(t, "▶ "+StartedNowNote)
+	}
+	wctx, cancel := context.WithCancel(ctx)
+	e.mu.Lock()
+	e.running[t.ID] = cancel
+	e.runCtxs[t.ID] = wctx
+	if t.MergeMain {
+		e.resolving[t.ID] = t.ProjectID
+	}
+	e.mu.Unlock()
+	e.workers.Add(1)
+	go func() {
+		defer e.workers.Done()
+		defer func() {
+			cancel()
+			e.mu.Lock()
+			delete(e.running, t.ID)
+			delete(e.runCtxs, t.ID)
+			delete(e.interrupted, t.ID)
+			e.mu.Unlock()
+			e.Kick()
+		}()
+		e.work(wctx, t)
+	}()
+	return true
 }
 
 // StartedNowNote is the task log's line for a run started with Start now.
