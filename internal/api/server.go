@@ -410,19 +410,11 @@ func (s *Server) buildMux() *http.ServeMux {
 		if s.projectChatBusy(sv.c.Org, user, pid) {
 			w.Header().Set("X-Chat-Busy", "1")
 		}
+		pastChatCount(w, sv, user, pid)
 		writeJSON(w, http.StatusOK, msgs)
 	})
-	mux.HandleFunc("DELETE /api/projects/{pid}/chat", func(w http.ResponseWriter, r *http.Request) {
-		sv, ok := s.service(w, r)
-		if !ok {
-			return
-		}
-		if err := sv.data.ClearProjectChat(r.PathValue("pid"), chatUser(r, sv.c)); err != nil {
-			writeErr(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
+	// New chat: the conversation is put aside, not deleted (pastchats.go).
+	mux.HandleFunc("DELETE /api/projects/{pid}/chat", s.putChatAside)
 	mux.HandleFunc("POST /api/projects/{pid}/chat/actions", s.projectChatAction)
 	mux.HandleFunc("POST /api/projects/{pid}/cleanup", s.viaRunner(s.cleanupProject))
 
@@ -532,19 +524,11 @@ func (s *Server) buildMux() *http.ServeMux {
 		if s.generalBusy(sv.c) {
 			w.Header().Set("X-Chat-Busy", "1")
 		}
+		pastChatCount(w, sv, sv.c.User, "")
 		writeJSON(w, http.StatusOK, sv.data.Chat(sv.c.User))
 	})
-	mux.HandleFunc("DELETE /api/chat", func(w http.ResponseWriter, r *http.Request) {
-		sv, ok := s.service(w, r)
-		if !ok {
-			return
-		}
-		if err := sv.data.SetChat(sv.c.User, nil); err != nil {
-			writeErr(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
+	mux.HandleFunc("DELETE /api/chat", s.putChatAside)
+	s.pastChatRoutes(mux)
 	mux.HandleFunc("GET /ws/proc/{procid}", s.processViaRunner(s.procWS))
 	// A task's terminal preview (see preview.TerminalPath).
 	mux.HandleFunc("GET /ws/todos/{tid}/preview", s.previewTerminalWS)

@@ -36,7 +36,7 @@ follows it. Hover over either for a reminder of where it sends.
 ## Your own project chats
 
 Each member has their own chat about each project. Other members don't see it, and neither do
-the organization's owners and admins. `/clear` clears only yours.
+the organization's owners and admins.
 
 Your project chat is the same on each of your devices and browser windows:
 
@@ -46,11 +46,27 @@ Your project chat is the same on each of your devices and browser windows:
   message goes back in the box to send again. A window that is behind never removes messages.
 
 In the composer, <kbd>Enter</kbd> sends, messages written while Claude answers are queued, `/clear`
-starts a new conversation and `/help` lists these.
+starts a new chat (as **New chat** does) and `/help` lists these.
 
 <kbd>Up</kbd> on the first line of the message box shows the message you sent before it, as a
 shell's history does; <kbd>Down</kbd> on the last line goes forward again, back to what you were
 writing. Typing stops the stepping, so an edited message stays as you left it.
+
+## New chat and past chats
+
+**New chat** (the pencil in the chat pane's header) starts an empty conversation in General or a
+project's chat. The one it replaces is kept as a past chat.
+
+The clock beside it lists that chat's past chats, newest first:
+
+- Click one to open it. The conversation you had open becomes a past chat in its place.
+- Click its trash icon to delete it. **Undo** in the message that follows brings it back.
+
+Past chats are yours, like the chats themselves. A goal's chat has no **New chat**: its
+conversation is what its coordinator remembers.
+
+Tool calls Claude made (`▸ ✓ Bash …`) are saved with its answer, so they still show after a
+reload. Long input and output is cut short in the saved copy.
 
 ## Suggested next message
 

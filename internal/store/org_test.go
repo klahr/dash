@@ -168,6 +168,11 @@ func TestRowsCarryTheirProjectsOrg(t *testing.T) {
 	_, _ = o.SetScanSetting(p.ID, "s", func(*model.ScanSetting) {})
 	_, _ = o.SaveScanTemplate(model.ScanTemplate{ProjectID: p.ID, Name: "n"}, true)
 	_ = o.SetTodoChat(td.ID, []model.ChatMessage{{Role: "user", Content: "x"}})
+	// Past chats (New chat), of the general chat and of a project's.
+	_ = o.SetChat(u.ID, []model.ChatMessage{{Role: "user", Content: "old"}})
+	_ = o.PutChatAside(u.ID, "")
+	_ = o.AppendProjectChat(p.ID, u.ID, model.ChatMessage{Role: "user", Content: "old"})
+	_ = o.PutChatAside(u.ID, p.ID)
 	_ = o.SetChat(u.ID, []model.ChatMessage{{Role: "user", Content: "x"}})
 	g, _ := o.CreateGoal(model.Goal{ProjectID: p.ID, Title: "g"})
 	_ = o.AppendGoalChat(g.ID, model.ChatMessage{Role: "user", Content: "x"})

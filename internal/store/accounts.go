@@ -349,7 +349,7 @@ func (a *Accounts) syncEnvUser(username, password string, now time.Time) error {
 	})
 }
 
-var orgTables = []string{"projects", "todos", "dismissed_findings", "scan_runs", "scan_settings", "scan_templates", "chat_messages", "goals"}
+var orgTables = []string{"projects", "todos", "dismissed_findings", "scan_runs", "scan_settings", "scan_templates", "chat_messages", "goals", "past_chats"}
 
 // assignRecords puts records that have no org (those from before orgs) in
 // the default org, choosing the oldest org as default if none is set.
@@ -757,7 +757,10 @@ func (a *Accounts) removeMember(actor int64, platform bool, orgID, target int64)
 		if _, err := tx.Exec("DELETE FROM plans WHERE org_id = ? AND user_id = ?", orgID, target); err != nil {
 			return err
 		}
-		_, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND org_id = ? AND owner_id LIKE '%:' || ?", chatProject, orgID, target)
+		if _, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND org_id = ? AND owner_id LIKE '%:' || ?", chatProject, orgID, target); err != nil {
+			return err
+		}
+		_, err := tx.Exec("DELETE FROM past_chats WHERE org_id = ? AND user_id = ?", orgID, target)
 		return err
 	})
 	if err != nil {

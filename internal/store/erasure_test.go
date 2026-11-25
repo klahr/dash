@@ -52,6 +52,10 @@ func TestDeleteUser(t *testing.T) {
 	if err := s.SetChat(def.ID, ann, []model.ChatMessage{{Role: "user", Content: "private question", CreatedBy: ann}}); err != nil {
 		t.Fatal(err)
 	}
+	// Put aside with New chat: a past chat, exported and deleted as the chat is.
+	if err := s.PutChatAside(def.ID, ann, ""); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.SetChat(def.ID, admin.ID, []model.ChatMessage{{Role: "user", Content: "admin's own", CreatedBy: admin.ID}}); err != nil {
 		t.Fatal(err)
 	}
@@ -172,6 +176,7 @@ func TestDeleteUser(t *testing.T) {
 		"SELECT COUNT(*) FROM starred_projects WHERE user_id = " + itoa(admin.ID):                                   1,
 		"SELECT COUNT(*) FROM chat_messages WHERE kind = 'main' AND owner_id LIKE '%:" + itoa(ann) + "'":            0,
 		"SELECT COUNT(*) FROM chat_messages WHERE kind = 'project' AND owner_id = '" + p.ID + ":" + itoa(ann) + "'": 0,
+		"SELECT COUNT(*) FROM past_chats WHERE user_id = " + itoa(ann):                                              0,
 	} {
 		if err := s.db.QueryRow(q).Scan(&n); err != nil || n != want {
 			t.Errorf("%s: %d, want %d (%v)", q, n, want, err)

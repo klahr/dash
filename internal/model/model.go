@@ -1006,6 +1006,37 @@ type ChatMessage struct {
 	// queued or discarded a task from its card there); Content is the note
 	// as the chat shows it. Claude sees it on the next turn.
 	Action *ChatAction `json:"action,omitempty"`
+	// Tools are the tool calls Claude's answer made, in order (assistant
+	// messages only), so the chat shows them where they were when it is
+	// loaded again.
+	Tools []ChatTool `json:"tools,omitempty"`
+}
+
+// ChatTool is a tool call a chat answer made, as the chat shows it. Its
+// input and output are capped (see the api package's chatTool).
+type ChatTool struct {
+	ID    string          `json:"id,omitempty"`
+	Tool  string          `json:"tool"`
+	Input json.RawMessage `json:"input,omitempty"`
+	// Pos is how many bytes of the answer's Content came before the call.
+	Pos    int    `json:"pos"`
+	Output string `json:"output,omitempty"`
+	// IsError: the call failed. Cut: it had no result (the turn stopped
+	// while it ran).
+	IsError    bool  `json:"is_error,omitempty"`
+	Cut        bool  `json:"cut,omitempty"`
+	DurationMS int64 `json:"duration_ms,omitempty"`
+}
+
+// PastChat is a conversation put aside with New chat, which can be opened
+// again. Lists of them leave Messages out.
+type PastChat struct {
+	ID    string    `json:"id"`
+	Title string    `json:"title"`
+	At    time.Time `json:"at"` // when it was put aside
+	Count int       `json:"count"`
+	// Messages is the conversation, when it is opened.
+	Messages []ChatMessage `json:"messages,omitempty"`
 }
 
 // ChatTask is a task a chat answer made.

@@ -727,6 +727,16 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .chat-tab-options { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
 .chat-tab-options .project-name { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .chat-tab-options .machine-empty { padding: 8px 10px; color: var(--muted); font-size: var(--fs-m); }
+/* Past chats: the conversations New chat put aside, newest first. */
+.chat-past.foot-menu-list { top: calc(100% + 4px); bottom: auto; left: auto; right: 8px; width: min(340px, calc(100% - 16px)); max-height: min(60vh, 460px); overflow-y: auto; gap: 2px; }
+.chat-past-row { display: flex; align-items: center; min-width: 0; border-radius: var(--r-s); }
+.chat-past-row:hover, .chat-past-row:focus-within { background: var(--raised); }
+.chat-past.foot-menu-list .chat-past-open { flex: 1; min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 4px 10px; background: none; }
+.chat-past-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.chat-past-when { color: var(--muted); font-size: var(--fs-s); }
+.chat-past.foot-menu-list .chat-past-del { flex: none; width: 32px; min-height: 32px; padding: 0; justify-content: center; color: var(--muted); background: none; }
+.chat-past.foot-menu-list .chat-past-del:hover { color: var(--failed); }
+#pc-past[aria-expanded="true"] { color: var(--text); background: var(--raised); }
 .chat-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #chat-noproject { justify-content: center; }
 .chat-pane .composer { padding-bottom: max(10px, var(--safe-b)); }

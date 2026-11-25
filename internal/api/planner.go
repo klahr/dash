@@ -101,9 +101,13 @@ var plannerRoutes = map[string]bool{
 
 	// The general chat, on their runner, with Planning's tools only (see
 	// plannerBoard); project, task and goal chats stay members' (chatWS).
-	"GET /ws/chat":     true,
-	"GET /api/chat":    true,
-	"DELETE /api/chat": true,
+	"GET /ws/chat":                     true,
+	"GET /api/chat":                    true,
+	"DELETE /api/chat":                 true,
+	"GET /api/chat/past":               true,
+	"POST /api/chat/past/{id}/open":    true,
+	"DELETE /api/chat/past/{id}":       true,
+	"POST /api/chat/past/{id}/restore": true,
 
 	// Write a feature brief, on their runner. Not a project's brief, which
 	// launches a project (createPlan refuses it to planners).

@@ -466,7 +466,7 @@ func updateChat(tx *sql.Tx, kind, owner string, org int64, prev, msgs []model.Ch
 
 // sameChatMessage reports whether a and b would be stored the same.
 func sameChatMessage(a, b model.ChatMessage) bool {
-	if a.Role != b.Role || a.Content != b.Content || a.CreatedBy != b.CreatedBy || !slices.Equal(a.Attachments, b.Attachments) {
+	if a.Role != b.Role || a.Content != b.Content || a.CreatedBy != b.CreatedBy || !slices.Equal(a.Attachments, b.Attachments) || len(a.Tools) != len(b.Tools) {
 		return false
 	}
 	if (a.At == nil) != (b.At == nil) || a.At != nil && !a.At.Equal(*b.At) {

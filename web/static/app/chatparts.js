@@ -71,6 +71,19 @@ export function toolResult(t, d) {
   t.el.classList.toggle("error", !!d.is_error);
   toolSettled(t, d.at ? Date.parse(d.at) : Date.now());
 }
+// savedToolCall is tool call c as saved with its answer (model.ChatTool):
+// done, as it ended. since is when it began on a clock of the answer's
+// own (its calls' durations end to end), so a group's line adds them up.
+export function savedToolCall(c, since = 0) {
+  const t = toolCall(c.tool || "?", c.input || {}, since);
+  if (!c.cut) {
+    t.out.hidden = false;
+    t.out.textContent = c.output || "(no output)";
+    t.el.classList.toggle("error", !!c.is_error);
+  }
+  toolSettled(t, since + (c.duration_ms || 0));
+  return t;
+}
 // A tool call is done: its spinner turns into a mark in the same space, and a long one keeps how long it took.
 export function toolSettled(t, end = null) {
   if (t.done) return;

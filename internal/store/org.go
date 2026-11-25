@@ -237,6 +237,55 @@ func (o *OrgStore) ClearProjectChat(projectID string, user int64) error {
 	return o.s.ClearProjectChat(projectID, user)
 }
 
+// ownsChat reports whether user's general chat (project "") or their chat
+// about project is in the org.
+func (o *OrgStore) ownsChat(user int64, project string) bool {
+	if project == "" {
+		return o.org != 0 && user != 0
+	}
+	return o.ownsProject(project)
+}
+
+// PutChatAside is Store.PutChatAside in the org.
+func (o *OrgStore) PutChatAside(user int64, project string) error {
+	if !o.ownsChat(user, project) {
+		return ErrNotFound
+	}
+	return o.s.PutChatAside(o.org, user, project)
+}
+
+// PastChats is Store.PastChats in the org.
+func (o *OrgStore) PastChats(user int64, project string) ([]model.PastChat, error) {
+	if !o.ownsChat(user, project) {
+		return nil, ErrNotFound
+	}
+	return o.s.PastChats(o.org, user, project)
+}
+
+// OpenPastChat is Store.OpenPastChat in the org.
+func (o *OrgStore) OpenPastChat(user int64, project, id string) ([]model.ChatMessage, error) {
+	if !o.ownsChat(user, project) {
+		return nil, ErrNotFound
+	}
+	return o.s.OpenPastChat(o.org, user, project, id)
+}
+
+// DeletePastChat is Store.DeletePastChat in the org.
+func (o *OrgStore) DeletePastChat(user int64, project, id string) error {
+	if !o.ownsChat(user, project) {
+		return ErrNotFound
+	}
+	return o.s.DeletePastChat(o.org, user, project, id)
+}
+
+// RestorePastChat is Store.RestorePastChat in the org.
+func (o *OrgStore) RestorePastChat(user int64, project, id string) error {
+	if !o.ownsChat(user, project) {
+		return ErrNotFound
+	}
+	return o.s.RestorePastChat(o.org, user, project, id)
+}
+
 // ---- findings: reported issues, as draft tasks ----
 
 // ReportFinding is Store.ReportFinding, for one of the org's projects.

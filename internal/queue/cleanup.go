@@ -160,6 +160,13 @@ func (m *MergeQueue) cleanupFiles() CleanupReport {
 	for _, msgs := range m.Store.ProjectChats() {
 		useChat(msgs)
 	}
+	past, err := m.Store.PastChatUploads()
+	if err != nil {
+		uploads = nil // without them, cleanup can't tell which uploads past chats still have
+	}
+	for _, id := range past {
+		used[id] = true
+	}
 	cards, err := m.Store.CardUploads()
 	if err != nil {
 		uploads = nil // without them, cleanup can't tell which uploads cards still have

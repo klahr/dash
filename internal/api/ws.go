@@ -17,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 
@@ -808,9 +809,11 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 		// The images it showed (show_image): stored as uploads here, where
 		// the conversation is kept, and saved with it.
 		var images []model.Attachment
+		// The tool calls, as the chat shows them: saved with the reply.
+		calls := chatTools{}
 		started := time.Now() // places the reply right after its question in a task's timeline
 		answered := func() []agent.ChatMessage {
-			return append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started, Usage: usage, Tasks: tasks, Attachments: images})
+			return append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started, Usage: usage, Tasks: tasks, Attachments: images, Tools: calls.saved()})
 		}
 		err := ct.chatter.Stream(ctx, ct.dir, ct.prompt, func(d agent.ChatDelta) {
 			if ctx.Err() != nil {
@@ -825,6 +828,7 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 			if d.Kind == "tool_use" && d.ID != "" {
 				tools[d.ID] = d.Tool
 			}
+			calls.add(d, reply.Len())
 			if d.Kind == "tool_result" && !d.IsError && d.Task != nil && d.Task.ID != "" {
 				tasks = append(tasks, *d.Task)
 			}
@@ -893,6 +897,100 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 		}
 	}()
 	return done
+}
+
+// chatTools collects a reply's tool calls as it streams, to save with it.
+type chatTools struct {
+	list    []model.ChatTool
+	at      []time.Time // when each call began
+	results map[string]bool
+}
+
+// Caps on what a saved tool call keeps: the chat sends its conversation
+// back each turn, so a big file written or read mustn't ride along.
+const (
+	maxToolOutput = 4000 // bytes of a call's output, from its start
+	maxToolString = 2000 // bytes of each string in its input
+)
+
+// add takes in d, a delta of the reply, pos bytes of whose text came before it.
+func (c *chatTools) add(d agent.ChatDelta, pos int) {
+	switch d.Kind {
+	case "tool_use":
+		c.list = append(c.list, model.ChatTool{ID: d.ID, Tool: d.Tool, Input: capToolInput(d.Input), Pos: pos})
+		c.at = append(c.at, time.Now())
+	case "tool_result":
+		for i := range c.list {
+			t := &c.list[i]
+			if t.ID == "" || t.ID != d.ID || c.results[d.ID] {
+				continue
+			}
+			if c.results == nil {
+				c.results = map[string]bool{}
+			}
+			c.results[d.ID] = true
+			t.Output, t.IsError = capString(d.Text, maxToolOutput), d.IsError
+			t.DurationMS = time.Since(c.at[i]).Milliseconds()
+			break
+		}
+	}
+}
+
+// saved is the calls as saved: those without a result were cut off.
+func (c *chatTools) saved() []model.ChatTool {
+	if len(c.list) == 0 {
+		return nil
+	}
+	out := slices.Clone(c.list)
+	for i := range out {
+		out[i].Cut = !c.results[out[i].ID]
+	}
+	return out
+}
+
+// capString cuts s to at most n bytes, on a character boundary, marking the cut.
+func capString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "\n[…]"
+}
+
+// capToolInput is a tool call's input with its long strings cut short
+// (see maxToolString), at any depth.
+func capToolInput(in json.RawMessage) json.RawMessage {
+	if len(in) <= maxToolString {
+		return in
+	}
+	var v any
+	if json.Unmarshal(in, &v) != nil {
+		return nil
+	}
+	var walk func(any) any
+	walk = func(v any) any {
+		switch x := v.(type) {
+		case string:
+			return capString(x, maxToolString)
+		case map[string]any:
+			for k, e := range x {
+				x[k] = walk(e)
+			}
+		case []any:
+			for i, e := range x {
+				x[i] = walk(e)
+			}
+		}
+		return v
+	}
+	b, err := json.Marshal(walk(v))
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // suggestionTimeout gives up on a chat suggestion: by then the user is typing.
@@ -1051,14 +1149,19 @@ func (sv *service) saveImage(img mcptools.Image) (model.Attachment, error) {
 
 // authored sets who wrote each user message of msgs, a conversation the
 // client sent in full: messages it already had (prev, as saved) keep their
-// author, and new questions are user's. Claude's answers have none.
+// author, and new questions are user's. Claude's answers have none, and
+// keep the tool calls saved with them (the client leaves them out).
 func authored(prev, msgs []agent.ChatMessage, user int64) []agent.ChatMessage {
 	out := append([]agent.ChatMessage(nil), msgs...)
 	for i := range out {
+		same := i < len(prev) && prev[i].Role == out[i].Role && prev[i].Content == out[i].Content
+		if same && out[i].Tools == nil {
+			out[i].Tools = prev[i].Tools
+		}
 		switch {
 		case out[i].Role != "user":
 			out[i].CreatedBy = 0
-		case i < len(prev) && prev[i].Role == out[i].Role && prev[i].Content == out[i].Content:
+		case same:
 			out[i].CreatedBy = prev[i].CreatedBy
 		default:
 			out[i].CreatedBy = user

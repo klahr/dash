@@ -161,7 +161,7 @@ Type `:` and a command.
 | `:runners` `:org` `:account`    | **Runners**, **Organization**, **Account**                |
 | `:perms`                        | permission requests                                       |
 | `:board` `:mine`                | the board / only your tasks                               |
-| `:chat` `:pin` `:clear`         | chat: open, pin, clear                                    |
+| `:chat` `:pin` `:clear`         | chat: open, pin, new chat                                 |
 | `:history`                      | **History**                                               |
 | `:notify` `:vim` `:list`        | notifications, vim keys in the editor, invisibles         |
 | `:refresh`                      | load the projects again                                   |

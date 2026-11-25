@@ -13,6 +13,7 @@ import { addWorkerEvent, worker } from "./timeline.js";
 import { fitTerm } from "./terminal.js";
 import { fitTryTerm } from "./try.js";
 import { fuzzyScore } from "./palette.js";
+import { agoText } from "../time.js";
 
 // ------------------------------------------------------------------ chat pane
 // One pane on the right holds every chat but the task chats: General, the
@@ -74,7 +75,13 @@ export function projectChatFor(p) {
   pc.chat = makeChat({
     log: panel.querySelector(".chat-log"), empty: panel.querySelector(".chat-empty"), form: panel.querySelector("form"),
     target: () => ({ prefix: proj().prefix || "", project: proj().id }),
-    clear: () => api("DELETE", `/api/projects/${proj().id}/chat`, null, proj().prefix || ""),
+    // New chat (and /clear): the server keeps the conversation as a past chat.
+    clear: async () => {
+      if (!pc.chat.history.length) return;
+      await api("DELETE", `/api/projects/${proj().id}/chat`, null, proj().prefix || "");
+      pc.chat.past = (pc.chat.past || 0) + 1;
+      renderChatHead();
+    },
     cwd: panel.querySelector(".chat-cwd"),
     // A turn left streaming when the chat was cleared is saved when it finishes.
     saved: () => { if (!pc.chat.busy) loadProjectChat(proj(), true).catch(fail); },
@@ -104,6 +111,7 @@ export function projectChatFor(p) {
   });
   // Talking in a chat again wants its reply, even if its tab was closed mid-reply.
   pc.chat.input.form.addEventListener("submit", () => chatDismissed.delete(key));
+  pc.chat.past = 0; // how many past chats it has (see pastPlace)
   projectChats.set(key, pc);
   return pc;
 }
@@ -138,6 +146,7 @@ async function loadProjectChat(p, force = false) {
   }
   if (seq !== pc.seq) return; // a newer load is on its way
   pc.remoteBusy = !!res.headers.get("X-Chat-Busy");
+  pc.chat.past = Number(res.headers.get("X-Chat-Past")) || 0;
   if (pc.chat.busy) pc.dirty = true; // a turn began meanwhile: load when it ends
   else if (!sameChat(pc.chat.history, saved || [])) pc.chat.reset(saved || []);
   renderRemote(pc);
@@ -342,7 +351,7 @@ export function renderChatPane() {
   if (gt && pane.open) goalChatFor(gt);
   for (const [key, gc] of goalChats) show(gc.panel, key === tab);
   if (gt && pane.open) loadGoalChat(goalChats.get(tab)).catch((e) => toast(`Couldn't load the coordinator's conversation: ${e.message}`, true));
-  $("#pc-clear").disabled = !activeChat() || !!gt;
+  renderChatHead();
   renderTryBack();
   if (cur && pane.open) loadProjectChat(cur).catch((e) => toast(`Couldn't load the project chat: ${e.message}`, true));
   markChatSeen();
@@ -461,7 +470,7 @@ function showChatTab(tab) {
 export function toggleChatPane(open = !pane.open, tab = null) {
   pane.open = open;
   if (tab) pane.tab = tab;
-  if (!open) setChatTabPicker(false);
+  if (!open) { setChatTabPicker(false); setPastList(false); }
   savePane();
   renderChatPane();
   // On mobile the chat is a page: opening it doesn't pop the keyboard up over the nav.
@@ -510,14 +519,116 @@ export function renderChatBadge() {
   const more = $("#project-menu > summary");
   more.setAttribute("aria-label", says ? `More (chat: ${says})` : "More");
   more.title = says ? `More · Chat: ${says}` : "More";
+  renderChatHead(); // New chat waits for a reply to end
 }
 $("#pc-close").addEventListener("click", () => toggleChatPane(false));
 $("#pc-pin").addEventListener("click", togglePin);
 
-$("#pc-clear").addEventListener("click", attempt(async () => {
-  const c = activeChat();
-  if (c?.history.length) await c.clear();
+// ------------------------------------------------------------------ new and past chats
+// New chat starts an empty conversation in General or a project's chat;
+// the server keeps the one it replaces as a past chat. The clock lists
+// them (newest first): one opens in place of the current conversation
+// (which becomes a past chat in turn), and × deletes one, with Undo. A
+// goal's chat has neither: its conversation is its coordinator's memory.
+
+// pastPlace is the visible chat's {chat, base, prefix} (base: its API
+// path), or null for a chat without past chats.
+function pastPlace() {
+  const tab = paneTab();
+  if (tab === "general") return { chat, base: "/api/chat", prefix: "" };
+  if (isGoalTab(tab)) return null;
+  const p = tabProject(tab);
+  return p ? { chat: projectChatFor(p).chat, base: `/api/projects/${p.id}/chat`, prefix: p.prefix || "" } : null;
+}
+// renderChatHead shows New chat and the clock for the visible chat.
+export function renderChatHead() {
+  const e = pastPlace(), busy = !!e?.chat.busy;
+  const nb = $("#pc-new"), pb = $("#pc-past");
+  nb.hidden = !e;
+  nb.disabled = !e || busy || !e.chat.history.length;
+  pb.hidden = !e || !(e.chat.past > 0);
+  pb.disabled = busy;
+  if (pb.hidden || busy) setPastList(false);
+}
+$("#pc-new").addEventListener("click", attempt(async () => {
+  const e = pastPlace();
+  if (!e || e.chat.busy) return;
+  await e.chat.clear();
+  renderChatHead();
+  if (desktop.matches) e.chat.input.focus();
 }));
+
+// The open list's place (a token: pastPlace makes a new one each time) and what it shows.
+let pastFor = null, pastList = [];
+async function setPastList(open) {
+  const el = $("#chat-past");
+  if (el.hidden === !open) return;
+  el.hidden = !open;
+  $("#pc-past").setAttribute("aria-expanded", String(open));
+  if (!open) { pastFor = null; return; }
+  setChatTabPicker(false);
+  const e = pastFor = pastPlace();
+  el.replaceChildren();
+  if (e) await loadPastList(e, true);
+}
+async function loadPastList(e, focus = false) {
+  const list = await api("GET", `${e.base}/past`, null, e.prefix);
+  if (pastFor !== e) return;
+  e.chat.past = list.length;
+  pastList = list;
+  renderPastList(e, focus);
+}
+function renderPastList(e, focus = false) {
+  const el = $("#chat-past");
+  if (!pastList.length) { setPastList(false); renderChatHead(); return; }
+  el.replaceChildren(...pastList.map((pc) => h("div", { class: "chat-past-row", role: "none", "data-id": pc.id },
+    h("button", { type: "button", role: "menuitem", class: "chat-past-open", title: pc.title, onclick: attempt(() => openPast(e, pc)) },
+      h("span", { class: "chat-past-title" }, pc.title), h("span", { class: "chat-past-when" }, agoText(pc.at))),
+    ib({ type: "button", role: "menuitem", class: "chat-past-del", "aria-label": `Delete ${pc.title}`, title: "Delete", onclick: attempt(() => deletePast(e, pc)) }, "trash"))));
+  if (focus) el.querySelector("button")?.focus();
+}
+async function openPast(e, pc) {
+  if (e.chat.busy) return;
+  const had = e.chat.history.length > 0;
+  const msgs = await api("POST", `${e.base}/past/${pc.id}/open`, null, e.prefix);
+  if (!had) e.chat.past = Math.max(0, e.chat.past - 1);
+  setPastList(false);
+  e.chat.reset(msgs);
+  renderChatHead();
+  if (desktop.matches) e.chat.input.focus();
+  else $("#pc-past").focus();
+}
+async function deletePast(e, pc) {
+  const el = $("#chat-past"), rows = [...el.children], i = rows.findIndex((r) => r.dataset.id === pc.id);
+  await api("DELETE", `${e.base}/past/${pc.id}`, null, e.prefix);
+  e.chat.past = Math.max(0, e.chat.past - 1);
+  if (pastFor === e) {
+    pastList = pastList.filter((x) => x.id !== pc.id);
+    renderPastList(e);
+    // The focus goes to the row that took its place.
+    const next = el.children[Math.min(i, el.children.length - 1)];
+    next?.querySelector(".chat-past-open")?.focus();
+  }
+  renderChatHead();
+  if (el.hidden) $("#pc-past").hidden ? e.chat.input.focus() : $("#pc-past").focus();
+  toast(pc.title, { head: "Chat deleted", action: { label: "Undo", run: async () => {
+    await api("POST", `${e.base}/past/${pc.id}/restore`, null, e.prefix);
+    e.chat.past++;
+    renderChatHead();
+    if (pastFor && pastFor.base === e.base) await loadPastList(pastFor);
+  } } });
+}
+$("#pc-past").addEventListener("click", attempt(() => setPastList($("#chat-past").hidden)));
+document.addEventListener("click", (e) => { if (!$("#chat-past").hidden && !e.target.closest("#chat-past, #pc-past")) setPastList(false); });
+$("#chat-past").addEventListener("keydown", (e) => {
+  const btns = $$("#chat-past button"), i = btns.indexOf(document.activeElement);
+  if (e.key === "Escape") { setPastList(false); $("#pc-past").focus(); }
+  else if (e.key === "ArrowDown" || e.key === "j") (btns[i + 1] || btns[0])?.focus();
+  else if (e.key === "ArrowUp" || e.key === "k") (btns[i - 1] || btns.at(-1))?.focus();
+  else if (e.key === "Delete" || e.key === "Backspace") document.activeElement?.closest(".chat-past-row")?.querySelector(".chat-past-del")?.click();
+  else return;
+  e.preventDefault(); e.stopPropagation();
+});
 
 // Desktop: drag the pane's left edge to resize it, overlaid or pinned.
 resizeHandle($("#pc-resize"), $("#chat-pane"), {

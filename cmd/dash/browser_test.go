@@ -733,10 +733,33 @@ func TestBrowserProjectChatOnTwoDevices(t *testing.T) {
 	phone.waitJS("the phone's reply", replies+` === 2`)
 	wide.waitJS("the phone's turn on the laptop", has("Hi from the laptop", "And from the phone")+` && `+replies+` === 2`)
 
-	// Cleared on the laptop: on the phone too.
-	wide.do("clear on the laptop", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "/clear\r"))
+	// A new chat on the laptop (/clear): on the phone too. The old one is a past chat.
+	wide.do("new chat on the laptop", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "/clear\r"))
 	wide.waitJS("cleared", `!(`+has("Hi from the laptop")+`)`)
 	phone.waitJS("cleared on the phone", `!(`+has("Hi from the laptop")+`) && !!document.querySelector("`+panel+` .chat-empty:not([hidden])")`)
+	wide.waitJS("the past chats' clock", `!document.querySelector("#pc-past").hidden`)
+
+	// A tool call shows after a reload, as it did while the reply streamed.
+	tool := fmt.Sprintf(`[...document.querySelectorAll(%q)].some((d) => d.textContent.includes("create_todo"))`, panel+" .msg.assistant details.tool")
+	wide.do("ask for a draft", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "draft task: Fix login\r"))
+	wide.waitJS("the tool call while it streams", tool+` && `+replies+` === 1`)
+	wide.do("reload the laptop", chromedp.Reload())
+	wide.waitJS("the tool call after the reload", tool+` && `+replies+` === 1`)
+
+	// The past chat opens again; the one open goes aside in its place.
+	wide.do("open the past chats", chromedp.Click(chromedp.CSS(`#pc-past`)))
+	wide.waitJS("the list", `document.querySelectorAll("#chat-past .chat-past-open").length === 1 && document.querySelector("#chat-past").textContent.includes("Hi from the laptop")`)
+	wide.do("open the first chat", chromedp.Click(chromedp.CSS(`#chat-past .chat-past-open`)))
+	wide.waitJS("the first chat back", has("Hi from the laptop", "And from the phone")+` && document.querySelector("#chat-past").hidden`)
+	phone.waitJS("the first chat back on the phone", has("Hi from the laptop", "And from the phone"))
+
+	// Deleting a past chat (the draft one) can be undone.
+	phone.do("open the past chats on the phone", chromedp.Click(chromedp.CSS(`#pc-past`)))
+	phone.waitJS("the phone's list", `document.querySelector("#chat-past").textContent.includes("draft task: Fix login")`)
+	phone.do("delete it", chromedp.Click(chromedp.CSS(`#chat-past .chat-past-del`)))
+	phone.waitJS("deleted", `document.querySelector("#pc-past").hidden && [...document.querySelectorAll(".toast-action")].some((b) => b.textContent === "Undo")`)
+	phone.do("undo", chromedp.Click(chromedp.CSS(`.toast-action`)))
+	phone.waitJS("back", `!document.querySelector("#pc-past").hidden`)
 }
 
 // needChrome is the Chrome to test with, or skips the test (see

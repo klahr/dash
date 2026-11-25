@@ -8,10 +8,10 @@ import { attachBox, attachThumb } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { showView } from "./nav.js";
 import { projectKey } from "./events.js";
-import { chatCloseReason, chatPermCard, duration, permDecided, placeToolCall, sendStopButton, toolCall, toolResult, toolSettled } from "./chatparts.js";
+import { chatCloseReason, chatPermCard, duration, permDecided, placeToolCall, savedToolCall, sendStopButton, toolCall, toolResult, toolSettled } from "./chatparts.js";
 import { closeDetail } from "./detail.js";
 import { canRework, reworkLabel, reworkTodo, takeReviewNext } from "./drawmode.js";
-import { loadTodoChat, renderChatBadge, renderChatDots, renderChatPane, viewingChat } from "./chatpane.js";
+import { loadTodoChat, renderChatBadge, renderChatDots, renderChatHead, renderChatPane, viewingChat } from "./chatpane.js";
 import { timeline } from "./timeline.js";
 import { fmtTokens } from "./runstats.js";
 import { confirmRunAs } from "./people.js";
@@ -117,8 +117,12 @@ function chatView(c, { log, empty, labels, actions, scroller, merge, tasks }) {
   const prefixOf = c.prefixOf = () => c.target().prefix || "";
   // The images an answer showed (show_image) fit the reply's width; a click opens the lightbox.
   const images = c.images = (list = []) => h("div", { class: "msg-images", hidden: !list.length }, ...list.map((a) => attachThumb(a, null, prefixOf())));
-  const assistant = c.assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }),
-    m.attachments?.length ? images(m.attachments) : null, ...cards(m.tasks), usageLine(m.usage), actionRow(m.content));
+  const assistant = c.assistant = (m) => {
+    const el = h("div", { class: "msg assistant" }, from("assistant"));
+    savedReply(el, m);
+    el.append(...[m.attachments?.length ? images(m.attachments) : null, ...cards(m.tasks), usageLine(m.usage), actionRow(m.content)].filter(Boolean));
+    return el;
+  };
   const user = c.user = (m) => m.action ? actionNote(m) : m.shell ? c.shell.block(m, labels && from("user")).el : h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
     m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
   c.show = (saved) => {
@@ -128,6 +132,42 @@ function chatView(c, { log, empty, labels, actions, scroller, merge, tasks }) {
     toEnd();
   };
 }
+
+// savedReply puts saved answer m's text in el with its tool calls
+// (m.tools) where they were, as the answer showed while it streamed (see
+// chatStreamHandler's tool_use): text before a call is a reply of its own,
+// and calls in a row share a line.
+function savedReply(el, m) {
+  let reply = h("div", { class: "reply" });
+  el.append(reply);
+  const tools = Array.isArray(m.tools) ? m.tools : [];
+  if (!tools.length) {
+    reply.innerHTML = renderMarkdown(m.content || "");
+    return;
+  }
+  // A call's pos counts bytes of the answer's text (UTF-8, as the server saw it).
+  const bytes = new TextEncoder().encode(m.content || ""), dec = new TextDecoder();
+  let at = 0, since = 0;
+  for (const call of tools) {
+    const pos = Math.min(Math.max(Number(call.pos) || 0, at), bytes.length);
+    const seg = dec.decode(bytes.subarray(at, pos));
+    at = pos;
+    if (seg) {
+      reply.innerHTML = renderMarkdown(seg);
+      const next = h("div", { class: "reply" });
+      reply.after(next);
+      reply = next;
+    }
+    const t = savedToolCall(call, since);
+    since += call.duration_ms || 0;
+    placeToolCall(t, reply);
+  }
+  reply.innerHTML = renderMarkdown(dec.decode(bytes.subarray(at)));
+}
+
+// wire is a message as sent with a turn: without its saved tool calls,
+// which the server keeps (and Claude doesn't see).
+const wire = ({ tools, ...m }) => m;
 
 // chatComposer wires up the composer, form: its send button (mode() says
 // where it sends, see makeChat), dictation, shell mode (with shell), the
@@ -175,6 +215,11 @@ function chatComposer(c, { form, mode, shell, clear }) {
     help: () => toast(`/clear starts a new conversation. /help shows this.${shell ? " !command runs a shell command where the chat runs (no terminal); Claude sees it and its output next turn." : ""} Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one; otherwise Up and Down step through the messages sent before. A suggested next message shows grayed out in the empty composer: Enter sends it, Tab puts it there to edit.`, { head: "Chat commands" }),
   };
   commands.new = commands.reset = commands.clear;
+  // c.command(m) is the slash command a message (queued: {q, files}) runs, if it is one.
+  c.command = (m) => {
+    const cmd = /^\/(\w+)$/.exec(m.q || "")?.[1].toLowerCase();
+    return !m.files?.length && Object.hasOwn(commands, cmd) ? commands[cmd] : null;
+  };
 
   // The box is border-box, so the height takes the border on top of scrollHeight;
   // without it the text overflows by the border's width and a scrollbar shows.
@@ -220,13 +265,13 @@ function chatComposer(c, { form, mode, shell, clear }) {
     const q = input.value.trim() || (!c.current && suggestion.shown() ? c.suggestion : "");
     c.suggest();
     if (!q && !files.length) return;
-    const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
+    const command = c.command({ q, files });
     recall.end();
     input.value = "";
     autoGrow();
-    if (!files.length && Object.hasOwn(commands, cmd)) return commands[cmd]();
     att.reset();
-    // While Claude answers, the message waits its turn.
+    // While Claude answers, the message (or /clear, which starts a new chat) waits its turn.
+    if (command && (!c.current || command !== commands.clear)) return command();
     if (c.current) return queue.push({ q, files });
     if (!files.length && shellOn() && isShell(q)) return c.shell.run(q);
     c.send(q, files);
@@ -344,7 +389,7 @@ function chatTurns(c, { stale, onState }) {
     onState();
     const ws = c.socket(prefix);
     ws.fields = fields;
-    const go = () => ws.send(JSON.stringify({ type: "send", ...fields, ...(chatSuggestOn() && { suggest: true }), base: c.history.length - 1, messages: c.history }));
+    const go = () => ws.send(JSON.stringify({ type: "send", ...fields, ...(chatSuggestOn() && { suggest: true }), base: c.history.length - 1, messages: c.history.map(wire) }));
     ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
   };
 
@@ -603,6 +648,13 @@ function chatQueue(c) {
   }
   function drain() {
     if (!c.queue.length) return;
+    // A queued command (/clear) runs once the reply is done; what's queued after it follows.
+    const command = c.command(c.queue[0]);
+    if (command) {
+      c.queue.shift();
+      render();
+      return attempt(async () => { await command(); drain(); })();
+    }
     // A queued "!" command runs on its own; what's queued after it waits for it.
     const cmd = (m) => !m.files.length && c.shellOn() && c.isShell(m.q);
     if (cmd(c.queue[0])) {
@@ -758,7 +810,7 @@ function shellRunner(c) {
     delete fields.review; // a command reviews nothing
     const ws = c.socket(prefix);
     ws.fields = fields;
-    const go = () => ws.send(JSON.stringify({ type: "shell", id, ...fields, base: c.history.length - 1, messages: c.history }));
+    const go = () => ws.send(JSON.stringify({ type: "shell", id, ...fields, base: c.history.length - 1, messages: c.history.map(wire) }));
     ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
   }
   // The live output is capped: the saved result keeps its start and end.
@@ -1015,18 +1067,27 @@ export const chat = makeChat({
   log: $("#chat-log"), empty: $("#chat-empty"), form: $("#chat-form"),
   target: () => { const runner = chatRunner.choice(); return runner ? { runner } : {}; },
   onRunner: (name) => chatRunner.render(name),
-  clear: () => api("DELETE", "/api/chat"),
+  // New chat (and /clear): the server keeps the conversation as a past chat.
+  clear: async () => {
+    if (!chat.history.length) return;
+    await api("DELETE", "/api/chat");
+    chat.past++;
+    renderChatHead();
+  },
   actions: chatActions,
   cwd: $("#chat-cwd"),
   resume: true,
   onState: paneChatState("general", () => chat),
 });
+chat.past = 0; // how many past chats it has (see chatpane.js's pastPlace)
 
 // The server saves every turn, so the conversation survives restarts. A
 // question it never got to answer is asked again, unless another window's
 // turn is still running.
 export async function loadChat() {
   const { data: saved, res } = await request("GET", "/api/chat");
+  chat.past = Number(res.headers.get("X-Chat-Past")) || 0;
+  renderChatHead();
   if (!saved.length || chat.history.length || chat.busy) return;
   chat.reset(saved);
   if (!res.headers.get("X-Chat-Busy")) chat.resumeLast();

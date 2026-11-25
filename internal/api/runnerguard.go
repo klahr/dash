@@ -69,6 +69,8 @@ func init() {
 
 		"GET /api/todos/{tid}/chat", "DELETE /api/todos/{tid}/chat", "GET /api/projects/{pid}/chat",
 		"DELETE /api/projects/{pid}/chat", "POST /api/projects/{pid}/chat/actions", "POST /api/projects/{pid}/cleanup",
+		"GET /api/projects/{pid}/chat/past", "POST /api/projects/{pid}/chat/past/{id}/open",
+		"DELETE /api/projects/{pid}/chat/past/{id}", "POST /api/projects/{pid}/chat/past/{id}/restore",
 		"GET /ws/chat", // the general chat only for the runner's owner (see forOwner)
 
 		"GET /api/projects/{pid}/ci", "POST /api/projects/{pid}/ci/refresh", "POST /api/projects/{pid}/ci/investigate",
