@@ -329,26 +329,17 @@ func (sv *service) cancel(id string) (t model.Todo, accepted bool, err error) {
 	}
 	if cur.OnRunner() && cur.Status == model.StatusInProgress {
 		// The runner stops it and reports it failed ("canceled").
-		d, err := sv.runnerTask(cur)
-		if err != nil {
-			return t, false, err
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := d.Cancel(ctx, cur); err != nil {
+		if err := sv.onRunner(context.Background(), cur, func(ctx context.Context) error { return sv.s.Dispatch.Cancel(ctx, cur) }); err != nil {
+			if errors.Is(err, errBadRequest) {
+				return t, false, err
+			}
 			return t, false, fmt.Errorf("%w (if it stays away, the task fails by itself and can be queued again)", err)
 		}
 		return t, true, nil
 	}
 	if cur.OnRunner() && cur.WaitsOnGitHub() {
 		// Its runner moves it back to drafts too, closing its pull request.
-		d, err := sv.runnerTask(cur)
-		if err != nil {
-			return t, false, err
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := d.Cancel(ctx, cur); err != nil {
+		if err := sv.onRunner(context.Background(), cur, func(ctx context.Context) error { return sv.s.Dispatch.Cancel(ctx, cur) }); err != nil {
 			return t, false, err
 		}
 	}

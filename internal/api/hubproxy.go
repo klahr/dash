@@ -242,10 +242,23 @@ func (sv *service) linkOn(ctx context.Context, r tunnel.Runner, p model.Project)
 // onRunner runs fn, an action on t's runner (where t's worktree is), and
 // says plainly when that runner is offline.
 func (sv *service) onRunner(ctx context.Context, t model.Todo, fn func(context.Context) error) error {
+	return sv.onRunnerFor(ctx, t, 30*time.Second, fn)
+}
+
+// reachesRunners says whether this Dash can send a task's runner actions.
+func (sv *service) reachesRunners() error {
 	if sv.s.Dispatch == nil {
 		return fmt.Errorf("%w: this task ran on a runner, and this Dash doesn't reach runners", errBadRequest)
 	}
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	return nil
+}
+
+// onRunnerFor is onRunner with fn given timeout instead of 30 seconds.
+func (sv *service) onRunnerFor(ctx context.Context, t model.Todo, timeout time.Duration, fn func(context.Context) error) error {
+	if err := sv.reachesRunners(); err != nil {
+		return err
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	err := fn(cctx)
 	if errors.Is(err, tunnel.ErrOffline) || errors.Is(err, tunnel.ErrUnknownName) {

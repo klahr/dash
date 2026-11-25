@@ -12,7 +12,6 @@ import (
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/disk"
-	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/runnerctl"
 	"github.com/klahr/dash/internal/store"
@@ -485,22 +484,12 @@ func (s *Server) actionOnRunner(c Caller, t model.Todo, what string) error {
 	return nil
 }
 
-// runnerTask returns the dispatcher for t, a task on a runner, or an
-// error if this Dash has none.
-func (sv *service) runnerTask(t model.Todo) (*dispatch.Dispatcher, error) {
-	if sv.s.Dispatch == nil {
-		return nil, fmt.Errorf("%w: this task ran on a runner, and this Dash doesn't reach runners", errBadRequest)
-	}
-	return sv.s.Dispatch, nil
-}
-
 // pauseOnRunner pauses t, which runs on a runner: the hub marks it paused
 // and has the runner stop it. Once the runner reports it stopped, the hub
 // queues it again, still paused (see dispatch.Dispatcher's applyTask);
 // resumed, it goes back to a runner, which continues its Claude session.
 func (sv *service) pauseOnRunner(ctx context.Context, t model.Todo) error {
-	d, err := sv.runnerTask(t)
-	if err != nil {
+	if err := sv.reachesRunners(); err != nil {
 		return err
 	}
 	if _, err := sv.data.UpdateTodo(t.ID, func(x *model.Todo) error {
@@ -512,9 +501,7 @@ func (sv *service) pauseOnRunner(ctx context.Context, t model.Todo) error {
 	}); err != nil {
 		return err
 	}
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := d.Cancel(cctx, t); err != nil {
+	if err := sv.onRunner(ctx, t, func(ctx context.Context) error { return sv.s.Dispatch.Cancel(ctx, t) }); err != nil {
 		_, _ = sv.data.UpdateTodo(t.ID, func(x *model.Todo) error {
 			if x.Status == model.StatusInProgress {
 				x.Paused = false
@@ -537,13 +524,7 @@ func (sv *service) approveOnRunner(ctx context.Context, t model.Todo) (model.Tod
 	if err := reviewedOnGitHub(t); err != nil {
 		return t, err
 	}
-	d, err := sv.runnerTask(t)
-	if err != nil {
-		return t, err
-	}
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := d.Approve(cctx, t); err != nil {
+	if err := sv.onRunner(ctx, t, func(ctx context.Context) error { return sv.s.Dispatch.Approve(ctx, t) }); err != nil {
 		return t, err
 	}
 	return sv.data.UpdateTodo(t.ID, func(x *model.Todo) error {
@@ -557,28 +538,22 @@ func (sv *service) approveOnRunner(ctx context.Context, t model.Todo) (model.Tod
 // revertOnRunner asks the runner that landed t to undo it; the task
 // updates when the runner reports the revert.
 func (sv *service) revertOnRunner(ctx context.Context, t model.Todo) error {
-	d, err := sv.runnerTask(t)
-	if err != nil {
+	if err := sv.onRunner(ctx, t, func(ctx context.Context) error { return sv.s.Dispatch.Revert(ctx, t) }); err != nil {
 		return err
 	}
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := d.Revert(cctx, t); err != nil {
-		return err
-	}
-	_, err = sv.data.UpdateTodo(t.ID, func(x *model.Todo) error { x.Error, x.RevertConflict = "", nil; return nil })
+	_, err := sv.data.UpdateTodo(t.ID, func(x *model.Todo) error { x.Error, x.RevertConflict = "", nil; return nil })
 	return err
 }
 
 // fetchFromRunner gets a task's diff, log or events from its runner.
 func (sv *service) fetchFromRunner(ctx context.Context, t model.Todo, what string) ([]byte, error) {
-	d, err := sv.runnerTask(t)
-	if err != nil {
-		return nil, err
-	}
-	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	return d.Fetch(cctx, t, what)
+	var b []byte
+	err := sv.onRunnerFor(ctx, t, 60*time.Second, func(ctx context.Context) error {
+		var err error
+		b, err = sv.s.Dispatch.Fetch(ctx, t, what)
+		return err
+	})
+	return b, err
 }
 
 // sendable refuses a hub's task editor changes (model.Todo.Edits): they
