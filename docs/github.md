@@ -296,3 +296,14 @@ Besides the History view, a release can be tagged with `POST /api/projects/{id}/
 
 Dash fetches origin's tags along with its default branch, and when the History view is shown, so
 tags pushed from elsewhere appear too.
+
+## See new commits from origin
+
+Dash fetches origin's default branch in the background. To see commits pushed from another computer
+right away, click **Refresh** (the circular arrows) in **History → Commits**, or press `r`. It fetches
+origin now, redraws the graph and says how many new commits came in. A project without a remote
+has no **Refresh** button; `r` there only redraws the graph.
+
+The graph shows origin's commits as well as the local branch's. A commit that is on origin but not
+in the local checkout yet has a faded dot; hover it for "On origin, not in the local checkout yet".
+Hollow dots are local commits origin doesn't have yet.

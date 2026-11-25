@@ -89,6 +89,38 @@ func TestFetchSkipsWhileLockedAndReportsOriginAhead(t *testing.T) {
 	}
 }
 
+// FetchNow (History's Refresh) fetches even while backing off, waits for a
+// sync already running instead of skipping it, and answers with the result.
+func TestFetchNowWaitsAndIgnoresBackoff(t *testing.T) {
+	parallel(t)
+
+	h := newHarness(t, &fakeExec{fn: writeFile("", "x.txt")}, model.Project{Name: "p"})
+	origin, other := h.addOrigin(true, "")
+	r, _ := h.remote()
+
+	// A failed fetch starts the backoff.
+	gone := origin + ".gone"
+	if err := os.Rename(origin, gone); err != nil {
+		t.Fatal(err)
+	}
+	if st := r.FetchNow(context.Background(), h.proj); st.Error == "" {
+		t.Fatalf("no error with origin gone: %+v", st)
+	}
+	if err := os.Rename(gone, origin); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, other, "commit", "--allow-empty", "-q", "-m", "elsewhere")
+	gitRun(t, other, "push", "-q", "origin", "main")
+
+	// The lock is held for a moment: FetchNow waits for it, then fetches.
+	unlock, _ := r.TryLock(h.proj.ID)
+	time.AfterFunc(50*time.Millisecond, unlock)
+	st := r.FetchNow(context.Background(), h.proj)
+	if st.Error != "" || st.Behind != 1 || st.Fetched.IsZero() {
+		t.Fatalf("FetchNow = %+v; want origin 1 ahead, no error", st)
+	}
+}
+
 func TestFetchBacksOffAfterFailuresAndResetsOnSuccess(t *testing.T) {
 	parallel(t)
 

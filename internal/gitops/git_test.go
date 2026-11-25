@@ -148,3 +148,67 @@ func TestGraph(t *testing.T) {
 		t.Errorf("first parent: %+v", commits[at[m.Parents[0]]])
 	}
 }
+
+// Graph also lists origin's commits the local branch doesn't have yet (pushed
+// from elsewhere and fetched), besides the local ones origin doesn't have.
+func TestGraphOriginAhead(t *testing.T) {
+	t.Parallel()
+
+	ctx, g := context.Background(), New(nil)
+	dir := filepath.Join(t.TempDir(), "repo")
+	if err := g.InitRepo(ctx, "p", dir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	commit := func(msg string) {
+		gitIn(t, dir, "-c", "user.name=T", "-c", "user.email=t@x", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", msg)
+	}
+	commit("shared")
+	commit("from elsewhere")
+	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	gitIn(t, dir, "reset", "-q", "--hard", "HEAD~1")
+
+	// origin strictly ahead: its commit is listed, above the local tip.
+	commits, err := g.Graph(ctx, "p", dir, "main", 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 3 || commits[0].Subject != "from elsewhere" || !slices.Contains(commits[0].Refs, "origin/main") ||
+		commits[1].Subject != "shared" || !slices.Contains(commits[1].Refs, "HEAD -> main") {
+		t.Fatalf("origin ahead: %+v", commits)
+	}
+
+	// Diverged: both tips are listed, each before its parents.
+	commit("local only")
+	commits, err = g.Graph(ctx, "p", dir, "main", 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subjects := map[string]int{}
+	at := map[string]int{}
+	for i, c := range commits {
+		subjects[c.Subject] = i
+		at[c.Hash] = i
+	}
+	for _, s := range []string{"from elsewhere", "local only", "shared"} {
+		if _, ok := subjects[s]; !ok {
+			t.Fatalf("diverged: no %q in %+v", s, commits)
+		}
+	}
+	for i, c := range commits {
+		for _, p := range c.Parents {
+			if j, ok := at[p]; ok && j <= i {
+				t.Errorf("parent %s of %q isn't listed after it", p, c.Subject)
+			}
+		}
+	}
+
+	// No origin/main: only the local branch, as before.
+	gitIn(t, dir, "update-ref", "-d", "refs/remotes/origin/main")
+	commits, err = g.Graph(ctx, "p", dir, "main", 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 3 || commits[0].Subject != "local only" {
+		t.Fatalf("no origin: %+v", commits)
+	}
+}

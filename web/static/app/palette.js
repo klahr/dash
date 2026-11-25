@@ -33,7 +33,7 @@ import { chat, todoChat } from "./chat.js";
 import { isStarred, starsOn } from "./stars.js";
 import { pane, paneOverlays, projectChatFor, toggleChatPane, togglePin } from "./chatpane.js";
 import { attached, openShell, shellBlocked, startProc, techFor, term } from "./terminal.js";
-import { closeCommit, commitScroller, moveCommit, stepCommitFile } from "./history.js";
+import { closeCommit, commitScroller, moveCommit, refreshHistory, stepCommitFile } from "./history.js";
 import { closeGoal, goalsOn, gp, openGoalSheet, stepGoal } from "./goals.js";
 import { closeDeploy, dp, stepDeploy } from "./deploys.js";
 import { cardOpen, closeCard } from "./planning.js";
@@ -492,6 +492,7 @@ async function handleNormal(k, n, hadCount) {
         case "k": case "ArrowUp": return moveCommit(stepCommit(hashes, cp.sha, -n));
         case "gg": return moveCommit(hadCount ? hashes[Math.min(n, hashes.length) - 1] : hashes[0]);
         case "G": return moveCommit(hadCount ? hashes[Math.min(n, hashes.length) - 1] : hashes.at(-1));
+        case "r": return refreshHistory();
       }
       // With a commit open, the keys that scroll read it.
       if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(cp.sha ? commitScroller() : scroller(), k, n);

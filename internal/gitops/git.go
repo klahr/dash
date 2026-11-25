@@ -1068,12 +1068,18 @@ type GraphCommit struct {
 	When    string   `json:"when"`
 }
 
-// Graph returns up to limit commits of branch, newest first, in topological
-// order: a commit comes before its parents and a branch's commits stay
-// together, which is what drawing lanes needs.
+// Graph returns up to limit commits of branch, and of origin/<branch> when
+// that ref exists (commits fetched from origin but not yet in the local
+// branch show too), newest first, in topological order: a commit comes
+// before its parents and a branch's commits stay together, which is what
+// drawing lanes needs.
 func (g *Git) Graph(ctx context.Context, projectID, repo, branch string, limit int) ([]GraphCommit, error) {
-	out, err := g.run(ctx, false, projectID, repo, "git", "log", "--topo-order",
-		"--max-count="+strconv.Itoa(limit), "--format=%H\x1f%h\x1f%P\x1f%D\x1f%s\x1f%an\x1f%ar\x1e", branch, "--")
+	args := []string{"log", "--topo-order", "--max-count=" + strconv.Itoa(limit),
+		"--format=%H\x1f%h\x1f%P\x1f%D\x1f%s\x1f%an\x1f%ar\x1e", branch}
+	if g.RemoteHasBranch(ctx, projectID, repo, branch) {
+		args = append(args, "refs/remotes/origin/"+branch)
+	}
+	out, err := g.run(ctx, false, projectID, repo, "git", append(args, "--")...)
 	if err != nil {
 		return nil, err
 	}

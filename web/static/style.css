@@ -798,6 +798,10 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .page-tabs button[aria-current="page"] { background: var(--raised); color: var(--text); }
 @media (pointer: coarse) { .page-tabs button { min-height: 36px; } }
 .page-head { display: flex; align-items: center; gap: 8px; padding: 10px var(--pad-x) 0; }
+.graph-refresh { margin-left: auto; }
+@media (pointer: fine) { .graph-refresh { width: 36px; height: 36px; } }
+.graph-refresh[aria-busy="true"] svg { animation: spin .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .graph-refresh[aria-busy="true"] svg { animation-duration: 2.4s; } }
 .code-head { flex: none; }
 .deploys .cl-head .deploys-title { font-family: var(--ui); font-size: var(--fs-l); }
 
@@ -915,6 +919,9 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .graph-dot.merge { width: 8px; height: 8px; margin: -4px 0 0 -4px; }
 .graph-dot.unpushed { background: var(--bg); border: 2px solid var(--c); }
 .graph-dot.remote { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--c); }
+/* On origin, not in the local checkout yet: a faded dot (not hollow: hollow is unpushed) */
+.graph-dot.incoming { background: color-mix(in srgb, var(--c) 40%, var(--bg)); }
+#graph li.incoming .graph-subject { color: var(--muted); }
 .graph-commit { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; padding: 3px 0; line-height: 20px; }
 .graph-sha { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 .graph-ref { line-height: 18px; padding: 0 6px; border-radius: var(--r-s); border: 1px solid var(--merged); color: var(--merged); font-size: var(--fs-2xs); }

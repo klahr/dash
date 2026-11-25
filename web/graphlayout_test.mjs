@@ -2,7 +2,7 @@
 // `node --test web/`; groups_test.go runs them as part of `go test ./...`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { graphLayout } from "./static/graphlayout.js";
+import { graphLayout, graphTips, reachable } from "./static/graphlayout.js";
 
 const c = (hash, ...parents) => ({ hash, parents });
 
@@ -56,4 +56,26 @@ test("freed lanes are reused, so the graph stays narrow", () => {
 test("lanes waiting for commits past the list run to the bottom", () => {
   const { rows } = graphLayout([c("b", "a")]);
   assert.deepEqual(rows[0].down, [[0, 0, 0]]);
+});
+
+test("graphTips and reachable tell origin's commits from local ones", () => {
+  // o is on origin only, l on local only; both come from s.
+  const commits = [
+    { hash: "o", parents: ["s"], refs: ["origin/main"] },
+    { hash: "l", parents: ["s"], refs: ["HEAD -> main"] },
+    { hash: "s", parents: ["r"], refs: [] },
+    { hash: "r", parents: [], refs: [] },
+  ];
+  const { local, origin } = graphTips(commits, "main");
+  assert.equal(local.hash, "l");
+  assert.equal(origin.hash, "o");
+  assert.deepEqual([...reachable(commits, origin)].sort(), ["o", "r", "s"]);
+  assert.deepEqual([...reachable(commits, local)].sort(), ["l", "r", "s"]);
+  assert.equal(reachable(commits, null).size, 0);
+  // Two tips: two lanes that join at s.
+  const { rows, width } = graphLayout(commits);
+  assert.equal(width, 2);
+  assert.deepEqual(rows.map((r) => r.col), [0, 1, 0, 0]);
+  // Not checked out: the branch's ref has no HEAD.
+  assert.equal(graphTips([{ hash: "x", parents: [], refs: ["main", "origin/main"] }], "main").local.hash, "x");
 });

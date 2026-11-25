@@ -446,6 +446,24 @@ func TestBrowserHistoryCommitPane(t *testing.T) {
 	}
 	b.do("press Esc", chromedp.KeyEvent(kb.Escape))
 	b.waitJS("the pane closed", `document.querySelector("#commit-detail").hidden && !document.querySelector("#graph li.selected")`)
+
+	// Refresh fetches origin now: a commit pushed from elsewhere shows at once.
+	if err := os.WriteFile(filepath.Join(work, "more.txt"), []byte("more\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, work, h.gitEnv, "git", "add", ".")
+	run(t, work, h.gitEnv, "git", "commit", "-q", "-m", "Pushed from elsewhere")
+	run(t, work, h.gitEnv, "git", "push", "-q", "origin", "main")
+	b.waitJS("the Refresh button", `!document.querySelector("#graph-refresh").hidden && document.querySelector("#graph-refresh").getClientRects().length`)
+	b.do("click Refresh", chromedp.Click(chromedp.ID("graph-refresh")))
+	b.waitJS("the new commit", `document.querySelectorAll("#graph li").length === 3 && document.querySelector("#graph li:first-child .graph-subject").textContent === "Pushed from elsewhere"`)
+	b.waitJS("the toast", `[...document.querySelectorAll(".toast")].some((e) => e.textContent.includes("1 new commit from origin"))`)
+	b.waitJS("the button ready again", `!document.querySelector("#graph-refresh").disabled`)
+	// r does the same, and on a phone the button is still there.
+	b.do("press r", chromedp.KeyEvent("r"))
+	b.waitJS("up to date", `[...document.querySelectorAll(".toast")].some((e) => e.textContent.includes("Up to date"))`)
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("Refresh on a phone", `(() => { const r = document.querySelector("#graph-refresh").getBoundingClientRect(); return r.width > 0 && r.right <= innerWidth; })()`)
 }
 
 // A CLI project's terminal preview: open it on a task in review, type in

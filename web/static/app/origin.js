@@ -10,11 +10,14 @@ import { setStatus } from "./status.js";
 // Dash fetches origin's default branch when a project is selected and every
 // minute after, so commits pushed from another computer show up early.
 // fetch=false only keeps the project marked as selected on the server.
-export async function loadRemote(fetch, force) {
+// wait (with force) answers once the fetch is done, and returns the status.
+export async function loadRemote(fetch, force, { wait = false } = {}) {
   const p = state.project;
   if (!p?.remote_url) return;
-  const st = await api(fetch ? "POST" : "GET", `/api/projects/${p.id}/remote${fetch ? `/fetch${force ? "?force=1" : ""}` : ""}`);
+  const q = force ? (wait ? "?force=1&wait=1" : "?force=1") : "";
+  const st = await api(fetch ? "POST" : "GET", `/api/projects/${p.id}/remote${fetch ? `/fetch${q}` : ""}`);
   if (projectKey(state.project) === projectKey(p)) { state.remote = st; renderRemote(); }
+  return st;
 }
 
 // The default branch compared with origin's: a row in the status popover

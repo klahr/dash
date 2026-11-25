@@ -324,6 +324,30 @@ func (r *RemoteSync) wanted(projectID string) bool {
 	return len(r.Store.ListTodos(projectID, model.StatusQueued, model.StatusInProgress)) > 0
 }
 
+// FetchNow fetches origin now and returns the status once it is done, for a
+// person who asked (History's Refresh): unlike Select it ignores the
+// backoff and waits (up to LockWait) for a sync already running instead of
+// skipping. A failed fetch is in the status's Error.
+func (r *RemoteSync) FetchNow(ctx context.Context, p model.Project) RemoteStatus {
+	r.Select(ctx, p, false, false)
+	if !p.SyncsRemote() {
+		return r.Status(p)
+	}
+	lctx, cancel := context.WithTimeout(ctx, LockWait)
+	unlock, err := r.Lock(lctx, p.ID)
+	cancel()
+	if err != nil {
+		st := r.Status(p)
+		st.Error = "origin is busy syncing; try again in a moment"
+		return st
+	}
+	defer unlock()
+	if r.fetchLocked(ctx, p, false) == nil {
+		r.syncCheckout(ctx, p)
+	}
+	return r.Status(p)
+}
+
 // fetch updates origin/<default> and the counts, unless the project's lock
 // is taken (a merge is syncing it, or another fetch is running).
 func (r *RemoteSync) fetch(ctx context.Context, p model.Project) {

@@ -1,9 +1,9 @@
-import { graphLayout } from "../graphlayout.js";
+import { graphLayout, graphTips, reachable } from "../graphlayout.js";
 import { latestOnly } from "../commitnav.js";
 import { $, $$, dateTimeText, fill, h, ib, ico, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
-import { copy, fail } from "./dialogs.js";
+import { copy, fail, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
 import { cp, hist, state } from "./state.js";
 import { baseBranch, projectKey } from "./events.js";
@@ -14,6 +14,7 @@ import { DEPLOY_STATUS, deployCommit, dp, loadDeploys, openDeploy } from "./depl
 import { showView } from "./nav.js";
 import { changed } from "./routes.js";
 import { agoText } from "../time.js";
+import { loadRemote } from "./origin.js";
 
 // ------------------------------------------------------------------ history
 // History → Commits: the default branch's commit graph, a dot per commit on
@@ -86,6 +87,35 @@ async function showDeploy(id) {
 let graphTimer = 0;
 export const refreshGraph = () => { clearTimeout(graphTimer); graphTimer = setTimeout(() => state.view === "history" && loadGraph().catch(() => {}), 800); };
 
+// refreshHistory is History's Refresh (and r): with a remote it fetches
+// origin now and waits for it, then redraws the graph and says how many
+// commits came in; without one it only redraws.
+let refreshing = false;
+export async function refreshHistory() {
+  const p = state.project, btn = $("#graph-refresh");
+  if (!p || refreshing) return;
+  refreshing = true;
+  btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
+  const before = new Set(hist.commits.map((c) => c.hash));
+  try {
+    const st = p.remote_url ? await loadRemote(true, true, { wait: true }) : null;
+    if (projectKey(state.project) !== projectKey(p)) return;
+    await loadGraph();
+    if (projectKey(state.project) !== projectKey(p)) return;
+    if (st?.error) { toast(`Can't fetch origin: ${st.error}`, { tone: "error" }); return; }
+    const fresh = hist.commits.filter((c) => !before.has(c.hash)).length;
+    toast(!p.remote_url ? "History refreshed" : fresh ? `${plural(fresh, "new commit")} from origin` : "Up to date");
+  } catch (e) {
+    fail(e);
+  } finally {
+    refreshing = false;
+    btn.disabled = false;
+    btn.removeAttribute("aria-busy");
+  }
+}
+$("#graph-refresh").addEventListener("click", () => refreshHistory());
+
 const LANE_W = 14;
 
 // A row's lines as an SVG. The upper part has a fixed height (the dot sits
@@ -105,14 +135,18 @@ function graphLines(lines, width, stretch) {
 export function renderGraph(res) {
   const commits = res?.commits || [];
   $("#graph-empty").hidden = commits.length > 0;
+  $("#graph-refresh").hidden = !state.project?.remote_url; // without a remote, r still redraws
   $("#graph-empty-text").textContent = state.project ? `${baseBranch(state.project) || "main"} has no commits yet.` : "Select a project to see its main branch.";
-  // Commits origin's tip can't reach haven't been pushed yet: their dots are hollow.
-  const remote = `origin/${res?.branch || baseBranch(state.project) || "main"}`;
-  const tip = commits.find((c) => c.refs?.includes(remote));
-  const pushed = new Set(tip ? [tip.hash] : []);
-  for (const c of commits) if (pushed.has(c.hash)) c.parents?.forEach((p) => pushed.add(p));
+  // Commits origin's tip can't reach haven't been pushed yet: their dots are
+  // hollow. Those the local branch's tip can't reach are only on origin
+  // (fetched, not in the checkout yet): their dots are faded.
+  const branch = res?.branch || baseBranch(state.project) || "main";
+  const remote = `origin/${branch}`;
+  const { local: localTip, origin: tip } = graphTips(commits, branch);
+  const pushed = reachable(commits, tip), local = reachable(commits, localTip);
+  const onOriginOnly = (c) => !!(tip && localTip) && !local.has(c.hash);
   const { rows, width } = graphLayout(commits);
-  hist.commits = commits.map((c) => ({ ...c, pushed: !tip || pushed.has(c.hash) }));
+  hist.commits = commits.map((c) => ({ ...c, pushed: !tip || pushed.has(c.hash), incoming: onOriginOnly(c) }));
   hist.byHash = new Map(hist.commits.map((c) => [c.hash, c]));
   hist.remote = remote;
   // Another project's graph: its commit pane goes.
@@ -123,19 +157,20 @@ export function renderGraph(res) {
   graph.style.setProperty("--graph-w", `${width * LANE_W}px`);
   graph.replaceChildren(...commits.map((c, i) => {
     const { col, color, up, down } = rows[i];
-    const isPushed = !tip || pushed.has(c.hash);
+    const isPushed = !tip || pushed.has(c.hash), incoming = onOriginOnly(c);
     const open = (e) => { if (e.type === "click" || e.key === "Enter" || e.key === " ") { e.preventDefault(); selectCommit(c.hash).catch(fail); } };
-    const dot = "graph-dot" + (isPushed ? "" : " unpushed") + (c === tip ? " remote" : "") + (c.parents?.length > 1 ? " merge" : "");
+    const dot = "graph-dot" + (isPushed ? "" : " unpushed") + (incoming ? " incoming" : "") + (c === tip ? " remote" : "") + (c.parents?.length > 1 ? " merge" : "");
     const selected = c.hash === cp.sha;
-    return h("li", { title: isPushed ? null : "Not pushed yet", "data-hash": c.hash, class: selected ? "selected" : null },
+    const title = incoming ? INCOMING : isPushed ? null : "Not pushed yet";
+    return h("li", { title, "data-hash": c.hash, class: [selected ? "selected" : "", incoming ? "incoming" : ""].join(" ").trim() || null },
       h("span", { class: "graph-lane" },
         graphLines(up, width, false), graphLines(down, width, true),
         h("span", { class: dot, style: `--x:${col * LANE_W + LANE_W / 2}px;--c:var(--lane-${color})` })),
       h("span", { class: "graph-commit", role: "button", tabindex: "0", "aria-controls": "commit-detail", "aria-current": selected ? "true" : null, onclick: open, onkeydown: open },
         h("span", { class: "sr-only" }, "Commit "), h("code", { class: "graph-sha" }, c.short),
         // The hollow dot and the row's title are for the eye and the mouse: say it here too.
-        isPushed ? null : h("span", { class: "sr-only" }, " (not pushed yet)"),
-        ...(c.refs || []).map(graphRef),
+        title ? h("span", { class: "sr-only" }, ` (${title.toLowerCase()})`) : null,
+        ...(c.refs || []).map((r) => graphRef(r, incoming)),
         ...liveRefs(c.hash),
         ...deployRefs(c.hash),
         h("span", { class: "graph-subject" }, c.subject),
@@ -247,7 +282,11 @@ function commitRef() {
   return { sha: d?.hash || cp.sha, short: d?.short || c?.short || cp.sha.slice(0, 7), subject: d?.subject ?? c?.subject ?? "" };
 }
 
-function graphRef(r) {
+const INCOMING = "On origin, not in the local checkout yet";
+
+// A ref's chip. origin's is "pushed" while the local branch has it too.
+function graphRef(r, incoming) {
+  if (r === hist.remote && incoming) return h("span", { class: "graph-ref remote", title: "Origin's newest commit, not in the local checkout yet" }, r);
   return r === hist.remote
     ? h("span", { class: "graph-ref remote", title: "Last pushed commit" }, `pushed · ${r}`)
     : h("span", { class: `graph-ref${r.startsWith("tag: ") ? " tag" : ""}` }, r.replace(/^HEAD -> /, ""));
@@ -261,7 +300,7 @@ function renderCommitHead() {
   $("#cd-title").textContent = ref.subject || ref.short;
   fill($("#cd-meta"),
     h("button", { type: "button", class: "commit-sha", title: `Copy ${ref.sha}`, "aria-label": `Copy the commit's SHA ${ref.sha}`, onclick: () => copy(ref.sha, "SHA copied") }, ref.short),
-    ...(d?.refs || c?.refs || []).map(graphRef),
+    ...(d?.refs || c?.refs || []).map((r) => graphRef(r, c?.incoming)),
     ...liveRefs(ref.sha));
   if (!p) return;
   const gh = githubURL(p.remote_url);

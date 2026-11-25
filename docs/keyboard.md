@@ -109,7 +109,8 @@ A question from Claude has no key for an answer: answer it in its card. `X` decl
 ## History and Goals
 
 - **History → Commits**: `j`/`k` next / previous commit, `gg`/`G` first / last, `n`/`p` next / previous
-  changed file of the open commit, `Ctrl-d`/`Ctrl-u` scroll it, `q`/`Esc` close it.
+  changed file of the open commit, `Ctrl-d`/`Ctrl-u` scroll it, `q`/`Esc` close it, `r` refresh (fetch
+  origin and show its new commits).
 - **Goals**: `j`/`k` open the next / previous goal, `q`/`Esc` close it.
 - **History → Deploys**: `j`/`k` open the next / previous deploy, `q`/`Esc` close it.
 

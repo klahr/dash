@@ -4,6 +4,22 @@
 // LANE_COLORS is how many lane colours style.css defines (--lane-0…).
 export const LANE_COLORS = 6;
 
+// reachable is the set of hashes reachable from tip (a commit of the list,
+// or null for none) among commits, listed children before parents.
+export function reachable(commits, tip) {
+  const seen = new Set(tip ? [tip.hash] : []);
+  for (const c of commits) if (seen.has(c.hash)) c.parents?.forEach((p) => seen.add(p));
+  return seen;
+}
+
+// graphTips finds the local branch's tip and origin's among commits (null
+// where it isn't listed), from the refs `git log --format=%D` gives them.
+export function graphTips(commits, branch) {
+  const local = commits.find((c) => c.refs?.some((r) => r === branch || r === `HEAD -> ${branch}`)) || null;
+  const origin = commits.find((c) => c.refs?.includes(`origin/${branch}`)) || null;
+  return { local, origin };
+}
+
 // graphLayout gives each commit (newest first, children before parents, as
 // `git log --topo-order` lists them) a lane and the lines to draw above and
 // below its dot.

@@ -862,13 +862,19 @@ func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {
 // marks the project as selected, so it's fetched every minute. With fetch it
 // also fetches now, in the background: the result arrives as a
 // remote.updated event; ?force=1 fetches even while backing off after failures.
+// ?wait=1 fetches now (backoff or not) and answers once the fetch is done.
 func (s *Server) remoteStatus(fetch bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, p, ok := s.project(w, r)
 		if !ok {
 			return
 		}
-		writeJSON(w, http.StatusOK, s.Merges.Remote.Select(r.Context(), p, fetch, r.URL.Query().Get("force") == "1"))
+		q := r.URL.Query()
+		if fetch && q.Get("wait") == "1" { // History's Refresh: fetch now and answer once it is done
+			writeJSON(w, http.StatusOK, s.Merges.Remote.FetchNow(r.Context(), p))
+			return
+		}
+		writeJSON(w, http.StatusOK, s.Merges.Remote.Select(r.Context(), p, fetch, q.Get("force") == "1"))
 	}
 }
 

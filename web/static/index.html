@@ -269,6 +269,8 @@
             <button type="button" data-tab="history" aria-current="page">Commits</button>
             <button type="button" data-tab="deploys">Deploys</button>
           </nav>
+          <!-- Refresh: fetch origin now (with a remote) and redraw the graph (app/history.js) -->
+          <button class="icon-btn graph-refresh" id="graph-refresh" type="button" aria-label="Refresh" title="Refresh (r)" data-icon="reload"></button>
         </header>
         <ol class="graph" id="graph"></ol>
         <div class="empty" id="graph-empty"><p class="empty-title">No history</p><p id="graph-empty-text">Select a project to see its main branch.</p></div>
@@ -1977,6 +1979,7 @@
                 <tr><th scope="row"><kbd>n</kbd> <kbd>p</kbd></th><td>Next / previous changed file of the open commit (desktop)</td></tr>
                 <tr><th scope="row"><kbd>Ctrl-d</kbd> <kbd>Ctrl-u</kbd></th><td>Scroll the commit</td></tr>
                 <tr><th scope="row"><kbd>q</kbd> <kbd>Esc</kbd></th><td>Close it</td></tr>
+                <tr><th scope="row"><kbd>r</kbd></th><td>Refresh: fetch origin and show its new commits</td></tr>
               </tbody>
             </table>
           </section>
