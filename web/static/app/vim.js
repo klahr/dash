@@ -35,7 +35,8 @@ import { dismissNote } from "./tags.js";
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
 // In the nav's order: the project's sections, then Planning (the organization's).
-export const VIEWS = ["board", "scans", "run", "history", "goals", "files", "planning"];
+// The nav's pages, in its order, for gt and gT (a page with tabs opens its tab: nav.js).
+export const VIEWS = ["board", "goals", "history", "code", "planning"];
 export const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
 export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gn|gc|gs|gh|go|gf|gp|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
@@ -238,7 +239,7 @@ export async function runCommand(line) {
 // openKeys opens the Keyboard sheet at the keys of what is shown: the open
 // task, else the page (the Shell at a commit is the Shell; Files and Planning
 // have no keys of their own, so they start at Everywhere).
-const KEY_AREA = { board: "board", run: "shell", try: "shell", history: "history", goals: "goals" };
+const KEY_AREA = { board: "board", run: "shell", try: "shell", history: "history", goals: "goals", deploys: "deploys" };
 export function openKeys() {
   const d = $("#keys-sheet");
   d.showModal();

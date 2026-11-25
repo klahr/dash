@@ -1,9 +1,10 @@
-import { $, dateTimeText, h, ib, ico, plural, setModelField } from "./dom.js";
+import { $, $$, dateTimeText, h, ib, ico, plural, setModelField } from "./dom.js";
 import { api, here, on } from "./api.js";
 import { ask, attempt, copy, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { projectKey, projectName } from "./events.js";
 import { showView } from "./nav.js";
+import { changed } from "./routes.js";
 import { selectProject } from "./projects.js";
 import { agoText, untilText } from "../time.js";
 import { showRunnerNeeded } from "./runners.js";
@@ -15,7 +16,10 @@ import { pickDrafts, worstSeverity } from "./tags.js";
 // Preconfigured, read-only reviews of the project (security, code review,
 // dependency audit, dead code, duplication and complexity, or the team's own templates in .dash/scans/) that run on
 // demand or on a schedule and add what they find to the Board as draft
-// tasks (a finding a task already has bumps that task instead).
+// tasks (a finding a task already has bumps that task instead). Scans live
+// on the Board: its From scans filter shows what they added, and Scans…
+// beside it (also the project menu, gn, and Scans' old page's address)
+// opens the Scans sheet, where they are run and set up.
 export const SCAN_KINDS = {
   security: "Security", code_review: "Code review", dependencies: "Dependencies", tests: "Tests", docs: "Docs",
   performance: "Performance", dead_code: "Dead code", flaky_tests: "Flaky tests", accessibility: "Accessibility",
@@ -155,7 +159,7 @@ function counts(r) {
 // runTasks are the drafts a run added: for new issues and for ones that came back.
 const runTasks = (r) => [...(r.new_tasks || []), ...(r.reopened_tasks || [])];
 
-// scanTasksChanged re-renders the Scans page when tasks it counts changed:
+// scanTasksChanged re-renders the Scans sheet when tasks it counts changed:
 // what a run's drafts became (still drafts, in a task, fixed, deleted) is
 // read from state.todos. With no id (all tasks were loaded), always.
 export function scanTasksChanged(id) {
@@ -171,6 +175,8 @@ export function scanTasksChanged(id) {
 // its drafts that are still drafts picked (and shown, From scans or not).
 function showRunTasks(run) {
   const ids = runTasks(run).filter((id) => state.todos.has(id));
+  const sheet = $("#scans-sheet");
+  if (sheet.open) sheet.close();
   showView("board");
   if (ids.length === 1) openDetail(ids[0]);
   else if (ids.length) pickDrafts(ids);
@@ -197,13 +203,32 @@ function describeCron(expr) {
   return expr;
 }
 
+// scansRunning is how many of the project's scans run now.
+export const scansRunning = () => scans.list.filter((s) => s.running).length;
+
+// renderScanBadge shows how many scans run on the Board's Scans… (tags.js
+// draws it with the filters; this keeps it current between Board renders).
 function renderScanBadge() {
-  const n = scans.list.filter((s) => s.running).length;
-  const b = $("#scan-badge");
-  b.hidden = !n;
-  b.textContent = n;
-  b.title = `${plural(n, "scan")} running`;
+  const n = scansRunning();
+  for (const b of $$(".scans-open .badge")) {
+    b.hidden = !n;
+    b.textContent = n;
+    b.title = `${plural(n, "scan")} running`;
+  }
 }
+
+// openScans opens the Scans sheet over the page, and reads the scans again.
+export async function openScans() {
+  const d = $("#scans-sheet");
+  if (!state.project) return;
+  if (!d.open) {
+    renderScans();
+    d.showModal();
+    changed("push");
+  }
+  await loadScans();
+}
+$("#pm-scans").addEventListener("click", attempt(() => openScans()));
 
 export function renderScans() {
   renderScanBadge();

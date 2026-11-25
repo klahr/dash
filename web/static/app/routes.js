@@ -7,10 +7,12 @@
 // The scheme (the server serves the app at each path: internal/applink):
 //
 //   /                              no place named: the last view and project (localStorage)
-//   /p/{project}/{view}            a project's view: board, scans, run, try,
-//                                  history, goals, deploys, files (/p/{project} is its board;
-//                                  run and try are the Shell page at main and at a commit;
-//                                  checklist and issues, views Dash no longer has, open the board)
+//   /p/{project}/{view}            a project's page: board, goals, history, deploys (History's
+//                                  Deploys tab), code (Code's Files tab), shell (Code's Shell
+//                                  tab, at main) and try (the Shell tab at a commit);
+//                                  /p/{project} is its board. Older links still open, at the
+//                                  new place: files (code), run (shell), scans (the board with
+//                                  the Scans sheet: ?sheet=scans), checklist and issues (the board)
 //   /p/{project}/tasks/{id}        a task, open (over the board, after a reload)
 //   /p/{project}/goals/{id}        a goal, open on Goals
 //   /p/{project}/history/{sha}     a commit, open on History
@@ -24,7 +26,7 @@
 //   board=<id>, project=<id>, tag=<tag> (any number), target=<target>, mine=1
 //                                  Planning's board (left out: the default one) and
 //                                  filters (/planning only)
-//   sheet=settings|account|org|runners, section=<key>
+//   sheet=settings|account|org|runners|scans, section=<key>
 //                                  a sheet open over the page, at a section of its rail
 //                                  (Project settings → Board: ?sheet=settings&section=board)
 //
@@ -35,12 +37,18 @@
 //
 // Older links, /?project=<id>&task=<id> (also goal=, issue=), still open.
 
-export const VIEWS = ["board", "scans", "run", "try", "history", "goals", "deploys", "files", "planning"];
-export const SHEETS = ["settings", "account", "org", "runners"];
+// VIEWS are the app's views (state.view), as router.js and nav.js name them.
+// Code's tabs are views files and run (and try), History's history and
+// deploys; their paths are in VIEW_PATH where they differ.
+export const VIEWS = ["board", "run", "try", "history", "goals", "deploys", "files", "planning"];
+export const SHEETS = ["settings", "account", "org", "runners", "scans"];
+const VIEW_PATH = { files: "code", run: "shell" };
+const PATH_VIEW = { code: "files", shell: "run" };
 const ITEMS = { tasks: "task", goals: "goal", history: "sha", issues: "issue", deploys: "deploy" };
 const ITEM_VIEW = { task: "board", goal: "goals", sha: "history", issue: "board", deploy: "deploys" };
-// OLD_VIEWS are views Dash no longer has, and the view their links open.
-const OLD_VIEWS = { checklist: "board", issues: "board" };
+// OLD_VIEWS are views Dash no longer has, and the view their links open
+// (with a sheet over it, for scans).
+const OLD_VIEWS = { checklist: { view: "board" }, issues: { view: "board" }, scans: { view: "board", sheet: "scans" } };
 
 const dec = (s) => { try { return decodeURIComponent(s); } catch { return null; } };
 const enc = encodeURIComponent;
@@ -93,8 +101,13 @@ export function parse(loc) {
     r.project = parseProject(parts[1]);
     r.named = true;
     if (parts.length === 2) r.view = "board";
+    else if (parts.length === 3 && Object.hasOwn(PATH_VIEW, parts[2])) r.view = PATH_VIEW[parts[2]];
     else if (parts.length === 3 && VIEWS.includes(parts[2]) && parts[2] !== "planning") r.view = parts[2];
-    else if (parts.length === 3 && Object.hasOwn(OLD_VIEWS, parts[2])) r.view = OLD_VIEWS[parts[2]];
+    else if (parts.length === 3 && Object.hasOwn(OLD_VIEWS, parts[2])) {
+      const old = OLD_VIEWS[parts[2]];
+      r.view = old.view;
+      if (old.sheet && !r.sheet) { r.sheet = old.sheet; r.section = null; }
+    }
     else if (parts.length === 4 && ITEMS[parts[2]] && parts[3]) {
       const k = ITEMS[parts[2]];
       r[k] = parts[3];
@@ -133,7 +146,7 @@ export function href(r, p) {
     else if (r.sha) path = `${base}/history/${enc(r.sha)}`;
     else if (r.issue) path = `${base}/issues/${enc(r.issue)}`;
     else if (r.deploy) path = `${base}/deploys/${enc(r.deploy)}`;
-    else path = `${base}/${r.view || "board"}`;
+    else path = `${base}/${VIEW_PATH[r.view] || r.view || "board"}`;
   }
   if (r.sheet) {
     q.set("sheet", r.sheet);

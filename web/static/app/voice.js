@@ -35,7 +35,8 @@ const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 // field: the phrases that also work said on their own while dictating.
 // does: what it did, for the toast of a command that changes something
 // (changes); run may return a better text, or null when it said so itself.
-const SECTIONS = { board: "board", scans: "scans", shell: "run", history: "history", goals: "goals", deploys: "deploys", files: "files", planning: "planning" };
+// The pages and their tabs, by what is said (scans: the Scans sheet over the Board).
+const SECTIONS = { board: "board", scans: "scans", code: "code", shell: "run", files: "files", history: "history", commits: "history", deploys: "deploys", goals: "goals", planning: "planning" };
 const COMMANDS = [
   { id: "send", say: ["send", "send it", "send message", "submit"], field: ["send", "send it", "send message"], changes: true, does: "Sent the message", run: send },
   { id: "queue", say: ["queue task", "queue it", "queue draft", "run task", "start task"], changes: true, does: "Queued the task", run: queue },

@@ -1,9 +1,17 @@
 # Scans
 
-The Scans section runs preconfigured, read-only reviews of a project. Each problem a scan finds
+Scans are preconfigured, read-only reviews of a project. Each problem a scan finds
 becomes a draft task on the project's Board. Run one with "Run now", or let it run on a schedule. A scan uses its own throwaway
 checkout of the default branch. It never makes a branch, so nothing goes to review or the merge
 queue.
+
+Scans live on the **Board**:
+
+- **From scans (N)** above the board shows only the tasks scans added. Click it again to show
+  every task.
+- **Scans…** beside it opens the **Scans** sheet: each scan, **Run now**, its schedule and
+  settings, **Create custom scan…** and **Dismissed**. It is also in the project menu (**⋮ →
+  Scans…**), and `gn` opens it.
 
 Scans come from three places, marked on each card:
 
@@ -51,7 +59,7 @@ Scans come from three places, marked on each card:
 - **Repository:** markdown files in `.dash/scans/<name>.md`, versioned and shared with your team.
   Only a runner's own projects read them: on the hub, a project has the built-in scans and the
   Dash scans, since the hub has no checkout.
-- **Dash:** scans you write in the Scans section with **Create custom scan…**, kept by Dash for this project
+- **Dash:** scans you write in the **Scans** sheet with **Create custom scan…**, kept by Dash for this project
   only. "Duplicate" on any scan starts a new Dash scan from its prompt and settings, and
   "Export to repo" on a Dash scan shows its `.dash/scans/<name>.md` file to copy and commit.
 
@@ -131,8 +139,8 @@ Look for vulnerabilities in {{path}} …
   The scan is shown the findings it reported before, open and dismissed, so it reuses their
   fingerprints.
 - **Approvals.** Anyone who can merge to the repository can change its templates, so a
-  repository template's `tools:` and `schedule:` only apply once you approve them in the Scans
-  section. Until then the scan runs with read-only tools and its schedule is off. The approval
+  repository template's `tools:` and `schedule:` only apply once you approve them in the **Scans**
+  sheet. Until then the scan runs with read-only tools and its schedule is off. The approval
   covers the exact tool list and expression: if the template's tools change, it goes back to
   read-only until you approve again; if its schedule changes, the approved one keeps running
   until you approve the new one. Built-in scans need no approval, and neither do Dash scans: only
@@ -140,7 +148,7 @@ Look for vulnerabilities in {{path}} …
 - **Schedules.** The built-in scans' schedules are suggestions and a repository template's needs
   approval, so they only run once you turn them on; turning on a repository template's approves
   it. A Dash scan's schedule runs as soon as you save it. You can turn any schedule on or off, or
-  change it, in the Scans section. A run missed while Dash was down runs once at
+  change it, in the **Scans** sheet. A run missed while Dash was down runs once at
   startup, and a scan never runs twice at the same time. Scheduled scans wait while the
   subscription usage pauses the task queue. `-scan-schedules=false` turns schedules off.
 - **Run early if there's spare usage.** Turn it on under a scan's schedule to spend Claude usage
@@ -200,8 +208,8 @@ Two reports of one problem at the same moment, or twice in one scan, add one dra
 
 To keep the Board usable when scans find a lot:
 
-- Drafts from scans with severity `critical` or `high` show on the Board. Lower ones are hidden
-  behind the **From scans (N)** chip above the board. Click it to show them.
+- Drafts from scans with severity `critical` or `high` show on the Board. Lower ones show only
+  under **From scans (N)** above the board. Click it to see every task scans added.
 - Click a tag on a card to show only tasks with that tag. Remove the filter with its chip.
 - Tick drafts and click **Merge** to combine them into one draft. The merged draft keeps all
   their fingerprints, so later reports of any of them land on it, and adds up their counts.

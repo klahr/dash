@@ -31,14 +31,14 @@ page you are on.
 | Key        | Opens                          |
 |------------|--------------------------------|
 | `gb`       | **Board**                      |
-| `gn`       | **Scans**                      |
-| `gs`       | **Shell**                      |
-| `gh`       | **History**                    |
+| `gn`       | **Scans**, over the Board      |
 | `go`       | **Goals**                      |
-| `gd`       | **Deploys**                    |
-| `gf`       | **Files**                      |
+| `gh`       | **History → Commits**          |
+| `gd`       | **History → Deploys**          |
+| `gf`       | **Code → Files**               |
+| `gs`       | **Code → Shell**               |
 | `gp`       | **Planning** (the organization's) |
-| `gt` `gT`  | next / previous section        |
+| `gt` `gT`  | next / previous page           |
 
 ## Board and tasks
 
@@ -94,7 +94,7 @@ On a live preview, `P` starts drawing (see [Draw](draw.md)).
 
 A question from Claude has no key for an answer: answer it in its card. `X` declines it.
 
-## Shell
+## Code → Shell
 
 | Key           | Does                       |
 |---------------|----------------------------|
@@ -103,15 +103,15 @@ A question from Claude has no key for an answer: answer it in its card. `X` decl
 | `x`           | stop what runs in it       |
 | `R`           | run the server             |
 | `T`           | run the tests              |
-| `D`           | open **Deploys**           |
+| `D`           | open **History → Deploys** |
 | `!`           | a new shell                |
 
-## History, Goals and Deploys
+## History and Goals
 
-- **History**: `j`/`k` next / previous commit, `gg`/`G` first / last, `n`/`p` next / previous
+- **History → Commits**: `j`/`k` next / previous commit, `gg`/`G` first / last, `n`/`p` next / previous
   changed file of the open commit, `Ctrl-d`/`Ctrl-u` scroll it, `q`/`Esc` close it.
 - **Goals**: `j`/`k` open the next / previous goal, `q`/`Esc` close it.
-- **Deploys**: `j`/`k` open the next / previous deploy, `q`/`Esc` close it.
+- **History → Deploys**: `j`/`k` open the next / previous deploy, `q`/`Esc` close it.
 
 ## Chat
 
@@ -147,8 +147,8 @@ Type `:` and a command.
 | `:addclone`                     | **Runners**, to add a repository already on your runner   |
 | `:task …`                       | queue a task                                              |
 | `:new [prompt]`                 | the new task form                                         |
-| `:run cmd` `:shell`             | run a command / open the **Shell**                        |
-| `:try`                          | the **Shell** at a commit                                 |
+| `:run cmd` `:shell`             | run a command / open **Code → Shell**                     |
+| `:try`                          | **Code → Shell** at a commit                              |
 | `:push`                         | push merged work                                          |
 | `:ci`                           | builds                                                    |
 | `:cleanup`                      | clean up leftovers                                        |
@@ -171,8 +171,11 @@ To pause one project rather than the queue, use **Pause this project** in `Ctrl-
 
 ## Changed keys
 
+- Scans, Shell, Files and Deploys are no longer pages of their own; their keys open where they
+  moved: `gn` the **Scans** sheet over the Board, `gs` **Code → Shell**, `gf` **Code → Files**,
+  `gd` **History → Deploys**.
 - **Scans** is `gn` (it was `gS`, too close to `gs` for the Shell).
 - `a` only approves; a new task is `n`.
 - Deny is `X` (it was `n`, which is also a new task).
 - Draw on a preview is `P` (it was `D`, which is also Deploy on the Shell page).
-- `D` on the Shell page opens **Deploys** (it ran the deploy command, which is an environment now).
+- `D` on **Code → Shell** opens **History → Deploys** (it ran the deploy command, which is an environment now).

@@ -5,6 +5,7 @@ import "testing"
 func TestIs(t *testing.T) {
 	yes := []string{
 		"/planning", "/planning/cards/c1", "/p/abc", "/p/abc/board", "/p/abc/history", "/p/abc/checklist",
+		"/p/abc/code", "/p/abc/shell", "/p/abc/try", "/p/abc/deploys", "/p/abc/files", "/p/abc/run", "/p/abc/scans",
 		"/p/abc/tasks/t1", "/p/abc/goals/g1", "/p/abc/history/0123abcd", "/p/abc/issues/i1", "/p/abc@mac-mini/goals", "/p/abc@Mac Mini",
 	}
 	for _, p := range yes {
@@ -13,7 +14,7 @@ func TestIs(t *testing.T) {
 		}
 	}
 	no := []string{
-		"/", "/index.html", "/p", "/p/", "/p/abc/", "/p/abc/nope", "/p/abc/tasks", "/p/abc/tasks/", "/p/abc/board/x",
+		"/", "/index.html", "/p", "/p/", "/p/abc/", "/p/abc/nope", "/p/abc/tasks", "/p/abc/tasks/", "/p/abc/board/x", "/p/abc/code/x",
 		"/p/abc/tasks/t1/x", "/p/../api", "/p/abc/tasks/..", "/planning/", "/planning/cards", "/planning/cards/",
 		"/planning/cards/a/b", "/planning.html", "/api/projects", "/go/acme", "/wall", "/preview/t1", "/p/a\tb", "/p/a\\b",
 	}

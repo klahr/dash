@@ -23,7 +23,7 @@ func TestBrowserTaskCreatorAndMine(t *testing.T) {
 	b := newBrowser(t, chrome)
 	b.signIn(h)
 	b.waitCard(mine.ID, "draft")
-	b.waitJS("no face and no Mine in an org of one", fmt.Sprintf(`!document.querySelector(%q) && document.querySelector("#mine-filter").hidden && document.querySelector("#board-filters").hidden`, cardSel(mine.ID)+" .todo-creator"))
+	b.waitJS("no face and no Mine in an org of one", fmt.Sprintf(`!document.querySelector(%q) && document.querySelector("#mine-filter").hidden && document.querySelector("#goal-filter").hidden`, cardSel(mine.ID)+" .todo-creator"))
 	b.openTask(mine.ID)
 	b.waitJS("the pane names its creator", `document.querySelector("#d-meta .created-by")?.textContent.endsWith("Created by admin")`)
 	b.do("close the task", chromedp.Click(chromedp.CSS(`#d-close`)))

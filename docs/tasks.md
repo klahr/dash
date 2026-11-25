@@ -78,8 +78,8 @@ its severity and its source (`scan:<scan name>` or `reported`).
 - Deleting such a draft dismisses the problem: it won't come back as a draft. See
   **Scans → Dismissed** to undo it.
 - A problem that comes back after its task was merged gets a new draft that names that task.
-- Drafts from scans below `high` severity are hidden behind the **From scans (N)** chip. Click
-  it to show them.
+- Drafts from scans below `high` severity show only under the **From scans (N)** chip, which
+  shows only the tasks scans added. **Scans…** beside it opens the scans.
 - To combine drafts, tick them and click **Merge**. **Clear** unticks them.
 
 See [Scans](scans.md#findings-on-the-board) for how Dash spots the same problem twice.

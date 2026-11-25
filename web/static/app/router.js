@@ -14,6 +14,7 @@ import { openSettings } from "./settings.js";
 import { openAccount } from "./accountsheet.js";
 import { openOrg } from "./account.js";
 import { openRunners } from "./runners.js";
+import { openScans } from "./scans.js";
 
 // ------------------------------------------------------------------ router
 // Keeps the address bar on what the page shows, so Back and Forward step
@@ -261,6 +262,8 @@ async function openSheet(k, section) {
       if (section) railOf(d.id)?.show(section);
     } else if (k === "runners") {
       if (!d.open) await openRunners(section || undefined);
+    } else if (k === "scans") {
+      if (!d.open) await openScans();
     }
   } catch (e) {
     fail(e);

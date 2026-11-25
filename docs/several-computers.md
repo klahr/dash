@@ -527,7 +527,7 @@ every one of these labels, as well as the labels the project runs on. Below the 
 that would deploy show as you pick, with a warning when none of them has the environment's secrets
 file (`~/.dash/env/<environment>.env`, see [Secrets](deploys.md#secrets)).
 
-- **Deploy** (on the **Deploys** page) goes to an online runner with those labels that works for
+- **Deploy** (on **History → Deploys**) goes to an online runner with those labels that works for
   you. If none has them, the deploy fails with "no runner of this project has the labels …
   deploys on"; if all of them are offline, it fails and names them. It never runs elsewhere.
 - A runner without the labels refuses to deploy there even when asked: the hub holds that
@@ -727,12 +727,12 @@ connection, to the clone of one of the project's runners that is online:
   that task's runner), for any member of the org. The runner always takes the shared project's
   commands from the hub (set in its settings on the hub), each time it takes the project up. Only an
   org admin, or the owner of every runner the project runs on, can change those commands;
-- the **Shell** view and **Open shell in this worktree** on a task: a terminal on the runner, in
+- **Code → Shell** and **Open shell in this worktree** on a task: a terminal on the runner, in
   the project's checkout there or the task's worktree, only for the user who registered the runner
   (a shell can do whatever a deploy command can). The hub chooses neither the runner's folder nor
   whose terminal it is: the runner checks its owner itself. For the org's other members, or on a
-  runner older than the hub, the Shell view says why.
-  The header of the **Shell** view shows where the shell runs: the runner and its folder, such as
+  runner older than the hub, **Code → Shell** says why.
+  The header of **Code → Shell** shows where the shell runs: the runner and its folder, such as
   `laptop · ~/…/dash`. When more than one of your runners with the project is online, the runner is
   a menu. Pick another runner to open a shell there; the shell you had keeps running, and picking
   its runner again shows it. The menu also lists the project's other runners, greyed out, with why

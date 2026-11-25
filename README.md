@@ -61,6 +61,15 @@ shows, on this computer or another one. It looks like this:
 Queue as many tasks as you like: they run in parallel. See [Tasks](docs/tasks.md) for the
 details: test commands, priorities, follow-up tasks, pacing and pausing.
 
+A project has four pages in the sidebar, and Planning is the organization's:
+
+- **Board**: the tasks. **From scans** shows the drafts scans added; **Scans…** beside it runs
+  and sets up the scans.
+- **Goals**: bigger pieces of work, each planned and reviewed by a coordinator.
+- **History**: **Commits** (the default branch, with what was deployed where) and **Deploys**
+  (the environments: deploy, promote, roll back).
+- **Code**: **Files** (browse and edit the default branch) and **Shell** (a terminal).
+
 ## Docs
 
 Setup:

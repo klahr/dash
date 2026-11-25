@@ -7,6 +7,7 @@ import { attempt, toast } from "./dialogs.js";
 import { draft, promptEditor } from "./todoform.js";
 import { LANES, STATUS_LABEL, statusLabel, cp, hist, state } from "./state.js";
 import { navView, showView } from "./nav.js";
+import { boardFilter, setScanFilter } from "./tags.js";
 import { baseBranch, projectKey } from "./events.js";
 import { cleanup, grouped, loadProjects, toggleStar, menuOpen, notifyLabel, openDeleteProject, openNewProject, openPlanner, openProjects, projectWhere, selectProject, setMenu, setPicker, setSideCollapsed, sideCollapsed, stepProject, toggleProjectPause } from "./projects.js";
 import { mineOn, multiMember } from "./people.js";
@@ -72,14 +73,15 @@ function paletteCommands() {
     goalsOn(p) && ["New goal", "target", () => openGoalSheet(), "", "goal coordinator plan bigger project objective"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
     p && multiMember() && [mineOn() ? "Show everyone's tasks" : "Show only my tasks", "users", () => runCommand("mine"), ":mine", "mine my own created by me filter board"],
-    ["Scans", "scan", go("scans"), "gn", "scan security review dependency audit schedule cron"],
+    p && ["Scans", "scan", go("scans"), "gn", "scan security review dependency audit schedule cron run board"],
+    p && [boardFilter.showScans ? "Show every task" : "Show only tasks from scans", "bug", () => { closeDetail(); showView("board"); setScanFilter(); }, "", "from scans filter board drafts findings issues"],
     ["Toggle chat", "comment", () => toggleChatPane(), "gc", "chat open close claude ask project general"],
     [pane.pinned ? "Unpin chat" : "Pin chat", "pin", togglePin, ":pin", "pin unpin chat overlay dock"],
-    ["Shell", "terminal", go("run"), "gs", "run terminal processes view main checkout"],
-    p && ["Shell at a commit (try)", "terminal", openTry, ":try", "try commit older version cli runner worktree"],
-    ["History", "log", go("history"), "gh", "git graph tree commits view"],
+    ["Code: Shell", "terminal", go("run"), "gs", "shell run terminal processes view main checkout"],
+    p && ["Code: Shell at a commit (try)", "terminal", openTry, ":try", "try commit older version cli runner worktree"],
+    ["History: Commits", "log", go("history"), "gh", "history git graph tree commits view"],
     ["Goals", "target", go("goals"), "go", "goal coordinator plan progress budget"],
-    ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
+    ["Code: Files", "code", go("files"), "gf", "files browse edit source code tree editor"],
     ["Planning", "plan", go("planning"), "gp", "plan roadmap product owner cards ideas planned"],
     ["Switch project", "repo", openProjects, "p", "projects"],
     p && starsOn() && [isStarred(p) ? "Unstar project" : "Star project", "star", () => toggleStar(p), "", "favorite favourite pin sidebar starred"],
@@ -88,7 +90,7 @@ function paletteCommands() {
     p && ["Project settings", "settings", openSettings, ":settings", "configure commands"],
     p?.run_command && [serve.label || "Run", serve.icon || "play", () => startProc({ kind: "web", preset: "run" }), "R", `run web ${serve.icon || ""}`],
     p?.test_command && ["Run tests", "check", () => startProc({ kind: "task", preset: "test" }), "T", "test"],
-    ["Deploys", "rocket", go("deploys"), "gd", "deploy environments production staging live release ship"],
+    ["History: Deploys", "rocket", go("deploys"), "gd", "deploys deploy environments production staging live release ship promote rollback"],
     p?.environments?.length && [deploy.label || "Deploy", deploy.icon || "rocket", go("deploys"), "D", `release ship environment `],
     p && !shellBlocked(p) && ["Open a shell", "terminal", () => openShell(), "!", "terminal pty"],
     p && state.unpushed > 0 && ["Push merged work", "push", pushDone, ":push", "git"],
@@ -319,7 +321,7 @@ function sidebarList(el) {
 
 function openSections() {
   setMenu(false);
-  $(`.nav [data-view="${state.view}"]`)?.focus();
+  $(`.nav [data-view="${navView(state.view)}"]`)?.focus();
 }
 
 // o: the projects list first; pressed again, it switches to the sections

@@ -83,8 +83,10 @@ func TestBrowserDeploys(t *testing.T) {
 		}
 	}
 
-	b.until("open Deploys", `document.querySelector("#view-deploys.active")`,
-		chromedp.Click(chromedp.CSS(`.nav [data-view=deploys]`)))
+	b.until("open History", `document.querySelector("#view-history.active")`,
+		chromedp.Click(chromedp.CSS(`.nav [data-view=history]`)))
+	b.until("its Deploys tab", `document.querySelector("#view-deploys.active")`,
+		chromedp.Click(chromedp.CSS(`#view-history .page-tabs [data-tab=deploys]`)))
 	b.waitJS("a card per environment", `[...document.querySelectorAll("#env-cards .env-card .env-name")].map((e) => e.textContent).join() === "production,staging"`)
 	b.waitJS("nothing deployed yet", `document.querySelector('#env-cards [data-env="production"]').textContent.includes("Nothing deployed here yet")`)
 
@@ -156,6 +158,17 @@ func TestBrowserDeploys(t *testing.T) {
 	b.waitJS("its log says it rolled back", `document.querySelector("#dd-log").textContent.includes("staging rollback=1")`)
 	b.waitJS("no rollback to the commit just rolled back", `!document.querySelector("#dd-actions").textContent.includes("Roll back") && !document.querySelector('#env-cards [data-env="staging"] .env-rollback')`)
 	shot("deploy-rollback-pane-wide")
+	b.until("close the pane", `document.querySelector("#deploy-detail").hidden`, chromedp.Click(chromedp.ID("dd-close")))
+	// History → Commits: the commit is marked live in both, and its pane lists
+	// its deploys, each opening on History → Deploys.
+	b.until("History → Commits", `document.querySelector("#view-history.active")`,
+		chromedp.Click(chromedp.CSS(`#view-deploys .page-tabs [data-tab=history]`)))
+	b.waitJS("live in both", `[...document.querySelectorAll('#graph li[data-hash="`+first+`"] .graph-ref.env')].map((e) => e.textContent).join() === "Live in production,Live in staging"`)
+	b.until("open the commit", `document.querySelector("#cd-facts .commit-deploys")`,
+		chromedp.Click(chromedp.CSS(`#graph li[data-hash="`+first+`"] .graph-commit`)))
+	b.waitJS("its deploys", `document.querySelectorAll("#cd-facts .commit-deploys button").length === 3`)
+	b.until("open one on History → Deploys", `document.querySelector("#view-deploys.active") && !document.querySelector("#deploy-detail").hidden && location.pathname.includes("/deploys/")`,
+		chromedp.Click(chromedp.CSS(`#cd-facts .commit-deploys button`)))
 	b.until("close the pane", `document.querySelector("#deploy-detail").hidden`, chromedp.Click(chromedp.ID("dd-close")))
 
 	// Deploy's picker shows each tag's release build, kept up to date while

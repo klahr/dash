@@ -26,7 +26,7 @@ import { chatPage } from "./nav.js";
 import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
 import { creator, mineOn, multiMember, myID, people, setMine } from "./people.js";
 import { isQuestion } from "./chatparts.js";
-import { boardFilter, onBoard, pickBox, picked, renderMergeBar, renderTagFilter, tagRow } from "./tags.js";
+import { onBoard, pickBox, picked, renderMergeBar, renderTagFilter, tagRow } from "./tags.js";
 
 // ------------------------------------------------------------------ branches
 // The open switcher's GET /branches answer, for the project it was opened on.
@@ -299,7 +299,8 @@ function renderBoardNow() {
       l.key === "done" ? oldToggle() : null,
       l.key === "done" ? clearDoneBtn() : null))));
   // What needs you counts every task, whatever the board is filtered to.
-  const every = state.goalFilter || mineOn() || boardFilter.tag || !boardFilter.showScans ? laneItems(true) : items;
+  // (Always a filter: drafts from scans below high show only under From scans.)
+  const every = laneItems(true);
   updateNeedsYou(every);
 
   $(".lane-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });

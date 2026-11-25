@@ -6,8 +6,11 @@
 // the same paths in the browser; keep the two in step.
 //
 //	/p/{project}                     the project's board
-//	/p/{project}/{view}              board, scans, run, try, history, goals, deploys, files
-//	                                 (run and try: the Shell page at main and at a commit)
+//	/p/{project}/{view}              board, goals, history, deploys (History's Deploys tab),
+//	                                 code (Code's Files tab), shell and try (Code's Shell tab,
+//	                                 at main and at a commit)
+//	/p/{project}/files, /run         Code's Files and Shell tabs (their old addresses)
+//	/p/{project}/scans               the board, with the Scans sheet (Scans' old page)
 //	/p/{project}/checklist           the board (an old view's address, kept for bookmarks)
 //	/p/{project}/issues              the board (issues are draft tasks there now)
 //	/p/{project}/tasks/{id}          a task, open over the board
@@ -29,13 +32,14 @@ import (
 
 // Views are the project views a path may name.
 var Views = map[string]bool{
-	"board": true, "scans": true, "run": true, "try": true,
-	"history": true, "goals": true, "deploys": true, "files": true,
+	"board": true, "code": true, "shell": true, "try": true,
+	"history": true, "goals": true, "deploys": true,
 }
 
-// oldViews are views Dash no longer has. Their paths still serve the app's
-// page, which opens the project's board there, so old links still work.
-var oldViews = map[string]bool{"checklist": true, "issues": true}
+// oldViews are views Dash no longer has, or old names of views. Their paths
+// still serve the app's page, which opens the place they moved to (the
+// board, Code's tabs, the Scans sheet), so old links still work.
+var oldViews = map[string]bool{"checklist": true, "issues": true, "scans": true, "files": true, "run": true}
 
 // items are the kinds of thing /p/{project}/{kind}/{id} opens.
 var items = map[string]bool{"tasks": true, "goals": true, "history": true, "issues": true, "deploys": true}

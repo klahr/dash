@@ -9,7 +9,7 @@ import { ensureShell, fitTerm } from "./terminal.js";
 import { enterTry, leaveTry } from "./try.js";
 import { closeCommit, loadGraph } from "./history.js";
 import { loadFiles } from "./files.js";
-import { loadScans } from "./scans.js";
+import { openScans } from "./scans.js";
 import { closeGoal, loadGoals } from "./goals.js";
 import { closeDeploy, loadDeploys } from "./deploys.js";
 import { closeCard, planningShown } from "./planning.js";
@@ -18,13 +18,41 @@ import { boardSeen } from "./branches.js";
 import { projectKey } from "./events.js";
 
 // ------------------------------------------------------------------ navigation
-// Shell is one page with two places, main (view "run") and a commit (view
-// "try", Try's old name and link): both show #view-run under the nav's Shell.
-// (A function declaration: modules in an import cycle call into nav.js before it runs.)
-export function navView(name) { return name === "try" ? "run" : name; }
+// The nav's pages: Board, Goals, History, Code (and Planning, the org's).
+// Some have tabs, each a view of its own (state.view, its URL in routes.js):
+//   History  Commits (view "history") and Deploys ("deploys")
+//   Code     Files ("files") and Shell; the Shell tab has two places, main
+//            ("run") and a commit ("try", Try's old name and link), both
+//            #view-run
+// Scans, once a page, are the Board's From scans filter and the Scans sheet
+// (scans.js); "scans" still opens there, for old links and keys.
+// (Function declarations: modules in an import cycle call into nav.js before it runs.)
+export function navView(name) {
+  if (name === "files" || name === "run" || name === "try") return "code";
+  if (name === "deploys") return "history";
+  return name;
+}
+// tabOf is the page tab view name shows under (the Shell tab for both its places).
+export function tabOf(name) { return name === "try" ? "run" : name; }
+// sectionOf is the view's <section> (#view-…).
+function sectionOf(name) { return name === "try" ? "run" : name; }
+
+// Code opens on the tab it showed last (Files at first).
+const CODE_TAB = "dash.codeTab";
+function codeTab() { return store.get(CODE_TAB) === "run" ? "run" : "files"; }
+
+// resolve is the view a name opens: a page (code) opens its tab, an old
+// page (scans) the place it moved to.
+function resolve(name) {
+  if (name === "code") return codeTab();
+  if (name === "scans") return "board";
+  return name;
+}
 
 // now: at once, without the transition (Back and Forward: router.js).
 export function showView(name, { now = false } = {}) {
+  if (name === "scans") { showView("board", { now }); openScans().catch(fail); return; }
+  name = resolve(name);
   const apply = () => applyView(name);
   if (!now && name !== state.view && document.startViewTransition && !reduceMotion.matches) {
     document.startViewTransition(apply);
@@ -33,19 +61,24 @@ export function showView(name, { now = false } = {}) {
   apply();
 }
 
+// The views a project can open in (projectView), and the pages the nav has.
+const PROJECT_VIEWS_OK = ["board", "goals", "history", "deploys", "files", "run"];
+
 // Each project remembers the view it was last shown in (localStorage), so
 // switching projects returns to it (projects.js: selectProject). Planning is
 // the organization's, across projects, so it isn't one of them; a commit in
-// Shell (try) is that project's, so it is kept as Shell.
+// Shell (try) is that project's, so it is kept as Shell. A view Dash no
+// longer has (scans) opens where it moved to.
 const PROJECT_VIEWS = "dash.projectViews";
 export function projectView(p) {
   const v = p && store.getJSON(PROJECT_VIEWS, {})[projectKey(p)];
-  return v && v !== "planning" && $(`.nav [data-view="${v}"]`) ? v : null;
+  const r = v && resolve(v);
+  return r && PROJECT_VIEWS_OK.includes(r) ? r : null;
 }
 function rememberView(name) {
   if (!state.project || name === "planning") return;
   const views = store.getJSON(PROJECT_VIEWS, {});
-  views[projectKey(state.project)] = navView(name);
+  views[projectKey(state.project)] = tabOf(name);
   store.setJSON(PROJECT_VIEWS, views);
 }
 
@@ -53,8 +86,9 @@ function applyView(name) {
   state.view = name;
   store.set("dash.view", name);
   rememberView(name);
+  if (navView(name) === "code") store.set(CODE_TAB, tabOf(name));
   renderNavActive();
-  $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${navView(name)}`));
+  $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${sectionOf(name)}`));
   $("#view-run").classList.toggle("at-commit", name === "try");
   $("#shell-at-main").setAttribute("aria-pressed", String(name === "run"));
   $("#shell-at-commit").setAttribute("aria-pressed", String(name === "try"));
@@ -68,7 +102,6 @@ function applyView(name) {
   if (name === "planning") planningShown();
   else closeCard();
   if (name === "files" && state.project) loadFiles().catch(fail); // at startup the project (and the files code below) isn't ready yet
-  if (name === "scans" && state.project) loadScans().catch(fail);
   if (name === "try") requestAnimationFrame(() => enterTry().catch(fail));
   else leaveTry();
   renderTryBack();
@@ -87,20 +120,32 @@ export function renderNavActive() {
   };
   $$(".nav [data-view]").forEach((b) => mark(b, !chatOn && b.dataset.view === navView(state.view)));
   mark($("#nav-chat"), chatOn);
+  // The page tabs (History's, Code's): the one shown.
+  $$(".page-tabs [data-tab]").forEach((b) => {
+    const on = b.dataset.tab === tabOf(state.view);
+    b.classList.toggle("active", on);
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
   boardSeen();
 }
 desktop.addEventListener("change", () => renderNavActive());
-// The nav's sections: the bottom nav's, and on mobile the menu drawer's (those that
-// don't fit the bottom nav: Scans, Shell, History, Deploys, Files), which are in
-// the side rail on desktop. Picking one leaves the mobile chat page.
+// The nav's pages: the bottom nav's, and on mobile the menu drawer's (those that
+// don't fit the bottom nav: History, Code), which are in the side rail on desktop.
+// Picking one leaves the mobile chat page.
 $$(".nav [data-view]").forEach((b) => b.addEventListener("click", () => {
   if (!desktop.matches && pane.open) toggleChatPane(false);
   if (b.closest(".menu")) setMenu(false);
   showView(b.dataset.view);
 }));
-// The view a link names (routes.js), else the one shown last.
+// A page's tabs: each opens its view (the Shell tab, from Files: main).
+$$(".page-tabs [data-tab]").forEach((b) => b.addEventListener("click", () => {
+  if (b.dataset.tab !== tabOf(state.view)) showView(b.dataset.tab);
+}));
+// The view a link names (routes.js), else the one shown last (a view Dash
+// no longer has opens where it moved to).
 {
   const linked = initial.named && initial.view;
   const saved = linked || store.get("dash.view");
-  if (saved && $(linked ? `#view-${navView(saved)}` : `.nav [data-view="${saved}"]`)) applyView(saved);
+  const v = saved && resolve(saved);
+  if (v && (linked ? $(`#view-${sectionOf(v)}`) : v === "planning" || PROJECT_VIEWS_OK.includes(v))) applyView(v);
 }

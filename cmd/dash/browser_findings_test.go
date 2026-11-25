@@ -9,8 +9,8 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
-// Reported issues are drafts on the Board: scans' drafts below high wait
-// behind From scans (N), cards show severity, ×N and tags (a tag filters
+// Reported issues are drafts on the Board: From scans (N) shows only what
+// scans added, and scans' drafts below high show only there; cards show severity, ×N and tags (a tag filters
 // the Board), drafts can be picked and merged, a task's tags are edited in
 // its pane, and old links to Issues open the Board. On a wide screen and a
 // phone's.
@@ -40,8 +40,8 @@ func TestBrowserFindingDrafts(t *testing.T) {
 	b.signIn(h)
 	b.waitCard(high, "draft")
 	b.waitCard(plain.ID, "draft")
-	b.waitJS("the scans' low drafts hidden behind From scans (2)", fmt.Sprintf(`!document.querySelector(%q) && !document.querySelector(%q) &&
-		document.querySelector("#tag-filter .scan-filter")?.textContent === "From scans (2)" && !document.querySelector("#board-filters").hidden`, cardSel(low1), cardSel(low2)))
+	b.waitJS("the scans' low drafts hidden, From scans (3)", fmt.Sprintf(`!document.querySelector(%q) && !document.querySelector(%q) &&
+		document.querySelector("#tag-filter .scan-filter")?.textContent === "From scans (3)" && !document.querySelector("#board-filters").hidden`, cardSel(low1), cardSel(low2)))
 	b.waitJS("the high draft's severity, ×2 and tags", fmt.Sprintf(`(() => {
 		const c = document.querySelector(%q);
 		const tags = [...c.querySelectorAll(".todo-tags .tag-chip")].map((e) => e.textContent);
@@ -49,8 +49,12 @@ func TestBrowserFindingDrafts(t *testing.T) {
 			c.querySelector(".tag-chip.sev-high") !== null &&
 			[...c.querySelectorAll(".tag-chip.hued")].some((e) => e.textContent === "security" && e.style.getPropertyValue("--tag-h") !== "");
 	})()`, cardSel(high)))
-	b.until("show the scans' drafts", fmt.Sprintf(`!!document.querySelector(%q) && !!document.querySelector(%q) && document.querySelector("#tag-filter .scan-filter").getAttribute("aria-pressed") === "true"`, cardSel(low1), cardSel(low2)),
-		chromedp.Click(chromedp.CSS(`#tag-filter .scan-filter`)))
+	scanFilter := func(on bool, expr string) {
+		b.until(fmt.Sprintf("From scans %v", on), fmt.Sprintf(`%s && document.querySelector("#tag-filter .scan-filter").getAttribute("aria-pressed") === "%v"`, expr, on),
+			chromedp.Click(chromedp.CSS(`#tag-filter .scan-filter`)))
+	}
+	scanFilter(true, fmt.Sprintf(`!!document.querySelector(%q) && !!document.querySelector(%q) && !!document.querySelector(%q) && !document.querySelector(%q)`, cardSel(low1), cardSel(low2), cardSel(high), cardSel(plain.ID)))
+	scanFilter(false, fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardSel(plain.ID), cardSel(low1)))
 
 	// A tag on a card filters the Board by it.
 	b.until("filter by backend", fmt.Sprintf(`!document.querySelector(%q) && !!document.querySelector(%q) && /Tag: backend/.test(document.querySelector("#tag-filter .tag-active.hued")?.textContent)`, cardSel(high), cardSel(plain.ID)),
@@ -63,6 +67,7 @@ func TestBrowserFindingDrafts(t *testing.T) {
 	still := func() {
 		b.waitJS("the cards settled", `document.getAnimations().every((a) => a.playState !== "running")`)
 	}
+	scanFilter(true, fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardSel(low1), cardSel(plain.ID)))
 	still()
 	b.until("pick a low draft", `document.querySelector("#merge-bar")?.offsetWidth > 0 && /1 selected/.test(document.querySelector("#merge-bar").textContent) && document.querySelector("#merge-bar .btn.primary").disabled`,
 		chromedp.Click(chromedp.CSS(cardSel(low1)+` .todo-pick input`)))
@@ -93,7 +98,7 @@ func TestBrowserFindingDrafts(t *testing.T) {
 	b.do("reload", chromedp.Reload())
 	b.waitJS("the board", `document.querySelector("#project-name")?.textContent === "app"`)
 	b.until("the drafts lane", `document.querySelector('#board .col[data-lane="draft"]')?.offsetWidth > 0`, chromedp.Click(chromedp.CSS(`.lane-tab[data-lane="draft"]`)))
-	b.waitJS("From scans (1) on a phone", `document.querySelector("#tag-filter .scan-filter")?.offsetWidth > 0 && document.querySelector("#tag-filter .scan-filter").textContent === "From scans (1)"`)
+	b.waitJS("From scans (2) on a phone", `document.querySelector("#tag-filter .scan-filter")?.offsetWidth > 0 && document.querySelector("#tag-filter .scan-filter").textContent === "From scans (2)"`)
 	b.waitJS("a pick box shows without hovering", fmt.Sprintf(`getComputedStyle(document.querySelector(%q)).opacity === "1"`, cardSel(high)+" .todo-pick"))
 	still()
 	b.do("tap a pick box", chromedp.Click(chromedp.CSS(cardSel(high)+` .todo-pick input`)))

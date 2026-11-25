@@ -154,7 +154,7 @@ another one: click the branch button in the top bar (or **Switch branch…** in 
 The switcher lists the checkout's branches and origin's (it fetches them when it opens); type to
 filter, or type a new name to create that branch from the current one. Once switched, new tasks
 start from that branch and are merged into it (or, in pull request mode, open their pull requests
-against it), and History, Files and the push button follow it. Tasks that had already started keep
+against it), and **History**, **Code → Files** and the push button follow it. Tasks that had already started keep
 the branch they started from. A branch origin doesn't have yet is pushed when you switch to it, so
 pull requests and pushes have somewhere to go.
 
@@ -236,7 +236,7 @@ gh auth login
 
 ## Tag a release
 
-In **History** (the commit graph of the branch tasks land on), click a commit (or move to it with
+In **History → Commits** (the commit graph of the branch tasks land on), click a commit (or move to it with
 `j`/`k`) to open it in a pane beside the graph (full screen on a phone): its whole message, author
 and committer, parents, and the files it changed, each with its diff. The pane's head has
 **Tag release…**, **Copy SHA** and **Open on GitHub**. Commits origin doesn't have yet (the dimmed
@@ -252,7 +252,7 @@ build isn't green or tasks are still running. Confirming creates an annotated ta
 The project's environments that deploy on each release tag then deploy the tagged commit (see
 [Triggers](deploys.md#triggers)). The graph also marks the commit each environment runs.
 
-To tag the tip of the default branch and deploy it in one step, use **Deploys → Deploy…** instead
+To tag the tip of the default branch and deploy it in one step, use **Deploy…** on **History → Deploys** instead
 (see [Tag a new release from the picker](deploys.md#tag-a-new-release-from-the-picker)). Use
 **Tag release…** in History to tag an older commit.
 

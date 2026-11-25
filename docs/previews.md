@@ -30,15 +30,15 @@ a phone, with a row of Esc, Tab, Ctrl-C, Ctrl-D and arrow keys). Draw doesn't ap
 **Rework with transcript…** puts the terminal's last 200 lines into the rework notes, or only
 what you selected in the terminal if you selected something.
 
-### The Shell at a commit (Try): the project itself, at any commit
+### Code → Shell at a commit (Try): the project itself, at any commit
 
-The **Shell** page has a picker: **main** is a shell in the project's checkout, and **commit…**
+**Code → Shell** has a picker: **main** is a shell in the project's checkout, and **commit…**
 (of a CLI project on a hub; `:try`) opens the same kind of terminal as above on the project
 rather than a task, to test it without one in review. Its address is `/p/<project>/try`, so older
 links to Try still open it. It always
 runs on a runner, never on the hub: one that is connected, has the labels the project runs on and opens
 terminals for you (only for the runner's owner). With one such runner it is
-picked by itself; with several, pick one in the Shell page's header; with none, **commit…** is greyed out and
+picked by itself; with several, pick one in the Shell's header; with none, **commit…** is greyed out and
 says why.
 
 On that runner Dash fetches the default branch from origin and makes a **detached worktree** of its
@@ -52,7 +52,7 @@ minutes without typing (or with **Stop**), and its worktree is removed.
 ### Run and Terminate: the latest commit in one click
 
 A CLI project has a **Run** button (▶) in the header, beside the project's name. It runs
-`preview_command` at the tip of the default branch, as the Shell at a commit does, and opens its
+`preview_command` at the tip of the default branch, as **Code → Shell** at a commit does, and opens its
 terminal.
 
 - **Run** runs on the runner you used last, or on the only runner that can run it. With no such
@@ -64,12 +64,12 @@ terminal.
 - With no runner at all, **Run** is greyed out and says why.
 
 A web project with a run command has the same button: **Run** runs the command in the project's
-checkout and shows its output on the **Shell** page (`R` there does the same). The button is
+checkout and shows its output on **Code → Shell** (`R` there does the same). The button is
 **Stop** while the server runs.
 
 **▾** also holds the project's other actions, with their keys:
 
-- **Run tests** (`T` on the **Shell** page) runs the project's **Test command** in its checkout. It
+- **Run tests** (`T` on **Code → Shell**) runs the project's **Test command** in its checkout. It
   says **Testing 1:23** while it runs (click it to see the output), then **passed** or **failed**.
 - **Push** (`:push`) pushes the commits waiting on the default branch, for a project that pushes to
   GitHub directly. It says how many wait.

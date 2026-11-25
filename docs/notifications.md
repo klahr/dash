@@ -90,7 +90,7 @@ the title (unless the title already names it). A project with no image shows its
 color. A runner's disk and **Send a test** show Dash's own icon.
 
 Tapping a notification opens the task (for a new problem, its draft), the goal on the **Goals**
-page, the deploy on the **Deploys** page, or the card on **Planning**. **Send a test**, under the switch, pushes one right away.
+page, the deploy on **History → Deploys**, or the card on **Planning**. **Send a test**, under the switch, pushes one right away.
 On an iPhone or iPad, add Dash to the home screen first ([phone.md](phone.md)) and turn
 notifications on in the installed app: Safari tabs can't get pushes there.
 

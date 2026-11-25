@@ -124,7 +124,7 @@ it runs as a shell command where the chat runs, as in Claude Code.
   Stop does the same at once. What it printed until then is kept.
 - **No terminal**: commands run without a TTY and without input, with `$SHELL -c` (else
   `/bin/sh`), `TERM=dumb` and no pager. Interactive programs (vim, top, less, `ssh` asking for a
-  password, …) fail, or wait until the timeout. Use the **Shell** view (a real terminal) for
+  password, …) fail, or wait until the timeout. Use **Code → Shell** (a real terminal) for
   those.
 - **No approval prompt**: you typed the command, so it runs as it is, as your user on that
   computer. Claude's permission settings don't apply to it.

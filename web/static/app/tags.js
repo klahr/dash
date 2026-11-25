@@ -7,13 +7,14 @@ import { renderBoard, title } from "./branches.js";
 import { openDetail } from "./detail.js";
 import { goalHue } from "./goals.js";
 import { MAX_TAG_LEN, addTag, cleanTag } from "../tagtext.js";
+import { openScans, scansRunning } from "./scans.js";
 
 // ------------------------------------------------------------------ tags
 // Tasks carry short tags. A draft made from a reported issue (a scan's
 // finding, Claude's report_issue) has its type, severity and source as tags,
 // and its issues in t.finding. Here: the tags on cards and in a task's pane,
-// the Board's filters (drafts from scans below high hide behind From scans
-// (N); a tag filter), and picking drafts to Merge.
+// the Board's filters (From scans (N): only what scans added, with Scans…
+// beside it; a tag filter), and picking drafts to Merge.
 
 export const SEVERITIES = ["critical", "high", "medium", "low", "info"];
 const sevRank = (s) => { const i = SEVERITIES.indexOf(s); return i < 0 ? SEVERITIES.length : i; };
@@ -38,12 +39,13 @@ function tagLook(x) {
 const hasTag = (t, tag) => (t.tags || []).some((x) => x.toLowerCase() === tag.toLowerCase());
 const fromScan = (t) => (t.tags || []).some((x) => x.toLowerCase().startsWith("scan:"));
 
-// quietDraft: a draft a scan added for an issue below high. The Board keeps
-// those behind From scans (N), so a scan's volume doesn't bury the rest.
+// quietDraft: a draft a scan added for an issue below high. The Board shows
+// those only under From scans, so a scan's volume doesn't bury the rest.
 export const quietDraft = (t) => t.status === "draft" && !!t.finding && fromScan(t) && sevRank(worstSeverity(t)) > 1;
 
-// boardFilter is the Board's tag filter and whether quiet drafts show, for
-// the project open (both reset when another project opens).
+// boardFilter is the Board's tag filter and whether it shows only the tasks
+// scans added (From scans, quiet drafts included), for the project open
+// (both reset when another project opens).
 export const boardFilter = { project: null, tag: "", showScans: false };
 
 function sameProject() {
@@ -59,7 +61,15 @@ function sameProject() {
 export function onBoard(t) {
   sameProject();
   if (boardFilter.tag && !hasTag(t, boardFilter.tag)) return false;
-  return boardFilter.showScans || !quietDraft(t);
+  return boardFilter.showScans ? fromScan(t) : !quietDraft(t);
+}
+
+// setScanFilter turns From scans on or off (on: true, off: false, else the other way).
+export function setScanFilter(on = !boardFilter.showScans) {
+  sameProject();
+  boardFilter.showScans = on;
+  state.lane = null;
+  renderBoard();
 }
 
 export function setTagFilter(tag) {
@@ -69,24 +79,32 @@ export function setTagFilter(tag) {
   renderBoard();
 }
 
-// renderTagFilter fills the filter bar's tag part: From scans (N) when
-// quiet drafts are there, the tag filtered to (removable) and a tag picker.
+// renderTagFilter fills the filter bar's tag part: From scans (N), the
+// drafts scans added, with Scans… (the Scans sheet: run them, schedules,
+// settings) beside it; the tag filtered to (removable) and a tag picker.
 // It reports whether there is anything to show.
 export function renderTagFilter() {
   sameProject();
   const el = $("#tag-filter");
   const all = [...state.todos.values()];
   const tagged = (t) => !boardFilter.tag || hasTag(t, boardFilter.tag);
+  const drafts = all.filter((t) => t.status === "draft" && fromScan(t) && tagged(t)).length;
   const quiet = all.filter((t) => quietDraft(t) && tagged(t)).length;
   const counts = new Map();
   for (const t of all) for (const x of t.tags || []) counts.set(x.toLowerCase(), { name: counts.get(x.toLowerCase())?.name || x, n: (counts.get(x.toLowerCase())?.n || 0) + 1 });
   const kids = [];
-  if (quiet || boardFilter.showScans) {
-    kids.push(h("button", {
-      type: "button", class: "filter-chip scan-filter", "aria-pressed": String(boardFilter.showScans),
-      title: boardFilter.showScans ? "Hide the drafts scans added for medium, low and info issues" : "Show the drafts scans added for medium, low and info issues (critical and high ones always show)",
-      onclick: () => { boardFilter.showScans = !boardFilter.showScans; state.lane = null; renderBoard(); },
-    }, ico("bug"), `From scans (${quiet})`));
+  if (state.project) {
+    const running = scansRunning();
+    kids.push(h("span", { class: "scan-filter-group", role: "group", "aria-label": "Scans" },
+      h("button", {
+        type: "button", class: "filter-chip scan-filter", "aria-pressed": String(boardFilter.showScans),
+        title: boardFilter.showScans ? "Show every task again"
+          : `Show only the tasks scans added: ${plural(drafts, "draft")}${quiet ? `, ${quiet} of them for medium, low and info issues, which show only here` : ""}`,
+        onclick: () => setScanFilter(),
+      }, ico("bug"), `From scans (${drafts})`),
+      h("button", { type: "button", class: "filter-chip scans-open", "aria-haspopup": "dialog", title: "Scans: run them, their schedules and settings (gn)", onclick: attempt(() => openScans()) },
+        ico("scan"), h("span", {}, "Scans…"),
+        h("span", { class: "badge quiet", hidden: !running, title: running ? `${plural(running, "scan")} running` : null }, running ? String(running) : ""))));
   }
   if (boardFilter.tag) {
     const look = tagLook(boardFilter.tag);

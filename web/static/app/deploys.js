@@ -15,7 +15,7 @@ import { refreshGraph } from "./history.js";
 import { estimate, etaText } from "../deployeta.js";
 
 // ------------------------------------------------------------------ deploys
-// The Deploys page: one card per environment of the project (what is live
+// History → Deploys: one card per environment of the project (what is live
 // there, since when, how far it is ahead of the others, what is on its way)
 // and the deploys, newest first. A deploy opens in a pane beside the list
 // (full screen with Back on a phone), like a History commit; Esc closes it.
@@ -103,6 +103,7 @@ export function renderDeploys() {
       h("button", { type: "button", class: "link inline", onclick: () => openDeploySettings() }, "Project settings → Deploy"), "."]
     : "Select a project to see its deploys.");
   $("#deploy-settings").hidden = !p;
+  $("#view-deploys .deploys-title").hidden = !dp.envs.length;
   renderEnvCards();
   renderList();
 }
@@ -318,7 +319,7 @@ export async function deployCommit(c) {
   const first = (envs || []).findIndex((e) => !why(e));
   fill(body,
     h("p", {}, tag ? ["Release ", h("strong", {}, tag), " ", h("code", {}, short(sha)), c.subject ? ` ${c.subject}` : "", tags.commit_build ? buildBadge(tags.commit_build) : ""]
-      : [h("code", {}, short(sha)), ` isn't tagged${c.subject ? ` (${c.subject})` : ""}. Deploy a release tag from the Deploys page when you can.`]),
+      : [h("code", {}, short(sha)), ` isn't tagged${c.subject ? ` (${c.subject})` : ""}. Deploy a release tag from History → Deploys when you can.`]),
     envs?.length ? h("fieldset", { class: "field choice" }, h("legend", {}, "Environment"),
       ...envs.map((e, i) => h("label", { class: "radio" },
         h("input", { type: "radio", name: "env", value: e.name, disabled: why(e) ? true : null, checked: i === first ? true : null }),
@@ -583,6 +584,7 @@ export function onDeployEvent(ev) {
     toast(d.error || "", { tone: "error", head: `${d.rollback ? "Rollback" : "Deploy"} to ${d.environment} failed`, action: { label: "Open", run: () => openDeploy(d.id).catch(fail) } });
   }
   mergeDeploy(d);
+  refreshGraph(); // History → Commits marks the commits deploys shipped (when it shows)
   clearTimeout(envTimer);
   envTimer = setTimeout(() => state.view === "deploys" && loadEnvs().catch(() => {}), 300);
   // Another deploy to the same environment may change what the open one offers (Roll back).
@@ -679,7 +681,7 @@ function markSelected() {
   }
 }
 
-// j/k on the Deploys page: the next or previous deploy, opened.
+// j/k on History → Deploys: the next or previous deploy, opened.
 export function stepDeploy(n) {
   const ids = $$("#deploy-list li").map((li) => li.dataset.id);
   if (!ids.length) return;

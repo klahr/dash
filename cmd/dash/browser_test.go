@@ -1370,8 +1370,8 @@ func TestBrowserCustomScan(t *testing.T) {
 		}
 	}
 
-	b.until("open the scans", `document.querySelector("#view-scans.active")`,
-		chromedp.Click(chromedp.CSS(`.nav [data-view=scans]`)))
+	b.until("open the scans", `document.querySelector("#scans-sheet").open`,
+		chromedp.Click(chromedp.CSS(`.scans-open`)))
 	b.waitJS("the create card after the list", `(() => {
 		const c = document.querySelector("#scan-create");
 		return !c.hidden && document.querySelector("#scan-list").children.length > 0 &&
@@ -1751,7 +1751,8 @@ func TestBrowserShellHeader(t *testing.T) {
 	b := newBrowser(t, chrome)
 	b.signIn(h)
 	openShell := func() {
-		b.until("open the Shell view", `document.querySelector("#view-run.active")`, chromedp.Click(chromedp.CSS(`.nav [data-view=run]`)))
+		b.until("open Code", `document.querySelector("#view-run.active, #view-files.active")`, chromedp.Click(chromedp.CSS(`.nav [data-view=code]`)))
+		b.until("open the Shell view", `document.querySelector("#view-run.active")`, chromedp.Click(chromedp.CSS(`.view.active .page-tabs [data-tab=run]`)))
 	}
 
 	openShell()

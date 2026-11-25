@@ -10,20 +10,27 @@ import { baseBranch, projectKey } from "./events.js";
 import { detailBackground } from "./detail.js";
 import { diffImages, diffLines, isDiffImage, parseDiff } from "./drawmode.js";
 import { openRelease } from "./releases.js";
-import { deployCommit } from "./deploys.js";
+import { DEPLOY_STATUS, deployCommit, dp, loadDeploys, openDeploy } from "./deploys.js";
+import { showView } from "./nav.js";
 import { changed } from "./routes.js";
 import { agoText } from "../time.js";
 
 // ------------------------------------------------------------------ history
-// The default branch's commit graph: a dot per commit on coloured lanes, as
-// GUI git clients draw it.
+// History → Commits: the default branch's commit graph, a dot per commit on
+// coloured lanes, as GUI git clients draw it, each commit with the
+// environments it is live in and the other deploys that shipped it. Its
+// Deploys tab is deploys.js's.
 export async function loadGraph() {
   const p = state.project;
   if (!p) return renderGraph(null);
-  // What each environment runs, for its marker (none when there are none, or it fails).
-  const live = p.environments?.length ? api("GET", `/api/projects/${p.id}/deploys/live`).catch(() => null) : null;
+  // What each environment runs, for its marker, and the deploys, for theirs
+  // (none when there are no environments, or it fails).
+  const envs = !!p.environments?.length;
+  const live = envs ? api("GET", `/api/projects/${p.id}/deploys/live`).catch(() => null) : null;
+  const deploys = envs ? loadDeploys().catch(() => {}) : null;
   const res = await api("GET", `/api/projects/${p.id}/graph`);
   hist.live = liveByCommit(await live);
+  await deploys;
   if (projectKey(state.project) === projectKey(p)) renderGraph(res);
 }
 
@@ -42,6 +49,38 @@ function liveByCommit(live) {
 function liveRefs(hash) {
   return (hist.live?.get(hash) || []).map((e) => h("span", { class: "graph-ref env", title: `Live in ${e.environment} since ${dateTimeText(e.since)}` },
     h("span", { class: "sr-only" }, "Live in "), e.environment));
+}
+
+// deploysOf are the deploys of commit hash, newest first (the Deploys tab's
+// list, when it is this project's).
+function deploysOf(hash) {
+  if (!hash || dp.project?.id !== state.project?.id) return [];
+  return dp.list.filter((d) => d.commit === hash);
+}
+
+const DEPLOY_WORD = { superseded: "", live: "" }; // shipped and live once: the environment says it
+
+// deployRefs are the markers of the deploys that shipped commit hash, the
+// newest per environment, where it isn't live now (its live marker says so).
+function deployRefs(hash) {
+  const live = new Set((hist.live?.get(hash) || []).map((e) => e.environment));
+  const seen = new Set();
+  const out = [];
+  for (const d of deploysOf(hash)) {
+    if (seen.has(d.environment) || live.has(d.environment)) continue;
+    seen.add(d.environment);
+    const status = DEPLOY_STATUS[d.status] || d.status;
+    const word = d.status in DEPLOY_WORD ? DEPLOY_WORD[d.status] : status.toLowerCase();
+    out.push(h("span", { class: `graph-ref deploy d-${d.status}`, title: `${d.rollback ? "Rollback" : "Deploy"} to ${d.environment}: ${status}, ${agoText(d.created_at)}` },
+      h("span", { class: "sr-only" }, "Deployed to "), d.environment, word ? ` · ${word}` : ""));
+  }
+  return out;
+}
+
+// showDeploy opens deploy id on History's Deploys tab.
+async function showDeploy(id) {
+  showView("deploys", { now: true });
+  await openDeploy(id);
 }
 
 let graphTimer = 0;
@@ -98,6 +137,7 @@ export function renderGraph(res) {
         isPushed ? null : h("span", { class: "sr-only" }, " (not pushed yet)"),
         ...(c.refs || []).map(graphRef),
         ...liveRefs(c.hash),
+        ...deployRefs(c.hash),
         h("span", { class: "graph-subject" }, c.subject),
         h("span", { class: "graph-meta" }, `${c.author} · ${c.when}`)));
   }));
@@ -255,6 +295,7 @@ function renderCommit() {
     sameCommitter ? null : h("dd", {}, person(d.committer), " · ", when(d.committer)),
     h("dt", {}, d.parents.length > 1 ? "Parents" : "Parent"),
     h("dd", {}, d.parents.length ? d.parents.flatMap((sha, i) => [i ? " " : null, parent(sha)]) : "None (the first commit)"),
+    ...deployFacts(d.hash || cp.sha),
   ] : []));
   const head = $("#cd-files-head");
   head.hidden = !d;
@@ -276,6 +317,16 @@ function renderCommit() {
   if (!d.files.some((f) => f.path === cp.file)) cp.file = d.files[0].path;
   pickFile(cp.file, { focus: cp.listFocus && (!document.activeElement || document.activeElement === document.body) });
   cp.listFocus = false;
+}
+
+// deployFacts list the commit's deploys, each opening on History → Deploys
+// (where Promote and Roll back are).
+function deployFacts(hash) {
+  const list = deploysOf(hash);
+  if (!list.length) return [];
+  return [h("dt", {}, list.length > 1 ? "Deploys" : "Deploy"), h("dd", { class: "commit-deploys" }, ...list.map((x) =>
+    h("button", { type: "button", class: "link inline", title: `Open the ${x.rollback ? "rollback" : "deploy"} on History → Deploys`, onclick: () => showDeploy(x.id).catch(fail) },
+      h("span", { class: `status d-${x.status}` }, DEPLOY_STATUS[x.status] || x.status), ` ${x.environment} · ${agoText(x.created_at)}`)))];
 }
 
 // A long message shows its first lines until "Show all" (desktop only: the

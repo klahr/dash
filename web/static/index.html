@@ -62,14 +62,16 @@
       <details class="foot-menu top-menu" id="project-menu" hidden>
         <summary class="icon-btn" aria-label="Project menu" title="Project menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
         <!-- Managing the project, in groups: its setup, its queue, then housekeeping and
-             deleting it. Running things are elsewhere: Run in the top bar, Deploy on the
-             Deploys page, Run tests, Push and Builds… in Run's ▾ menu; status is the
+             deleting it. Running things are elsewhere: Run in the top bar, Deploy on
+             History → Deploys, Run tests, Push and Builds… in Run's ▾ menu; status is the
              sidebar's pills. -->
         <div class="foot-menu-list">
           <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
           <!-- Star / Unstar project: starred projects come first in the sidebar (app/stars.js). -->
           <button id="pm-star" type="button" data-icon="star" hidden>Star project</button>
           <button id="pm-branch" type="button" data-icon="branch">Switch branch…</button>
+          <!-- The project's scans: run them, their schedules and settings (app/scans.js) -->
+          <button id="pm-scans" type="button" data-icon="scan">Scans…</button>
           <hr class="menu-sep">
           <button id="pm-pause" type="button" data-icon="pause" title="Pause this project's running tasks, keeping their work; none of its tasks starts until you resume it">Pause this project</button>
           <!-- Platform admins: the queue every project of this Dash shares (app/usage.js) -->
@@ -121,28 +123,18 @@
             <span>Add project</span>
           </button>
         </div>
-        <!-- The sections that don't fit the bottom nav: in the menu drawer on a phone, and
-             in the side rail on desktop (style.css orders them among the nav's buttons). -->
+        <!-- The pages that don't fit the bottom nav: in the menu drawer on a phone, and in the
+             side rail on desktop (style.css orders them among the nav's buttons). History has
+             the commits and the deploys (its Deploys tab); Code the files (Files tab) and a
+             terminal (Shell tab), and app/nav.js opens the tab shown last. -->
         <div class="menu-views nav-views" role="group" aria-label="More sections">
-          <button class="menu-view" data-view="scans" type="button" title="Scans (gn)">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Scans</span><span class="badge quiet" id="scan-badge" hidden></span>
-          </button>
-          <button class="menu-view" data-view="run" type="button" title="Shell (gs)">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4M12 17h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Shell</span>
-          </button>
-          <button class="menu-view" data-view="history" type="button" title="History (gh)">
+          <button class="menu-view" data-view="history" type="button" title="History: commits and deploys (gh, gd)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 9c0 4 10 2 10 7M7 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>
             <span>History</span>
           </button>
-          <button class="menu-view" data-view="deploys" type="button" title="Deploys (gd)">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c3 2.2 4.5 5.5 4.5 9.5l-1.5 4h-6L7.5 12c0-4 1.5-7.3 4.5-9.5zM7.8 13.5 5 16.5V20l4-2.5M16.2 13.5l2.8 3V20l-4-2.5M12 9v.01M10.5 19.5 12 21.5l1.5-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Deploys</span>
-          </button>
-          <button class="menu-view" data-view="files" type="button" title="Files (gf)">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-            <span>Files</span>
+          <button class="menu-view" data-view="code" type="button" title="Code: files and shell (gf, gs)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M13.5 5l-3 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Code</span>
           </button>
         </div>
         <button class="usage-pill remote-pill" id="remote-pill" type="button" hidden title="The default branch compared with origin's"></button>
@@ -200,7 +192,8 @@
         <div class="board-filters" id="board-filters" role="group" aria-label="Filters" hidden>
           <button class="mine-filter" type="button" id="mine-filter" aria-pressed="false" title="Show only the tasks you created" hidden></button>
           <div class="goal-filter" id="goal-filter" hidden></div>
-          <!-- Drafts from scans below high, behind From scans (N), and the tag filter (app/tags.js) -->
+          <!-- From scans (N): only the tasks scans added, with Scans… beside it (the Scans sheet);
+               drafts from scans below high show only there. Then the tag filter (app/tags.js) -->
           <div class="tag-filter" id="tag-filter" hidden></div>
         </div>
         <div class="merge-bar" id="merge-bar" role="toolbar" aria-label="Selected drafts" hidden></div>
@@ -218,35 +211,18 @@
         </button>
       </section>
 
-      <!-- Scans: preconfigured read-only reviews that add what they find to the Board as draft tasks -->
-      <section class="view" id="view-scans" aria-label="Scans">
-        <div class="page scans">
-          <header class="cl-head">
-            <h2 class="cl-title page-title">Scans</h2>
-          </header>
-          <div class="scan-bar">
-            <div class="scan-intro" id="scan-intro" hidden></div>
-            <p class="hint warn runner-note" id="scan-runner-note" hidden></p>
-          </div>
-          <ul class="scan-problems" id="scan-problems" hidden></ul>
-          <ul class="scan-list" id="scan-list"></ul>
-          <div class="scan-create" id="scan-create" hidden>
-            <div><p class="scan-create-title">Need something else?</p><p>Describe what to look for; Dash runs it like the built-in scans and adds what it finds to the Board as drafts.</p></div>
-            <button class="btn" type="button" id="scan-new" data-icon="plus">Create custom scan…</button>
-          </div>
-          <!-- Dismissed: issues whose drafts were deleted, with Undo (app/scans.js) -->
-          <section class="scan-dismissed" id="scan-dismissed" aria-label="Dismissed issues" hidden></section>
-          <div class="empty" id="scan-empty"><p class="empty-title">No project</p><p>Select a project to see its scans.</p></div>
-        </div>
-      </section>
-
-      <!-- Shell: a terminal on the project. The picker says where: "main" is a shell in the
-           project's checkout (URL …/run); "commit…" tries the project itself (its preview
-           command) at a commit, in a throwaway worktree on a runner (URL …/try, Try's old
-           link). app/terminal.js runs the first, app/try.js the second; .at-commit is set on
+      <!-- Code → Shell: a terminal on the project. The picker says where: "main" is a shell in the
+           project's checkout (URL …/shell, once …/run); "commit…" tries the project itself (its
+           preview command) at a commit, in a throwaway worktree on a runner (URL …/try, Try's
+           old link). app/terminal.js runs the first, app/try.js the second; .at-commit is set on
            the section while the second shows. -->
-      <section class="view" id="view-run" aria-label="Shell">
+      <section class="view" id="view-run" aria-label="Code: Shell">
         <header class="try-head shell-top">
+          <h2 class="sr-only">Code</h2>
+          <nav class="page-tabs" aria-label="Code">
+            <button type="button" data-tab="files">Files</button>
+            <button type="button" data-tab="run" aria-current="page">Shell</button>
+          </nav>
           <div class="shell-at" role="group" aria-label="Where the shell runs">
             <button type="button" id="shell-at-main" aria-pressed="true" title="A shell in the project's checkout"><code id="shell-at-branch">main</code></button>
             <button type="button" id="shell-at-commit" aria-pressed="false" aria-haspopup="dialog" title="Try the project at a commit, in a throwaway worktree">commit…</button>
@@ -301,8 +277,16 @@
         </div>
       </section>
 
-      <!-- History: git graph of the default branch -->
-      <section class="view" id="view-history" aria-label="History">
+      <!-- History → Commits: git graph of the default branch, each commit with the deploys
+           that shipped it (app/history.js) -->
+      <section class="view" id="view-history" aria-label="History: Commits">
+        <header class="page-head history-head">
+          <h2 class="sr-only">History</h2>
+          <nav class="page-tabs" aria-label="History">
+            <button type="button" data-tab="history" aria-current="page">Commits</button>
+            <button type="button" data-tab="deploys">Deploys</button>
+          </nav>
+        </header>
         <ol class="graph" id="graph"></ol>
         <div class="empty" id="graph-empty"><p class="empty-title">No history</p><p id="graph-empty-text">Select a project to see its main branch.</p></div>
       </section>
@@ -321,13 +305,20 @@
         </div>
       </section>
 
-      <!-- Deploys: a card per environment (what is live where) and the deploys; a deploy opens
-           in #deploy-detail beside the list (app/deploys.js) -->
-      <section class="view" id="view-deploys" aria-label="Deploys">
+      <!-- History → Deploys: a card per environment (what is live where) and the deploys; a
+           deploy opens in #deploy-detail beside the list (app/deploys.js) -->
+      <section class="view" id="view-deploys" aria-label="History: Deploys">
+        <header class="page-head history-head">
+          <h2 class="sr-only">History</h2>
+          <nav class="page-tabs" aria-label="History">
+            <button type="button" data-tab="history">Commits</button>
+            <button type="button" data-tab="deploys" aria-current="page">Deploys</button>
+          </nav>
+        </header>
         <div class="page deploys">
           <header class="cl-head">
-            <h2 class="cl-title page-title">Deploys</h2>
-            <button class="btn small" type="button" id="deploy-settings" data-icon="settings" title="Project settings → Deploy">Environments…</button>
+            <h3 class="cl-title deploys-title">Environments</h3>
+            <button class="btn small" type="button" id="deploy-settings" data-icon="settings" title="Project settings → Deploy">Settings…</button>
           </header>
           <ul class="env-cards" id="env-cards" aria-label="Environments"></ul>
           <h3 class="commit-files-head" id="deploy-list-head" hidden>Deploys</h3>
@@ -340,8 +331,15 @@
            beside the board (app/planning.js builds it; planners get planning.html instead) -->
       <section class="view" id="view-planning" aria-label="Planning"></section>
 
-      <!-- Files: browse the default branch; saving an edit queues it as a task -->
-      <section class="view" id="view-files" aria-label="Files">
+      <!-- Code → Files: browse the default branch; saving an edit queues it as a task -->
+      <section class="view" id="view-files" aria-label="Code: Files">
+        <header class="try-head code-head">
+          <h2 class="sr-only">Code</h2>
+          <nav class="page-tabs" aria-label="Code">
+            <button type="button" data-tab="files" aria-current="page">Files</button>
+            <button type="button" data-tab="run">Shell</button>
+          </nav>
+        </header>
         <div class="files">
           <div class="file-side">
             <input type="search" id="file-filter" placeholder="Filter files" autocomplete="off" spellcheck="false" aria-label="Filter files">
@@ -949,6 +947,30 @@
   </dialog>
 
   <!-- Scan editor: a custom scan kept in Dash -->
+  <!-- Scans: preconfigured read-only reviews that add what they find to the Board as draft
+       tasks. Opened from the Board's Scans… (beside From scans), the project menu or gn;
+       its old page's address (/p/{project}/scans) opens it too (app/scans.js). -->
+  <dialog class="sheet scans-sheet" id="scans-sheet" aria-labelledby="scans-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="scans-title" tabindex="-1" autofocus>Scans</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
+      <div class="scans">
+        <div class="scan-bar">
+          <div class="scan-intro" id="scan-intro" hidden></div>
+          <p class="hint warn runner-note" id="scan-runner-note" hidden></p>
+        </div>
+        <ul class="scan-problems" id="scan-problems" hidden></ul>
+        <ul class="scan-list" id="scan-list"></ul>
+        <div class="scan-create" id="scan-create" hidden>
+          <div><p class="scan-create-title">Need something else?</p><p>Describe what to look for; Dash runs it like the built-in scans and adds what it finds to the Board as drafts.</p></div>
+          <button class="btn" type="button" id="scan-new" data-icon="plus">Create custom scan…</button>
+        </div>
+        <!-- Dismissed: issues whose drafts were deleted, with Undo (app/scans.js) -->
+        <section class="scan-dismissed" id="scan-dismissed" aria-label="Dismissed issues" hidden></section>
+        <div class="empty" id="scan-empty"><p class="empty-title">No project</p><p>Select a project to see its scans.</p></div>
+      </div>
+    </form>
+  </dialog>
+
   <dialog class="sheet" id="scan-sheet" aria-labelledby="scan-sheet-title">
     <form method="dialog" id="scan-form">
       <header class="sheet-head"><h2 id="scan-sheet-title">Create custom scan</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
@@ -1787,10 +1809,10 @@
           <button type="button" class="rail-item" data-rail="open">Open task</button>
           <button type="button" class="rail-item" data-rail="draw">Drawing</button>
           <button type="button" class="rail-item" data-rail="perms">Approvals</button>
-          <button type="button" class="rail-item" data-rail="shell">Shell</button>
+          <button type="button" class="rail-item" data-rail="shell">Code → Shell</button>
           <button type="button" class="rail-item" data-rail="history">History</button>
           <button type="button" class="rail-item" data-rail="goals">Goals</button>
-          <button type="button" class="rail-item" data-rail="deploys">Deploys</button>
+          <button type="button" class="rail-item" data-rail="deploys">History → Deploys</button>
           <button type="button" class="rail-item" data-rail="chat">Chat</button>
           <button type="button" class="rail-item" data-rail="forms">Forms</button>
           <button type="button" class="rail-item" data-rail="commands">Commands</button>
@@ -1822,12 +1844,12 @@
               <caption class="sr-only">Sections</caption>
               <tbody>
                 <tr><th scope="row"><kbd>gb</kbd></th><td>Board</td></tr>
-                <tr><th scope="row"><kbd>gn</kbd></th><td>Scans</td></tr>
-                <tr><th scope="row"><kbd>gs</kbd></th><td>Shell</td></tr>
-                <tr><th scope="row"><kbd>gh</kbd></th><td>History</td></tr>
+                <tr><th scope="row"><kbd>gn</kbd></th><td>Scans, over the Board</td></tr>
                 <tr><th scope="row"><kbd>go</kbd></th><td>Goals</td></tr>
-                <tr><th scope="row"><kbd>gd</kbd></th><td>Deploys</td></tr>
-                <tr><th scope="row"><kbd>gf</kbd></th><td>Files</td></tr>
+                <tr><th scope="row"><kbd>gh</kbd></th><td>History → Commits</td></tr>
+                <tr><th scope="row"><kbd>gd</kbd></th><td>History → Deploys</td></tr>
+                <tr><th scope="row"><kbd>gf</kbd></th><td>Code → Files</td></tr>
+                <tr><th scope="row"><kbd>gs</kbd></th><td>Code → Shell</td></tr>
                 <tr><th scope="row"><kbd>gp</kbd></th><td>Planning (the organization's)</td></tr>
                 <tr><th scope="row"><kbd>gt</kbd> <kbd>gT</kbd></th><td>Next / previous section</td></tr>
               </tbody>
@@ -1909,14 +1931,14 @@
           </section>
           <section class="rail-section" data-section="shell">
             <table class="keys-table">
-              <caption class="sr-only">Shell</caption>
+              <caption class="sr-only">Code → Shell</caption>
               <tbody>
                 <tr><th scope="row"><kbd>i</kbd> <kbd>Enter</kbd></th><td>Type into the terminal</td></tr>
                 <tr><th scope="row"><kbd>Ctrl-]</kbd></th><td>Leave the terminal</td></tr>
                 <tr><th scope="row"><kbd>x</kbd></th><td>Stop what runs in it (main)</td></tr>
                 <tr><th scope="row"><kbd>R</kbd></th><td>Run the server</td></tr>
                 <tr><th scope="row"><kbd>T</kbd></th><td>Run the tests</td></tr>
-                <tr><th scope="row"><kbd>D</kbd></th><td>Open Deploys, to deploy to an environment</td></tr>
+                <tr><th scope="row"><kbd>D</kbd></th><td>Open History → Deploys, to deploy to an environment</td></tr>
                 <tr><th scope="row"><kbd>!</kbd></th><td>A new shell</td></tr>
               </tbody>
             </table>
@@ -1944,7 +1966,7 @@
           </section>
           <section class="rail-section" data-section="deploys">
             <table class="keys-table">
-              <caption class="sr-only">Deploys</caption>
+              <caption class="sr-only">History → Deploys</caption>
               <tbody>
                 <tr><th scope="row"><kbd>j</kbd> <kbd>k</kbd></th><td>Open the next / previous deploy (also <kbd>↓</kbd>/<kbd>↑</kbd>)</td></tr>
                 <tr><th scope="row"><kbd>q</kbd> <kbd>Esc</kbd></th><td>Close it</td></tr>
@@ -1986,8 +2008,8 @@
                 <tr><th scope="row"><code>:addclone</code></th><td>Add a repository already on your runner (in Runners)</td></tr>
                 <tr><th scope="row"><code>:task …</code></th><td>Queue a task</td></tr>
                 <tr><th scope="row"><code>:new</code></th><td>New task form</td></tr>
-                <tr><th scope="row"><code>:run cmd</code> <code>:shell</code></th><td>Run a command / open the Shell</td></tr>
-                <tr><th scope="row"><code>:try</code></th><td>The Shell at a commit</td></tr>
+                <tr><th scope="row"><code>:run cmd</code> <code>:shell</code></th><td>Run a command / open Code → Shell</td></tr>
+                <tr><th scope="row"><code>:try</code></th><td>Code → Shell at a commit</td></tr>
                 <tr><th scope="row"><code>:push</code></th><td>Push merged work</td></tr>
                 <tr><th scope="row"><code>:ci</code></th><td>Builds</td></tr>
                 <tr><th scope="row"><code>:cleanup</code></th><td>Clean up leftovers</td></tr>

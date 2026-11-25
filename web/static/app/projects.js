@@ -117,8 +117,9 @@ export async function selectProject(p, { follow = true, restore = follow } = {})
   resetGoals();
   loadTry().catch(() => {});
   // After the resets: a view shown here loads its own data for p (nav.js),
-  // so History, Files and Scans aren't loaded twice below. (Goals are: a
-  // caller may open a goal once this returns.)
+  // so History and Files aren't loaded twice below. (Goals are: a caller
+  // may open a goal once this returns. Scans are, for the Board's Scans…
+  // and its count of scans running.)
   let view = restore && state.view !== "planning" ? projectView(p) : null;
   if (view === state.view) view = null;
   if (view) showView(view, { now: true });
@@ -126,7 +127,7 @@ export async function selectProject(p, { follow = true, restore = follow } = {})
   // Planning is the hub's: it follows a hub project, not a runner's.
   if (follow && p && !p.prefix) followProject(p.id);
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); return; }
-  await Promise.all([loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), shows("history") && loadGraph(), shows("files") && loadFiles(), shows("scans") && loadScans()]);
+  await Promise.all([loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), shows("history") && loadGraph(), shows("files") && loadFiles(), loadScans().catch(() => {})]);
 }
 
 async function loadPerms() {

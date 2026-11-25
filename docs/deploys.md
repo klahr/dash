@@ -27,7 +27,7 @@ A project that had a **Deploy command** before environments now has one environm
 
 ## Deploy
 
-Open **Deploys** in the sidebar (`gd`). Each environment has a card:
+Open **History** in the sidebar and pick its **Deploys** tab (`gd`). Each environment has a card:
 
 - what is live there, since when, and its version. A deploy of a release tag shows the tag and
   its commit, such as `1.4.0 (a1b2c3d4)`;
@@ -54,7 +54,7 @@ follows each release tag's build (see [Tag a release](github.md#tag-a-release)).
 
 If you pick a tag whose build failed or is still running, Dash asks you to confirm first
 ("The release build of 1.4.0 failed; deploy it to production anyway?"). It doesn't refuse it.
-**Deploy to…** in **History** asks the same for a tagged commit.
+**Deploy to…** on a commit in **History → Commits** asks the same for a tagged commit.
 
 ### Tag a new release from the picker
 
@@ -258,7 +258,10 @@ during a freeze fails with the reason.
 
 Dash works out from its deploy records what each environment runs, so it shows:
 
-- in **History**, a marker with the environment's name on the commit each environment runs;
+- in **History → Commits**, a marker with the environment's name on the commit each environment
+  runs, and on other commits a marker for each environment they were deployed to, with how that
+  deploy went (failed, rolled back…). An open commit lists its deploys; click one to open it on
+  **History → Deploys**;
 - on a merged task, **Live in production since 4 Nov 2026** (production when it is live there,
   else the environment furthest along; point at it to see all of them);
 - on a [planning card](planning.md#status), the same once all its work is live.

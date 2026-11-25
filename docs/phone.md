@@ -18,5 +18,9 @@ checks for updates and offers a reload, so an installed copy never goes stale. T
 **Account → Notifications → Push to this browser** in the installed app and it notifies you of reviews, failures,
 approvals and failing builds while it's closed (choose which in the same section) ([push notifications](notifications.md#push-notifications)).
 
+On a phone the bar at the bottom has **Board**, **Chat**, **Planning** and **Goals**.
+**History** (**Commits** and **Deploys**) and **Code** (**Files** and **Shell**) are in the
+menu, with the projects.
+
 To use Dash from the Claude mobile apps instead, see
 [the custom connector](mcp.md#claudeai-and-the-claude-app-custom-connector).

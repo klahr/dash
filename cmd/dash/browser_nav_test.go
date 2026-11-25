@@ -8,11 +8,13 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
-// The web app's navigation: Planning set apart below a divider, page
-// headings that match the nav, one Shell page with a "main / commit…"
-// picker (Try's old link opens it at a commit), the shortcut keys and the
-// Keyboard sheet's table per area, and the project's actions in groups,
-// with Clean up saying what it removed. On a wide screen and a phone's.
+// The web app's navigation: the project's pages Board · Goals · History ·
+// Code, Planning set apart below a divider, Code's Files and Shell tabs (the
+// Shell with a "main / commit…" picker; Try's old link opens it at a
+// commit), History's Commits and Deploys tabs, Scans as a sheet over the
+// Board, old links and keys opening where their pages moved, the Keyboard
+// sheet's table per area, and the project's actions in groups, with Clean up
+// saying what it removed. On a wide screen and a phone's.
 func TestBrowserNavigation(t *testing.T) {
 	endToEnd(t)
 	chrome := needChrome(t)
@@ -22,14 +24,14 @@ func TestBrowserNavigation(t *testing.T) {
 	b.signIn(h)
 	key := func(what, k, expr string) { b.until(what, expr, chromedp.KeyEvent(k)) }
 
-	// The rail lists each section once, in order (the drawer's sections among the nav's
-	// own); Planning comes last, after the Organization divider.
-	b.waitJS("the sections in order, Planning below the divider", `(() => {
+	// The rail lists each page once, in order (the drawer's pages among the nav's own):
+	// Board, Goals, History, Code; Planning comes last, after the Organization divider.
+	b.waitJS("the pages in order, Planning below the divider", `(() => {
 		const els = [...document.querySelectorAll(".nav [data-view], .nav > .nav-sep")].filter((e) => e.offsetHeight > 0)
 			.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
 		const sep = els.find((e) => e.matches(".nav-sep"));
 		return sep?.textContent === "Organization"
-			&& els.map((e) => e.dataset.view || "|").join() === "board,scans,run,history,goals,deploys,files,|,planning";
+			&& els.map((e) => e.dataset.view || "|").join() === "board,goals,history,code,|,planning";
 	})()`)
 	// The sidebar has no Actions: Run tests, Push and Builds… are in Run's ▾ menu, Deploy on the Deploys page.
 	b.waitJS("no Actions in the sidebar", `document.querySelector("#run-split") && !document.querySelector("#quick-actions, #quick-test, #push-main, #pm-builds")`)
@@ -44,22 +46,51 @@ func TestBrowserNavigation(t *testing.T) {
 	b.waitJS("the board", `document.querySelector("#view-board.active") && location.pathname === "/p/`+pid+`/board"`)
 	b.waitJS("no Checklist", `!document.querySelector("#view-checklist, [data-view=checklist]")`)
 
-	// Keys: gn is Scans, gs the Shell (no gS any more).
+	// Old links open where their pages moved: Scans' the Scans sheet over the
+	// board, Files' Code → Files, Deploys' History → Deploys.
+	b.do("open Scans' old link", chromedp.Navigate(h.base+"/p/"+pid+"/scans"))
+	b.waitJS("the Scans sheet over the board", `document.querySelector("#scans-sheet").open && document.querySelector("#view-board.active")
+		&& location.pathname === "/p/`+pid+`/board" && new URLSearchParams(location.search).get("sheet") === "scans"`)
+	b.until("close it", `!document.querySelector("#scans-sheet").open && !new URLSearchParams(location.search).has("sheet")`, chromedp.KeyEvent(kb.Escape))
+	b.waitJS("From scans and Scans… on the board", `document.querySelector("#board-filters:not([hidden]) .scan-filter") && document.querySelector(".scans-open")`)
+	b.until("Scans… opens the sheet", `document.querySelector("#scans-sheet").open`, chromedp.Click(chromedp.CSS(`.scans-open`)))
+	b.until("close it", `!document.querySelector("#scans-sheet").open`, chromedp.KeyEvent(kb.Escape))
+	b.do("open Files' old link", chromedp.Navigate(h.base+"/p/"+pid+"/files"))
+	b.waitJS("Code → Files", `document.querySelector("#view-files.active") && location.pathname === "/p/`+pid+`/code"
+		&& document.querySelector('.nav [data-view=code]').getAttribute("aria-current") === "page"
+		&& document.querySelector('#view-files .page-tabs [data-tab=files]').getAttribute("aria-current") === "page"`)
+	b.do("open Deploys' old link", chromedp.Navigate(h.base+"/p/"+pid+"/deploys"))
+	b.waitJS("History → Deploys", `document.querySelector("#view-deploys.active")
+		&& document.querySelector('.nav [data-view=history]').getAttribute("aria-current") === "page"
+		&& document.querySelector('#view-deploys .page-tabs [data-tab=deploys]').getAttribute("aria-current") === "page"`)
+	b.until("its Commits tab", `document.querySelector("#view-history.active") && location.pathname === "/p/`+pid+`/history"`,
+		chromedp.Click(chromedp.CSS(`#view-deploys .page-tabs [data-tab=history]`)))
+
+	// Keys: gn opens Scans, gs Code → Shell (no gS any more).
 	b.run("leave any field", `document.activeElement?.blur(); true`)
 	key("g", "g", `document.querySelector("#kbd-status").textContent.includes("g")`)
-	key("n: Scans", "n", `document.querySelector("#view-scans.active")`)
+	key("n: Scans", "n", `document.querySelector("#scans-sheet").open && document.querySelector("#view-board.active")`)
+	b.until("close it", `!document.querySelector("#scans-sheet").open`, chromedp.KeyEvent(kb.Escape))
+	b.run("leave any field", `document.activeElement?.blur(); true`)
 	key("g", "g", `document.querySelector("#kbd-status").textContent.includes("g")`)
 	key("s: the Shell", "s", `document.querySelector("#view-run.active:not(.at-commit)")`)
-	b.waitJS("the Shell at main", `document.querySelector("#shell-at-main").getAttribute("aria-pressed") === "true" && location.pathname === "/p/`+pid+`/run"`)
+	b.waitJS("the Shell at main", `document.querySelector("#shell-at-main").getAttribute("aria-pressed") === "true" && location.pathname === "/p/`+pid+`/shell"`)
+	// Code opens on the tab shown last; the Files tab switches.
+	b.until("Code → Files", `document.querySelector("#view-files.active") && location.pathname === "/p/`+pid+`/code"`,
+		chromedp.Click(chromedp.CSS(`#view-run .page-tabs [data-tab=files]`)))
+	b.until("the board", `document.querySelector("#view-board.active")`, chromedp.Click(chromedp.CSS(`.nav > button[data-view=board]`)))
+	b.until("Code, on Files again", `document.querySelector("#view-files.active")`, chromedp.Click(chromedp.CSS(`.nav [data-view=code]`)))
+	b.do("open Run's old link", chromedp.Navigate(h.base+"/p/"+pid+"/run"))
+	b.waitJS("Code → Shell", `document.querySelector("#view-run.active:not(.at-commit)") && location.pathname === "/p/`+pid+`/shell"`)
 	// Not a CLI project: commit… says why it can't.
 	b.waitJS("commit… off, with why", `document.querySelector("#shell-at-commit").disabled && document.querySelector("#shell-at-commit").title.includes("CLI projects")`)
 	b.waitJS("no Try in the sidebar", `!document.querySelector("#quick-try")`)
 
-	// Try's old link opens the Shell page at a commit, under the nav's Shell.
+	// Try's old link opens the Shell at a commit, under the nav's Code.
 	b.do("open Try's old link", chromedp.Navigate(h.base+"/p/"+pid+"/try"))
-	b.waitJS("the Shell at a commit", `document.querySelector("#view-run.active.at-commit") && document.querySelector('.nav [data-view=run]').getAttribute("aria-current") === "page"`)
+	b.waitJS("the Shell at a commit", `document.querySelector("#view-run.active.at-commit") && document.querySelector('.nav [data-view=code]').getAttribute("aria-current") === "page"`)
 	b.waitJS("commit… pressed", `document.querySelector("#shell-at-commit").getAttribute("aria-pressed") === "true" && !document.querySelector("#try-status").hidden`)
-	b.until("back to main", `document.querySelector("#view-run.active:not(.at-commit)") && location.pathname === "/p/`+pid+`/run"`, chromedp.Click(chromedp.ID("shell-at-main")))
+	b.until("back to main", `document.querySelector("#view-run.active:not(.at-commit)") && location.pathname === "/p/`+pid+`/shell"`, chromedp.Click(chromedp.ID("shell-at-main")))
 
 	// ? opens the Keyboard sheet at the page's area, a table per area. The
 	// Shell's terminal focuses itself once it starts, which may be after a
@@ -95,8 +126,8 @@ func TestBrowserNavigation(t *testing.T) {
 	b.waitJS("Push isn't in the top bar", `!document.querySelector(".topbar #push-main")`)
 	b.waitJS("the live dot says so", `document.querySelector("#live-label").offsetWidth > 0 && document.querySelector("#live-label").textContent === "Live"`)
 
-	// A phone: the bottom nav is Board · Chat · Planning · Goals, left to right, with
-	// no divider; Shell and Files are in the menu drawer, Goals and Planning aren't.
+	// A phone: the bottom nav is Board · Chat · Planning · Goals, left to right, with no
+	// divider; History and Code are in the menu drawer.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.do("reload", chromedp.Reload())
 	b.waitJS("the board", `document.querySelector("#project-name")?.textContent === "app"`)
@@ -107,9 +138,13 @@ func TestBrowserNavigation(t *testing.T) {
 	b.until("open Goals", `document.querySelector('.nav > button[data-view=goals][aria-current=page].active') && document.querySelector("#view-goals.active")`,
 		chromedp.Click(chromedp.CSS(`.nav > button[data-view=goals]`)))
 	b.openDrawer("")
-	b.waitJS("Shell and Files in the drawer, Goals and Planning not", `[...document.querySelectorAll(".menu-views .menu-view")].filter((e) => e.offsetHeight > 0)
-		.map((e) => e.dataset.view).join() === "scans,run,history,deploys,files"`)
-	b.until("open the Shell from the drawer", `document.querySelector("#view-run.active") && document.querySelector('.menu-view[data-view=run][aria-current=page]') && !document.querySelector(".app").classList.contains("menu-open")`,
-		chromedp.Click(chromedp.CSS(`.menu-view[data-view=run]`)))
+	b.waitJS("History and Code in the drawer, nothing else", `[...document.querySelectorAll(".menu-views .menu-view")].filter((e) => e.offsetHeight > 0)
+		.map((e) => e.dataset.view).join() === "history,code"`)
+	b.until("open Code from the drawer", `document.querySelector("#view-run.active, #view-files.active") && document.querySelector('.menu-view[data-view=code][aria-current=page]') && !document.querySelector(".app").classList.contains("menu-open")`,
+		chromedp.Click(chromedp.CSS(`.menu-view[data-view=code]`)))
+	b.waitJS("its tabs fit", `[...document.querySelectorAll(".view.active .page-tabs button")].every((e) => e.offsetWidth > 0 && e.getBoundingClientRect().right <= innerWidth)`)
+	b.openDrawer("")
+	b.until("History from the drawer, its tabs", `document.querySelector("#view-history.active .page-tabs [data-tab=deploys]")?.offsetWidth > 0`,
+		chromedp.Click(chromedp.CSS(`.menu-view[data-view=history]`)))
 	b.do("a wide screen", chromedp.EmulateReset())
 }

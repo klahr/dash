@@ -65,7 +65,13 @@ func TestBrowserQuestionCard(t *testing.T) {
 	b.waitJS("the card still there", `!!document.querySelector("`+card+`") && !document.querySelector("`+card+` button[type=submit]").disabled`)
 
 	// SQLite, then Unit and an answer of my own for the tests.
+	// Each option in the middle of the screen first: toasts and the bottom nav cover its edges.
+	center := func(sel string) {
+		b.run("center "+sel, `document.querySelector("`+sel+`")?.scrollIntoView({ block: "center" }); true`)
+	}
+	center(card + ` fieldset.ask-q:nth-of-type(1)`)
 	b.clickIn(card+` fieldset.ask-q:nth-of-type(1) label.radio`, "SQLite", "input")
+	center(card + ` fieldset.ask-q:nth-of-type(2)`)
 	b.clickIn(card+` fieldset.ask-q:nth-of-type(2) label.radio`, "Unit", "input")
 	b.do("write my own answer", chromedp.SendKeys(chromedp.CSS(card+` fieldset.ask-q:nth-of-type(2) .ask-other-text`), "a smoke test"))
 	b.waitJS("Other chosen as I type", `document.querySelector("`+card+` fieldset.ask-q:nth-of-type(2) .ask-other input[type=checkbox]").checked`)

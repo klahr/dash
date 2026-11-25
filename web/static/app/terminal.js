@@ -352,6 +352,6 @@ export function testStatus() {
       : ok ? "Last test run passed: click to run again"
       : bad ? `Last test run failed (exit ${proc.exit_code}): click to run again`
       : cut ? "Last test run was interrupted by a Dash restart: click to run again"
-      : "Run the project's tests (T on the Shell page)",
+      : "Run the project's tests (T on Code → Shell)",
   };
 }

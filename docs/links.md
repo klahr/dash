@@ -20,12 +20,17 @@ Any other page can be shared by copying the address bar.
 | Address                         | Opens                                    |
 |---------------------------------|------------------------------------------|
 | `/p/<project>/board`            | a project's board                        |
-| `/p/<project>/<view>`           | `scans`, `run` (the **Shell** at main), `try` (the **Shell** at a commit), `history`, `goals`, `files` |
+| `/p/<project>/<view>`           | `goals`, `history` (**History → Commits**), `deploys` (**History → Deploys**), `code` (**Code → Files**), `shell` (**Code → Shell** at main), `try` (**Code → Shell** at a commit) |
 | `/p/<project>/tasks/<id>`       | a task, over the board                   |
 | `/p/<project>/goals/<id>`       | a goal, on **Goals**                     |
-| `/p/<project>/history/<sha>`    | a commit, on **History**                 |
+| `/p/<project>/history/<sha>`    | a commit, on **History → Commits**       |
+| `/p/<project>/deploys/<id>`     | a deploy, on **History → Deploys**       |
+| `/p/<project>/board?sheet=scans` | the **Scans** sheet, over the board     |
 | `/planning`                     | **Planning**                             |
 | `/planning/cards/<id>`          | a Planning card                          |
+
+Older addresses still open, at the new place: `files` opens **Code → Files**, `run` **Code →
+Shell**, and `scans` the **Scans** sheet over the board.
 
 `<project>` is the project's id, so a link keeps working when the project is renamed. A
 project on another computer of a hub is `<id>@<computer>`.
