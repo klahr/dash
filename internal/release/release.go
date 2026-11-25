@@ -200,6 +200,10 @@ func (f Format) Resolve(tags []string, version, bump string) (Tag, error) {
 			return Tag{version, v}, nil
 		}
 		if v, err := ParseVersion(version); err == nil {
+			if strings.HasPrefix(version, "v") {
+				// A "v" the format doesn't have: say so rather than drop it.
+				return Tag{}, errors.New(f.VPrefixHint(version, v))
+			}
 			return Tag{f.Render(v), v}, nil
 		}
 		return Tag{}, fmt.Errorf("%q doesn't match the tag format %s (or a version like 1.2.3)", version, f.raw)
@@ -218,6 +222,16 @@ func (f Format) Resolve(tags []string, version, bump string) (Tag, error) {
 		return Tag{}, err
 	}
 	return Tag{f.Render(v), v}, nil
+}
+
+// VPrefixHint explains why tag, a version with a leading "v" such as
+// "v1.2.3", isn't a tag in this format, and what to do instead.
+func (f Format) VPrefixHint(tag string, v Version) string {
+	msg := fmt.Sprintf("%s isn't in the project's tag format %s: give %s", tag, f.raw, f.Render(v))
+	if f.prefix == "" {
+		return msg + ", or set the tag format to v" + f.raw + " in Project settings → Approval & push"
+	}
+	return msg + ", or change the tag format in Project settings → Approval & push"
 }
 
 // Earliest is the tag with the lowest version among tags in this format

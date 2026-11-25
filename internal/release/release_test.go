@@ -133,6 +133,14 @@ func TestResolve(t *testing.T) {
 	if got, err := f.Resolve(nil, "", Minor); err != nil || got.Name != "v0.1.0" {
 		t.Errorf("first release: %v %v", got, err)
 	}
+	// A "v" the format doesn't have isn't dropped: the tag would not be the one asked for.
+	plain, _ := ParseFormat("")
+	if got, err := plain.Resolve(nil, "v0.1.0", ""); err == nil || !strings.Contains(err.Error(), "vX.Y.Z") {
+		t.Errorf("v0.1.0 in X.Y.Z: %v %v, want an error suggesting vX.Y.Z", got, err)
+	}
+	if got, err := plain.Resolve(nil, "0.1.0", ""); err != nil || got.Name != "0.1.0" {
+		t.Errorf("0.1.0 in X.Y.Z: %v %v", got, err)
+	}
 	for _, c := range []struct{ version, bump string }{{"", ""}, {"1.0.0", Patch}, {"release-1.0.0", ""}, {"1.0", ""}, {"", "huge"}} {
 		if _, err := f.Resolve(tags, c.version, c.bump); err == nil {
 			t.Errorf("%q/%q accepted", c.version, c.bump)

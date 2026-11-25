@@ -38,6 +38,12 @@ export function checkVersion(info, raw) {
     if (!m) return { error: `Use a version like 1.4.0 or a tag like ${fmt.render([1, 4, 0])} (format ${info.format}).` };
     v = [+m[1], +m[2], +m[3]];
     tag = fmt.render(v);
+    // A "v" the format doesn't have isn't dropped: the tag wouldn't be the one typed.
+    if (raw.startsWith("v")) {
+      const f = info.format || "X.Y.Z";
+      const fix = f.startsWith("X") ? `set the tag format to v${f}` : "change the tag format";
+      return { error: `${raw} isn't in this project's tag format ${f}. Type ${tag}, or ${fix} in Project settings → Approval & push.` };
+    }
   }
   if (info.tags.includes(tag)) return { error: `${tag} already exists.` };
   const latest = info.previous && fmt.parse(info.previous);

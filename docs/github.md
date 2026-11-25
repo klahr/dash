@@ -284,6 +284,10 @@ is, e.g. `X.Y.Z` (the default), `vX.Y.Z`, `release-X.Y.Z` or `app/X.Y.Z`. It mus
 tag name. Tags in another format are ignored when working out the latest version. Pre-release
 suffixes such as `-rc.1` aren't supported yet.
 
+To tag `v1.2.0` rather than `1.2.0`, set the format to `vX.Y.Z` in **Project settings → Approval &
+push**. With the default `X.Y.Z`, a version typed as `v1.2.0` is refused rather than tagged as
+`1.2.0`; a bare `1.2.0` gets the format's prefix, so it tags `v1.2.0` under `vX.Y.Z`.
+
 If the repository has a GitHub Actions workflow that runs on pushed tags (`on.push.tags` in
 `.github/workflows/*.yml`) and the format's tags wouldn't match it, the settings say so and offer a
 matching format: with `X.Y.Z` and a workflow on `v*`, pushing a tag wouldn't start the release.
