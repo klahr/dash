@@ -1361,6 +1361,7 @@
             <label class="toggle"><input type="checkbox" name="speechReplies" form="prefs-form"><span>Replies <em>in Message Claude, Ask about this project and the task chat</em></span></label>
             <label class="toggle"><input type="checkbox" name="speechApprovals" form="prefs-form"><span>Approval requests <em>what Claude wants to run, in short</em></span></label>
             <label class="toggle"><input type="checkbox" name="speechStatus" form="prefs-form"><span>Task status <em>ready for review, failed or finished, for the tasks you hear about in Notifications</em></span></label>
+            <label class="toggle"><input type="checkbox" name="speechSummary" form="prefs-form"><span>Summarise spoken replies <em>Claude's small model says a long reply, request or task news in a sentence or two; say “read it all” to hear the whole of it</em></span></label>
             <label class="field"><span>Long replies</span>
               <select name="speechLong" form="prefs-form">
                 <option value="">Read the start, then say there's more</option>
@@ -1380,6 +1381,7 @@
               </select>
             </label>
             <p class="hint">Code blocks, diffs and long paths are named, not read. A speaker button under each reply reads it, or stops. <kbd>Esc</kbd> or sending a message stops it too. Dash doesn't speak while dictation or voice commands listen.
+              A summary is made with your <code>claude</code> login, on your runner on a shared Dash.
               Some browsers use an online voice service and send it the text: voices marked <em>online</em> do.</p>
             <p class="hint warn" id="speech-missing" hidden>This browser can't read aloud. Use your system's screen reader instead (VoiceOver, Narrator): <a data-docs="dictation.md" target="_blank" rel="noopener">How</a>.</p>
           </section>

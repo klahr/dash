@@ -201,6 +201,8 @@ type Server struct {
 	routes []string
 	// ships remembers which release shipped a commit (planning.go).
 	ships shipCache
+	// spoken keeps the spoken summaries made lately (speech.go).
+	spoken spokenCache
 }
 
 // Routes is the dashboard's handler: every route, behind the login.
@@ -331,6 +333,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/todos/{tid}/merge-pr", s.mergePRTodo)
 	mux.HandleFunc("POST /api/refine", s.refinePrompt)
 	mux.HandleFunc("POST /api/split", s.splitPrompt)
+	mux.HandleFunc("POST /api/speech/summary", s.speechSummary)
 	mux.HandleFunc("GET /api/claude", s.claudeInfo)
 	mux.HandleFunc("POST /api/hub/claude/{kind}", s.hubClaude)
 	mux.HandleFunc("GET /api/hub/repos", s.hubRepos)

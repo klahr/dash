@@ -3,6 +3,7 @@ import * as store from "./store.js";
 import { state } from "./state.js";
 import { describePerm, isQuestion } from "./chatparts.js";
 import { listening } from "./dictation.js";
+import { api } from "./api.js";
 
 // ------------------------------------------------------------------ spoken replies (docs/dictation.md)
 // Reads Claude's chat replies, approval requests and task status changes
@@ -18,6 +19,12 @@ import { listening } from "./dictation.js";
 // file name, a link its text and a bare URL its host. A long reply is read up to its first part,
 // then "There's more" (or in full: Account → Voice → Long replies).
 // The speaker button on a reply reads all of it, or stops.
+//
+// With Summarise spoken replies on (Account → Voice, on by default), a long
+// reply, approval request or task's news is said as a sentence or two the
+// title model writes (POST /api/speech/summary). Short text, a summary that
+// fails or takes longer than SUMMARY_WAIT, is read as above. The voice
+// command "read it all" reads the last item said in short in full (readAll).
 //
 // Esc, sending a message or pressing a speaker button again stops it. Dash
 // doesn't speak while dictation or voice commands listen (they send
@@ -38,6 +45,8 @@ export const speechRate = () => Number(store.get("dash.speech.rate")) || 1;
 export const setSpeechRate = (r) => store.set("dash.speech.rate", r && Number(r) !== 1 ? r : null);
 export const speechLong = () => store.get("dash.speech.long", "");
 export const setSpeechLong = (v) => store.set("dash.speech.long", v || null);
+export const speechSummaries = () => store.get("dash.speech.summary") !== "0";
+export const setSpeechSummaries = (on) => store.setFlag("dash.speech.summary", on);
 
 // The speaker buttons show while the preference is on (style.css: .speak-btn).
 const showButtons = () => document.documentElement.classList.toggle("speech-on", speechOn());
@@ -183,10 +192,49 @@ function chunks(text, max = 220) {
   return out;
 }
 
+// ---- summaries
+// summary asks for a spoken summary of text (kind: reply, approval or
+// status; agent.SpeakKinds), or resolves to "" when there's none: the
+// setting is off, the text is short (the server's minSpokenWords too, so
+// short text isn't sent at all), the call fails or takes too long. key names
+// the message: each is summarised once.
+const SUMMARY_WAIT = 10000; // ms
+const MIN_WORDS = 40;
+const summaries = new Map(); // key → Promise of the summary
+export function summary(kind, text, key = `${kind}:${text}`) {
+  if (!speechSummaries() || String(text).trim().split(/\s+/).length < MIN_WORDS) return Promise.resolve("");
+  if (summaries.has(key)) return summaries.get(key);
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), SUMMARY_WAIT);
+  const p = api("POST", "/api/speech/summary", { kind, text }, "", { signal: ctl.signal })
+    .then((r) => r?.summary || "")
+    .catch(() => "")
+    .finally(() => clearTimeout(timer));
+  // A failure isn't kept: the next message asks again.
+  p.then((s) => { if (!s) summaries.delete(key); });
+  summaries.set(key, p);
+  if (summaries.size > 200) summaries.delete(summaries.keys().next().value);
+  return p;
+}
+
+// last is the full text of the latest item said in short (a summary, or
+// the first part of a long reply), for readAll.
+let last = "";
+export const hasReadAll = () => speechOn() && !!last;
+
+// readAll reads the latest item said in short in full ("read it all").
+// false when there's none, or Spoken replies are off.
+export function readAll() {
+  if (!speechOn() || !last) return false;
+  say(last, { now: true });
+  return true;
+}
+
 // ---- speaking
 // Items wait in a queue and are read one after another; a speaker button
-// reads its reply now instead. An item: {text, btn}, btn the speaker button
-// pressed while it is read.
+// reads its reply now instead. An item: {text, btn, short?, full?}, btn the
+// speaker button pressed while it is read; short, a promise of a summary
+// said instead of text when it comes, full the whole text ("read it all").
 let queue = [];
 let current = null;
 
@@ -199,16 +247,34 @@ function press(btn, on) {
 
 // say queues text (now: stops what is read and reads it at once). It reads
 // nothing while dictation listens, or with the preference off.
-function say(text, { btn = null, now = false } = {}) {
-  if (!speechOn() || listening() || !text?.trim()) return;
+function say(text, { btn = null, now = false, short = null, full = "" } = {}) {
+  if (!canSay() || !text?.trim()) return;
   if (now) stopSpeaking();
-  queue.push({ text, btn });
+  queue.push({ text, btn, short, full });
   if (!current) next();
 }
+const canSay = () => speechOn() && !listening();
 
+// next reads the next item: once its summary is in, when it waits for one
+// (the items after it wait too, so they stay in order).
 function next() {
   const item = current = queue.shift() || null;
   if (!item) return;
+  if (item.short) {
+    const short = item.short;
+    item.short = null;
+    short.then((s) => {
+      if (current !== item) return; // stopped meanwhile
+      if (s) item.text = s;
+      if (s || item.text !== item.full) last = item.full;
+      next1(item);
+    });
+    return;
+  }
+  next1(item);
+}
+
+function next1(item) {
   press(item.btn, true);
   const voice = pickVoice(), rate = speechRate();
   const parts = chunks(item.text);
@@ -271,17 +337,18 @@ export function speakButton(content) {
   return btn;
 }
 
-// speakReply reads a reply that has just finished (btn: its speaker button).
+// speakReply reads a reply that has just finished (btn: its speaker
+// button): in short, or as it is (up to its first part, or all of it).
 export function speakReply(content, btn = null) {
-  if (!speechOn() || !speechKind("replies")) return;
+  if (!canSay() || !speechKind("replies")) return;
   const text = speakable(content);
-  say(speechLong() === "all" ? text : firstPart(text), { btn });
+  say(speechLong() === "all" ? text : firstPart(text), { btn, short: summary("reply", content), full: text });
 }
 
 // speakApproval reads approval request p in short: what Claude wants to do
 // (where: the project, when it isn't the one shown).
 export function speakApproval(p, where = "") {
-  if (!speechOn() || !speechKind("approvals")) return;
+  if (!canSay() || !speechKind("approvals")) return;
   const d = describePerm(p);
   let text;
   if (isQuestion(p)) {
@@ -294,15 +361,23 @@ export function speakApproval(p, where = "") {
     }
     text = stop(text);
   }
-  say(where ? `${text} In ${where}.` : text);
+  const full = where ? `${text} In ${where}.` : text;
+  // In short: what and why, as a question, from all of the request.
+  const all = [`Claude wants to ${d.title}.`, d.note ? `Why: ${d.note}` : "", d.detail || "", where ? `In ${where}.` : ""].filter(Boolean).join("\n");
+  say(full, { short: summary("approval", all, p.id ? `approval:${p.id}` : undefined), full: [full, d.detail ? speakable(String(d.detail)) : ""].filter(Boolean).join("\n\n") });
 }
 
 // speakStatus reads a task's news (head: "Ready for review", "Failed", …),
 // for the tasks the user hears about (Account → Notifications → Tasks).
 export function speakStatus(head, t, where = "") {
-  if (!speechOn() || !speechKind("status")) return;
+  if (!canSay() || !speechKind("status")) return;
   const by = t?.created_by || 0;
   if (state.pushTasks === "mine" && by > 0 && by !== state.me?.user?.id) return;
   const name = inline(t?.title || String(t?.prompt || "").split("\n")[0].slice(0, 120) || "a task");
-  say(`${head}: ${stop(name)}${where ? ` In ${where}.` : ""}`);
+  const text = `${head}: ${stop(name)}${where ? ` In ${where}.` : ""}`;
+  // In short: the result and the tests, from what the task says of them.
+  const c = t?.checks;
+  const all = [text, t?.summary ? `What Claude did: ${t.summary}` : "", t?.error ? `Error: ${t.error}` : "",
+    c ? `Tests (${c.command}): ${c.passed ? "passed" : `failed, exit code ${c.exit_code}`}.` : ""].filter(Boolean).join("\n");
+  say(text, { short: summary("status", all, t?.id ? `status:${t.id}:${head}` : undefined), full: speakable(all) });
 }

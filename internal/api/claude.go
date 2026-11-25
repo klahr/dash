@@ -43,6 +43,8 @@ type SmallClaude interface {
 	// Plan runs one round of the interview of a plan of kind
 	// (model.PlanKinds; agent.PlanInputWith in, the interviewer's JSON out).
 	Plan(ctx context.Context, kind, input string) (string, error)
+	// Speak summarises text of kind (agent.SpeakKinds) to be read aloud.
+	Speak(ctx context.Context, kind, text string) (string, error)
 }
 
 // errNoClaudeRunner is why the hub can't run something on the caller's runner.
@@ -439,6 +441,11 @@ func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 		// plan-<kind>: another kind of plan's round.
 		if kind, ok := strings.CutPrefix(r.PathValue("kind"), "plan-"); ok && model.PlanKinds[kind].ID != "" {
 			call = func(ctx context.Context, in string) (string, error) { return s.Small.Plan(ctx, kind, in) }
+			break
+		}
+		// speak-<kind>: a spoken summary (speech.go).
+		if kind, ok := strings.CutPrefix(r.PathValue("kind"), "speak-"); ok && slices.Contains(agent.SpeakKinds, kind) {
+			call = func(ctx context.Context, in string) (string, error) { return s.Small.Speak(ctx, kind, in) }
 			break
 		}
 		writeError(w, http.StatusNotFound, "no such call")

@@ -64,6 +64,7 @@ Press the shortcut while the cursor is in a chat, so "send" knows what to send.
 | "approve", "allow"                    | allows the permission request in view (`y`)                  |
 | "deny"                                | denies it (`X`)                                              |
 | "next card", "previous card"          | the next or previous task: the board's cursor (`j` `k`), or in an open task, the task beside it in its column |
+| "read it all"                         | reads the last reply, request or task news Dash said in short, in full (see [Summaries](#summaries)) |
 | "open board", "open chat"             | the **Board** (`gb`) / the project's chat (`c`)              |
 | "open scans", "open history" …        | that section: board, scans, shell, history, goals, deploys, files, planning |
 | "stop listening"                      | ends voice commands                                          |
@@ -112,7 +113,8 @@ Dash can read aloud, so you can follow a chat or a task without looking at the s
    - **Approval requests**: what Claude wants to run, in short.
    - **Task status**: a task is ready for review, failed or finished. These are the tasks you hear
      about in **Account → Notifications**.
-4. Pick a **Voice** and a **Speed** if you like. **Voice** shows when the browser has several.
+4. Leave **Summarise spoken replies** on to hear long text in short. See [Summaries](#summaries).
+5. Pick a **Voice** and a **Speed** if you like. **Voice** shows when the browser has several.
 
 It is off until you turn it on. It is a setting of this browser. Chrome, Edge, Safari and Firefox
 have it. Where a browser doesn't, the setting is greyed out.
@@ -127,6 +129,29 @@ reply, set **Long replies** to **Read all of it**.
 
 Each reply has a **Read aloud** button under it. Click it to hear the whole reply.
 
+### Summaries
+
+With **Summarise spoken replies** on, Dash says long text in a sentence or two instead of reading
+it all:
+
+- **Replies**: what Claude did or changed, and what it needs from you, if anything.
+- **Approval requests**: the action and why, as a question: "Claude wants to run the agent
+  package's tests, okay?"
+- **Task status**: the result, and whether the tests passed.
+
+Claude's small model writes them: the one for task titles (`-title-model`, Haiku by default). It
+runs with your `claude` login, on your runner on a shared Dash. Text under about 40 words is read
+as it is, and each message is summarised once.
+
+If a summary fails, or takes more than 10 seconds, Dash reads the text as it would without
+summaries.
+
+To hear all of it, say "read it all" with [voice commands](#voice-commands) on. Dash reads the
+last thing it said in short, in full, with code blocks named as above. Voice commands stop first,
+so Dash doesn't hear itself. The **Read aloud** button under a reply reads it all too.
+
+Summaries are on by default. Turn off **Summarise spoken replies** to hear the text itself.
+
 ### Stop it
 
 - Press `Esc`.
@@ -140,6 +165,8 @@ Dash doesn't speak while dictation or voice commands listen, so it doesn't hear 
 The browser does the speaking, not Dash. Some voices are an online service, and the browser sends
 it the text: Chrome's Google voices and Edge's online voices, for example. **Voice** marks these
 *online*. Pick another voice to keep the text on your computer.
+
+A summary sends the text to Claude, as a task or a chat does, with your own `claude` login.
 
 ### Your system's screen reader
 

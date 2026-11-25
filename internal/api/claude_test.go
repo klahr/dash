@@ -41,6 +41,9 @@ func (f *fakeSmall) Title(_ context.Context, p string) (string, error)   { retur
 func (f *fakeSmall) Summary(_ context.Context, r string) (string, error) { return f.call("summary", r) }
 func (f *fakeSmall) Refine(_ context.Context, p string) (string, error)  { return f.call("refine", p) }
 func (f *fakeSmall) Suggest(_ context.Context, t string) (string, error) { return f.call("suggest", t) }
+func (f *fakeSmall) Speak(_ context.Context, kind, t string) (string, error) {
+	return f.call("speak-"+kind, t)
+}
 
 // Plan answers an interview round with one question, the brief saying
 // where it ran.

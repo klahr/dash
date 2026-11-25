@@ -8,6 +8,7 @@ import { cursorTodo, keys, laneCount, laneTodos, moveCursor, permKey, todoKey } 
 import { title } from "./branches.js";
 import { openDetail } from "./detail.js";
 import { toggleChatPane } from "./chatpane.js";
+import { hasReadAll, readAll, speechOn } from "./speech.js";
 
 // ------------------------------------------------------------------ voice commands (docs/dictation.md)
 // Spoken commands that run what Dash's buttons and keys run, with the
@@ -44,6 +45,7 @@ const COMMANDS = [
   { id: "deny", say: ["deny", "deny it", "deny request", "reject"], changes: true, does: "Denied the permission request", run: () => answer("X") },
   { id: "next", say: ["next card", "next task", "next"], run: () => stepCard(1) },
   { id: "previous", say: ["previous card", "previous task", "previous"], run: () => stepCard(-1) },
+  { id: "readall", say: ["read it all", "read all", "read all of it", "read everything", "read whole thing", "read it in full"], changes: true, run: readItAll },
   { id: "chat", say: ["open chat", "show chat", "go to chat"], run: () => toggleChatPane(true, "project") },
   ...Object.entries(SECTIONS).map(([name, view]) => ({
     id: `open-${name}`, say: [`open ${name}`, `show ${name}`, `go to ${name}`], run: () => showView(view),
@@ -101,6 +103,18 @@ async function answer(k) {
   const r = await permKey(k);
   if (r === false) throw new Error("No permission request waiting.");
   return r === true ? undefined : null; // not true: it said why it didn't
+}
+
+// readItAll reads the latest reply, approval request or task news said in
+// short (a summary, or a long reply's start) in full, as speech.js said it
+// before summaries, with code blocks named. Voice commands stop first:
+// Dash doesn't speak while they listen, so it doesn't hear itself.
+function readItAll() {
+  if (!speechOn()) throw new Error("Turn on Spoken replies in Account → Voice first.");
+  if (!hasReadAll()) throw new Error("Nothing was said in short yet.");
+  stopCommands();
+  readAll();
+  return "Reading it all. Voice commands stopped, so Dash doesn't hear itself.";
 }
 
 // stepCard: in an open task, the next or previous task in its column; else the

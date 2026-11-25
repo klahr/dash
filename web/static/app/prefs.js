@@ -40,6 +40,7 @@ function syncSpeech() {
     f[name].checked = speech.speechKind(kind);
     f[name].disabled = !on;
   }
+  f.speechSummary.checked = speech.speechSummaries();
   f.speechLong.value = speech.speechLong();
   f.speechRate.value = String(speech.speechRate());
   if (!f.speechRate.value) f.speechRate.value = "1";
@@ -50,7 +51,7 @@ function syncSpeech() {
     ...voices.map((v) => h("option", { value: v.voiceURI }, `${v.name} (${v.lang})${v.localService ? "" : " · online"}`)));
   f.speechVoice.value = speech.speechVoice();
   if (f.speechVoice.value !== speech.speechVoice()) f.speechVoice.value = "";
-  for (const el of [f.speechLong, f.speechRate, f.speechVoice]) el.disabled = !on;
+  for (const el of [f.speechSummary, f.speechLong, f.speechRate, f.speechVoice]) el.disabled = !on;
 }
 document.addEventListener("dash:voices", () => { if ($("#account-sheet").open) syncSpeech(); });
 // The preferences are the Account sheet's first sections (Editors, Time, Chat, Dictation, Spoken replies), and
@@ -76,6 +77,7 @@ pref("speech", (el) => { speech.setSpeech(el.checked); syncSpeech(); speech.spee
 pref("speechReplies", (el) => speech.setSpeechKind("replies", el.checked));
 pref("speechApprovals", (el) => speech.setSpeechKind("approvals", el.checked));
 pref("speechStatus", (el) => speech.setSpeechKind("status", el.checked));
+pref("speechSummary", (el) => speech.setSpeechSummaries(el.checked));
 pref("speechLong", (el) => speech.setSpeechLong(el.value));
 pref("speechRate", (el) => { speech.setSpeechRate(el.value); speech.speechSample(); });
 pref("speechVoice", (el) => { speech.setSpeechVoice(el.value); speech.speechSample(); });
