@@ -9,7 +9,7 @@
 import { $, docsLink, entering, fill, h, ib, ico, dateTimeText } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, fail, railOf, toast } from "./dialogs.js";
-import { installSteps, runnerNameInput } from "./install.js";
+import { runnerCodePane } from "./install.js";
 import { wsURL } from "./viewport.js";
 import { renderMarkdown } from "../editor.js";
 import { chatCloseReason, chatPermCard, permDecided, placeToolCall, sendStopButton, toolCall, toolResult, toolSettled } from "./chatparts.js";
@@ -122,23 +122,14 @@ async function startAdd() {
   const { code, expires, hub } = await call("POST", "/api/runners/codes");
   if (hub) cl.hub = hub;
   cl.adding = { known: new Set((cl.runners || []).map((r) => r.id)), expires: new Date(expires).getTime() };
-  const mins = Math.round((cl.adding.expires - Date.now()) / 60000);
-  const name = runnerNameInput();
-  const cmds = h("div", {});
-  const render = () => fill(cmds, installSteps(cl.hub, code, { name: name.value.trim().toLowerCase() }));
-  name.addEventListener("input", render);
-  render();
-  fill(pane,
-    h("ol", { class: "steps" },
+  fill(pane, runnerCodePane({
+    hub: cl.hub, code, expires,
+    steps: (cmds) => [h("ol", { class: "steps" },
       h("li", {}, h("strong", {}, "Sign in to Claude Code on your computer. "), "Install it and run ", h("code", {}, "claude"), " once to sign in with your own Claude account."),
       h("li", {}, h("strong", {}, "Install the runner. "), "Paste the command below. It installs Dash and starts the runner in the background, with no admin rights.", cmds),
-      h("li", {}, h("strong", {}, "Come back here. "), "Once it connects, the chat and Write a feature brief use it.")),
-    h("details", { class: "runner-add-opts" },
-      h("summary", {}, "Name (optional)"),
-      h("label", { class: "field" }, h("span", {}, "Name"), name)),
-    h("p", { class: "runner-add-status", role: "status" }, "Waiting for the runner to connect…"),
-    h("p", { class: "hint" }, `The code works once, for ${mins} minutes. Your runner runs only your chat and feature briefs, never tasks or other project work. `,
-      docsLink("several-computers.md#a-planners-runner")));
+      h("li", {}, h("strong", {}, "Come back here. "), "Once it connects, the chat and Write a feature brief use it."))],
+    note: ["Your runner runs only your chat and feature briefs, never tasks or other project work. ", docsLink("several-computers.md#a-planners-runner")],
+  }));
   keepWatching();
 }
 

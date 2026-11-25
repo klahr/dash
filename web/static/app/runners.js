@@ -10,7 +10,7 @@ import { isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, s
 import { renderBoard } from "./branches.js";
 import { agoText } from "../time.js";
 import { ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
-import { copyBlock, installCmd, installCmdWin, installSteps, runnerNameInput, shq } from "./install.js";
+import { copyBlock, installCmd, installCmdWin, runnerCodePane, shq } from "./install.js";
 import { shortLabel } from "./usage.js";
 import { openSettings, syncSettingsRunners } from "./settings.js";
 import { ensureShell, forgetShellRefusal } from "./terminal.js";
@@ -996,17 +996,8 @@ async function addRunner() {
   const { code, expires, hub } = await api("POST", "/api/runners/codes");
   if (hub) runnerInfo.hub = hub;
   runnerAdd = { known: new Set(before.runners.map((r) => r.id)) };
-  const mins = Math.round((new Date(expires) - Date.now()) / 60000);
-  const name = runnerNameInput();
-  const dir = h("input", { type: "text", placeholder: "~/dash-projects", autocomplete: "off", spellcheck: false });
-  const oneLine = h("div", {});
   const manual = h("div", { hidden: true });
-  const render = () => {
-    const n = name.value.trim().toLowerCase(), d = dir.value.trim();
-    oneLine.replaceChildren(
-      ...installSteps(runnerInfo.hub, code, { name: n, projects: d }),
-      h("p", { class: "hint" }, "It installs Dash", isRelease(runnerInfo.version) ? ` ${runnerInfo.version}` : "", " and starts the runner as a service. No sudo or admin rights. ",
-        h("a", { href: "https://github.com/klahr/dash/blob/main/docs/several-computers.md#add-a-runner", target: "_blank", rel: "noopener" }, "What it does")));
+  const renderManual = ({ name: n, projects: d }) => {
     let flags = "";
     if (n) flags += ` --name ${shq(n)}`;
     if (d) flags += ` --projects ${shq(d)}`;
@@ -1018,27 +1009,25 @@ async function addRunner() {
       h("li", {}, h("strong", {}, "Optionally, keep it running in the background:"), copyBlock("dash runner install", "Command copied", { pre: true }),
         h("p", { class: "hint" }, h("code", {}, "dash runner status"), " shows how it's doing."))));
   };
-  name.addEventListener("input", render);
-  dir.addEventListener("input", render);
-  const tab = (label, pane, other) => h("button", { type: "button", role: "tab", "aria-selected": String(pane === oneLine), onclick: (e) => {
-    pane.hidden = false; other.hidden = true;
-    for (const b of e.currentTarget.parentElement.children) b.setAttribute("aria-selected", String(b === e.currentTarget));
-  } }, label);
-  render();
-  $("#runners-code").replaceChildren(
-    h("div", { class: "runner-add-head" },
-      h("h3", { class: "runner-title" }, "Add a runner"),
-      h("div", { class: "segmented", role: "tablist", "aria-label": "How to install" }, tab("One line", oneLine, manual), tab("Manual", manual, oneLine))),
-    oneLine, manual,
-    h("details", { class: "runner-add-opts" },
-      h("summary", {}, "Name and projects directory (optional)"),
-      h("div", { class: "runner-add-fields" },
-        h("label", { class: "field" }, h("span", {}, "Name"), name),
-        h("label", { class: "field" }, h("span", {}, "Projects directory"), dir))),
-    h("div", { class: "runner-add-foot" },
-      h("p", { class: "runner-add-status", id: "runner-add-status", role: "status" }, "Waiting for the runner to connect…"),
-      h("button", { class: "btn small", type: "button", onclick: closeRunnerAdd }, "Cancel")),
-    h("p", { class: "hint" }, `The code works once, for ${mins} minutes. The runner is yours.`));
+  const steps = (cmds) => {
+    const oneLine = h("div", {}, cmds,
+      h("p", { class: "hint" }, "It installs Dash", isRelease(runnerInfo.version) ? ` ${runnerInfo.version}` : "", " and starts the runner as a service. No sudo or admin rights. ",
+        h("a", { href: "https://github.com/klahr/dash/blob/main/docs/several-computers.md#add-a-runner", target: "_blank", rel: "noopener" }, "What it does")));
+    const tab = (label, pane, other) => h("button", { type: "button", role: "tab", "aria-selected": String(pane === oneLine), onclick: (e) => {
+      pane.hidden = false; other.hidden = true;
+      for (const b of e.currentTarget.parentElement.children) b.setAttribute("aria-selected", String(b === e.currentTarget));
+    } }, label);
+    return [
+      h("div", { class: "runner-add-head" },
+        h("h3", { class: "runner-title" }, "Add a runner"),
+        h("div", { class: "segmented", role: "tablist", "aria-label": "How to install" }, tab("One line", oneLine, manual), tab("Manual", manual, oneLine))),
+      oneLine, manual];
+  };
+  $("#runners-code").replaceChildren(...runnerCodePane({
+    hub: runnerInfo.hub, code, expires, withDir: true, steps, onInput: renderManual,
+    foot: h("button", { class: "btn small", type: "button", onclick: closeRunnerAdd }, "Cancel"),
+    statusId: "runner-add-status", note: "The runner is yours.",
+  }));
   closeRunnerPanels();
   shown = "add";
   paintRunners();

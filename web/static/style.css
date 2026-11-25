@@ -1637,7 +1637,7 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .runner-update .hint { margin: 4px 0 0; }
 /* "Add a runner": its pane beside the rail, with the command, its options and whether it has connected yet. */
 #runners-code .hint { margin: 6px 0 0; }
-#runners-code > div > p:first-child { margin: 12px 0 0; }
+#runners-code > div > p:first-child, #runners-code > div > div:first-child > p:first-child { margin: 12px 0 0; }
 .runner-add-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .runner-add-head .segmented { margin: 0; }
 .runner-add-head .segmented button { min-height: 30px; padding: 0 12px; font-size: var(--fs-s); }
