@@ -978,14 +978,34 @@ func (b *browser) openStatus(expr string) {
 // openDrawer opens the phone's drawer with Menu, until it is open and expr
 // (if any) is true, and waits for it to finish sliding in: a click into it
 // while it moves can land on the scrim behind it and close it.
+//
+// Just after EmulateViewport the page may not have had its "(min-width:
+// 1024px)" change event yet, and that event closes the drawer
+// (setMenu(false)): a drawer opened before it closes again, and the clicks
+// into it land on nothing. So it waits for the page to render a frame
+// first, and checks the drawer is still open once it has slid in.
 func (b *browser) openDrawer(expr string) {
 	b.t.Helper()
 	open := `document.querySelector(".app").classList.contains("menu-open")`
 	if expr != "" {
 		open += " && " + expr
 	}
+	b.frames()
 	b.until("open the drawer", open, chromedp.Click(chromedp.ID("menu-open")))
-	b.waitJS("the drawer slid in", `!document.querySelector("#menu").getAnimations().length`)
+	b.frames()
+	b.waitJS("the drawer slid in", `!document.querySelector("#menu").getAnimations().length && `+open)
+}
+
+// frames waits for the page to render two frames: media query change
+// events, resizes and transitions due are dispatched by then.
+func (b *browser) frames() {
+	b.t.Helper()
+	ctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
+	defer cancel()
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`,
+		chromedp.EvalAwaitPromise)); err != nil {
+		b.t.Logf("wait for two frames: %v", err)
+	}
 }
 
 // topMenu opens the top bar's ⋮ menu and clicks its item with the id item
