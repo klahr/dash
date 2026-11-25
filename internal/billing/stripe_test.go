@@ -68,6 +68,24 @@ func TestHTTPStripeRequests(t *testing.T) {
 			t.Errorf("checkout %s = %q, want %q", k, f.Get(k), v)
 		}
 	}
+	if f.Has("consent_collection[terms_of_service]") || f.Has("custom_text[terms_of_service_acceptance][message]") {
+		t.Errorf("terms consent asked without terms: %v", f)
+	}
+	if _, err := st.CreateCheckoutSession(ctx, CheckoutParams{OrgID: 5, Customer: "cus_1", Price: "price_p", Quantity: 1,
+		SuccessURL: "https://dash.example/", CancelURL: "https://dash.example/",
+		TermsURL: "https://dash.example/terms", PrivacyURL: "https://dash.example/privacy"}); err != nil {
+		t.Fatal(err)
+	}
+	f = got["POST /v1/checkout/sessions"]
+	if f.Get("consent_collection[terms_of_service]") != "required" {
+		t.Errorf("terms consent not required: %v", f)
+	}
+	msg := f.Get("custom_text[terms_of_service_acceptance][message]")
+	for _, want := range []string{"](https://dash.example/terms)", "](https://dash.example/privacy)", "start at once"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("terms message %q lacks %q", msg, want)
+		}
+	}
 	if _, err := st.CreatePortalSession(ctx, "cus_1", "https://dash.example/"); err != nil {
 		t.Fatal(err)
 	}

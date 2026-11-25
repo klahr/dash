@@ -295,6 +295,16 @@ func configureBilling(acc *store.Accounts, cfg billing.Config) *billing.Service 
 	return b
 }
 
+// absURL makes a link to one of this Dash's own pages (u starting with "/",
+// e.g. /terms) absolute with publicURL, for pages elsewhere such as Stripe
+// Checkout. Absolute URLs and "" stay as they are.
+func absURL(publicURL, u string) string {
+	if strings.HasPrefix(u, "/") {
+		return strings.TrimRight(publicURL, "/") + u
+	}
+	return u
+}
+
 // configureMail sets up email (password reset) when SMTP is configured, and
 // opens signup if asked to and email works. When it can't, it says why and
 // Dash carries on invite-only.

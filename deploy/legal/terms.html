@@ -1,15 +1,19 @@
 <!--
   A starting point for your hub's terms of service, served at /terms with
   DASH_TERMS_FILE (docs/privacy.md). Replace every [bracketed] part and
-  delete what doesn't apply (paid plans, ...).
+  delete what doesn't apply (paid plans, individual plan, trial, ...).
+  The paid-plan parts describe Dash's billing (docs/billing.md): check them
+  against your Stripe prices, trial (DASH_BILLING_TRIAL_DAYS) and grace
+  period (DASH_BILLING_GRACE).
   This is not legal advice: have someone who knows your jurisdiction read it.
 -->
 <h1>Terms of service</h1>
 <p>Last updated: [date]</p>
 
-<p>These terms are an agreement between you and [legal name], [postal address] (“we”), about
-your use of [service name] at [https://dash.example.com] (“the service”). By creating an account
-you accept them. If you accept them for an organization, you confirm you may do so for it.</p>
+<p>These terms are an agreement between you and [legal name], [postal address], [company
+registration number and VAT number] (“we”), about your use of [service name] at
+[https://dash.example.com] (“the service”). By creating an account you accept them. If you accept
+them for an organization, you confirm you may do so for it.</p>
 
 <h2>The service</h2>
 <p>The service is a hosted <a href="https://github.com/klahr/dash">Dash</a>: a board where you
@@ -17,7 +21,8 @@ queue tasks for Claude Code, review what it did and merge it. The tasks run on c
 connect yourself (“runners”), with your own Claude account. We don't run your code, and we
 aren't responsible for what Claude Code or your runners do; you review and merge the result.</p>
 <p>You need your own Claude account to run tasks, and you must follow
-<a href="https://www.anthropic.com/legal">Anthropic's terms</a> when you do.</p>
+<a href="https://www.anthropic.com/legal">Anthropic's terms</a> when you do. What you pay
+Anthropic is between you and Anthropic: our prices don't include it.</p>
 
 <h2>Your account</h2>
 <ul>
@@ -41,12 +46,79 @@ law or someone's safety stops us.</p>
 only the permission we need to store it, show it to the people you share it with, and back it
 up. The <a href="/privacy">privacy policy</a> says what we keep about you and for how long.</p>
 
-<h2>Paid plans</h2>
-<p>[Delete this section without billing.] Organizations of two or more pay [price] per seat
-per month, billed by Stripe in advance, plus VAT where it applies. You can cancel at any time in
-<strong>Organization → Billing &amp; usage</strong>; the plan runs to the end of the period you paid for.
-[Refunds: say when you give them.] We tell you at least [30] days before a price change takes
-effect.</p>
+<h2>Plans and prices</h2>
+<p>[Delete this section and the next three without billing.]</p>
+<ul>
+<li><strong>Individuals</strong> (a personal workspace, or an organization with one member):
+[free. / [price] per month. You may instead choose <strong>I can't pay right now</strong> and
+keep using the service for free, with nothing locked.]</li>
+<li><strong>Teams</strong> (an organization with two or more members): [price] per member
+(“seat”) per [month], for every member. Seats follow the members: when someone joins or leaves,
+the next invoice charges or credits the difference for the rest of the period.</li>
+<li><strong>Trial:</strong> a team's first subscription starts with a free trial of [14] days.
+You give a card when you start it. If you don't cancel before the trial ends, the subscription
+starts and your card is charged.</li>
+</ul>
+<p>Prices for consumers include VAT. Businesses pay VAT on top where it applies; a business
+in another EU country that gives a valid VAT number pays by reverse charge. [Adjust this to
+the tax setting of your Stripe prices.] Stripe handles the payment; we never see your card.
+Invoices and receipts are in <strong>Organization → Billing &amp; usage → Manage billing</strong>.</p>
+
+<h2>Renewal and cancelling</h2>
+<p>A subscription renews automatically at the end of each period, at the price that holds then,
+until you cancel it. Cancel at any time in <strong>Organization → Billing &amp; usage → Manage
+billing</strong>: the plan runs to the end of the period you paid for, and isn't renewed. We don't
+refund a part of a period, except as the next section says or the law requires.</p>
+<p>We tell you by email at least [30] days before a price change takes effect. If you don't
+accept it, cancel before then.</p>
+
+<h2>If a payment fails</h2>
+<p>Stripe tries again for a while. If a team's subscription isn't paid within [3 days] of a payment
+failing, a trial ending without a card, or a cancellation, the team's board becomes read-only:
+everyone can still read everything, but nothing can be changed and no new tasks run. Nothing is deleted. As soon
+as the subscription is paid again, everything works as before. Individuals are never locked.</p>
+
+<h2>Your right of withdrawal (consumers in the EU)</h2>
+<p>If you are a consumer in the EU, you may withdraw from a paid subscription within 14 days of
+taking it out, without giving a reason. To do so, tell us clearly, for example by email to
+<a href="mailto:[help@example.com]">[help@example.com]</a> or with the form below, before the
+14 days have passed.</p>
+<p>When you subscribe, you ask for the service to start at once. If you then withdraw, we refund
+what you paid, less an amount in proportion to the days you used before you told us. A free trial
+costs nothing. We refund within 14 days of hearing from you, to the card you paid with.</p>
+<p><strong>Model withdrawal form</strong> (fill it in and send it only if you want to withdraw):<br>
+To [legal name], [postal address], [help@example.com]:<br>
+I hereby give notice that I withdraw from my contract for the following service: [service name],
+organization: ______. Ordered on: ______. Name: ______. Email address of the account: ______.
+Date: ______.</p>
+
+<h2>Organizations: processing personal data for you</h2>
+<p>When an organization uses the service, it decides what goes into it, including personal data
+about its members and others (in tasks, chats, attachments). For that content the organization is
+the controller and we are its processor (GDPR article 28), and this section is our data
+processing agreement. We:</p>
+<ul>
+<li>process it only to provide the service as these terms describe, and as the organization's
+owners instruct through the service, unless the law requires otherwise (and then tell you,
+unless the law forbids it);</li>
+<li>make sure everyone who can access it is bound to confidentiality;</li>
+<li>keep it safe: passwords hashed with Argon2id, HTTPS only, two-factor sign-in, access limited to
+the people who run the service, [encrypted backups];</li>
+<li>use only the subprocessors the <a href="/privacy">privacy policy</a> lists, and tell owners by
+email [30] days before adding or replacing one, so they can object or leave;</li>
+<li>help the organization answer requests from people about their data, and with security and
+data protection assessments, as far as we reasonably can;</li>
+<li>tell the organization without undue delay, and within [48 hours], after we learn of a breach
+affecting its data;</li>
+<li>delete the data when the organization or the project is deleted (from backups within
+[7 days]), and let it download its data before then;</li>
+<li>give the information needed to show we follow this section, and allow audits by the
+organization or an auditor it chooses, at its cost, on [30] days' notice.</li>
+</ul>
+<p>The data stays [in the EU/EEA]. [If a subprocessor is outside it, name the basis, e.g. the
+EU–US Data Privacy Framework or the EU's standard contractual clauses.] What the service keeps
+about members' own accounts (to sign them in, to bill) is ours to control: the privacy policy covers
+it.</p>
 
 <h2>Availability</h2>
 <p>We work to keep the service running and your data safe, but we can't promise it will always be
@@ -60,17 +132,19 @@ losses, lost profits or lost data, and our total liability is limited to what yo
 the law doesn't allow to be limited, or your rights as a consumer.</p>
 
 <h2>Ending</h2>
-<p>You can stop at any time by deleting your account in <strong>Account → Profile</strong>. We
-may end the service, or your access to it, with [30] days' notice by email; if we end the whole
-service you will have that time to download your data.</p>
+<p>You can stop at any time by deleting your account in <strong>Account → Profile</strong>; cancel
+a subscription first. We may end the service, or your access to it, with [30] days' notice by
+email; if we end the whole service you will have that time to download your data, and we refund
+what you paid for the time after it ends.</p>
 
 <h2>Changes</h2>
 <p>We may change these terms. We tell you by email at least [30] days before a change that matters
-takes effect; if you don't accept it, delete your account before then.</p>
+takes effect; if you don't accept it, cancel and delete your account before then.</p>
 
 <h2>Law and disputes</h2>
 <p>These terms are governed by the law of [country]. Disputes go to the courts of [city], unless
-the law gives you, as a consumer, the right to use the courts where you live.</p>
+the law gives you, as a consumer, the right to use the courts where you live. Consumers in the EU
+can also bring a complaint to [your national consumer dispute body, e.g. its name and website].</p>
 
 <h2>Contact</h2>
 <p>[Legal name], [postal address], <a href="mailto:[help@example.com]">[help@example.com]</a>.</p>

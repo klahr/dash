@@ -820,7 +820,13 @@ func (a *app) setupHub() {
 		TrialDays:         o.trialDays,
 		Grace:             o.billingGrace,
 		PublicURL:         o.publicURL,
+		TermsURL:          absURL(o.publicURL, apiSrv.Brand.TermsURL),
+		PrivacyURL:        absURL(o.publicURL, apiSrv.Brand.PrivacyURL),
 	})
+	if missing := apiSrv.Brand.MissingLegal(); apiSrv.Billing != nil && len(missing) > 0 {
+		slog.Warn("billing on without terms, privacy policy or contact: publish them before you take payments (docs/privacy.md)",
+			"missing", strings.Join(missing, ", "))
+	}
 	if b := apiSrv.Billing; b != nil {
 		authn.OnMembersChanged, authn.InviteNotice = b.MembersChanged, b.InviteNotice
 		todos.Hold, a.scheduler.Hold = b.Hold, b.Hold

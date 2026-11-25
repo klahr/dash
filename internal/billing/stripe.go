@@ -40,6 +40,22 @@ type CheckoutParams struct {
 	TrialDays  int // 0: no trial
 	SuccessURL string
 	CancelURL  string
+	// TermsURL and PrivacyURL are the hub's terms of service and privacy
+	// policy, absolute (optional). With TermsURL, Checkout asks the
+	// customer to tick that they accept the terms and want the
+	// subscription to start at once, and Stripe records it on the session.
+	TermsURL, PrivacyURL string
+}
+
+// termsMessage is the text beside Checkout's terms checkbox. Asking for the
+// subscription to start at once is what EU consumer law wants before a
+// service starts within the 14 days a consumer may withdraw in.
+func termsMessage(terms, privacy string) string {
+	m := fmt.Sprintf("I accept the [terms of service](%s) and ask for my subscription to start at once.", terms)
+	if privacy != "" {
+		m += fmt.Sprintf(" The [privacy policy](%s) says what is kept about me.", privacy)
+	}
+	return m
 }
 
 // Subscription is what billing needs of a Stripe subscription.
@@ -202,6 +218,12 @@ func (h *HTTPStripe) CreateCheckoutSession(ctx context.Context, p CheckoutParams
 	f.Set("billing_address_collection", "required")
 	f.Set("customer_update[address]", "auto")
 	f.Set("customer_update[name]", "auto")
+	if p.TermsURL != "" {
+		// Stripe also needs a terms of service URL in its Dashboard's
+		// public details for this (docs/billing.md).
+		f.Set("consent_collection[terms_of_service]", "required")
+		f.Set("custom_text[terms_of_service_acceptance][message]", termsMessage(p.TermsURL, p.PrivacyURL))
+	}
 	f.Set("success_url", p.SuccessURL)
 	f.Set("cancel_url", p.CancelURL)
 	var out struct {

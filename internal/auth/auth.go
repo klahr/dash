@@ -377,6 +377,7 @@ func (a *Auth) startSessionVia(w http.ResponseWriter, r *http.Request, uid, org 
 	tok := randomString(32)
 	now := a.now()
 	_ = a.acc.PruneSessions(now)
+	_ = a.acc.PruneUnverified(now)
 	a.ensurePersonal(uid) // before the session picks the org to start in
 	if err := a.acc.CreateSessionVia(sessionKey(tok), uid, org, family, method, now, now.Add(sessionTTL)); err != nil {
 		return err

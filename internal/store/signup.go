@@ -107,6 +107,13 @@ func (a *Accounts) SignUp(email string, now time.Time) (SignupResult, error) {
 	return res, nil
 }
 
+// PruneUnverified deletes signups that were never confirmed and whose links
+// have all expired, so an address isn't kept after its last link expires
+// just because nobody signed up since.
+func (a *Accounts) PruneUnverified(now time.Time) error {
+	return inTx(a.db, func(tx *sql.Tx) error { return deleteStaleUnverified(tx, now) })
+}
+
 // deleteStaleUnverified deletes the accounts that signed up longer ago than
 // a link lasts and have no link that still works (nor any membership).
 func deleteStaleUnverified(tx *sql.Tx, now time.Time) error {

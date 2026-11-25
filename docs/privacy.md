@@ -44,7 +44,26 @@ Set a URL or a file for each, not both. Dash then links all three in every page'
 signup form ("By creating an account, you accept the terms of service …"), and the contact
 address at the end of every email (see [Branding](branding.md)). With
 [open signup](signup.md) on and any of the three missing, Dash logs `open signup on without
-terms, privacy policy or contact` at every start, naming what's missing.
+terms, privacy policy or contact` at every start, naming what's missing. With
+[billing](billing.md) on, it logs `billing on without terms, privacy policy or contact`.
+
+## Before you take payments
+
+With [billing](billing.md) on, check these too:
+
+1. The terms' **Plans and prices**, **Renewal and cancelling**, **If a payment fails** and
+   **Your right of withdrawal** sections match your Stripe prices, the trial
+   (`DASH_BILLING_TRIAL_DAYS`) and the grace period (`DASH_BILLING_GRACE`).
+2. Your legal name, address, company registration and VAT number are in the terms and the
+   privacy policy. EU law asks for them on any site that sells.
+3. The terms' **Organizations: processing personal data for you** section is your data processing
+   agreement (GDPR article 28) with the organizations that pay you. Its list of subprocessors is
+   the privacy policy's **Who else gets it**: keep that list complete.
+4. In Stripe, set the terms of service URL (see [Billing](billing.md#setting-it-up)). Checkout
+   then asks every customer to accept your terms and to start the subscription at once, and
+   Stripe records it.
+5. Keep invoices as long as your accounting law asks (Stripe keeps them), and say how long
+   in the privacy policy.
 
 Everyone can download what Dash keeps about them and delete their own account, and a
 platform admin can delete someone else's. This covers the rights of access, portability and
@@ -143,7 +162,7 @@ Everything is on the hub's own disk, in its data directory (`-data`, by default
 | What                                    | Kept                                                                          |
 |-----------------------------------------|-------------------------------------------------------------------------------|
 | Account: email address, username, password hash (Argon2id), two-factor secret and hashed recovery codes, profile picture, when it was created | until the account is deleted (see [Delete your account](#delete-your-account)) |
-| Unconfirmed signup                      | deleted once its last confirmation link has expired, when the next person signs up |
+| Unconfirmed signup                      | deleted once its last confirmation link has expired (24 hours), at the next sign-in or signup |
 | Confirmation and password reset links   | 24 hours and 1 hour                                                           |
 | Invitations (the invitee's email)       | 7 days                                                                        |
 | Sessions (a hash of the cookie; no IP address or browser) | 7 days                                                      |
@@ -172,12 +191,18 @@ Not stored in the database:
 ## Who else gets data
 
 - **Your email provider** (`DASH_SMTP_*`): the addresses Dash writes to, and the links.
-- **Stripe**, with billing on: the org's name and its owner's email address.
+- **Stripe**, with billing on: the org's name and its owner's email address. Customers give
+  Stripe their card, billing address and VAT number at Checkout, and Stripe records that they
+  accepted the terms.
 - **Google**, with Google sign-in on.
 - **Browser push services** (Google, Mozilla, Apple), for push notifications: encrypted.
 - **Webhooks:** the addresses users add receive their tasks' events.
 - **Anthropic:** the hub never calls it. Runners send prompts, code and attachments to
-  Anthropic through Claude Code, under their owner's own Claude account and terms.
+  Anthropic through Claude Code, under their owner's own Claude account and terms. That
+  includes the short calls the hub asks a user's own runner to make: task titles, summaries,
+  and [spoken summaries](dictation.md#spoken-replies).
+- **The browser's speech service**, for [dictation](dictation.md#privacy): the browser sends
+  the audio, not Dash.
 
 Dash has no analytics or tracking, and loads no fonts or scripts from other sites.
 

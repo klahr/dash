@@ -234,3 +234,25 @@ func TestStaleUnverifiedAccountsAreDeleted(t *testing.T) {
 		t.Fatalf("again: %+v %v", again, err)
 	}
 }
+
+func TestPruneUnverified(t *testing.T) {
+	t.Parallel()
+
+	_, a := openAccounts(t)
+	now := time.Now()
+	if _, err := a.SignUp("old@example.com", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.PruneUnverified(now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Credentials("old@example.com"); err != nil {
+		t.Fatalf("signup with a live link pruned: %v", err)
+	}
+	if err := a.PruneUnverified(now.Add(VerifyTTL + time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Credentials("old@example.com"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stale signup kept: %v", err)
+	}
+}

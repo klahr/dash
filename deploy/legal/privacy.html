@@ -22,9 +22,9 @@ about anything in this policy.</p>
 <table>
 <thead><tr><th>What</th><th>Why</th><th>Legal basis (GDPR art. 6)</th><th>How long</th></tr></thead>
 <tbody>
-<tr><td>Your account: email address, username, password hash, two-factor secret and hashed recovery codes, when it was made</td>
+<tr><td>Your account: email address, username, password hash, two-factor secret and hashed recovery codes, profile picture, when it was made</td>
     <td>to give you an account and let you sign in</td><td>contract (1b)</td><td>until you delete your account</td></tr>
-<tr><td>A signup that was never confirmed</td><td>to finish signing you up</td><td>contract (1b)</td><td>about 48 hours</td></tr>
+<tr><td>A signup that was never confirmed</td><td>to finish signing you up</td><td>steps before a contract (1b)</td><td>deleted once its link has expired (24 hours), at the next sign-in or signup on the service</td></tr>
 <tr><td>Confirmation and password reset links</td><td>to check your email address and reset your password</td><td>contract (1b)</td><td>24 hours and 1 hour</td></tr>
 <tr><td>Invitations: the invitee's email address</td><td>to let someone join an organization</td><td>legitimate interest (1f) of the organization that invites</td><td>7 days</td></tr>
 <tr><td>Sessions: a hash of the sign-in cookie (no IP address or browser)</td><td>to keep you signed in</td><td>contract (1b)</td><td>7 days</td></tr>
@@ -33,21 +33,41 @@ about anything in this policy.</p>
 <tr><td>The sign-in log: Google sign-ins, linking accounts, settings changed, members signed out, with the IP address</td>
     <td>to keep accounts safe and investigate abuse</td><td>legitimate interest (1f): security</td><td>[1 year]</td></tr>
 <tr><td>IP addresses for sign-in lockouts and signup limits</td><td>to stop password guessing and spam</td><td>legitimate interest (1f): security</td><td>in memory only, 15 minutes to 1 hour</td></tr>
+<tr><td>The server's log: the IP address of a lockout or a failed Google sign-in[, and our reverse proxy's access log: IP address, address asked for, browser]</td>
+    <td>to keep the service safe and find faults</td><td>legitimate interest (1f): security</td><td>[14 days]</td></tr>
+<tr><td>Your notification settings, and the summaries you ask for by email</td><td>to tell you what happened, as you chose</td><td>contract (1b)</td><td>until you change them or delete your account</td></tr>
 <tr><td>Push notification subscriptions (the browser's push address and its user agent)</td><td>to send you the notifications you turned on</td><td>consent (1a)</td><td>until you turn them off on that device</td></tr>
 <tr><td>Webhooks you add (the URL) and their last 50 deliveries</td><td>to send your tasks' events where you asked</td><td>contract (1b)</td><td>until you delete them</td></tr>
 <tr><td>Your work: projects, tasks, chats, issues, attachments, drawings, the logs of Claude's runs, with who made them</td>
     <td>this is the service</td><td>contract (1b)</td><td>until you or your organization delete them</td></tr>
-<tr><td>Your own chats with Claude: the general chat and your chat about each project. They are private to you:
+<tr><td>Your own chats with Claude (the general chat and your chat about each project) and your project plans. They are private to you:
     other members and your organization's owners and admins can't see them</td>
     <td>this is the service</td><td>contract (1b)</td><td>until you clear them, leave the organization, it deletes the project, or you delete your account</td></tr>
-<tr><td>Billing: the Stripe customer and subscription ids, the plan and its period</td><td>to charge for paid plans</td><td>contract (1b); legal obligation (1c) for accounting</td><td>while the organization exists; invoices at Stripe for [as long as accounting law requires]</td></tr>
+<tr><td>Billing: the Stripe customer and subscription ids, the plan, its seats and period. Stripe keeps the name, billing address, VAT number, card, invoices and that you accepted the terms at checkout</td>
+    <td>to charge for paid plans and keep the accounts the law requires</td><td>contract (1b); legal obligation (1c) for accounting</td><td>while the organization exists; invoices and payment records for [7 years, as accounting law requires]</td></tr>
 <tr><td>Backups of all of the above</td><td>to recover from a failure</td><td>legitimate interest (1f)</td><td>[7 days]: what you delete is gone from backups after that</td></tr>
 </tbody>
 </table>
 <p>You don't have to give us any of this, but without an email address and a password (or a Google
 account) we can't give you an account.</p>
 <p>We make no decisions about you by automated means alone, and we don't use your data for
-advertising or profiling.</p>
+advertising or profiling. The service isn't meant for children under [16].</p>
+
+<h2>Your organization's content</h2>
+<p>What an organization puts in the service (its projects, tasks, chats and attachments) is the
+organization's. For that content the organization decides what is done with it (it is the
+controller) and we process it for the organization (we are its processor, under the data
+processing terms in our <a href="/terms">terms of service</a>). If you are a member, ask its owners
+about it first; we help them answer. This policy covers what we decide ourselves: your account,
+signing in, security and billing.</p>
+<p>In an organization, the other members see your username, email address, profile picture and
+what you do there. Its owners and admins also manage your membership and can sign you out of it.
+The people who run the service (platform admins) can see every account, to run and support it.</p>
+
+<h2>How we keep it safe</h2>
+<p>Passwords are hashed with Argon2id, and tokens and sign-in cookies are kept only as hashes. The
+service is served over HTTPS only, offers two-factor sign-in, and only the people who run it can
+reach its server. [Backups are encrypted.]</p>
 
 <h2>Where it is</h2>
 <p>Everything above is on our own server at [hosting provider], in [country]. Your code is not:
@@ -55,9 +75,12 @@ it stays on the computers you run tasks on.</p>
 
 <h2>Who else gets it</h2>
 <ul>
-<li><strong>[Mail provider]</strong> sends our emails: it gets your address and the email.</li>
+<li><strong>[Hosting provider]</strong> runs the server the service is on[, and keeps our backups].</li>
+<li><strong>[Mail provider]</strong> sends our emails (confirmation and reset links, and the
+notifications and summaries you turn on): it gets your address and the email.</li>
 <li><strong>Stripe</strong>, if your organization pays for a plan: your organization's name and its
-owner's email address. Stripe keeps the card, billing address and tax id; see
+owner's email address. At checkout you give Stripe the card, billing address and VAT number; it
+handles the payment, checks it for fraud, and keeps the invoices. See
 <a href="https://stripe.com/privacy">Stripe's privacy policy</a>.</li>
 <li><strong>Google</strong>, if you sign in with Google.</li>
 <li><strong>Your browser's push service</strong> (Google, Mozilla or Apple), if you turn on push
@@ -65,7 +88,11 @@ notifications. What it carries is encrypted.</li>
 <li><strong>The webhooks you add</strong> get your tasks' events.</li>
 <li><strong>Anthropic</strong>: the service itself never sends your data to Anthropic. The computers
 you run tasks on send prompts and code to Anthropic through Claude Code, under your own Claude
-account and Anthropic's terms.</li>
+account and Anthropic's terms. That includes what the service asks your own runner to do for you:
+naming and summarising tasks, and the short spoken summaries if you turn them on.</li>
+<li><strong>Your browser's speech recognition</strong>, if you turn on dictation or voice commands:
+the browser does it, not the service. Chrome sends the audio to Google; Safari may do it on the
+device. We only get the text you send.</li>
 </ul>
 <p>[If any of these are outside the EU/EEA, say so and on what basis, e.g. “Stripe and Google are in
 the United States and certified under the EU–US Data Privacy Framework.”]</p>

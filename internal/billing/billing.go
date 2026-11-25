@@ -57,6 +57,9 @@ type Config struct {
 	TrialDays       int // a first subscription's trial; 0 = none
 	Grace           time.Duration
 	PublicURL       string // where Checkout and the portal send people back to
+	// TermsURL and PrivacyURL are the published terms and privacy policy,
+	// absolute (optional): Checkout asks customers to accept the terms.
+	TermsURL, PrivacyURL string
 }
 
 // Configured reports whether any of Stripe's settings are present: if none
@@ -458,6 +461,7 @@ func (s *Service) Checkout(ctx context.Context, org int64) (string, error) {
 		OrgID: org, Customer: cust, Price: price, Quantity: n, TrialDays: trial,
 		SuccessURL: s.cfg.PublicURL + "/?billing=done",
 		CancelURL:  s.cfg.PublicURL + "/?billing=canceled",
+		TermsURL:   s.cfg.TermsURL, PrivacyURL: s.cfg.PrivacyURL,
 	})
 }
 

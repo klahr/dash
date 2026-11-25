@@ -33,7 +33,14 @@ show the amount.
    Stripe.
 3. Turn on the **Customer portal** (Settings → Billing → Customer portal): let customers update
    payment methods, see invoices and cancel. Leave "change quantity" off: Dash sets the seats.
-4. Add a **webhook endpoint** at `https://<your Dash>/api/billing/webhook` (Developers →
+4. Publish your terms of service and privacy policy (see [Your data, terms and
+   privacy](privacy.md#before-you-take-payments)), and set the terms' URL in Stripe too
+   (Settings → Business → Public details → **Terms of service**). With terms set in Dash
+   (`DASH_TERMS_URL` or `DASH_TERMS_FILE`), Checkout shows a checkbox: "I accept the terms of
+   service and ask for my subscription to start at once", with links to your terms and privacy
+   policy. Customers must tick it to pay, and Stripe records it on the Checkout session. Without
+   the URL in Stripe, Stripe refuses to open Checkout.
+5. Add a **webhook endpoint** at `https://<your Dash>/api/billing/webhook` (Developers →
    Webhooks) with these events:
    - `checkout.session.completed`
    - `customer.subscription.created`, `customer.subscription.updated`,
@@ -41,7 +48,7 @@ show the amount.
    - optionally `customer.subscription.paused`, `customer.subscription.resumed`
 
    Note its **signing secret**, `whsec_…`.
-5. Configure Dash and restart:
+6. Configure Dash and restart:
 
 | Variable                  | Flag                     | What                                                        |
 |---------------------------|--------------------------|-------------------------------------------------------------|

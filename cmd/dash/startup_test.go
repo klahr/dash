@@ -9,6 +9,19 @@ import (
 	"testing"
 )
 
+// Stripe Checkout links the terms the hub serves itself by its public URL.
+func TestAbsURL(t *testing.T) {
+	for _, c := range []struct{ pub, u, want string }{
+		{"https://dash.example.com/", "/terms", "https://dash.example.com/terms"},
+		{"https://dash.example.com", "https://example.com/terms", "https://example.com/terms"},
+		{"https://dash.example.com", "", ""},
+	} {
+		if got := absURL(c.pub, c.u); got != c.want {
+			t.Errorf("absURL(%q, %q) = %q, want %q", c.pub, c.u, got, c.want)
+		}
+	}
+}
+
 // A second hub on a busy port says what to do, and stops before it makes
 // a data directory or an account.
 func TestBusyPort(t *testing.T) {
