@@ -1,4 +1,4 @@
-import { $, $$, avatar, dateTimeText, fill, h, ib, ico } from "./dom.js";
+import { $, $$, avatar, dateText, dateTimeText, fill, h, ib, ico } from "./dom.js";
 import { api } from "./api.js";
 import { EASE, ask, attempt, busy, copy, fail, openSheet, reduceMotion, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
@@ -1356,7 +1356,7 @@ function renderCard() {
   fill($("#pd-meta"),
     h("span", { class: "pl-col-tag" }, COLUMN_TITLE[c.column] || c.column),
     c.status ? statusEl(c.status) : null,
-    c.created_at ? h("span", { title: dateTimeText(c.created_at) }, `added ${new Date(c.created_at).toLocaleDateString()}`) : null);
+    c.created_at ? h("span", { title: dateTimeText(c.created_at) }, `added ${dateText(c.created_at)}`) : null);
   const started = (c.links || []).length > 0;
   fill($("#pd-actions"),
     ib({ type: "button", class: `btn small ${started ? "" : "primary"}`, title: "Make a task or a goal in a project for this card", onclick: attempt(() => startSheet(c)) }, "play", "Start…"),
@@ -1367,8 +1367,20 @@ function renderCard() {
   const body = $("#pd-body");
   if (pl.error) { fill(body, h("p", { class: "error-note" }, pl.error)); return; }
 
+  const desc = descriptionEl(c);
+  desc.id = "pd-desc";
+  const keep = body.scrollTop;
+  fill(body, renameEl(c), suggestEl(c), factsEl(c),
+    h("section", { class: "pl-section" }, h("h3", {}, h("label", { for: "pd-desc" }, "Description")), desc),
+    filesSection(c), depsSection(c), workSection(c), commentsSection(c), dangerEl(c));
+  body.scrollTop = keep;
+}
+
+// factsEl is the card's fields: board, column, priority, target, project,
+// members and tags.
+function factsEl(c) {
   const sel = (opts, value, onchange, label) => h("select", { "aria-label": label, onchange }, ...opts.map(([v, t]) => h("option", { value: v, selected: v === value }, t)));
-  const facts = h("div", { class: "pl-fields" },
+  return h("div", { class: "pl-fields" },
     pl.boards.length > 1 ? field("Board", sel(pl.boards.map((b) => [b.id, b.name]), c.board_id, (e) => moveToBoard(c, e.target.value).catch(fail), "Board")) : null,
     field("Column", sel(COLUMNS.map((x) => [x.key, x.title]), c.column, (e) => moveCard(c.id, e.target.value, 1 << 20).catch(fail), "Column")),
     field("Priority", sel([["", "None"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]], c.priority || "", (e) => patchCard({ priority: e.target.value })().catch(fail), "Priority")),
@@ -1378,35 +1390,37 @@ function renderCard() {
       (e) => patchCard({ project: e.target.value })().catch(fail), "Project")),
     membersField(c),
     tagsField(c));
+}
 
-  const suggest = c.status?.suggest_done
-    ? h("div", { class: "pl-suggest-box" },
-      h("p", {}, "Everything linked is done."),
-      ib({ type: "button", class: "btn small primary", onclick: attempt((e) => busy(e.currentTarget, () => moveCard(c.id, "done", 0))) }, "check", "Move to Done"))
-    : null;
+// suggestEl offers to move the card to Done once everything linked is done.
+function suggestEl(c) {
+  if (!c.status?.suggest_done) return null;
+  return h("div", { class: "pl-suggest-box" },
+    h("p", {}, "Everything linked is done."),
+    ib({ type: "button", class: "btn small primary", onclick: attempt((e) => busy(e.currentTarget, () => moveCard(c.id, "done", 0))) }, "check", "Move to Done"));
+}
 
-  // Rename: the title in a box, above the rest.
-  let rename = null;
-  if (pl.editing) {
-    const t = h("input", { id: "pd-edit-title", value: c.title, maxlength: 200, autocomplete: "off", "aria-label": "Title" });
-    const save = attempt((e) => busy(e.currentTarget, async () => {
-      await saveText(c.id, "title", t.value, c.version, c.title || ""); pl.editing = false; renderCard();
-    }));
-    t.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); save({ currentTarget: t }); }
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); pl.editing = false; renderCard(); }
-    });
-    rename = h("div", { class: "pl-edit" }, field("Title", t),
-      h("div", { class: "pl-edit-actions" },
-        ib({ type: "button", class: "btn small", onclick: () => { pl.editing = false; renderCard(); } }, "x", "Cancel"),
-        ib({ type: "button", class: "btn small primary", onclick: save }, "check", "Save")));
-  }
-  const desc = descriptionEl(c);
-  desc.id = "pd-desc";
+// renameEl is the title in a box, above the rest, while renaming.
+function renameEl(c) {
+  if (!pl.editing) return null;
+  const t = h("input", { id: "pd-edit-title", value: c.title, maxlength: 200, autocomplete: "off", "aria-label": "Title" });
+  const save = attempt((e) => busy(e.currentTarget, async () => {
+    await saveText(c.id, "title", t.value, c.version, c.title || ""); pl.editing = false; renderCard();
+  }));
+  t.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); save({ currentTarget: t }); }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); pl.editing = false; renderCard(); }
+  });
+  return h("div", { class: "pl-edit" }, field("Title", t),
+    h("div", { class: "pl-edit-actions" },
+      ib({ type: "button", class: "btn small", onclick: () => { pl.editing = false; renderCard(); } }, "x", "Cancel"),
+      ib({ type: "button", class: "btn small primary", onclick: save }, "check", "Save")));
+}
 
+// workSection lists the tasks and goals started for the card.
+function workSection(c) {
   const links = c.links || [];
-  const deps = depsSection(c);
-  const work = h("section", { class: "pl-section", "aria-labelledby": "pd-work" },
+  return h("section", { class: "pl-section", "aria-labelledby": "pd-work" },
     h("h3", { id: "pd-work" }, "Work"),
     links.length
       ? h("ul", { class: "pl-links" }, ...links.map((l) => h("li", { class: `pl-link t-${l.tone}` },
@@ -1420,11 +1434,14 @@ function renderCard() {
         !pl.planner && l.id ? ib({ type: "button", class: "icon-btn small", "aria-label": `Unlink ${l.title}`, title: "Unlink",
           onclick: attempt((e) => busy(e.currentTarget, () => unlink(c, l))) }, "x") : null)))
       : h("p", { class: "hint" }, "Nothing started yet. Start makes a task or a goal for this card in a project."));
+}
 
+// commentsSection is the card's discussion and the box to add a comment.
+function commentsSection(c) {
   const comments = c.discussion || [];
   const me = pl.hooks.me?.();
   const box = h("textarea", { rows: 3, placeholder: "Add a comment", "aria-label": "Comment", maxlength: 10000, onpaste: pasteFiles });
-  const discussion = h("section", { class: "pl-section", "aria-labelledby": "pd-comments" },
+  return h("section", { class: "pl-section", "aria-labelledby": "pd-comments" },
     h("h3", { id: "pd-comments" }, "Comments"),
     comments.length ? h("ol", { class: "pl-comments-list" }, ...comments.map((m) => h("li", { class: "pl-comment" },
       h("div", { class: "pl-comment-head" },
@@ -1443,10 +1460,14 @@ function renderCard() {
     }) }, box, h("div", { class: "pl-comment-actions" },
       dictation(box, { place: () => {}, cls: "icon-btn small", send: () => !!box.value.trim() && (box.form.requestSubmit(), true) }),
       ib({ type: "submit", class: "btn small" }, "comment", "Comment"))));
+}
 
-  // Its creator, its owner or an admin deletes a card (the server checks too).
-  const mayDelete = me && (me.admin || me.id === c.created_by || me.id === c.owner);
-  const danger = mayDelete ? h("div", { class: "pl-danger" },
+// dangerEl is the card's Delete button: its creator, its owner or an admin
+// deletes a card (the server checks too).
+function dangerEl(c) {
+  const me = pl.hooks.me?.();
+  if (!me || !(me.admin || me.id === c.created_by || me.id === c.owner)) return null;
+  return h("div", { class: "pl-danger" },
     ib({ type: "button", class: "btn small danger", onclick: attempt(async () => {
       if (!await ask({ title: "Delete this card?", body: deleteCardText(c), ok: "Delete", danger: true })) return;
       await call("DELETE", cardAPI(c.id));
@@ -1454,11 +1475,7 @@ function renderCard() {
       closeCard();
       renderBoard();
       toast("Card deleted");
-    }) }, "trash", "Delete card…")) : null;
-
-  const keep = body.scrollTop;
-  fill(body, rename, suggest, facts, h("section", { class: "pl-section" }, h("h3", {}, h("label", { for: "pd-desc" }, "Description")), desc), filesSection(c), deps, work, discussion, danger);
-  body.scrollTop = keep;
+    }) }, "trash", "Delete card…"));
 }
 
 // deleteCardText is the confirmation for deleting c: it names the work that
