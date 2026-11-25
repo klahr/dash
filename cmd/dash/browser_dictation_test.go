@@ -52,10 +52,15 @@ func TestBrowserDictation(t *testing.T) {
 	b.until("turn it on", `localStorage.getItem("dash.dictation") === "1"`,
 		chromedp.Click(chromedp.CSS(`#account-sheet [data-section=voice] input[name=dictation] + span`)))
 	b.until("close Account", `!document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
+	// Closing goes Back (router.js), and its popstate comes a moment later: a
+	// sheet opened before it lands would be shut by it.
+	b.waitJS("the URL without the sheet", `!new URLSearchParams(location.search).has("sheet")`)
 	// A link to the old Spoken replies section (merged into Voice) opens Voice.
+	// Followed again on each poll while the sheet is shut, in case anything
+	// still closed it.
 	b.waitJS("an old link opens Voice", `(() => {
-		if (!window.e2eOldLink) { window.e2eOldLink = true; const a = document.createElement("a"); a.dataset.account = "speech"; document.body.append(a); a.click(); a.remove(); }
-		return document.querySelector("#account-sheet").open && document.querySelector('#account-sheet [data-section=voice]').classList.contains("current");
+		if (!document.querySelector("#account-sheet").open) { const a = document.createElement("a"); a.dataset.account = "speech"; document.body.append(a); a.click(); a.remove(); return false; }
+		return document.querySelector('#account-sheet [data-section=voice]').classList.contains("current");
 	})()`)
 	b.waitJS("its URL names Voice", `new URLSearchParams(location.search).get("section") === "voice"`)
 	b.until("close Account again", `!document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
