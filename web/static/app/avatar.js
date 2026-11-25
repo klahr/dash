@@ -1,13 +1,13 @@
-import { $, avatar, avatarURL, fillAvatar, h } from "./dom.js";
+import { $, avatar, fillAvatar, h } from "./dom.js";
 import { api, request } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { accountSection } from "./accountsheet.js";
 
 // ------------------------------------------------------------------ profile pictures
-// avatarURL, fillAvatar and avatar are in dom.js (Planning's own page uses
-// them too).
-export { avatar, avatarURL, fillAvatar };
+// avatar, avatarURL and fillAvatar are in dom.js (Planning's own page uses
+// them too); avatar is re-exported here for detail.js and account.js.
+export { avatar };
 
 // showOwnAvatar redraws the signed-in user's picture: the account menu and
 // the Account sheet.
