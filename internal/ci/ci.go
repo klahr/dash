@@ -88,6 +88,7 @@ type Watcher struct {
 	Rand func(d time.Duration) time.Duration
 
 	relMu    sync.Mutex // one release update at a time (settleRelease)
+	ended    func(projectID, tag string)
 	mu       sync.Mutex
 	kicked   map[string]bool // projects with a refresh a delivery asked for, soon
 	status   map[string]Status

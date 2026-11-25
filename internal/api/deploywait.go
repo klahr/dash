@@ -6,8 +6,10 @@ package api
 // model.Environment.WaitForBuild), so it doesn't deploy before the release
 // workflow has published what it deploys. The tag's deploy is recorded at
 // once, waiting (model.DeployWaitingBuild), which the queue doesn't run.
-// Every so often the waiting deploys look at their tag's build, as the CI
-// watcher keeps it (ci.Watcher.ReleaseBuild, saved in the store): once it
+// The waiting deploys look at their tag's build, as the CI watcher keeps it
+// (ci.Watcher.ReleaseBuild, saved in the store), as soon as the watcher
+// saves it ended (ci.Watcher.OnReleaseEnded: a webhook delivery or a poll
+// learned it), and every so often all the same (buildWaitEvery): once it
 // passed, the deploy goes on as any deploy does (the requirements, the
 // freezes, an approval, the queue); if it failed, none ran, or it took too
 // long, the deploy fails with why, and so is notified like a failed deploy.
@@ -43,11 +45,26 @@ var (
 	waitBuildFor = 6 * time.Hour
 )
 
+// buildWaitSlow is how often a project's waiting deploys look at their
+// build while its webhook works: the watcher tells them when it ends, so
+// this is only a safety net (and catches the time limits).
+var buildWaitSlow = 3 * time.Minute
+
+// buildWaitPoll is how often the ticker looks for waiting deploys due.
 func (s *Server) buildWaitPoll() time.Duration {
 	if s.BuildWaitPoll > 0 {
 		return s.BuildWaitPoll
 	}
 	return 15 * time.Second
+}
+
+// buildWaitEvery is how often project projectID's waiting deploys look at
+// their build: buildWaitPoll, or buildWaitSlow while its webhook works.
+func (s *Server) buildWaitEvery(projectID string) time.Duration {
+	if s.CI.HookActive(projectID) {
+		return max(buildWaitSlow, s.buildWaitPoll())
+	}
+	return s.buildWaitPoll()
 }
 
 // waitForBuild records the deploy of release tag (on commit) to e of p,
@@ -63,13 +80,17 @@ func (s *Server) waitForBuild(p model.Project, e model.Environment, commit, tag 
 	return d, true
 }
 
-// watchBuildWaits looks at the waiting deploys every buildWaitPoll until
-// ctx ends.
+// watchBuildWaits looks at the waiting deploys until ctx ends: those of
+// each project every buildWaitEvery, and those of a tag as soon as the CI
+// watcher saves the tag's build ended.
 func (s *Server) watchBuildWaits(ctx context.Context) {
+	if s.CI != nil {
+		s.CI.OnReleaseEnded(s.releaseBuildEnded)
+	}
 	t := time.NewTicker(s.buildWaitPoll())
 	defer t.Stop()
 	for {
-		s.checkBuildWaits(time.Now())
+		s.pollBuildWaits(time.Now())
 		select {
 		case <-ctx.Done():
 			return
@@ -89,11 +110,49 @@ func (s *Server) releaseBuildOf(projectID, tag string) (model.ReleaseBuild, erro
 // checkBuildWaits moves each deploy waiting for its release build on, as of
 // now: on to the queue when the build passed, failed when it can't pass.
 func (s *Server) checkBuildWaits(now time.Time) {
+	s.checkWaits(now, "", nil)
+}
+
+// releaseBuildEnded moves the deploys of project projectID waiting for
+// tag's release build on at once: the CI watcher saved it ended. Deploys
+// of other tags and projects are left to the ticker.
+func (s *Server) releaseBuildEnded(projectID, tag string) {
+	s.checkWaits(time.Now(), projectID, func(d model.Deploy) bool { return cmp.Or(d.Tag, d.TriggerRef) == tag })
+}
+
+// pollBuildWaits is the ticker's look, as of now, at the waiting deploys of
+// each project due (see buildWaitEvery).
+func (s *Server) pollBuildWaits(now time.Time) {
+	due := map[string]bool{} // checkWaits holds s.buildWaits: buildWaitLast is ours
+	s.checkWaits(now, "", func(d model.Deploy) bool {
+		ok, seen := due[d.ProjectID]
+		if !seen {
+			last, every := s.buildWaitLast[d.ProjectID], s.buildWaitEvery(d.ProjectID)
+			// Half a tick early still counts: the ticker isn't exact.
+			ok = last.IsZero() || now.Add(s.buildWaitPoll()/2).Sub(last) >= every
+			due[d.ProjectID] = ok
+			if ok {
+				if s.buildWaitLast == nil {
+					s.buildWaitLast = map[string]time.Time{}
+				}
+				s.buildWaitLast[d.ProjectID] = now
+			}
+		}
+		return ok
+	})
+}
+
+// checkWaits is the one look at the waiting deploys that the ticker and
+// the CI watcher's word share: each of project projectID ("": any) that
+// match takes (nil: all) moves on, as of now. One look runs at a time,
+// and each move is made only if the deploy still waits as the store has
+// it, so two looks at the same build move a deploy once.
+func (s *Server) checkWaits(now time.Time, projectID string, match func(model.Deploy) bool) {
 	s.buildWaits.Lock()
 	defer s.buildWaits.Unlock()
-	all := s.Store.ListDeploys("", "")
+	all := s.Store.ListDeploys(projectID, "")
 	for _, d := range all {
-		if d.Status != model.DeployWaitingBuild {
+		if d.Status != model.DeployWaitingBuild || match != nil && !match(d) {
 			continue
 		}
 		p, err := s.deployProject(d.ProjectID)

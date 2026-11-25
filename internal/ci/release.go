@@ -143,7 +143,9 @@ func (w *Watcher) follow(rel Release) {
 	}()
 }
 
-// save stores rel's build, stamped now.
+// save stores rel's build, stamped now. Once it ended (published, failed,
+// no_build), whoever OnReleaseEnded asked is told, whichever path (a poll
+// or a webhook delivery) learned it.
 func (w *Watcher) save(rel Release) {
 	if w.Store == nil {
 		return
@@ -151,7 +153,37 @@ func (w *Watcher) save(rel Release) {
 	rel.Updated = time.Now()
 	if err := w.Store.PutReleaseBuild(rel); err != nil {
 		slog.Debug("save release build", "project", rel.ProjectID, "tag", rel.Tag, "err", err)
+		return
 	}
+	if rel.State == ReleaseBuilding {
+		return
+	}
+	w.mu.Lock()
+	f := w.ended
+	w.mu.Unlock()
+	if f != nil {
+		// Not here: save may run under relMu, and f may take a while.
+		go f(rel.ProjectID, rel.Tag)
+	}
+}
+
+// OnReleaseEnded has f called (in its own goroutine) each time a release
+// tag's build is saved as ended: the deploys waiting for it go on at once
+// (see api's deploywait.go). f may be called more than once for a build.
+func (w *Watcher) OnReleaseEnded(f func(projectID, tag string)) {
+	w.mu.Lock()
+	w.ended = f
+	w.mu.Unlock()
+}
+
+// HookActive reports whether project projectID's webhook works, so its
+// builds are polled only as a safety net.
+func (w *Watcher) HookActive(projectID string) bool {
+	if w == nil || w.Hooks == nil || w.Store == nil {
+		return false
+	}
+	p, err := w.Store.GetProject(projectID)
+	return err == nil && w.hookActive(p)
 }
 
 // Resume shows each project's newest saved release again, and follows

@@ -503,3 +503,39 @@ func TestRefreshKeepsHookStatus(t *testing.T) {
 		t.Fatalf("hook: %+v", st.Hook)
 	}
 }
+
+// A release build saved as ended, here by a webhook delivery, tells
+// OnReleaseEnded's callback at once; one still building doesn't.
+func TestReleaseEndedCallback(t *testing.T) {
+	releaseEvery = time.Hour // nothing polls by itself
+	w, h, gh, p, _ := newHookWatcher(t)
+	ended := make(chan string, 4)
+	w.OnReleaseEnded(func(projectID, tag string) { ended <- projectID + " " + tag })
+	h.Check(context.Background())
+	secret := secretOf(t, h, "o/r")
+	w.WatchRelease(p.ID, "v1.0.0", "ccc")
+	deliver := func() {
+		t.Helper()
+		body := runPayload("o/r", 31, "v1.0.0")
+		if err := h.Deliver("workflow_run", sign(secret, body), body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gh.runs[31] = gitops.Run{ID: 31, Workflow: "Release", Status: "in_progress", SHA: "ccc", Branch: "v1.0.0", Event: "push"}
+	deliver()
+	select {
+	case got := <-ended:
+		t.Fatalf("told while building: %s", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+	gh.runs[31] = gitops.Run{ID: 31, Workflow: "Release", Status: "completed", Conclusion: "success", SHA: "ccc", Branch: "v1.0.0", Event: "push"}
+	deliver()
+	select {
+	case got := <-ended:
+		if got != p.ID+" v1.0.0" {
+			t.Fatalf("told %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("not told the build ended")
+	}
+}

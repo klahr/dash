@@ -167,9 +167,11 @@ type Server struct {
 	EnvDir     string
 	DeployPoll time.Duration
 	// BuildWaitPoll is how often the deploys waiting for their release
-	// build look at it again (default 15s; see deploywait.go).
+	// build look at it again (default 15s; slower while the project's
+	// webhook works; see deploywait.go).
 	BuildWaitPoll time.Duration
-	buildWaits    sync.Mutex // one look at the waiting deploys at a time
+	buildWaits    sync.Mutex           // one look at the waiting deploys at a time
+	buildWaitLast map[string]time.Time // project ID → the ticker's last look (under buildWaits)
 	// deployRuns are the deploys running on this computer; deploys runs
 	// each environment's queue (on a hub, or a Dash that isn't one).
 	deployRuns  deploy.Manager

@@ -191,7 +191,10 @@ the deploy needs (an image, a package), the deploy can start before it is there.
 3. Tick **Wait for the release build before deploying**. It is off by default.
 
 Then a release tag's deploy shows as **Waiting for build** on the environment's card and in the
-list. Dash looks at the tag's GitHub Actions runs every 15 seconds:
+list. The deploy goes on, or fails, as soon as Dash learns that the tag's GitHub Actions runs
+ended. With a [GitHub webhook](github-webhooks.md) that is within seconds of the build ending.
+Dash also looks at waiting deploys every 15 seconds, or every 3 minutes while the project's webhook
+works:
 
 - When they all pass, the deploy goes on as any deploy: the requirements, the freezes, an approval,
   then the queue.

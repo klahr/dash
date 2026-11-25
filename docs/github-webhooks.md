@@ -53,6 +53,8 @@ cancelled runs:
 
 - A release that is building is checked every 3 minutes instead of every 15 seconds.
 - A tag that no workflow started for is still marked as such after 3 minutes.
+- A deploy [waiting for the release build](deploys.md#wait-for-the-release-build) starts as soon
+  as the build passes. Dash checks waiting deploys every 3 minutes instead of every 15 seconds.
 - A building release or a running build no longer makes the project poll every minute.
 
 GitHub sends nothing between builds. When a webhook has been quiet for an hour, Dash asks GitHub
