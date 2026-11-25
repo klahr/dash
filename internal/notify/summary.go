@@ -2,9 +2,7 @@ package notify
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -24,6 +22,7 @@ import (
 	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/signedtok"
 )
 
 // A user's daily or weekly summary (Account → Notifications) of what
@@ -718,41 +717,28 @@ func upperFirst(s string) string {
 // ErrUnsubscribeToken covers unknown and tampered unsubscribe tokens.
 var ErrUnsubscribeToken = errors.New("this link isn't valid")
 
-func (s *Summaries) sig(msg string) []byte {
-	m := hmac.New(sha256.New, s.Key)
-	m.Write([]byte("unsubscribe." + msg))
-	return m.Sum(nil)
-}
+// unsubscribePurpose keeps the MAC input of links already sent:
+// "unsubscribe." + payload.
+const unsubscribePurpose = "unsubscribe"
 
 // UnsubscribeToken lets its bearer turn user's summary in org off. It
 // doesn't expire: it is in emails people keep.
 func (s *Summaries) UnsubscribeToken(user, org int64) string {
-	msg := strconv.FormatInt(user, 10) + "." + strconv.FormatInt(org, 10)
-	enc := base64.RawURLEncoding
-	return enc.EncodeToString([]byte(msg)) + "." + enc.EncodeToString(s.sig(msg))
+	return signedtok.Seal(s.Key, unsubscribePurpose, strconv.FormatInt(user, 10)+"."+strconv.FormatInt(org, 10))
 }
 
 // ParseUnsubscribe checks a token and returns whose summary it turns off.
 func (s *Summaries) ParseUnsubscribe(tok string) (user, org int64, err error) {
-	if len(s.Key) == 0 {
+	msg, err := signedtok.Open(s.Key, unsubscribePurpose, tok)
+	if err != nil {
 		return 0, 0, ErrUnsubscribeToken
 	}
-	enc := base64.RawURLEncoding
-	m, sg, ok := strings.Cut(tok, ".")
+	us, os, ok := strings.Cut(msg, ".")
 	if !ok {
 		return 0, 0, ErrUnsubscribeToken
 	}
-	msg, err1 := enc.DecodeString(m)
-	sig, err2 := enc.DecodeString(sg)
-	if err1 != nil || err2 != nil || !hmac.Equal(sig, s.sig(string(msg))) {
-		return 0, 0, ErrUnsubscribeToken
-	}
-	us, os, ok := strings.Cut(string(msg), ".")
-	if !ok {
-		return 0, 0, ErrUnsubscribeToken
-	}
-	user, err1 = strconv.ParseInt(us, 10, 64)
-	org, err2 = strconv.ParseInt(os, 10, 64)
+	user, err1 := strconv.ParseInt(us, 10, 64)
+	org, err2 := strconv.ParseInt(os, 10, 64)
 	if err1 != nil || err2 != nil || user <= 0 || org <= 0 {
 		return 0, 0, ErrUnsubscribeToken
 	}

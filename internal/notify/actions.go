@@ -1,16 +1,15 @@
 package notify
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/klahr/dash/internal/signedtok"
 )
 
 // ActionPath is where ntfy's Approve/Deny buttons post: ActionPath+<token>.
@@ -50,33 +49,19 @@ func (a *Actions) now() time.Time {
 	return time.Now()
 }
 
-func (a *Actions) sig(msg string) []byte {
-	m := hmac.New(sha256.New, a.key)
-	m.Write([]byte(msg))
-	return m.Sum(nil)
-}
-
 // Token lets its bearer give decision ("allow" or "deny") on permission
 // request id until exp.
 func (a *Actions) Token(id, decision string, exp time.Time) string {
-	msg := id + "." + decision + "." + strconv.FormatInt(exp.Unix(), 10)
-	enc := base64.RawURLEncoding
-	return enc.EncodeToString([]byte(msg)) + "." + enc.EncodeToString(a.sig(msg))
+	return signedtok.Seal(a.key, "action", id+"."+decision+"."+strconv.FormatInt(exp.Unix(), 10))
 }
 
 // Parse checks a token and returns what it allows.
 func (a *Actions) Parse(tok string) (id, decision string, err error) {
-	enc := base64.RawURLEncoding
-	m, s, ok := strings.Cut(tok, ".")
-	if !ok {
+	msg, err := signedtok.Open(a.key, "action", tok)
+	if err != nil {
 		return "", "", ErrActionToken
 	}
-	msg, err1 := enc.DecodeString(m)
-	sig, err2 := enc.DecodeString(s)
-	if err1 != nil || err2 != nil || !hmac.Equal(sig, a.sig(string(msg))) {
-		return "", "", ErrActionToken
-	}
-	parts := strings.Split(string(msg), ".")
+	parts := strings.Split(msg, ".")
 	if len(parts) != 3 || (parts[1] != "allow" && parts[1] != "deny") {
 		return "", "", ErrActionToken
 	}

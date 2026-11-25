@@ -3,9 +3,6 @@ package auth
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"html/template"
 	"log/slog"
@@ -18,6 +15,7 @@ import (
 	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/localpath"
 	"github.com/klahr/dash/internal/orgdomain"
+	"github.com/klahr/dash/internal/signedtok"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -460,29 +458,22 @@ type handoff struct {
 
 var errHandoff = errors.New("invalid or expired handoff token")
 
-func (a *Auth) signHandoff(payload string) string {
-	m := hmac.New(sha256.New, a.handoffKey)
-	m.Write([]byte(payload))
-	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
-}
-
 // newHandoff makes a token for h, good for HandoffTTL.
 func (a *Auth) newHandoff(h handoff) string {
 	h.Nonce = randomString(16)
 	h.Expires = a.now().Add(HandoffTTL)
 	payload := strings.Join([]string{"v1", strconv.FormatInt(h.User, 10), strconv.FormatInt(h.Org, 10), h.Slug, h.Family,
 		strconv.FormatInt(h.Expires.Unix(), 10), h.Nonce}, "|")
-	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + a.signHandoff(payload)
+	return signedtok.Seal(a.handoffKey, "handoff", payload)
 }
 
 // takeHandoff checks a token for slug's host and spends it: each works once.
 func (a *Auth) takeHandoff(tok, slug string) (handoff, error) {
-	p64, sig, ok := strings.Cut(tok, ".")
-	pb, err := base64.RawURLEncoding.DecodeString(p64)
-	if !ok || err != nil || !hmac.Equal([]byte(sig), []byte(a.signHandoff(string(pb)))) {
+	payload, err := signedtok.Open(a.handoffKey, "handoff", tok)
+	if err != nil {
 		return handoff{}, errHandoff
 	}
-	f := strings.Split(string(pb), "|")
+	f := strings.Split(payload, "|")
 	if len(f) != 7 || f[0] != "v1" {
 		return handoff{}, errHandoff
 	}
