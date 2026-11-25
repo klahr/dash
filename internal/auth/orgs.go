@@ -71,6 +71,7 @@ func (a *Auth) Routes(mux Mux) {
 	a.twoFactorRoutes(mux)
 	a.signupRoutes(mux)
 	a.googleRoutes(mux)
+	mux.HandleFunc("GET "+BillingReturnPath, a.billingReturn)
 	a.ssoRoutes(mux)
 	a.erasureRoutes(mux)
 	a.avatarRoutes(mux)

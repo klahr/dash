@@ -23,6 +23,7 @@ type fakeStripe struct {
 	customers []CustomerParams
 	checkouts []CheckoutParams
 	portals   []string
+	returns   []string // the portal sessions' return URLs
 	subs      map[string]Subscription
 	updates   []string // "sub=quantity"
 	fail      error
@@ -51,6 +52,7 @@ func (f *fakeStripe) CreatePortalSession(_ context.Context, customer, returnURL 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.portals = append(f.portals, customer)
+	f.returns = append(f.returns, returnURL)
 	return "https://portal.test/" + customer, nil
 }
 
@@ -333,11 +335,14 @@ func TestCheckoutAndPortal(t *testing.T) {
 	if c.Customer != "cus_1" || c.Price != "price_seat" || c.Quantity != 2 || c.TrialDays != 14 || c.OrgID != f.team {
 		t.Errorf("checkout: %+v", c)
 	}
-	if !strings.HasPrefix(c.SuccessURL, "https://dash.test/") || !strings.HasPrefix(c.CancelURL, "https://dash.test/") {
-		t.Errorf("checkout returns elsewhere than the public URL: %+v", c)
+	if c.SuccessURL != "https://dash.test/billing/return?to=done" || c.CancelURL != "https://dash.test/billing/return?to=canceled" {
+		t.Errorf("checkout returns elsewhere than the public URL's return hop: %+v", c)
 	}
 	if url, err := f.b.Portal(context.Background(), f.team); err != nil || url != "https://portal.test/cus_1" {
 		t.Errorf("portal: %q %v", url, err)
+	}
+	if r := f.fake.returns; len(r) != 1 || r[0] != "https://dash.test/billing/return?to=portal" {
+		t.Errorf("portal returns to %q, not the public URL's return hop", r)
 	}
 
 	// Subscribed: no second checkout, and no second trial after it ends.

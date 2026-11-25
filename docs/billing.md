@@ -60,6 +60,9 @@ show the amount.
 | `DASH_BILLING_GRACE`      | `-billing-grace`         | how long an org may go unpaid before its board becomes read-only (default `72h`) |
 | `DASH_PUBLIC_URL`         | `-public-url`            | where Stripe sends people back to after Checkout and the portal (required) |
 
+Stripe sends people back to `DASH_PUBLIC_URL/billing/return`, which goes on to the board. Behind
+a proxy or firewall, let that path through to Dash like the rest of the app.
+
 Keep the secrets in `.env` or the service's environment rather than on the command line.
 A restricted key needs write access to Customers, Checkout Sessions, Customer portal and
 Subscriptions.

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -459,8 +460,8 @@ func (s *Service) Checkout(ctx context.Context, org int64) (string, error) {
 	}
 	return s.stripe.CreateCheckoutSession(ctx, CheckoutParams{
 		OrgID: org, Customer: cust, Price: price, Quantity: n, TrialDays: trial,
-		SuccessURL: s.cfg.PublicURL + "/?billing=done",
-		CancelURL:  s.cfg.PublicURL + "/?billing=canceled",
+		SuccessURL: s.cfg.PublicURL + auth.BillingReturnPath + "?to=done",
+		CancelURL:  s.cfg.PublicURL + auth.BillingReturnPath + "?to=canceled",
 		TermsURL:   s.cfg.TermsURL, PrivacyURL: s.cfg.PrivacyURL,
 	})
 }
@@ -475,7 +476,7 @@ func (s *Service) Portal(ctx context.Context, org int64) (string, error) {
 	if b.CustomerID == "" {
 		return "", ErrNoCustomer
 	}
-	return s.stripe.CreatePortalSession(ctx, b.CustomerID, s.cfg.PublicURL+"/?billing=portal")
+	return s.stripe.CreatePortalSession(ctx, b.CustomerID, s.cfg.PublicURL+auth.BillingReturnPath+"?to=portal")
 }
 
 // ChooseFree records that an individual can't pay right now: Dash stops

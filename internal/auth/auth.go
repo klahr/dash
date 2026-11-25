@@ -849,6 +849,9 @@ var public = map[string]bool{
 	"/runner/version":     true,
 	// Stripe's events: signed with the webhook secret (billing).
 	"/api/billing/webhook": true,
+	// Coming back from Stripe Checkout or the portal: a page that only goes
+	// on to /?billing=… (billingreturn.go).
+	BillingReturnPath: true,
 }
 
 // publicAsset reports whether path is static artwork the sign-in and
