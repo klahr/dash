@@ -265,8 +265,11 @@ func TestInstanceDefaultOrgIsNeverBilled(t *testing.T) {
 	f.join(def.ID)
 	f.join(def.ID)
 	f.now = f.now.Add(90 * 24 * time.Hour)
-	if st := f.state(def.ID); !st.Free || st.ReadOnly {
+	if st := f.state(def.ID); !st.Free || !st.Exempt || st.ReadOnly {
 		t.Fatalf("default org: %+v", st)
+	}
+	if st := f.state(f.team); st.Exempt {
+		t.Fatalf("another org is exempt: %+v", st)
 	}
 }
 

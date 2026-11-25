@@ -1,9 +1,11 @@
-import { $, dateText, h, plural } from "./dom.js";
+import { $, dateText, dayText, h, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, openSheet, railOf, toast } from "./dialogs.js";
 import { state } from "./state.js";
-import { switchOrg } from "./myaccount.js";
+import { labelAccountMenu, switchOrg } from "./myaccount.js";
 import { setStatus } from "./status.js";
+import { HOUR } from "../time.js";
+import { billingBadge, billingPhase, pastDue } from "../billingstate.js";
 
 // ------------------------------------------------------------------ billing
 // Only when the hub has Stripe configured: an org with two or more members
@@ -18,9 +20,51 @@ export async function loadBilling() {
   const b = await api("GET", `/api/orgs/${org.id}/billing`);
   state.billing = b;
   renderBillingStatus();
+  renderBillingBadge();
   return b;
 }
 document.addEventListener("dash:billing-read-only", () => loadBilling().catch(() => {}));
+
+// renderBillingBadge shows the org's plan beside Organization in the account
+// menu, and a dot on the avatar while something needs doing (a failed
+// payment, a subscription needed, a read-only board, a trial ending soon).
+// Owners only (can_manage); none with billing off or in the Default org.
+// The text comes from billingBadge (billingstate.js), which Billing & usage
+// shares.
+function renderBillingBadge() {
+  const badge = billingBadge(state.billing, { day: dayText });
+  const el = $("#org-billing-badge");
+  const dot = $("#foot-billing-dot");
+  if (!el || !dot) return;
+  el.hidden = !badge;
+  const short = badge && badge.short !== badge.text;
+  el.className = `menu-badge${badge ? ` tone-${badge.tone}` : ""}${short ? " has-short" : ""}`;
+  // On a phone, or in a narrow menu, the short text replaces the long one (style.css).
+  el.replaceChildren(...(!badge ? [] : [h("span", { class: "menu-badge-long" }, badge.text),
+    ...(short ? [h("span", { class: "menu-badge-short" }, badge.short)] : [])]));
+  const attention = !!badge?.attention;
+  dot.hidden = !attention;
+  dot.className = `foot-dot${attention ? ` tone-${badge.tone}` : ""}`;
+  const summary = $("#foot-menu summary");
+  if (attention) summary.dataset.note = "Billing needs attention";
+  else delete summary.dataset.note;
+  labelAccountMenu();
+}
+// A trial's days count down while the page stays open; opening the menu
+// shows the count as of now.
+setInterval(renderBillingBadge, HOUR);
+$("#foot-menu")?.addEventListener("toggle", (e) => { if (e.currentTarget.open) renderBillingBadge(); });
+
+// openOrgFromMenu: the account menu's Organization row opens Organization,
+// or its Billing & usage section from the badge, or whenever billing needs
+// the owner.
+export async function openOrgFromMenu(e) {
+  const badge = $("#org-billing-badge");
+  const toBilling = !badge.hidden && (badge.contains(e?.target) || billingBadge(state.billing)?.attention);
+  if (toBilling) return openOrgBilling();
+  const { openOrg } = await import("./account.js");
+  return openOrg();
+}
 
 
 async function startCheckout() {
@@ -38,6 +82,7 @@ async function openBillingPortal() {
 async function chooseFree() {
   const b = await api("POST", `/api/orgs/${state.me.org.id}/billing/free`);
   state.billing = b;
+  renderBillingBadge();
   if (!$("#org-billing").hidden) renderOrgBilling(b);
   toast("Thanks for trying Dash. Use it free for as long as you need.", { tone: "ok" });
 }
@@ -94,13 +139,13 @@ export function askToPay(b) {
 function renderBillingStatus() {
   const b = state.billing;
   if (!b?.enabled || !b.required) { setStatus("billing", null); return; }
-  const pastDue = b.status === "past_due" || b.status === "unpaid";
+  const failed = pastDue(b);
   const head = b.read_only ? "This board is read-only" :
-    pastDue ? "The last payment failed" : `${state.me.org.name} needs a subscription`;
+    failed ? "The last payment failed" : `${state.me.org.name} needs a subscription`;
   let text = b.read_only ?
     "Organizations with two or more members need an active subscription. Everything is still here and can be read; tasks start again once it is active." :
     `Organizations with two or more members are billed per member. Until ${dateText(b.grace_until)} the board works as usual; after that it becomes read-only.`;
-  if (pastDue && b.has_account) text += " Update the card in the billing portal.";
+  if (failed && b.has_account) text += " Update the card in the billing portal.";
   if (!b.can_manage) text += " Ask an owner of the organization to subscribe.";
   setStatus("billing", {
     tone: b.read_only ? "bad" : "warn", label: "Billing", text: head, detail: h("p", { class: "hint" }, text),
@@ -137,9 +182,9 @@ export function renderOrgBilling(b) {
 }
 
 // individualLines: the Billing section of an individual's workspace.
-function individualLines(b) {
-  if (b.plan === "individual" || b.seats) {
-    const line = b.status === "past_due" || b.status === "unpaid" ? "The last payment failed. Update the card in the billing portal." :
+function individualLines(b, phase) {
+  if (phase === "active" || phase === "past_due") {
+    const line = phase === "past_due" ? "The last payment failed. Update the card in the billing portal." :
       `Subscribed${b.plan === "individual" ? "" : ` · ${plural(b.seats, "seat")}`}${b.period_end ? ` · ${b.cancel_at_period_end ? "ends" : "renews"} ${dateText(b.period_end)}` : ""}`;
     return [line, "Thanks for paying for Dash. Manage or cancel it in the billing portal: if you cancel, you keep using Dash for free."];
   }
@@ -150,23 +195,27 @@ function individualLines(b) {
   return lines;
 }
 
+// ownerBillingLines: the Billing section as owners see it. Where it stands
+// (billingPhase) is shared with the account menu's badge.
 function ownerBillingLines(b, free) {
-  if (b.individual && !free) return individualLines(b);
+  const phase = billingPhase(b);
+  if (phase !== "waived" && b.individual) return individualLines(b, phase);
   const lines = [];
-  if (free) {
+  if (phase === "waived") {
     lines.push(`${free}: a platform admin waived the subscription for this organization, whatever its members.`);
     if (b.seats) lines.push("The subscription carries on as before: cancel it in the billing portal if you don't need it.");
     else if (b.free_until) lines.push(`After that, organizations with two or more members need a subscription, billed per member.`);
     return lines;
   }
-  switch (b.status) {
+  // A failed payment says so even once the board is read-only.
+  switch (pastDue(b) ? "past_due" : phase) {
     case "active":
       lines.push(`Subscribed · ${plural(b.seats, "seat")} · ${b.cancel_at_period_end ? "ends" : "renews"} ${b.period_end ? dateText(b.period_end) : ""}`);
       break;
-    case "trialing":
+    case "trial":
       lines.push(`Trial · ${plural(b.seats, "seat")}${b.trial_end ? ` · until ${dateText(b.trial_end)}` : ""}${b.cancel_at_period_end ? " · then ends" : ""}`);
       break;
-    case "past_due": case "unpaid":
+    case "past_due":
       lines.push("The last payment failed. Update the card in the billing portal.");
       break;
     default:

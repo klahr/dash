@@ -35,6 +35,12 @@ applyClockPref();
 // the server's locale and the "Time format" setting.
 export const clockTime = (iso) => new Date(iso).toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" });
 export const dateText = (iso) => new Date(iso).toLocaleDateString(timeLocale, { year: "numeric", month: "short", day: "numeric" });
+// dayText is dateText without the year when it is this year's: "2 Dec" (in
+// the locale's order), for a short label such as the account menu's badge.
+export const dayText = (iso) => {
+  const d = new Date(iso);
+  return d.toLocaleDateString(timeLocale, { month: "short", day: "numeric", ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }) });
+};
 export const dateTimeText = (iso) => new Date(iso).toLocaleString(timeLocale, { dateStyle: "medium", timeStyle: "short" });
 // plural counts a noun: "1 task", "3 tasks"; many is for nouns that don't just add an s.
 export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

@@ -17,8 +17,8 @@ import { ghMark, ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
 import { closeDetail } from "./detail.js";
 import { syncPrefs } from "./prefs.js";
 import { loadRunners, openRunners, renderRunnersStatus, startRunner } from "./runners.js";
-import { loadMe, openOrg, renameOrg, sendInvite, setOrgName, setRequire2FA } from "./account.js";
-import { askToPay, loadBilling, newOrg } from "./billing.js";
+import { loadMe, renameOrg, sendInvite, setOrgName, setRequire2FA } from "./account.js";
+import { askToPay, loadBilling, newOrg, openOrgFromMenu } from "./billing.js";
 import { createToken } from "./tokens.js";
 import { openAccount } from "./accountsheet.js";
 import { notifyOn, renderTitle } from "./notifications.js";
@@ -1124,7 +1124,7 @@ loadMe().then(() => {
 }).then(askToPay).catch(() => {});
 loadRunners().catch(() => {});
 $("#account-open").addEventListener("click", attempt(() => openAccount()));
-$("#org-open").addEventListener("click", attempt(openOrg));
+$("#org-open").addEventListener("click", attempt(openOrgFromMenu)); // its billing badge opens Billing & usage
 $("#runners-open").addEventListener("click", attempt(openRunners));
 $("#settings-runners-manage").addEventListener("click", attempt(openRunners));
 $("#token-create").addEventListener("click", attempt(createToken));

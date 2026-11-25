@@ -157,6 +157,8 @@ type State struct {
 	// Free: the org needs no subscription (a personal workspace, one
 	// member, the instance's own org, or a platform admin's override).
 	Free bool `json:"free"`
+	// Exempt: the instance's own Default org, which is never billed.
+	Exempt bool `json:"exempt,omitempty"`
 	// FreeForever and FreeUntil: a platform admin made the org free, for
 	// good or until then. Only set while the override holds.
 	FreeForever bool       `json:"free_forever,omitempty"`
@@ -236,9 +238,10 @@ func (s *Service) State(org int64) (State, error) {
 	}
 	now := s.now()
 	override := freeByOverride(b, now)
+	exempt := s.exempt(org)
 	st := State{
-		Enabled: true, Members: members, Status: b.Status,
-		Free:      personal || members < 2 || s.exempt(org) || override,
+		Enabled: true, Members: members, Status: b.Status, Exempt: exempt,
+		Free:      personal || members < 2 || exempt || override,
 		PeriodEnd: timePtr(b.PeriodEnd), TrialEnd: timePtr(b.TrialEnd), CancelAtPeriodEnd: b.CancelAtPeriodEnd,
 		CanSubscribe: !live(b.Status), HasAccount: b.CustomerID != "",
 	}
@@ -251,7 +254,7 @@ func (s *Service) State(org int64) (State, error) {
 	}
 	// Individuals are asked to pay, never made to: this touches nothing
 	// below (Free stays, so Required stays false).
-	if s.cfg.IndividualPriceID != "" && (personal || members < 2) && !s.exempt(org) && !override {
+	if s.cfg.IndividualPriceID != "" && (personal || members < 2) && !exempt && !override {
 		st.Individual, st.IndividualPrice = true, s.cfg.IndividualPrice
 		st.ChoseFree = !b.ChoseFreeAt.IsZero()
 		// Having subscribed once (even if since cancelled) is an answer too.

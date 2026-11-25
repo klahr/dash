@@ -28,8 +28,7 @@ export function showAccountMenu(me) {
   const name = me.username;
   $("#foot-user").textContent = name;
   showOwnAvatar();
-  $("#foot-menu summary").title = `Account menu · ${name}${me.org ? ` in ${me.org.name}` : ""}`;
-  $("#foot-menu summary").setAttribute("aria-label", `${name}, account menu`);
+  labelAccountMenu();
   // The Google part of Account → Sign-in drops out.
   $("#google-area").hidden = !me.google_available;
   const orgs = me.orgs || [];
@@ -43,6 +42,18 @@ export function showAccountMenu(me) {
       onclick: attempt(() => switchOrg(o)),
     }, ico(o.id === me.org?.id ? "check" : "users"), o.name)),
   ]));
+}
+
+// labelAccountMenu names the account menu's button: who is signed in, and
+// its data-note when something needs them (app/billing.js sets "Billing
+// needs attention" with the avatar's dot).
+export function labelAccountMenu() {
+  const me = state.me;
+  if (!me) return;
+  const s = $("#foot-menu summary");
+  const note = s.dataset.note ? ` · ${s.dataset.note}` : "";
+  s.title = `Account menu · ${me.username}${me.org ? ` in ${me.org.name}` : ""}${note}`;
+  s.setAttribute("aria-label", `${me.username}, account menu${note ? `, ${s.dataset.note}` : ""}`);
 }
 
 // switchOrg moves this browser to org o. Everything on the page belongs to

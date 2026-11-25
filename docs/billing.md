@@ -88,6 +88,12 @@ Use test-mode keys (`sk_test_…`) and the Stripe CLI to try it out:
   subscription: until when it can keep working, or that the board is read-only (the status
   icon's dot is then red). Owners get **Billing**, which opens **Organization → Billing**; other
   members are asked to talk to an owner.
+- **The account menu** (owners only): a badge beside **Organization** shows the plan, such as
+  **Team**, **Trial · 9 days**, **Free**, **Subscribe by 2 Dec**, **Payment failed**,
+  **Read-only** or **Ends 30 Dec**. Click it to open **Organization → Billing & usage**. While
+  the menu is closed, a dot on the avatar says billing needs action: a failed payment, a
+  subscription needed, a read-only board, or a trial ending within 3 days. The Default
+  organization has no badge.
 
 ## Individuals
 
@@ -217,7 +223,7 @@ price and when an individual chose **I can't pay right now**.
 
 | Method and path                              | Who            | What                                     |
 |----------------------------------------------|----------------|------------------------------------------|
-| `GET /api/orgs/{id}/billing`                 | members        | the state: `enabled`, `free`, `free_forever`, `free_until`, `required`, `status`, `read_only`, `grace_until`, `seats`, `period_end`, `trial_end`, `can_subscribe`, `can_manage`, and for individuals `individual`, `individual_price`, `ask`, `chose_free`, `plan`, … |
+| `GET /api/orgs/{id}/billing`                 | members        | the state: `enabled`, `free`, `exempt` (the Default organization), `free_forever`, `free_until`, `required`, `status`, `read_only`, `grace_until`, `seats`, `period_end`, `trial_end`, `can_subscribe`, `can_manage`, and for individuals `individual`, `individual_price`, `ask`, `chose_free`, `plan`, … |
 | `POST /api/orgs/{id}/billing/checkout`       | owners         | `{url}` of a Stripe Checkout session (an individual's is at the individual price) |
 | `POST /api/orgs/{id}/billing/free`           | owners         | an individual can't pay right now: stop asking; answers the state (`409` for a team) |
 | `POST /api/orgs/{id}/billing/portal`         | owners         | `{url}` of a customer portal session     |
