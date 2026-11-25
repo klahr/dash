@@ -146,7 +146,6 @@ export async function toggleNotifications() {
 }
 
 // ---- Web Push: notifications while Dash is closed (pushsub.js)
-export { pushUnsubscribe };
 export async function testPush() {
   if (!notifyOn() || !state.pushOn) throw new Error("Turn push on first (Account → Notifications → Push to this browser); this browser or Dash may not support pushes.");
   await pushTest();
