@@ -83,24 +83,14 @@ func (a *Accounts) TOTPSecret(uid int64) (string, error) {
 // UseTOTPStep records that uid signed in with the code of step, and reports
 // false if that step (or a later one) was used already: a replayed code.
 func (a *Accounts) UseTOTPStep(uid, step int64) (bool, error) {
-	res, err := a.db.Exec("UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_secret IS NOT NULL AND totp_last_step < ?", step, uid, step)
-	if err != nil {
-		return false, err
-	}
-	n, _ := res.RowsAffected()
-	return n == 1, nil
+	return execClaim(a.db, "UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_secret IS NOT NULL AND totp_last_step < ?", step, uid, step)
 }
 
 // UseRecoveryCode spends one of uid's recovery codes, reporting whether it
 // was one.
 func (a *Accounts) UseRecoveryCode(uid int64, code string) (bool, error) {
-	res, err := a.db.Exec(`DELETE FROM recovery_codes WHERE user_id = ? AND code_hash = ?
+	return execClaim(a.db, `DELETE FROM recovery_codes WHERE user_id = ? AND code_hash = ?
 		AND EXISTS (SELECT 1 FROM users WHERE id = ? AND totp_secret IS NOT NULL)`, uid, hashToken(code), uid)
-	if err != nil {
-		return false, err
-	}
-	n, _ := res.RowsAffected()
-	return n == 1, nil
 }
 
 // RecoveryCodesLeft counts uid's unused recovery codes.

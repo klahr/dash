@@ -163,12 +163,8 @@ func (s *Store) UpdateWebhook(id string, fn func(*model.Webhook) error) (model.W
 // it; the old one stops working at once.
 func (s *Store) RotateWebhookSecret(id string) (string, error) {
 	secret := newWebhookSecret()
-	res, err := s.db.Exec("UPDATE webhooks SET secret = ? WHERE id = ?", secret, id)
-	if err != nil {
+	if err := execOne(s.db, ErrNotFound, "UPDATE webhooks SET secret = ? WHERE id = ?", secret, id); err != nil {
 		return "", err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return "", ErrNotFound
 	}
 	return secret, nil
 }

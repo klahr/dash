@@ -123,13 +123,8 @@ func (s *Store) SummariesDue(now time.Time) ([]model.UserNotify, error) {
 // so a summary is sent once. Claiming before sending means a crash while
 // sending loses that summary rather than sending it twice.
 func (s *Store) ClaimSummary(user, org int64, due, through, next time.Time) (bool, error) {
-	res, err := s.db.Exec("UPDATE notify_settings SET through = ?, next_at = ? WHERE user_id = ? AND org_id = ? AND next_at = ?",
+	return execClaim(s.db, "UPDATE notify_settings SET through = ?, next_at = ? WHERE user_id = ? AND org_id = ? AND next_at = ?",
 		zeroOrUnix(through), zeroOrUnix(next), user, org, zeroOrUnix(due))
-	if err != nil {
-		return false, err
-	}
-	n, _ := res.RowsAffected()
-	return n == 1, nil
 }
 
 // MarkSummarySent notes that a summary of user in org went out at at.

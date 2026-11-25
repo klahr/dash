@@ -141,12 +141,7 @@ func (a *Accounts) OrgByStripeCustomer(customer string) (int64, error) {
 // it is new. A handler that fails afterwards calls ReleaseStripeEvent, so
 // Stripe's retry is handled again.
 func (a *Accounts) ClaimStripeEvent(id string, now time.Time) (bool, error) {
-	res, err := a.db.Exec("INSERT INTO stripe_events (id, received_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", id, now.Unix())
-	if err != nil {
-		return false, err
-	}
-	n, err := res.RowsAffected()
-	return n == 1, err
+	return execClaim(a.db, "INSERT INTO stripe_events (id, received_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", id, now.Unix())
 }
 
 // ReleaseStripeEvent forgets a claimed event (see ClaimStripeEvent).

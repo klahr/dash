@@ -129,3 +129,14 @@ func execOne(q execer, missing error, query string, args ...any) error {
 	}
 	return nil
 }
+
+// execClaim runs query (with args) and reports whether it changed exactly
+// one row: a claim that another run didn't take first.
+func execClaim(q execer, query string, args ...any) (bool, error) {
+	res, err := q.Exec(query, args...)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
