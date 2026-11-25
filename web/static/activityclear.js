@@ -14,3 +14,10 @@ export function activityAfterStatus(cur, status, prevStatus) {
   if (cur.tool && (NO_CLAUDE_RUN.includes(status) || (status === "in_progress" && prevStatus !== "in_progress"))) return undefined;
   return cur;
 }
+
+// Whether a new activity can start for a task in this status. A worker event
+// can arrive after the task's status change (they come on different streams):
+// a Bash call from a run that is already merged must not bring a spinner back.
+export function activityFits(a, status) {
+  return !!a && (!status || activityAfterStatus(a, status, status) === a);
+}

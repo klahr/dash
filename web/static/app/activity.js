@@ -3,6 +3,7 @@ import { state } from "./state.js";
 import { renderBoard, updateLiveLine } from "./branches.js";
 import { renderChecks } from "./review.js";
 import { duration } from "./chatparts.js";
+import { activityFits } from "../activityclear.js";
 
 // duration lives in chatparts.js, which planning.html can load too.
 export { duration };
@@ -16,15 +17,20 @@ const TEST_CMD = /(^|[\s;&|/(])(go test|cargo test|pytest|jest|vitest|mocha|phpu
 export function trackActivity(id, e) {
   const cur = state.activity.get(id);
   const at = Date.now(); // not e.at: the runner's clock may differ from this one
+  const status = state.todos.get(id)?.status;
   let m;
   if (e.kind === "status" && (m = /^▶ (setup|tests): ([^]*)/.exec(e.text || ""))) {
-    state.activity.set(id, { key: `${m[1]}${at}`, label: m[1] === "tests" ? "Running tests" : "Setting up the worktree", cmd: m[2], line: "", since: at });
+    const a = { key: `${m[1]}${at}`, label: m[1] === "tests" ? "Running tests" : "Setting up the worktree", cmd: m[2], line: "", since: at };
+    if (!activityFits(a, status)) return; // late, from a run that's over
+    state.activity.set(id, a);
   } else if (e.kind === "status" && (e.text || "").startsWith("│ ")) {
     if (cur && !cur.tool) cur.line = e.text.slice(2);
     return; // the card's line updates with todo.output
   } else if (e.kind === "tool_use" && e.tool === "Bash") {
     const cmd = String(e.input?.command || "").trim().split("\n")[0];
-    state.activity.set(id, { key: e.id, tool: e.id, label: TEST_CMD.test(cmd) ? "Claude is running tests" : "Claude is running", cmd, line: "", since: at });
+    const a = { key: e.id, tool: e.id, label: TEST_CMD.test(cmd) ? "Claude is running tests" : "Claude is running", cmd, line: "", since: at };
+    if (!activityFits(a, status)) return; // late, from a run that's over
+    state.activity.set(id, a);
   } else if (e.kind === "tool_result") {
     if (!cur?.tool || cur.tool !== e.id) return;
     state.activity.delete(id);
