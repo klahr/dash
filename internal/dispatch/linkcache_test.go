@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klahr/dash/internal/tunnel"
 )
@@ -68,6 +69,67 @@ func TestLinkSentOnlyWhenItChanges(t *testing.T) {
 	}
 	if n := fx.linksTo("laptop"); n != 4 {
 		t.Fatalf("%d links sent after Relink, want 4", n)
+	}
+}
+
+// Two links of a project to a runner at once (requests that link it while
+// it clones, one from before a settings change) go one after the other: the
+// one the runner got last is the one the hub remembers, so the new settings
+// reach it, however the answers come back.
+func TestLinksAtOnceKeepTheNewSettings(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
+	old := fx.project(t, fx.orgA, "laptop")
+	cur := old
+	cur.PreviewKind, cur.PreviewCommand = "terminal", "echo hi; exec sh"
+	ctx := context.Background()
+
+	// The new link reaches the runner first and its answer is slow; the old
+	// one is sent meanwhile.
+	sent, release := make(chan struct{}), make(chan struct{})
+	fx.fleet.linked = func(l Link) {
+		if l.PreviewCommand != "" {
+			close(sent)
+			<-release
+		}
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := fx.d.Link(ctx, "laptop", cur)
+		done <- err
+	}()
+	<-sent
+	oldDone := make(chan error, 1)
+	go func() {
+		_, err := fx.d.Link(ctx, "laptop", old)
+		oldDone <- err
+	}()
+	select {
+	case <-oldDone:
+		t.Fatal("the old link was sent while the new one was")
+	case <-time.After(50 * time.Millisecond):
+	}
+	fx.fleet.mu.Lock()
+	fx.fleet.linked = nil
+	fx.fleet.mu.Unlock()
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-oldDone; err != nil {
+		t.Fatal(err)
+	}
+
+	// The runner got the old settings last: the next link sends the new ones.
+	if _, err := fx.d.Link(ctx, "laptop", cur); err != nil {
+		t.Fatal(err)
+	}
+	fx.fleet.mu.Lock()
+	defer fx.fleet.mu.Unlock()
+	if last := fx.fleet.links[len(fx.fleet.links)-1]; last.PreviewCommand != cur.PreviewCommand {
+		t.Fatalf("the runner was left with preview command %q, want %q", last.PreviewCommand, cur.PreviewCommand)
 	}
 }
 

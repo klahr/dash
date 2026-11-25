@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"sync"
@@ -21,9 +22,46 @@ const linkFresh = 10 * time.Minute
 // and the runner's answer, so the hub sends a project's link again only
 // when its settings change, the runner reconnects, or the runner says it
 // doesn't have the project.
+//
+// The links of one project to one runner are sent one at a time (lock):
+// two sent at once (requests that link it while its first clone runs, one
+// from before a settings change) could reach the runner in one order and
+// answer in the other, leaving the cache saying the runner has the new
+// settings while it kept the old ones, and never sending them again.
 type linkCache struct {
 	mu      sync.Mutex
-	entries map[[2]string]linkEntry // {runner id, hub project id} → the last link
+	entries map[[2]string]linkEntry     // {runner id, hub project id} → the last link
+	busy    map[[2]string]chan struct{} // {runner id, hub project id} → held while a link is sent
+}
+
+// lock waits until no other link of project is being sent to runner, and
+// returns what ends its own turn.
+func (c *linkCache) lock(ctx context.Context, runner, project string) (unlock func(), err error) {
+	k := [2]string{runner, project}
+	for {
+		c.mu.Lock()
+		if c.busy == nil {
+			c.busy = map[[2]string]chan struct{}{}
+		}
+		ch, held := c.busy[k]
+		if !held {
+			ch = make(chan struct{})
+			c.busy[k] = ch
+			c.mu.Unlock()
+			return func() {
+				c.mu.Lock()
+				delete(c.busy, k)
+				c.mu.Unlock()
+				close(ch)
+			}, nil
+		}
+		c.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }
 
 type linkEntry struct {

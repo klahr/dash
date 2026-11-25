@@ -239,7 +239,7 @@ func TestBrowserPersonalWebhook(t *testing.T) {
 	b.signIn(h)
 
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu > summary`)))
-	b.until("open Account at Editors", `document.querySelector("#account-sheet").open && document.querySelector("#account-sheet-section-editors").classList.contains("current")`, chromedp.Click(chromedp.ID("account-open")))
+	b.until("open Account at General", `document.querySelector("#account-sheet").open && document.querySelector("#account-sheet-section-general").classList.contains("current")`, chromedp.Click(chromedp.ID("account-open")))
 	b.until("pick Notifications", `document.querySelector("#account-sheet-section-notifications").classList.contains("current")`, chromedp.Click(chromedp.ID("account-sheet-rail-notifications")))
 	b.waitJS("no My webhooks or Browser notifications any more", `!document.querySelector("#account-sheet .rail-item[data-rail=webhooks], #account-sheet .rail-item[data-rail=notify]")`)
 	b.waitJS("the push switch for this browser", `document.querySelector("#notify-form [name=notify][form=prefs-form]")`)

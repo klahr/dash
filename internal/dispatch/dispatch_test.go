@@ -30,6 +30,8 @@ type fakeFleet struct {
 	// answer, if set, is how a runner answers a task sent to it (instead
 	// of taking it).
 	answer func(runner string, t Task, a *Accepted) error
+	// linked, if set, is called once a runner has a link, before it answers.
+	linked func(l Link)
 }
 
 func (f *fakeFleet) Get(id string) (tunnel.Runner, bool) {
@@ -99,7 +101,13 @@ func (f *fakeFleet) Call(_ context.Context, id, method, path string, in, out any
 	if !r.Online {
 		return tunnel.ErrOffline
 	}
-	if _, ok := in.(Link); ok {
+	if l, ok := in.(Link); ok {
+		f.mu.Lock()
+		linked := f.linked
+		f.mu.Unlock()
+		if linked != nil {
+			linked(l)
+		}
 		if l, ok := out.(*Linked); ok {
 			l.ProjectID = "on-" + id
 		}

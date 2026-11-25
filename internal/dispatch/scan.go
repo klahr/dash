@@ -212,6 +212,11 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 		}
 	}
 	sum := linkSum(link)
+	unlock, err := d.links.lock(ctx, id, p.ID)
+	if err != nil {
+		return Linked{}, err
+	}
+	defer unlock()
 	if out, ok := d.links.get(id, p.ID, sum, time.Now()); ok {
 		return out, nil
 	}
