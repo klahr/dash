@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 // A draft Claude makes in a project chat shows as a card with Queue, Open
@@ -84,6 +85,28 @@ func TestBrowserChatDraftCards(t *testing.T) {
 	// Open on the phone: the task, full screen, without the chat page over it.
 	click(phone, "open it", "Fix login redirect", "Open", `!document.querySelector("#detail").hidden && document.querySelector("#chat-pane").hidden`)
 	phone.waitJS("the task opened", `document.querySelector("#detail")?.textContent.includes("Fix login redirect")`)
+
+	// Open on a laptop, the chat overlaid (1600px unpinned, 1100px pinned): the
+	// task panel is modal, so it shows over the chat (inert, behind the scrim)
+	// and takes the clicks there. Esc closes it and brings the chat back on top.
+	overChat := func(sel string) string {
+		return `(() => { const r = document.querySelector("#chat-pane").getBoundingClientRect();
+			return !!document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest(` + fmt.Sprintf("%q", sel) + `); })()`
+	}
+	// elementFromPoint skips the inert chat, so also check that it is drawn under the scrim.
+	const chatUnderScrim = `+getComputedStyle(document.querySelector("#chat-pane")).zIndex < +getComputedStyle(document.querySelector("#scrim")).zIndex`
+	for _, size := range []struct {
+		w      int64
+		pinned bool
+	}{{1600, false}, {1100, true}} {
+		wide.do("resize", chromedp.EmulateViewport(size.w, 1000))
+		if size.pinned {
+			wide.until("pin the chat", `document.querySelector(".app").classList.contains("chat-pinned")`, chromedp.Click(chromedp.ID("pc-pin")))
+		}
+		wide.waitJS("the chat on top", overChat("#chat-pane"))
+		click(wide, "open it", "Fix login redirect", "Open", `!document.querySelector("#detail").hidden && `+overChat("#detail")+` && `+chatUnderScrim)
+		wide.until("close it with Esc", `document.querySelector("#detail").hidden && `+overChat("#chat-pane"), chromedp.KeyEvent(kb.Escape))
+	}
 
 	// Loaded again: the cards and notes come back, as the tasks are now.
 	wide.do("reload", chromedp.Reload())

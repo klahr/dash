@@ -2604,6 +2604,11 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .commit-file-list .counts { flex: none; font-size: var(--fs-2xs); }
   :is(.commit-file-list, .commit-diff-head) .dir { color: var(--faint); }
   .scrim { position: fixed; inset: 0; z-index: 35; background: var(--scrim-light); }
+  /* The task panel is modal and makes the chat inert (app/detail.js): an
+     overlaid chat (z 46) goes under the scrim while the panel is open, or it
+     would show over the panel and let clicks fall through to it. A pinned
+     chat stays beside the panel, under the scrim as before. */
+  .app:has(#detail:not([hidden])) .chat-pane { z-index: 34; }
   .detail-body { --pad-t: var(--sp-4); --pad-x: var(--sp-5); padding: var(--pad-t) var(--pad-x) var(--sp-6); }
   .actionbar { padding: var(--sp-3) var(--sp-5); }
   .actionbar .btn { flex: 0 1 auto; }
