@@ -305,9 +305,15 @@ func (d *Dispatcher) send(ctx context.Context, p model.Project, t model.Todo, r 
 // in full, why runners with too little disk space don't start it). parent
 // is the task t builds on (nil: none): a task starting out prefers the
 // runner that has its Claude session.
+//
+// It is a pipeline: eligible keeps the runners that may take t at all,
+// unavailable drops those that can't take it now, and prefer ranks the rest.
 func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*tunnel.Runner, string, string) {
-	var cands []tunnel.Runner
-	var why, full []string
+	users := t.WorkFor()
+	runners, notFor, reason := d.eligible(tunnel.Serving(d.Fleet.List(), p), t, users)
+	if reason != "" {
+		return nil, reason, ""
+	}
 	limits := map[string]int{} // runner id → how many tasks it may have at once now
 	limit := func(r tunnel.Runner) int {
 		if n, ok := limits[r.ID]; ok {
@@ -316,35 +322,8 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		return r.Limit()
 	}
 	load := d.claimedLoads() // runner id → tasks in progress or being sent to it, counted once for this pick
-	runners := tunnel.Serving(d.Fleet.List(), p)
-	// Only runners that may do this run's work: its creator's and starter's
-	// own, or shared ones (tunnel.Runner.WorksFor).
-	users := t.WorkFor()
-	var notFor []string
-	mine := slices.DeleteFunc(slices.Clone(runners), func(r tunnel.Runner) bool {
-		ok, why := r.WorksFor(users)
-		if !ok {
-			notFor = append(notFor, why)
-		}
-		return !ok
-	})
-	if t.RunOn != "" {
-		// The task was set to run on one runner: only that one may take it.
-		i := slices.IndexFunc(mine, func(r tunnel.Runner) bool { return r.ID == t.RunOn })
-		if i < 0 {
-			r, ok := d.Fleet.Get(t.RunOn)
-			switch {
-			case !ok:
-				return nil, "no runner: the runner this task is set to run on was revoked; pick another in the task", ""
-			case !slices.ContainsFunc(runners, func(x tunnel.Runner) bool { return x.ID == t.RunOn }):
-				return nil, "no runner: the runner this task is set to run on no longer has the labels this project runs on; pick another in the task", ""
-			}
-			_, why := r.WorksFor(users)
-			return nil, "no runner: " + why + "; pick another in the task", ""
-		}
-		mine = mine[i : i+1]
-	}
-	runners = mine
+	var cands []tunnel.Runner
+	var why, full []string
 	for _, r := range runners {
 		var pace GroupPace
 		if d.Pacer != nil && active(r) {
@@ -353,35 +332,14 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 				limits[r.ID] = n
 			}
 		}
-		switch busy := load[r.ID]; {
-		case !r.Online:
-			why = append(why, r.Name+" is offline")
-		case r.Update != nil:
-			why = append(why, r.Name+" is updating")
-		case r.Paused:
-			why = append(why, r.Name+" is paused")
-		case starting(r):
-			// Its account, and so its pace, isn't known yet: it reports them
-			// in a moment.
-			why = append(why, r.Name+" is starting up")
-		case r.Reported != nil && r.Reported.Usage != nil && r.Reported.Usage.Paused && !(t.StartNow && r.Reported.Usage.PaceOnly()):
-			msg := r.Name + " has paused its queue"
-			if r.Reported.Usage.Reason != "" {
-				msg += " (" + r.Reported.Usage.Reason + ")"
-			}
-			why = append(why, msg)
-		case r.DiskFull:
-			msg := tooFull(r)
-			why, full = append(why, msg), append(full, msg)
-		case pace.Stop != "":
-			// Its account's: every runner on it waits.
-			why = append(why, r.Name+"'s Claude account is paused ("+pace.Stop+")")
-		case pace.Waiting() && !t.StartNow: // Start now: only the pace holds it back
-			why = append(why, r.Name+" is "+lowerFirst(pace.Pace.Reason()))
-		case busy >= limit(r):
-			why = append(why, fmt.Sprintf("%s is busy (%d of %d tasks)", r.Name, busy, limit(r)))
-		default:
+		msg, isFull := unavailable(r, pace, load[r.ID], limit(r), t)
+		switch {
+		case msg == "":
 			cands = append(cands, r)
+		case isFull:
+			why, full = append(why, msg), append(full, msg)
+		default:
+			why = append(why, msg)
 		}
 	}
 	if len(cands) == 0 {
@@ -390,19 +348,91 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		}
 		return nil, waitReason(append(why, notFor...)), strings.Join(full, "; ")
 	}
+	return prefer(cands, t, parent, load, limit), "", ""
+}
+
+// eligible keeps those of runners (the ones serving t's project) that may
+// do t's work: its creator's and starter's own, or shared ones
+// (tunnel.Runner.WorksFor), and only the one t is set to run on, if any.
+// notFor says why the others may not. reason is set when t is set to run
+// on a runner that can't take it, so no other runner may either.
+func (d *Dispatcher) eligible(runners []tunnel.Runner, t model.Todo, users []int64) (cands []tunnel.Runner, notFor []string, reason string) {
+	cands = slices.DeleteFunc(slices.Clone(runners), func(r tunnel.Runner) bool {
+		ok, why := r.WorksFor(users)
+		if !ok {
+			notFor = append(notFor, why)
+		}
+		return !ok
+	})
+	if t.RunOn == "" {
+		return cands, notFor, ""
+	}
+	// The task was set to run on one runner: only that one may take it.
+	if i := slices.IndexFunc(cands, func(r tunnel.Runner) bool { return r.ID == t.RunOn }); i >= 0 {
+		return cands[i : i+1], notFor, ""
+	}
+	r, ok := d.Fleet.Get(t.RunOn)
+	switch {
+	case !ok:
+		return nil, notFor, "no runner: the runner this task is set to run on was revoked; pick another in the task"
+	case !slices.ContainsFunc(runners, func(x tunnel.Runner) bool { return x.ID == t.RunOn }):
+		return nil, notFor, "no runner: the runner this task is set to run on no longer has the labels this project runs on; pick another in the task"
+	}
+	_, why := r.WorksFor(users)
+	return nil, notFor, "no runner: " + why + "; pick another in the task"
+}
+
+// unavailable says why runner r can't start t now ("": it can), given its
+// account's pace, the busy tasks it has and how many it may have at once.
+// full is set when the reason is that its disk is too full.
+func unavailable(r tunnel.Runner, pace GroupPace, busy, limit int, t model.Todo) (why string, full bool) {
+	switch {
+	case !r.Online:
+		return r.Name + " is offline", false
+	case r.Update != nil:
+		return r.Name + " is updating", false
+	case r.Paused:
+		return r.Name + " is paused", false
+	case starting(r):
+		// Its account, and so its pace, isn't known yet: it reports them
+		// in a moment.
+		return r.Name + " is starting up", false
+	case r.Reported != nil && r.Reported.Usage != nil && r.Reported.Usage.Paused && !(t.StartNow && r.Reported.Usage.PaceOnly()):
+		msg := r.Name + " has paused its queue"
+		if r.Reported.Usage.Reason != "" {
+			msg += " (" + r.Reported.Usage.Reason + ")"
+		}
+		return msg, false
+	case r.DiskFull:
+		return tooFull(r), true
+	case pace.Stop != "":
+		// Its account's: every runner on it waits.
+		return r.Name + "'s Claude account is paused (" + pace.Stop + ")", false
+	case pace.Waiting() && !t.StartNow: // Start now: only the pace holds it back
+		return r.Name + " is " + lowerFirst(pace.Pace.Reason()), false
+	case busy >= limit:
+		return fmt.Sprintf("%s is busy (%d of %d tasks)", r.Name, busy, limit), false
+	}
+	return "", false
+}
+
+// prefer chooses among cands, the runners free to start t: the one that
+// has t's worktree and session, else (for a task starting out) the one
+// that has parent's, else the least loaded relative to its limit.
+func prefer(cands []tunnel.Runner, t model.Todo, parent *model.Todo, load map[string]int, limit func(tunnel.Runner) int) *tunnel.Runner {
 	// The runner that has the task's worktree and session continues it.
 	if i := slices.IndexFunc(cands, func(r tunnel.Runner) bool { return r.ID == t.Runner }); i >= 0 {
-		return &cands[i], "", ""
+		return &cands[i]
 	}
 	if t.Runner == "" && parent != nil && parent.Runner != "" {
 		if i := slices.IndexFunc(cands, func(r tunnel.Runner) bool { return r.ID == parent.Runner }); i >= 0 {
-			return &cands[i], "", ""
+			return &cands[i]
 		}
 	}
 	best := slices.MinFunc(cands, func(a, b tunnel.Runner) int {
 		return load[a.ID]*limit(b) - load[b.ID]*limit(a) // the least loaded, relative to its limit
 	})
-	return &best, "", ""
+	return &best
 }
 
 // PaceWait is why queued task t of p waits for the weekly pace (the
