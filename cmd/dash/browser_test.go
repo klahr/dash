@@ -399,7 +399,7 @@ func TestBrowserHistoryCommitPane(t *testing.T) {
 	b := newBrowser(t, chrome)
 	b.signIn(h)
 	b.until("open History", `document.querySelector("#view-history.active")`,
-		chromedp.Click(chromedp.CSS(`.nav > button[data-view=history]`)))
+		chromedp.Click(chromedp.CSS(`.nav [data-view=history]`)))
 	b.waitJS("both commits", `document.querySelectorAll("#graph li").length === 2`)
 
 	title := func(s string) string {
@@ -436,7 +436,7 @@ func TestBrowserHistoryCommitPane(t *testing.T) {
 	b.waitJS("the parent shown", title("first")+" && "+selected(1))
 
 	// The selection survives a refresh of the graph.
-	b.do("refresh the graph", chromedp.Click(chromedp.CSS(`.nav > button[data-view=history]`)))
+	b.do("refresh the graph", chromedp.Click(chromedp.CSS(`.nav [data-view=history]`)))
 	b.waitJS("still selected", selected(1))
 
 	// Esc closes the pane and clears the selection.
@@ -1371,7 +1371,7 @@ func TestBrowserCustomScan(t *testing.T) {
 	}
 
 	b.until("open the scans", `document.querySelector("#view-scans.active")`,
-		chromedp.Click(chromedp.CSS(`.nav > button[data-view=scans]`)))
+		chromedp.Click(chromedp.CSS(`.nav [data-view=scans]`)))
 	b.waitJS("the create card after the list", `(() => {
 		const c = document.querySelector("#scan-create");
 		return !c.hidden && document.querySelector("#scan-list").children.length > 0 &&
@@ -1748,7 +1748,7 @@ func TestBrowserShellHeader(t *testing.T) {
 	b := newBrowser(t, chrome)
 	b.signIn(h)
 	openShell := func() {
-		b.until("open the Shell view", `document.querySelector("#view-run.active")`, chromedp.Click(chromedp.CSS(`.nav > button[data-view=run]`)))
+		b.until("open the Shell view", `document.querySelector("#view-run.active")`, chromedp.Click(chromedp.CSS(`.nav [data-view=run]`)))
 	}
 
 	openShell()

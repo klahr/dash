@@ -1,4 +1,4 @@
-import { $, $$, h, ico } from "./dom.js";
+import { $, h } from "./dom.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
@@ -256,32 +256,28 @@ export function ensureShell() {
   openShellOn(want);
 }
 
-const runPreset = attempt(async (e) => {
-  const spec = e.target.closest("[data-run]")?.dataset.run;
-  if (!spec || !state.project) return;
-  const [kind, preset] = spec.split(":");
-  await startProc({ kind, preset }, preset !== "deploy");
-});
-// While a quick action runs, clicking it shows its output instead of starting it again;
-// a running server is stopped instead.
-$("#quick-actions").addEventListener("click", attempt(async (e) => {
-  const spec = e.target.closest("[data-run]")?.dataset.run;
-  if (!spec) return; // not a run button
-  // Deploy goes to the Deploys page: a deploy is to one of the environments there.
-  // Whatever opens a page (Deploys or Shell) closes the drawer on a phone, to show it.
-  if (spec === "task:deploy") { setMenu(false); closeDetail(); return showView("deploys"); }
-  const proc = quickProc(spec);
-  if (!proc?.running) { setMenu(false); return runPreset(e); }
-  if (spec === "web:run") {
-    await api("DELETE", `/api/processes/${proc.id}`);
-    toast("Stopping");
-    return loadProcs();
-  }
+// The sidebar's Run Tests: while a run goes, clicking it shows its output instead of
+// starting it again. Whatever opens a page closes the drawer on a phone, to show it.
+$("#quick-test").addEventListener("click", attempt(async () => {
+  if (!state.project) return;
   setMenu(false);
+  const proc = quickProc("task:test");
+  if (!proc?.running) return startProc({ kind: "task", preset: "test" });
   closeDetail();
   attach(proc);
   showView("run");
 }));
+
+// The project's server (its run command, in its checkout), which the top bar's Run
+// starts and stops (try.js).
+export const serverRunning = () => !!state.project && !!quickProc("web:run")?.running;
+export async function toggleServer() {
+  const proc = quickProc("web:run");
+  if (!proc?.running) return startProc({ kind: "web", preset: "run" });
+  await api("DELETE", `/api/processes/${proc.id}`);
+  toast("Stopping");
+  return loadProcs();
+}
 
 // The latest server/test/deploy process started from the project's own checkout (not a worktree).
 const quickCmd = (spec) => ({ "web:run": state.project?.run_command, "task:test": state.project?.test_command, "task:deploy": state.project?.environments?.[0]?.deploy_command })[spec];
@@ -319,7 +315,6 @@ export const techFor = (spec) => {
   const hit = cmd && TECH_RULES[spec]?.find(([re]) => re.test(cmd));
   return hit ? { icon: hit[1], label: hit[2] } : {};
 };
-const quickPlainIcons = new Map($$(".quick-btn").map((b) => [b, b.querySelector("svg")]));
 // A process running in the project's own checkout, not a task's worktree. Dash marks it
 // (main); on a hub its dir is the runner's clone, never the hub's path. Processes from
 // before Dash marked them go by their dir.
@@ -339,43 +334,29 @@ function quickProc(spec) {
     .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
 }
 
+// renderQuick shows Run Tests with how its last run went, and keeps the top bar's Run
+// (which starts and stops the server) current.
 export function renderQuick() {
-  for (const [sel, verb, generic, noun, key] of [["#quick-server", "Serving", "Run", "server run", "R"], ["#quick-test", "Testing", "Run Tests", "test run", "T"], ["#quick-deploy", "Deploying", "Deploy", "deploy", "D"]]) {
-    const btn = $(sel);
-    const spec = btn.dataset.run;
-    const proc = state.project ? quickProc(spec) : null;
-    // Shown only with a command set, or while a run of it is still going.
-    btn.hidden = !state.project || !(quickCmd(spec) || proc?.running);
-    const ok = proc && !proc.running && proc.exit_code === 0 && sel !== "#quick-server";
-    const bad = proc && !proc.running && proc.exit_code != null && proc.exit_code !== 0;
-    const cut = proc && !proc.running && proc.exit_code == null;
-    const stop = !!proc?.running && sel === "#quick-server";
-    btn.classList.toggle("running", !!proc?.running && !stop);
-    btn.classList.toggle("stop", stop);
-    btn.classList.toggle("ok", !!ok);
-    btn.classList.toggle("bad", !!bad);
-    const tech = techFor(spec);
-    const plain = quickPlainIcons.get(btn);
-    const svg = btn.querySelector("svg");
-    const icon = !stop && tech.icon;
-    if (icon ? svg.dataset.tech !== icon : svg !== plain) svg.replaceWith(icon ? ico(icon) : plain);
-    if (sel === "#quick-server") {
-      const path = plain.querySelector("path");
-      path.setAttribute("d", stop ? "M7 7h10v10H7z" : "M8 5.5v13l10.5-6.5z");
-      path.setAttribute("fill", stop ? "currentColor" : "none");
-    }
-    const done = tech.label || generic;
-    const secs = proc ? Math.max(0, Math.floor((Date.now() - new Date(proc.started_at)) / 1000)) : 0;
-    const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-    btn.querySelector("span").textContent = stop ? "Stop" : proc?.running ? `${verb} ${elapsed}` : done;
-    btn.title = stop ? "Running — click to stop it"
-      : proc?.running ? `${verb}… ${elapsed} — click to view output`
-      : ok ? `Last ${noun} passed — click to run again`
-      : bad ? `Last ${noun} failed (exit ${proc.exit_code}) — click to run again`
-      : cut ? `Last ${noun} was interrupted by a Dash restart — click to run again`
-      : `${done} (${key} on the Shell page)`;
-  }
-  renderTryButton(); // after the buttons: the header's Run mirrors #quick-server
+  const btn = $("#quick-test");
+  const proc = state.project ? quickProc("task:test") : null;
+  // Shown only with a command set, or while a run of it is still going.
+  btn.hidden = !state.project || !(quickCmd("task:test") || proc?.running);
+  const running = !!proc?.running;
+  const ok = proc && !running && proc.exit_code === 0;
+  const bad = proc && !running && proc.exit_code != null && proc.exit_code !== 0;
+  const cut = proc && !running && proc.exit_code == null;
+  btn.classList.toggle("running", running);
+  btn.classList.toggle("ok", !!ok);
+  btn.classList.toggle("bad", !!bad);
+  const secs = proc ? Math.max(0, Math.floor((Date.now() - new Date(proc.started_at)) / 1000)) : 0;
+  const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  btn.querySelector("span").textContent = running ? `Testing ${elapsed}` : "Run Tests";
+  btn.title = running ? `Testing… ${elapsed} — click to view output`
+    : ok ? "Last test run passed — click to run again"
+    : bad ? `Last test run failed (exit ${proc.exit_code}) — click to run again`
+    : cut ? "Last test run was interrupted by a Dash restart — click to run again"
+    : "Run Tests (T on the Shell page)";
+  renderTryButton();
 }
 setInterval(() => { if ($(".quick-btn.running")) renderQuick(); }, 1000);
 // The Actions group (and its heading) shows only while one of its buttons does.

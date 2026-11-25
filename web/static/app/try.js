@@ -11,7 +11,7 @@ import { closeDetail } from "./detail.js";
 import { PV_ARROWS, PV_KEYS } from "./preview.js";
 import { agoText } from "../time.js";
 import { pane, renderTryBack, toggleChatPane } from "./chatpane.js";
-import { ensureShell, procTerminal, renderQuick } from "./terminal.js";
+import { ensureShell, procTerminal, renderQuick, serverRunning, toggleServer } from "./terminal.js";
 
 // ------------------------------------------------------------------ try: the project's CLI on a runner
 // (tryState is declared with state, near the top: views render before this runs.)
@@ -64,8 +64,8 @@ export function renderTryButton() {
 // commit (an empty ref: the default branch's tip) on the runner used last, or
 // the only one; ▾ lists the project's runners to pick from. While a run starts
 // or goes it is ■ Terminate, with the commit and runner beside it, linking to
-// its terminal. A web project with a run command runs (or stops) it as the
-// Shell page's Run does. Any other project has nothing to run: ▶ Run is greyed
+// its terminal. A web project with a run command runs it in its checkout, and
+// while it runs the button is ■ Stop (terminal.js: toggleServer). Any other project has nothing to run: ▶ Run is greyed
 // (aria-disabled, so it still takes clicks) and opens Configure….
 const runKey = (pid) => `dash.run.runner.${pid}`;
 function lastRunner(pid) { try { return localStorage.getItem(runKey(pid)) || ""; } catch { return ""; } }
@@ -75,10 +75,8 @@ function rememberRunner(pid, id) { try { localStorage.setItem(runKey(pid), id); 
 // but the button is Run again).
 const running = () => !!tryState.starting || !!tryState.pending || tryState.stopAsked || tryState.session?.state === "live";
 
-// webRun: the project runs its run_command in its checkout (the Shell page's Run).
+// webRun: the project runs its run_command in its checkout.
 const webRun = (p = state.project) => !!p && !tryProject(p) && p.preview_kind !== "terminal" && !!p.run_command;
-// The Shell page's Run button, which webRun drives (renderQuick keeps it current).
-const webRunning = () => $("#quick-server").classList.contains("stop");
 
 // noRunWhy says why the project has nothing to run ("" when it has).
 function noRunWhy(p = state.project) {
@@ -114,7 +112,7 @@ function renderRun() {
   if (why) main.setAttribute("aria-disabled", "true"); else main.removeAttribute("aria-disabled");
   if (!tryProject(p)) {
     // Nothing to run (greyed, opens Configure…), or the web project's run command.
-    const stop = !why && webRunning();
+    const stop = !why && serverRunning();
     main.classList.toggle("stop", stop);
     setLabel(main, stop ? "stop" : "play", h("span", { class: "run-main-label" }, stop ? "Stop" : "Run"));
     main.disabled = false;
@@ -183,7 +181,7 @@ async function clickRun() {
   const p = state.project;
   if (!p) throw new Error(projectFirst());
   if (noRunWhy(p)) return configureRun(); // greyed: one click from setting it up
-  if (webRun(p)) return $("#quick-server").click(); // runs it, or stops it while it runs
+  if (webRun(p)) return toggleServer(); // runs it, or stops it while it runs
   if (running()) {
     // Terminate: stop it, or ask startTry to once it has started.
     if (tryState.starting || tryState.pending) { tryState.stopAsked = true; tryState.pending = null; return renderRun(); }

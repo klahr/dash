@@ -40,7 +40,7 @@ export function showView(name, { now = false } = {}) {
 const PROJECT_VIEWS = "dash.projectViews";
 export function projectView(p) {
   const v = p && store.getJSON(PROJECT_VIEWS, {})[projectKey(p)];
-  return v && v !== "planning" && $(`.nav > button[data-view="${v}"]`) ? v : null;
+  return v && v !== "planning" && $(`.nav [data-view="${v}"]`) ? v : null;
 }
 function rememberView(name) {
   if (!state.project || name === "planning") return;
@@ -85,22 +85,22 @@ export function renderNavActive() {
     b.toggleAttribute("aria-current", on);
     if (on) b.setAttribute("aria-current", "page");
   };
-  $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => mark(b, !chatOn && b.dataset.view === navView(state.view)));
+  $$(".nav [data-view]").forEach((b) => mark(b, !chatOn && b.dataset.view === navView(state.view)));
   mark($("#nav-chat"), chatOn);
   boardSeen();
 }
 desktop.addEventListener("change", () => renderNavActive());
-// The nav's sections, and the menu drawer's copies of those that don't fit the
-// bottom nav on mobile (Scans, Shell, History, Deploys, Files). Picking
-// one leaves the mobile chat page.
-$$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => b.addEventListener("click", () => {
+// The nav's sections: the bottom nav's, and on mobile the menu drawer's (those that
+// don't fit the bottom nav: Scans, Shell, History, Deploys, Files), which are in
+// the side rail on desktop. Picking one leaves the mobile chat page.
+$$(".nav [data-view]").forEach((b) => b.addEventListener("click", () => {
   if (!desktop.matches && pane.open) toggleChatPane(false);
-  if (b.closest(".menu-views")) setMenu(false);
+  if (b.closest(".menu")) setMenu(false);
   showView(b.dataset.view);
 }));
 // The view a link names (routes.js), else the one shown last.
 {
   const linked = initial.named && initial.view;
   const saved = linked || store.get("dash.view");
-  if (saved && $(linked ? `#view-${navView(saved)}` : `.nav > button[data-view="${saved}"]`)) applyView(saved);
+  if (saved && $(linked ? `#view-${navView(saved)}` : `.nav [data-view="${saved}"]`)) applyView(saved);
 }

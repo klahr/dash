@@ -63,8 +63,9 @@ terminal.
 - Dash remembers the runner you picked, per project, in this browser.
 - With no runner at all, **Run** is greyed out and says why.
 
-A web project with a run command has the same button: **Run** runs the command, as **Run** on the
-Shell page does, and is **Stop** while the server runs.
+A web project with a run command has the same button: **Run** runs the command in the project's
+checkout and shows its output on the **Shell** page (`R` there does the same). The button is
+**Stop** while the server runs.
 
 A project with nothing to run (a web project with no run command) still shows **Run**, greyed out.
 Hover it to see why. Click it, or **▾** then **Configure…**, to open **Project settings → Commands**

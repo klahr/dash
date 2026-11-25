@@ -234,8 +234,6 @@ textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: 
   content: ""; width: 12px; height: 12px; flex: none; border-radius: 50%;
   border: 2px solid color-mix(in srgb, var(--running) 30%, transparent); border-top-color: var(--running); animation: spin .8s linear infinite;
 }
-.quick-btn.stop { border-color: var(--running); background: color-mix(in srgb, var(--running) 10%, var(--surface)); }
-.quick-btn.stop svg { color: var(--failed); }
 .quick-btn.ok svg { color: var(--merged); }
 .quick-btn.ok { border-color: color-mix(in srgb, var(--merged) 50%, var(--line)); }
 .quick-btn.bad svg { color: var(--failed); }
@@ -1922,7 +1920,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 }
 
 /* ---------- motion ---------- */
-.btn, .icon-btn, .lane-tab, .todo, .nav > button { transition: background-color .15s, border-color .15s, color .15s, transform .12s var(--ease), box-shadow .15s; }
+.btn, .icon-btn, .lane-tab, .todo, .nav > button, .menu-view { transition: background-color .15s, border-color .15s, color .15s, transform .12s var(--ease), box-shadow .15s; }
 .btn:active, .icon-btn:active, .fab:active { transform: scale(.97); }
 .fab { transition: transform .2s var(--ease), box-shadow .2s, background-color .15s; }
 .fab:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: var(--shadow-3); }
@@ -2073,7 +2071,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 
 /* ---------- menu: sidebar on desktop, drawer on mobile ---------- */
 .remote-pill, .checkouts, .side-runners { order: 5; margin-top: 8px; }
-/* Mobile: the sections the bottom nav has no room for (Scans, Shell, History, Deploys, Files); the side rail has them on desktop. */
+/* Mobile: the sections the bottom nav has no room for (Scans, Shell, History, Deploys, Files), in the drawer;
+   on desktop the same buttons are in the side rail (.nav-views, below). */
 .menu-views { order: 4; display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
 .menu-view { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 10px; border-radius: var(--r-m); color: var(--muted); font-size: var(--fs-body); font-weight: 500; text-align: left; }
 .menu-view svg { width: 22px; height: 22px; flex: none; }
@@ -2342,10 +2341,10 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   /* With the keyboard up, the action bar only takes room from the body. */
   .detail:has(.composer textarea:focus) .actionbar { display: none; }
 
-  /* Bottom nav: Board · Chat · Planning · Goals · Issues, put in that order here (the DOM
+  /* Bottom nav: Board · Chat · Planning · Goals, put in that order here (the DOM
      order is the desktop sidebar's). Scans, Shell, History, Deploys and Files are in
      the menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
-  .nav > button:is([data-view="scans"], [data-view="run"], [data-view="history"], [data-view="deploys"], [data-view="files"]), #pc-open { display: none; }
+  #pc-open { display: none; }
   .nav > .nav-chat { order: 1; }
   .nav > button[data-view="planning"] { order: 2; }
   .nav > button[data-view="goals"] { order: 3; }
@@ -2411,7 +2410,15 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .nav { display: contents; }
   .menu-head, .menu-scrim, .nav > .nav-chat, .menu-views { display: none; }
   .menu { display: contents; }
-  .nav > .nav-sep { display: flex; order: 2; }
+  /* The drawer's sections join the rail, in order: Board, Scans, Shell, History, then
+     Goals, Deploys, Files, then the divider and Planning (the projects are order 3,
+     later in the DOM). */
+  .menu-views.nav-views { display: contents; }
+  .nav > button[data-view="board"], .menu-view:is([data-view="scans"], [data-view="run"], [data-view="history"]) { order: 1; }
+  .menu-view { order: 2; min-height: 42px; }
+  .menu-view svg { width: 20px; height: 20px; }
+  .nav > .nav-sep { display: flex; order: 3; }
+  .nav > button[data-view="planning"] { order: 3; }
   .side-collapsed .nav > .nav-sep { padding: 0 6px; }
   .side-collapsed .nav-sep span { display: none; }
   .nav > button { order: 2; flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 42px; padding: 0 10px; border-radius: var(--r-m); font-size: var(--fs-body); }
@@ -2444,8 +2451,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-collapsed .side-resize { display: none; }
   .side-collapsed .brand { width: auto; }
   .side-collapsed .sidebar { overflow: visible; }
-  .side-collapsed .nav > button { justify-content: center; padding: 0; }
-  .side-collapsed .nav > button > span:not(.badge),
+  .side-collapsed :is(.nav > button, .menu-view) { justify-content: center; padding: 0; }
+  .side-collapsed :is(.nav > button, .menu-view) > span:not(.badge),
   .side-collapsed .side-projects-head, .side-collapsed .side-project-text, .side-collapsed .side-project-branch, .side-collapsed .shared-mark,
   .side-collapsed .side-machine, .side-collapsed .machine-empty,
   .side-collapsed .side-new-project span, .side-collapsed .quick-btn span,

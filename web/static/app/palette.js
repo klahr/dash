@@ -306,7 +306,9 @@ document.addEventListener("keydown", (e) => {
 // Sidebar lists: o focuses the projects and then toggles between them and the
 // sections, p the projects (in the phone menu), Tab switches between them. j/k move, Enter opens the focused item, Esc, q
 // or l leave the list.
-const SECTIONS = ".nav > button[data-view]";
+// The sections: the nav's own buttons and the drawer's (.menu-views), which style.css
+// orders among them in the side rail; j/k go by where they show.
+const SECTIONS = ".nav [data-view]";
 // The projects and the Other projects fold between them (stars.js).
 const PROJECTS = "#side-project-list .side-project, #side-others-fold";
 function sidebarList(el) {
@@ -317,7 +319,7 @@ function sidebarList(el) {
 
 function openSections() {
   setMenu(false);
-  $(`.nav > button[data-view="${state.view}"]`)?.focus();
+  $(`.nav [data-view="${state.view}"]`)?.focus();
 }
 
 // o: the projects list first; pressed again, it switches to the sections
@@ -340,7 +342,12 @@ function openSection(name) {
 
 function sidebarKey(k, n, hadCount) {
   const list = sidebarList(document.activeElement);
-  const btns = [...document.querySelectorAll(list)];
+  let btns = [...document.querySelectorAll(list)];
+  if (list === SECTIONS) {
+    btns = btns.filter((b) => b.getClientRects().length);
+    const top = new Map(btns.map((b) => [b, b.getBoundingClientRect().top]));
+    btns.sort((a, b) => top.get(a) - top.get(b));
+  }
   const i = btns.indexOf(document.activeElement);
   const go = (j) => btns[Math.max(0, Math.min(btns.length - 1, j))]?.focus();
   switch (k) {

@@ -61,8 +61,9 @@
       <details class="foot-menu top-menu" id="project-menu" hidden>
         <summary class="icon-btn" aria-label="Project menu" title="Project menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
         <!-- Managing the project, in groups: its setup, its queue, then housekeeping and
-             deleting it. Running things (Run, Tests, Deploy, Push, Builds) are the sidebar's
-             Actions; status is the sidebar's pills. -->
+             deleting it. Running things are elsewhere: Run in the top bar, Deploy on the
+             Deploys page, Tests, Push and Builds in the sidebar's Actions; status is the
+             sidebar's pills. -->
         <div class="foot-menu-list">
           <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
           <!-- Star / Unstar project: starred projects come first in the sidebar (app/stars.js). -->
@@ -93,29 +94,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Chat</span><span class="badge chat-badge" id="chat-badge" hidden></span>
       </button>
-      <button data-view="scans" title="Scans (gn)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Scans</span><span class="badge quiet" id="scan-badge" hidden></span>
-      </button>
-      <button data-view="run" title="Shell (gs)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4M12 17h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Shell</span>
-      </button>
-      <button data-view="history" title="History (gh)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 9c0 4 10 2 10 7M7 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>
-        <span>History</span>
-      </button>
       <button data-view="goals" title="Goals (go)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 1 0 0-9M12 11.5v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <span>Goals</span><span class="badge" id="goal-badge" hidden></span>
-      </button>
-      <button data-view="deploys" title="Deploys (gd)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c3 2.2 4.5 5.5 4.5 9.5l-1.5 4h-6L7.5 12c0-4 1.5-7.3 4.5-9.5zM7.8 13.5 5 16.5V20l4-2.5M16.2 13.5l2.8 3V20l-4-2.5M12 9v.01M10.5 19.5 12 21.5l1.5-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Deploys</span>
-      </button>
-      <button data-view="files" title="Files (gf)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-        <span>Files</span>
       </button>
       <!-- Planning is the organization's, not this project's: below a divider of its own. -->
       <div class="nav-sep" role="presentation"><span>Organization</span></div>
@@ -139,25 +120,26 @@
             <span>Add project</span>
           </button>
         </div>
-        <!-- Mobile only: the sections that don't fit the bottom nav (the side rail has them on desktop). -->
-        <div class="menu-views" role="group" aria-label="More sections">
-          <button class="menu-view" data-view="scans" type="button">
+        <!-- The sections that don't fit the bottom nav: in the menu drawer on a phone, and
+             in the side rail on desktop (style.css orders them among the nav's buttons). -->
+        <div class="menu-views nav-views" role="group" aria-label="More sections">
+          <button class="menu-view" data-view="scans" type="button" title="Scans (gn)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Scans</span><span class="badge quiet" id="menu-scan-badge" hidden></span>
+            <span>Scans</span><span class="badge quiet" id="scan-badge" hidden></span>
           </button>
-          <button class="menu-view" data-view="run" type="button">
+          <button class="menu-view" data-view="run" type="button" title="Shell (gs)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4M12 17h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span>Shell</span>
           </button>
-          <button class="menu-view" data-view="history" type="button">
+          <button class="menu-view" data-view="history" type="button" title="History (gh)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 9c0 4 10 2 10 7M7 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>
             <span>History</span>
           </button>
-          <button class="menu-view" data-view="deploys" type="button">
+          <button class="menu-view" data-view="deploys" type="button" title="Deploys (gd)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c3 2.2 4.5 5.5 4.5 9.5l-1.5 4h-6L7.5 12c0-4 1.5-7.3 4.5-9.5zM7.8 13.5 5 16.5V20l4-2.5M16.2 13.5l2.8 3V20l-4-2.5M12 9v.01M10.5 19.5 12 21.5l1.5-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span>Deploys</span>
           </button>
-          <button class="menu-view" data-view="files" type="button">
+          <button class="menu-view" data-view="files" type="button" title="Files (gf)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
             <span>Files</span>
           </button>
@@ -165,17 +147,9 @@
         <!-- The project's actions: what runs on its code, each showing how it went. -->
         <div class="quick-actions" id="quick-actions" role="group" aria-labelledby="quick-actions-title">
           <h2 class="side-projects-head" id="quick-actions-title">Actions</h2>
-          <button class="quick-btn" data-run="web:run" id="quick-server" hidden title="Run (R on the Shell page)">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>
-            <span>Run</span>
-          </button>
           <button class="quick-btn" data-run="task:test" id="quick-test" hidden title="Run tests (T on the Shell page)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span>Run Tests</span>
-          </button>
-          <button class="quick-btn" data-run="task:deploy" id="quick-deploy" hidden title="Deploys: deploy to an environment (gd)">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c3 2.2 4.5 5.5 4.5 9.5l-1.5 4h-6L7.5 12c0-4 1.5-7.3 4.5-9.5zM7.8 13.5 5 16.5V20l4-2.5M16.2 13.5l2.8 3V20l-4-2.5M12 9v.01M10.5 19.5 12 21.5l1.5-2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Deploy</span>
           </button>
           <button class="quick-btn" id="push-main" type="button" data-icon="push" hidden><span>Push</span></button>
           <button class="quick-btn" id="pm-builds" type="button" data-icon="checks" aria-haspopup="dialog" hidden><span>Builds</span></button>

@@ -1,4 +1,4 @@
-import { $, $$, dateTimeText, h, ib, ico, plural, setModelField } from "./dom.js";
+import { $, dateTimeText, h, ib, ico, plural, setModelField } from "./dom.js";
 import { api, here, on } from "./api.js";
 import { ask, attempt, copy, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -199,12 +199,10 @@ function describeCron(expr) {
 
 function renderScanBadge() {
   const n = scans.list.filter((s) => s.running).length;
-  // The side rail's, and on mobile the menu drawer's.
-  for (const b of $$("#scan-badge, #menu-scan-badge")) {
-    b.hidden = !n;
-    b.textContent = n;
-    b.title = `${plural(n, "scan")} running`;
-  }
+  const b = $("#scan-badge");
+  b.hidden = !n;
+  b.textContent = n;
+  b.title = `${plural(n, "scan")} running`;
 }
 
 export function renderScans() {

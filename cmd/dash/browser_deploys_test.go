@@ -84,7 +84,7 @@ func TestBrowserDeploys(t *testing.T) {
 	}
 
 	b.until("open Deploys", `document.querySelector("#view-deploys.active")`,
-		chromedp.Click(chromedp.CSS(`.nav > button[data-view=deploys]`)))
+		chromedp.Click(chromedp.CSS(`.nav [data-view=deploys]`)))
 	b.waitJS("a card per environment", `[...document.querySelectorAll("#env-cards .env-card .env-name")].map((e) => e.textContent).join() === "production,staging"`)
 	b.waitJS("nothing deployed yet", `document.querySelector('#env-cards [data-env="production"]').textContent.includes("Nothing deployed here yet")`)
 

@@ -22,13 +22,17 @@ func TestBrowserNavigation(t *testing.T) {
 	b.signIn(h)
 	key := func(what, k, expr string) { b.until(what, expr, chromedp.KeyEvent(k)) }
 
-	// Planning comes last, after the Organization divider; the project's sections before it.
-	b.waitJS("Planning below the divider", `(() => {
-		const els = [...document.querySelectorAll(".nav > button[data-view], .nav > .nav-sep")];
-		const sep = els.findIndex((e) => e.matches(".nav-sep"));
-		return sep > 0 && getComputedStyle(els[sep]).display !== "none" && els[sep].textContent === "Organization"
-			&& els.slice(sep + 1).map((e) => e.dataset.view).join() === "planning";
+	// The rail lists each section once, in order (the drawer's sections among the nav's
+	// own); Planning comes last, after the Organization divider.
+	b.waitJS("the sections in order, Planning below the divider", `(() => {
+		const els = [...document.querySelectorAll(".nav [data-view], .nav > .nav-sep")].filter((e) => e.offsetHeight > 0)
+			.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+		const sep = els.find((e) => e.matches(".nav-sep"));
+		return sep?.textContent === "Organization"
+			&& els.map((e) => e.dataset.view || "|").join() === "board,scans,run,history,goals,deploys,files,|,planning";
 	})()`)
+	// Run is the top bar's and Deploy the Deploys page's: not in the sidebar's Actions too.
+	b.waitJS("no Run or Deploy in the Actions", `document.querySelector("#run-split") && !document.querySelector("#quick-actions [data-run='web:run'], #quick-actions [data-run='task:deploy'], #quick-server, #quick-deploy")`)
 
 	// The Checklist's old link opens the board.
 	b.do("open the Checklist's old link", chromedp.Navigate(h.base+"/p/"+pid+"/checklist"))
@@ -48,7 +52,7 @@ func TestBrowserNavigation(t *testing.T) {
 
 	// Try's old link opens the Shell page at a commit, under the nav's Shell.
 	b.do("open Try's old link", chromedp.Navigate(h.base+"/p/"+pid+"/try"))
-	b.waitJS("the Shell at a commit", `document.querySelector("#view-run.active.at-commit") && document.querySelector('.nav > button[data-view=run]').getAttribute("aria-current") === "page"`)
+	b.waitJS("the Shell at a commit", `document.querySelector("#view-run.active.at-commit") && document.querySelector('.nav [data-view=run]').getAttribute("aria-current") === "page"`)
 	b.waitJS("commit… pressed", `document.querySelector("#shell-at-commit").getAttribute("aria-pressed") === "true" && !document.querySelector("#try-status").hidden`)
 	b.until("back to main", `document.querySelector("#view-run.active:not(.at-commit)") && location.pathname === "/p/`+pid+`/run"`, chromedp.Click(chromedp.ID("shell-at-main")))
 

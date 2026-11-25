@@ -49,7 +49,7 @@ func TestBrowserLinks(t *testing.T) {
 	// Views: each one an entry.
 	b.until("open the board", `document.querySelector("#view-board.active")`, chromedp.Click(chromedp.CSS(`.nav > button[data-view=board]`)))
 	b.waitJS("the board's URL", path(board))
-	b.until("open History", `document.querySelector("#view-history.active")`, chromedp.Click(chromedp.CSS(`.nav > button[data-view=history]`)))
+	b.until("open History", `document.querySelector("#view-history.active")`, chromedp.Click(chromedp.CSS(`.nav [data-view=history]`)))
 	b.waitJS("History's URL", path("/p/"+pid+"/history"))
 	b.until("open Goals", `document.querySelector("#view-goals.active")`, chromedp.Click(chromedp.CSS(`.nav > button[data-view=goals]`)))
 	b.waitJS("Goals' URL", path("/p/"+pid+"/goals"))
@@ -81,7 +81,7 @@ func TestBrowserLinks(t *testing.T) {
 	b.waitJS("the board's URL", path(board))
 
 	// A commit on History: its own URL; Back closes the pane.
-	b.until("open History", `document.querySelector("#view-history.active")`, chromedp.Click(chromedp.CSS(`.nav > button[data-view=history]`)))
+	b.until("open History", `document.querySelector("#view-history.active")`, chromedp.Click(chromedp.CSS(`.nav [data-view=history]`)))
 	b.until("open the commit", `!document.querySelector("#commit-detail").hidden`, chromedp.Click(chromedp.CSS(`#graph li:first-child .graph-commit`)))
 	b.waitJS("the commit's URL", `location.pathname === "/p/`+pid+`/history/" + document.querySelector("#graph li:first-child").dataset.hash`)
 	b.do("go back", chromedp.NavigateBack())
