@@ -140,9 +140,29 @@ export function buildStatus() {
   };
 }
 
+// The repository's GitHub webhook, on a hub that registers them: whether
+// GitHub tells Dash of builds, or why Dash polls instead.
+const HOOK_LABEL = {
+  active: "active: GitHub tells Dash of builds",
+  pending: "waiting",
+  unreachable: "not reachable",
+  no_permission: "no permission",
+  error: "not registered",
+};
+function renderHook(hook) {
+  const note = $("#ci-hook");
+  note.hidden = !hook;
+  if (!hook) return;
+  note.className = `hint ci-hook ci-hook-${hook.state}`;
+  note.replaceChildren(h("strong", {}, "Webhook"), ` ${HOOK_LABEL[hook.state] || hook.state}.`,
+    hook.reason ? ` ${hook.reason}` : "",
+    hook.last_delivery ? ` Last delivery ${agoText(hook.last_delivery)}.` : "");
+}
+
 export function renderCI() {
   const st = state.ci;
   renderLimit(st);
+  renderHook(st?.hook);
   const rel = st?.release;
   const has = !!buildStatus();
   renderTryButton(); // Run ▾ lists Builds… with how the latest went

@@ -820,6 +820,12 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if s.GitHubHooks != nil {
+		// While the project and its runner are still there to delete it with.
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		s.GitHubHooks.Remove(ctx, p)
+		cancel()
+	}
 	if s.Procs != nil && !s.hub() {
 		for _, proc := range s.Procs.List(p.ID) {
 			_ = s.Procs.Stop(proc.ID)

@@ -90,7 +90,7 @@ Using Dash:
 - [Planning](docs/planning.md)
 - [Chat](docs/chat.md)
 - [Dictation](docs/dictation.md)
-- [GitHub](docs/github.md)
+- [GitHub](docs/github.md) and its [webhooks](docs/github-webhooks.md)
 - [Merge queue](docs/merge-queue.md)
 - [Deploys](docs/deploys.md)
 - [Live previews](docs/previews.md) and [Draw](docs/draw.md)

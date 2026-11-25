@@ -2914,6 +2914,8 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .claude-ok { --c: var(--merged); } .claude-warn { --c: var(--running); } .claude-bad { --c: var(--failed); } .claude-muted { --c: var(--muted); }
 /* ---- GitHub rate limit: polls paused ---- */
 .ci-limit { color: var(--running); }
+.ci-hook-active strong { color: var(--merged); }
+.ci-hook-unreachable strong, .ci-hook-no_permission strong, .ci-hook-error strong { color: var(--running); }
 /* ---- checkouts left behind origin (another runner pushed) ---- */
 .checkouts { display: flex; flex-direction: column; gap: 6px; }
 .checkout-behind { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border: 1px solid var(--line); border-radius: var(--r-m); font-size: var(--fs-s); }

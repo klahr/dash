@@ -182,7 +182,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.StringVar(&o.titleModel, "title-model", "haiku", "model for automatic titles and summaries")
 	hostname, _ := os.Hostname()
 	f.StringVar(&o.machine, "name", strings.ToLower(strings.Split(hostname, ".")[0]), "this computer's name in the dashboard")
-	f.StringVar(&o.publicURL, "public-url", "", "public HTTPS origin (e.g. https://dash.example.com) that serves /mcp with OAuth for claude.ai custom connectors; empty = off (or $DASH_PUBLIC_URL)")
+	f.StringVar(&o.publicURL, "public-url", "", "public HTTPS origin (e.g. https://dash.example.com) that serves /mcp with OAuth for claude.ai custom connectors and, on a hub, takes GitHub webhooks for builds (see docs/github-webhooks.md); empty = off (or $DASH_PUBLIC_URL)")
 	f.StringVar(&o.previewDomain, "preview-domain", "", "serve each task's live preview at https://<task>.<this domain>, e.g. preview.dash.example.com; needs a wildcard DNS record and certificate (see docs/previews.md; or $DASH_PREVIEW_DOMAIN)")
 	f.StringVar(&o.orgDomain, "org-domain", "", "serve each organization at https://<slug>.<this domain>, e.g. dash.example.com; needs a wildcard DNS record and certificate (see docs/deploy.md; or $DASH_ORG_DOMAIN). Empty = off")
 	f.StringVar(&o.orgReserved, "org-reserved", "", "comma-separated subdomains no organization may take, replacing the defaults ("+strings.Join(store.DefaultReservedSlugs, ",")+"); the preview domain's label is always reserved (or $DASH_ORG_RESERVED)")
@@ -895,6 +895,19 @@ func (a *app) setupHub() {
 	// GitHub's builds read with their gh. localrun refuses whatever
 	// would still try to run here.
 	a.builds.Git = api.RunnerGitHub{S: apiSrv}
+	// GitHub tells a hub GitHub can reach of its projects' builds with a
+	// webhook on each repository, registered with a runner's gh; builds
+	// are then polled only as a safety net. Without a public URL, or where
+	// a webhook can't be registered, Dash polls as before.
+	if o.publicURL != "" {
+		hooks := &ci.Hooks{Store: st, API: api.RunnerGitHub{S: apiSrv}, PublicURL: o.publicURL, Watcher: a.builds}
+		a.builds.Hooks, apiSrv.GitHubHooks = hooks, hooks
+		a.storeEvents.chain(hooks.Observe)
+		go hooks.Run(ctx)
+		slog.Info("github webhooks on", "url", hooks.URL())
+	} else {
+		slog.Info("github webhooks off (no -public-url): builds are polled")
+	}
 	a.merges.CleanupEvery, a.merges.PRPoll = 0, 0 // the runners clean up and follow pull requests
 	slog.Info("this hub runs nothing itself: tasks, scans, chats, git and project commands run on runners. Start `dash runner` on a computer with git and Claude Code (account menu → Runners → Add a runner)")
 	warnUnlinked(st.ListProjects())

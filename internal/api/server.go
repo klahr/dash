@@ -109,6 +109,9 @@ type Server struct {
 	Editor             string // command that opens a directory, e.g. "code" (optional)
 	UploadRoot         string // where attached files are stored
 	CI                 *ci.Watcher
+	// GitHubHooks takes GitHub's webhook deliveries, and registers and
+	// removes the webhooks (a hub with a public URL; nil elsewhere).
+	GitHubHooks *ci.Hooks
 	// Notify sends events to the projects' outgoing webhooks (nil: off,
 	// as on a runner, whose hub notifies).
 	Notify *notify.Notifier
@@ -427,6 +430,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/projects/{pid}/ci/investigate", s.investigateCI)
 	mux.HandleFunc("POST /api/projects/{pid}/ci/retry", s.retryCI)
 	mux.HandleFunc("GET /api/projects/{pid}/ci/releases", s.releaseBuilds)
+	mux.HandleFunc("POST "+ci.HookPath, s.githubHook) // public: the repository's webhook secret signs it (auth.publicPath)
 
 	// Outgoing notification webhooks (generic JSON, Slack, ntfy)
 	mux.HandleFunc("GET /api/projects/{pid}/webhooks", s.listWebhooks)

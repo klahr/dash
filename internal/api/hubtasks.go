@@ -1177,7 +1177,8 @@ func (s *Server) hubScan(w http.ResponseWriter, r *http.Request) {
 // hubGitHub handles POST /api/hub/github/{hpid}: gh in this runner's clone
 // of a project the hub linked, for the hub's CI view (see
 // api.RunnerGitHub): reading builds, a release's page, a failed build's
-// log, and re-running a build. Nothing else.
+// log, re-running a build, and the repository's webhook that tells the hub
+// of runs (ci.Hooks). Nothing else.
 func (s *Server) hubGitHub(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.fromHub(w, r)
 	if !ok {
@@ -1215,6 +1216,25 @@ func (s *Server) hubGitHub(w http.ResponseWriter, r *http.Request) {
 		err = s.Git.RerunRun(ctx, p.ID, p.Path, req.RunID, req.FailedOnly)
 	case dispatch.GitHubFailedLog:
 		out.Log = s.Git.RunFailedLog(ctx, p.ID, p.Path, req.RunID, limit)
+	case dispatch.GitHubRun:
+		var run gitops.Run
+		if run, err = s.Git.RunByID(ctx, p.ID, p.Path, req.RunID); err == nil {
+			out.Run = &run
+		}
+	case dispatch.GitHubHookList:
+		out.Hooks, err = s.Git.Hooks(ctx, p.ID, p.Path)
+	case dispatch.GitHubHookCreate, dispatch.GitHubHookUpdate:
+		if req.Hook == nil {
+			err = fmt.Errorf("%w: no hook", errBadRequest)
+		} else if req.Op == dispatch.GitHubHookCreate {
+			out.HookID, err = s.Git.CreateHook(ctx, p.ID, p.Path, *req.Hook)
+		} else {
+			err = s.Git.UpdateHook(ctx, p.ID, p.Path, req.HookID, *req.Hook)
+		}
+	case dispatch.GitHubHookDelete:
+		err = s.Git.DeleteHook(ctx, p.ID, p.Path, req.HookID)
+	case dispatch.GitHubHookPing:
+		err = s.Git.PingHook(ctx, p.ID, p.Path, req.HookID)
 	default:
 		err = fmt.Errorf("%w: unknown op %q", errBadRequest, req.Op)
 	}

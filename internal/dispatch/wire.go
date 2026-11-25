@@ -379,6 +379,10 @@ type GitHubCall struct {
 	Limit      int    `json:"limit,omitempty"`
 	RunID      int64  `json:"run_id,omitempty"`
 	FailedOnly bool   `json:"failed_only,omitempty"`
+	// HookID and Hook are the webhook of the hook_* ops; Hook carries its
+	// secret, which the runner hands gh on stdin and nowhere else.
+	HookID int64              `json:"hook_id,omitempty"`
+	Hook   *gitops.HookConfig `json:"hook,omitempty"`
 }
 
 const (
@@ -388,11 +392,22 @@ const (
 	GitHubReleaseURL = "release_url"
 	GitHubRerun      = "rerun"
 	GitHubFailedLog  = "failed_log"
+	GitHubRun        = "run" // one run, by RunID
+	// The repository's webhooks (see ci.Hooks): the hub registers one so
+	// GitHub tells it of workflow runs.
+	GitHubHookList   = "hook_list"
+	GitHubHookCreate = "hook_create"
+	GitHubHookUpdate = "hook_update"
+	GitHubHookDelete = "hook_delete"
+	GitHubHookPing   = "hook_ping"
 )
 
 // GitHubAnswer is the runner's answer to a GitHubCall.
 type GitHubAnswer struct {
-	Runs []gitops.Run `json:"runs,omitempty"`
-	URL  string       `json:"url,omitempty"`
-	Log  string       `json:"log,omitempty"`
+	Runs   []gitops.Run  `json:"runs,omitempty"`
+	URL    string        `json:"url,omitempty"`
+	Log    string        `json:"log,omitempty"`
+	Run    *gitops.Run   `json:"run,omitempty"`
+	Hooks  []gitops.Hook `json:"hooks,omitempty"`
+	HookID int64         `json:"hook_id,omitempty"`
 }

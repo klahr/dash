@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/klahr/dash/internal/gitops"
@@ -69,7 +70,8 @@ func (w *Watcher) CommitRuns(ctx context.Context, p model.Project, sha string) (
 }
 
 // releaseEvery and releaseFor pace following a release build closely (the
-// regular poll follows it after that, until it ends); noBuildAfter is how
+// regular poll follows it after that, until it ends; a webhook slows it:
+// see releaseSlowEvery); noBuildAfter is how
 // long a pushed tag may go without a workflow run before Dash says none
 // started.
 var (
@@ -93,7 +95,8 @@ func (w *Watcher) WatchRelease(projectID, tag, sha string) {
 }
 
 // follow makes rel the release the project's status shows, saves it, and
-// while it builds checks it every releaseEvery for releaseFor.
+// while it builds checks it every releaseEvery for releaseFor (every
+// releaseSlowEvery while the project's webhook works: see releaseWait).
 func (w *Watcher) follow(rel Release) {
 	w.mu.Lock()
 	if w.releases == nil {
@@ -110,12 +113,27 @@ func (w *Watcher) follow(rel Release) {
 	}
 	projectID, tag := rel.ProjectID, rel.Tag
 	// Read the pacing here, not in the goroutine, which outlives this call.
-	every, deadline := releaseEvery, time.Now().Add(releaseFor)
+	every, slow, noBuild, deadline := releaseEvery, releaseSlowEvery, noBuildAfter, time.Now().Add(releaseFor)
+	building := func() (Release, bool) {
+		rel, ok := w.followed(projectID)
+		return rel, ok && rel.Tag == tag && rel.State == ReleaseBuilding
+	}
 	go func() {
 		for time.Now().Before(deadline) {
-			time.Sleep(every)
-			rel, ok := w.followed(projectID)
-			if !ok || rel.Tag != tag || rel.State != ReleaseBuilding {
+			rel, ok := building()
+			if !ok {
+				return
+			}
+			// While the webhook works, GitHub says when the build changes:
+			// this poll is only a safety net then.
+			hook := false
+			if w.Hooks != nil && w.Store != nil {
+				if p, err := w.Store.GetProject(projectID); err == nil {
+					hook = w.hookActive(p)
+				}
+			}
+			time.Sleep(releaseWait(hook, rel, time.Now(), every, slow, noBuild))
+			if _, ok := building(); !ok {
 				return
 			}
 			if _, err := w.Refresh(context.Background(), projectID); errors.Is(err, errGone) {
@@ -204,31 +222,111 @@ func (w *Watcher) refreshRelease(ctx context.Context, p model.Project) *Release 
 			slog.Debug("release runs", "project", p.Name, "tag", rel.Tag, "err", err)
 			return &rel
 		}
-		mine := tagRuns(runs, rel.SHA)
-		if len(mine) == 0 && len(rel.Runs) > 0 {
-			return &rel // GitHub listed its runs before: a glitch, not "no build"
-		}
-		prev := rel
-		rel.Runs = mine
-		rel.State = releaseState(rel, rel.Runs)
-		if rel.State == ReleasePublished || rel.State == ReleaseNoBuild {
-			if url, err := w.Git.ReleaseURL(ctx, p.ID, p.Path, rel.Tag); err == nil && url != "" {
-				rel.URL = url
-			} else {
-				rel.URL = gitops.ReleasePage(p.RemoteURL, rel.Tag)
-			}
-		}
-		w.mu.Lock()
-		cur, ok := w.releases[p.ID]
-		if ok && cur.Tag == rel.Tag {
-			w.releases[p.ID] = rel
-		}
-		w.mu.Unlock()
-		if ok && cur.Tag == rel.Tag && !sameRelease(&prev, &rel) {
-			w.save(rel)
-		}
+		rel = w.settleRelease(ctx, p, rel, runs, false)
 	}
 	return &rel
+}
+
+// settleRelease is where the poll (refreshRelease, with the tag's runs as
+// GitHub lists them) and the webhook (HookRun, with the one run a delivery
+// named, read again from GitHub: merge) update a release build, so the two
+// can't drift apart. It takes the tag's trusted runs on rel's commit, the
+// newest of each workflow (a run already seen in a newer state than runs
+// show keeps that state), works out the release's state and page, and
+// saves it when that changed; the release followed is updated too.
+func (w *Watcher) settleRelease(ctx context.Context, p model.Project, rel Release, runs []gitops.Run, merge bool) Release {
+	w.relMu.Lock()
+	defer w.relMu.Unlock()
+	if cur, ok := w.followed(p.ID); ok && cur.Tag == rel.Tag {
+		rel = cur // the latest, should another update have come in meanwhile
+	} else if saved, err := w.Store.ReleaseBuild(p.ID, rel.Tag); err == nil && saved.SHA == rel.SHA {
+		rel = saved
+	}
+	if rel.State != ReleaseBuilding {
+		return rel // it ended: nothing new to learn
+	}
+	mine := tagRuns(runs, rel.SHA)
+	if merge {
+		mine = mergeRuns(rel.Runs, mine)
+	} else if len(mine) == 0 && len(rel.Runs) > 0 {
+		return rel // GitHub listed its runs before: a glitch, not "no build"
+	} else {
+		mine = keepNewer(rel.Runs, mine)
+	}
+	prev := rel
+	rel.Runs = mine
+	rel.State = releaseState(rel, rel.Runs)
+	if rel.State == ReleasePublished || rel.State == ReleaseNoBuild {
+		if url, err := w.Git.ReleaseURL(ctx, p.ID, p.Path, rel.Tag); err == nil && url != "" {
+			rel.URL = url
+		} else {
+			rel.URL = gitops.ReleasePage(p.RemoteURL, rel.Tag)
+		}
+	}
+	w.mu.Lock()
+	cur, ok := w.releases[p.ID]
+	if ok && cur.Tag == rel.Tag {
+		w.releases[p.ID] = rel
+	}
+	w.mu.Unlock()
+	if !sameRelease(&prev, &rel) {
+		w.save(rel)
+	}
+	return rel
+}
+
+// mergeRuns adds the runs in fresh to have (each the newest of its
+// workflow): a run replaces its workflow's run of the same or a lower id,
+// unless that one is already further along.
+func mergeRuns(have, fresh []gitops.Run) []gitops.Run {
+	out := slices.Clone(have)
+	if out == nil {
+		out = []gitops.Run{}
+	}
+	for _, r := range fresh {
+		i := slices.IndexFunc(out, func(x gitops.Run) bool { return x.Workflow == r.Workflow })
+		switch {
+		case i < 0:
+			out = append(out, r)
+		case out[i].ID < r.ID, out[i].ID == r.ID && !older(r, out[i]):
+			out[i] = r
+		}
+	}
+	slices.SortStableFunc(out, func(a, b gitops.Run) int { return cmpInt(b.ID, a.ID) })
+	return out
+}
+
+// keepNewer is fresh, a list GitHub answered, with any run that have
+// already shows in a newer state (a delivery came in after GitHub made the
+// list) kept as it is in have.
+func keepNewer(have, fresh []gitops.Run) []gitops.Run {
+	for i, r := range fresh {
+		for _, h := range have {
+			if h.ID == r.ID && older(r, h) {
+				fresh[i] = h
+			}
+		}
+	}
+	return fresh
+}
+
+// older reports whether a is an earlier state of the same run than b: b
+// is done and a isn't, or b changed later.
+func older(a, b gitops.Run) bool {
+	if b.Done() != a.Done() {
+		return b.Done()
+	}
+	return !a.UpdatedAt.IsZero() && a.UpdatedAt.Before(b.UpdatedAt)
+}
+
+func cmpInt(a, b int64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
 }
 
 // pushRunsLimit is how many of the newest push runs Refresh reads to find

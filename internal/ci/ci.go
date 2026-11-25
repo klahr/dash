@@ -48,6 +48,9 @@ type Status struct {
 	// builds: polls are paused until it ends, and State and Runs are the
 	// last ones seen.
 	RateLimit *gitops.RateLimitError `json:"rate_limit,omitempty"`
+	// Hook is how the repository's webhook is doing, on a hub that
+	// registers them (see Hooks); nil where Dash only polls.
+	Hook *HookStatus `json:"hook,omitempty"`
 }
 
 // GitHub is how a Watcher reads GitHub Actions: gh in the project's
@@ -61,6 +64,8 @@ type GitHub interface {
 	ReleaseURL(ctx context.Context, projectID, dir, tag string) (string, error)
 	RerunRun(ctx context.Context, projectID, dir string, runID int64, failedOnly bool) error
 	RunFailedLog(ctx context.Context, projectID, dir string, runID int64, lines int) string
+	// RunByID reads one run again, as a webhook delivery names it.
+	RunByID(ctx context.Context, projectID, dir string, runID int64) (gitops.Run, error)
 }
 
 // Watcher polls GitHub Actions for every project with a GitHub remote.
@@ -75,11 +80,16 @@ type Watcher struct {
 	IdleEvery time.Duration
 	// AnyRemote also polls projects whose remote isn't on github.com (tests).
 	AnyRemote bool
+	// Hooks, on a hub with a public URL, registers the repositories'
+	// webhooks: while one works, builds are polled only as a safety net.
+	Hooks *Hooks
 	// Now and Rand (a random duration below d) are for tests.
 	Now  func() time.Time
 	Rand func(d time.Duration) time.Duration
 
+	relMu    sync.Mutex // one release update at a time (settleRelease)
 	mu       sync.Mutex
+	kicked   map[string]bool // projects with a refresh a delivery asked for, soon
 	status   map[string]Status
 	busy     map[string]bool
 	releases map[string]Release // project ID → the release being followed (saved in Store too)
@@ -187,8 +197,11 @@ func (w *Watcher) due(p model.Project, now time.Time) bool {
 // active reports whether project p has work going on that a build may
 // follow: a task running, in review or merging, a release building, or a
 // build running on its default branch.
+//
+// While the project's webhook works, GitHub says when builds change: a
+// build or release running doesn't count then.
 func (w *Watcher) active(p model.Project) bool {
-	if st := w.Status(p.ID); st.State == Running || (st.Release != nil && st.Release.State == ReleaseBuilding) {
+	if st := w.Status(p.ID); !w.hookActive(p) && (st.State == Running || (st.Release != nil && st.Release.State == ReleaseBuilding)) {
 		return true
 	}
 	return len(w.Store.ListTodos(p.ID, model.StatusInProgress, model.StatusReview, model.StatusMerging)) > 0
@@ -232,7 +245,6 @@ func (w *Watcher) watched(p model.Project) bool {
 // Status returns the last known build status of a project.
 func (w *Watcher) Status(projectID string) Status {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	st, ok := w.status[projectID]
 	if !ok {
 		st = Status{ProjectID: projectID, State: Unknown, Runs: []gitops.Run{}}
@@ -240,6 +252,8 @@ func (w *Watcher) Status(projectID string) Status {
 	if rel, ok := w.releases[projectID]; ok {
 		st.Release = &rel
 	}
+	w.mu.Unlock()
+	st.Hook = w.hookStatus(projectID)
 	return st
 }
 
@@ -264,7 +278,7 @@ func (w *Watcher) Refresh(ctx context.Context, projectID string) (Status, error)
 		return w.paused(p.ID, rl), nil
 	}
 	w.findReleases(ctx, p)
-	st := Status{ProjectID: p.ID, Branch: p.DefaultBranch, Checked: time.Now(), Release: w.refreshRelease(ctx, p)}
+	st := Status{ProjectID: p.ID, Branch: p.DefaultBranch, Checked: time.Now(), Release: w.refreshRelease(ctx, p), Hook: w.hookStatus(p.ID)}
 	if rl := w.limit(p.ID); rl != nil {
 		return w.paused(p.ID, rl), nil // limited while reading the releases
 	}
@@ -606,6 +620,9 @@ func (w *Watcher) release(id string) {
 
 // set stores a status and publishes it when it changed.
 func (w *Watcher) set(st Status) {
+	if st.Hook == nil {
+		st.Hook = w.hookStatus(st.ProjectID)
+	}
 	w.mu.Lock()
 	if w.status == nil {
 		w.status = map[string]Status{}
@@ -615,7 +632,7 @@ func (w *Watcher) set(st Status) {
 	w.mu.Unlock()
 	if had && prev.State == st.State && prev.SHA == st.SHA && prev.TodoID == st.TodoID && prev.Error == st.Error &&
 		len(prev.Runs) == len(st.Runs) && (len(st.Runs) == 0 || prev.Runs[0] == st.Runs[0]) && sameRelease(prev.Release, st.Release) &&
-		sameLimit(prev.RateLimit, st.RateLimit) {
+		sameLimit(prev.RateLimit, st.RateLimit) && sameHook(prev.Hook, st.Hook) {
 		return
 	}
 	if w.Pub != nil {

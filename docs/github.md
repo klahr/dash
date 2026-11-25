@@ -205,6 +205,9 @@ Dash calls GitHub with `gh`. On a hub, each runner calls it with its own `gh` lo
 - **Pull requests**: every minute for a project with an open pull request. Pull requests of failed
   tasks are followed every 10 minutes.
 
+On a hub with a public URL, GitHub tells Dash of builds with a webhook instead, and these polls
+slow down. See [GitHub webhooks](github-webhooks.md).
+
 Each project's polls have a little random delay added, so after a restart they don't all call
 GitHub at once. Writes (opening, commenting on or merging a pull request) from one computer run one
 after another, a second apart.
@@ -260,6 +263,8 @@ When the project is on GitHub, Dash then follows the workflow runs the tag start
 project's row in the sidebar shows the pulsing ring ("Building v1.2.3"), **Builds…** in the **Run ▾** menu says
 **Release v1.2.3 failed** for a failed release, and the **Builds** sheet shows it building, published (with a link
 to the GitHub release) or failed, with **Ask Claude to fix it** for a failure.
+Without a webhook, Dash checks the build every 15 seconds. On a hub with a working
+[GitHub webhook](github-webhooks.md), GitHub tells Dash and it checks only every 3 minutes.
 
 Only the organization's owners and admins, who may push, can tag releases. For a project on
 another computer, the tag is made and pushed there, in its own clone. On a hub, a runner makes

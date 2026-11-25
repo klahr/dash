@@ -849,6 +849,9 @@ var public = map[string]bool{
 	"/runner/version":     true,
 	// Stripe's events: signed with the webhook secret (billing).
 	"/api/billing/webhook": true,
+	// GitHub's webhook deliveries: signed with the repository's webhook
+	// secret (ci.Hooks, ci.HookPath).
+	"/api/github/hook": true,
 	// Coming back from Stripe Checkout or the portal: a page that only goes
 	// on to /?billing=… (billingreturn.go).
 	BillingReturnPath: true,

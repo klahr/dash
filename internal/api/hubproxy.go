@@ -874,6 +874,42 @@ func (g RunnerGitHub) RunFailedLog(ctx context.Context, projectID, _ string, run
 	return out.Log
 }
 
+func (g RunnerGitHub) RunByID(ctx context.Context, projectID, _ string, id int64) (gitops.Run, error) {
+	out, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubRun, RunID: id})
+	if err != nil {
+		return gitops.Run{}, err
+	}
+	if out.Run == nil {
+		return gitops.Run{}, errors.New("the runner sent no run")
+	}
+	return safeRuns([]gitops.Run{*out.Run})[0], nil
+}
+
+func (g RunnerGitHub) Hooks(ctx context.Context, projectID, _ string) ([]gitops.Hook, error) {
+	out, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubHookList})
+	return out.Hooks, err
+}
+
+func (g RunnerGitHub) CreateHook(ctx context.Context, projectID, _ string, c gitops.HookConfig) (int64, error) {
+	out, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubHookCreate, Hook: &c})
+	return out.HookID, err
+}
+
+func (g RunnerGitHub) UpdateHook(ctx context.Context, projectID, _ string, id int64, c gitops.HookConfig) error {
+	_, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubHookUpdate, HookID: id, Hook: &c})
+	return err
+}
+
+func (g RunnerGitHub) DeleteHook(ctx context.Context, projectID, _ string, id int64) error {
+	_, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubHookDelete, HookID: id})
+	return err
+}
+
+func (g RunnerGitHub) PingHook(ctx context.Context, projectID, _ string, id int64) error {
+	_, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubHookPing, HookID: id})
+	return err
+}
+
 // pullOnRunner is POST /api/projects/{pid}/remote/pull on a hub: the
 // runner named by ?runner= (it must be online and linked to p) pulls origin
 // into its checkout, fast-forward only.
