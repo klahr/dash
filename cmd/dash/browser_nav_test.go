@@ -54,7 +54,9 @@ func TestBrowserNavigation(t *testing.T) {
 	b.until("close it", `!document.querySelector("#scans-sheet").open && !new URLSearchParams(location.search).has("sheet")`, chromedp.KeyEvent(kb.Escape))
 	b.waitJS("From scans and Scans… on the board", `document.querySelector("#board-filters:not([hidden]) .scan-filter") && document.querySelector(".scans-open")`)
 	b.until("Scans… opens the sheet", `document.querySelector("#scans-sheet").open`, chromedp.Click(chromedp.CSS(`.scans-open`)))
-	b.until("close it", `!document.querySelector("#scans-sheet").open`, chromedp.KeyEvent(kb.Escape))
+	// Closing the sheet goes Back (router.js) a moment later; navigating before
+	// that lands has Chrome abort the load (net::ERR_ABORTED).
+	b.until("close it", `!document.querySelector("#scans-sheet").open && !new URLSearchParams(location.search).has("sheet")`, chromedp.KeyEvent(kb.Escape))
 	b.do("open Files' old link", chromedp.Navigate(h.base+"/p/"+pid+"/files"))
 	b.waitJS("Code → Files", `document.querySelector("#view-files.active") && location.pathname === "/p/`+pid+`/code"
 		&& document.querySelector('.nav [data-view=code]').getAttribute("aria-current") === "page"
