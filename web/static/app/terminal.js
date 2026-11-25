@@ -99,6 +99,7 @@ export async function startProc(req, show = true) {
   closeDetail();
   attach(p);
   showView("run");
+  loadProcs().catch(() => {}); // listed now, so Run says Stop without waiting for its event
   if (p.url && !p.warning) toast(`Server starting at ${p.url}`);
 }
 

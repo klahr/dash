@@ -30,7 +30,7 @@ import { loadTodoChat } from "./chatpane.js";
 import { addWorkerEvent } from "./timeline.js";
 import { renderPane } from "./drawmode.js";
 import { attach, attached, termWS } from "./terminal.js";
-import { loadProcs } from "./try.js";
+import { loadProcs, procsChanged } from "./try.js";
 import { refreshGraph } from "./history.js";
 import { loadDismissed, loadScans, onScanRun, scanFinished, scanTasksChanged, scans } from "./scans.js";
 import { checkForUpdate } from "./updates.js";
@@ -273,7 +273,7 @@ function onEvent(ev, m = { name: "" }) {
       }
       break;
     case "process.updated":
-      if (mine) loadProcs().catch(fail);
+      if (mine) procsChanged(); // the processes, and a CLI project's run (it has no event of its own)
       break;
     case "preview.updated":
       previewEvent(ev.data, m);

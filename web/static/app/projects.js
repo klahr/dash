@@ -95,6 +95,7 @@ export async function selectProject(p, { follow = true, restore = follow } = {})
   state.goalFilter = null;
   state.unpushed = 0;
   state.unpushedTodos = null;
+  state.procs = []; // the last project's: its server running isn't this one's (Run would say Stop)
   state.lane = null;
   state.follow = null;
   closeDetail();

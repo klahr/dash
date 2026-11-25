@@ -27,15 +27,19 @@ function tryProject(p = state.project) { return !!p && p.preview_kind === "termi
 function shortSHA(sha) { return (sha || "").slice(0, 7); }
 function trySend(msg) { tryT?.send(msg); }
 
+// Only the latest look at the session counts: one asked before Run or Terminate
+// changed it, answered after, would undo the change on the button.
+let trySeq = 0;
 export async function loadTry() {
   const p = state.project;
+  const n = ++trySeq;
   if (tryState.pid !== (p?.id || null)) {
     disconnectTry();
     Object.assign(tryState, { pid: p?.id || null, loaded: false, runners: [], candidates: [], default: "", disabled: "", session: null, runner: "", refused: null, pending: null, stopAsked: false });
   }
   if (!tryProject(p)) { renderTryButton(); if (state.view === "try") renderTry(); return; }
   const st = await api("GET", `/api/projects/${p.id}/try`);
-  if (state.project?.id !== p.id) return;
+  if (state.project?.id !== p.id || n !== trySeq) return;
   Object.assign(tryState, { loaded: true, runners: st.runners || [], candidates: st.candidates || [], default: st.default || "", disabled: st.disabled || "", session: st.session || null });
   const ids = tryState.runners.map((r) => r.id);
   if (tryState.session) tryState.runner = tryState.session.runner_id;
@@ -286,6 +290,7 @@ async function startTry({ ref = tryState.session?.ref || "", runner = tryState.r
   try {
     const s = await api("POST", `/api/projects/${p.id}/try`, { runner, ref });
     if (state.project?.id !== p.id) return;
+    trySeq++; // a look asked while it started is older than this
     Object.assign(tryState, { session: s, runner: s.runner_id, refused: null });
     ok = true;
   } finally {
@@ -304,6 +309,7 @@ async function stopTry() {
   tryState.pending = null;
   disconnectTry();
   await api("DELETE", `/api/projects/${p.id}/try`);
+  trySeq++; // a look asked while it stopped is older than this
   tryState.session = null;
   renderTry();
   renderTryButton();
@@ -486,16 +492,32 @@ $$("#try-keys [data-key]").forEach((b) => {
   });
 });
 // The session may stop on the runner (idle, exited): look again now and then while it's shown.
-// Elsewhere, a running session is looked at too, so the header's Terminate turns back into Run.
+// Elsewhere, a running session is looked at too, so the header's Terminate turns back into Run
+// (process.updated, procsChanged below, says so at once; this is for when an event is missed).
 setInterval(() => {
   if (document.hidden || tryState.starting || !tryProject()) return;
   if (state.view === "try" || tryState.session?.state === "live") loadTry().catch(() => {});
 }, 20000);
 
+// Only the latest listing counts: an earlier one answered late (a server
+// listed while it still stopped) or another project's would put Run out of step.
+let procsSeq = 0;
 export async function loadProcs() {
-  if (!state.project) return;
-  state.procs = await api("GET", `/api/projects/${state.project.id}/processes`);
+  const p = state.project;
+  if (!p) return;
+  const n = ++procsSeq;
+  const procs = await api("GET", `/api/projects/${p.id}/processes`);
+  if (n !== procsSeq || state.project?.id !== p.id) return;
+  state.procs = procs;
   renderProcs();
+}
+
+// procsChanged: a process of the project started or ended (events.js). A
+// CLI project's run is one: look at it again, so Run follows it at once
+// (its exit, an idle stop, a run started on another device).
+export function procsChanged() {
+  loadProcs().catch(fail);
+  if (tryProject() && !tryState.starting) loadTry().catch(() => {});
 }
 
 export function renderProcs() {
