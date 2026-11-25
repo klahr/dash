@@ -4,6 +4,7 @@ import { attempt, busy, toast } from "./dialogs.js";
 import { projectFirst, state } from "./state.js";
 import { title } from "./branches.js";
 import { agoText } from "../time.js";
+import { setStatus } from "./status.js";
 import { openDetail } from "./detail.js";
 import { buildEtaText, buildProgress } from "../buildeta.js";
 import { renderTryButton } from "./try.js";
@@ -100,7 +101,7 @@ export const ciBuilding = h("button", { type: "button", class: "side-ci-build", 
 ciBuilding.addEventListener("click", attempt(openCI));
 
 // While GitHub rate limits the gh that reads the builds, Dash pauses its
-// polls: the sidebar says so and until when, with GitHub's message on hover.
+// polls: the status popover says so and until when, with GitHub's message.
 const limitText = (rl) => `GitHub rate limit (${rl.kind}): paused until ${clockTime(rl.until)}`;
 const limitHelp = (rl) => rl.no_login
   ? `gh isn't logged in on ${rl.machine ? `the runner ${rl.machine}` : "the Dash computer"}, so GitHub limits it by IP address. Run gh auth login there to fix it.`
@@ -110,17 +111,19 @@ function renderLimit(st) {
   clearTimeout(limitTimer);
   const rl = st?.rate_limit;
   const left = rl ? new Date(rl.until) - Date.now() : 0;
-  const pill = $("#github-limit-pill"), note = $("#ci-limit");
-  pill.hidden = note.hidden = !(left > 0);
-  if (left <= 0) return;
+  const note = $("#ci-limit");
+  note.hidden = !(left > 0);
+  if (left <= 0) { setStatus("github", null); return; }
   const help = limitHelp(rl);
-  pill.textContent = limitText(rl) + (rl.no_login ? " (gh isn't logged in)" : "");
-  pill.title = [`GitHub: ${rl.message}`, help].filter(Boolean).join("\n\n");
+  setStatus("github", {
+    tone: "warn", label: "GitHub rate limit", text: `Builds paused until ${clockTime(rl.until)}` + (rl.no_login ? " (gh isn't logged in)" : ""),
+    title: `GitHub (${rl.kind}): ${rl.message}`, detail: help ? h("p", { class: "hint" }, help) : null,
+    action: { label: "Builds", run: attempt(() => openCI()) },
+  });
   note.replaceChildren(`${limitText(rl)}. Dash checks the builds again then. `, help);
   note.title = `GitHub: ${rl.message}`;
   limitTimer = setTimeout(() => renderLimit(state.ci), Math.min(left + 1000, 2 ** 31 - 1));
 }
-$("#github-limit-pill").addEventListener("click", attempt(() => openCI()));
 
 // buildStatus says how the latest build went, for Builds… in the top bar's Run ▾ menu
 // (try.js): null while the project has no builds to show. state is "running", "ok", "bad" or "".

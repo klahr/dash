@@ -74,9 +74,10 @@ Use test-mode keys (`sk_test_…`) and the Stripe CLI to try it out:
   forms of its own.
 - **Inviting a second member** into an unpaid organization offers the owner to start the
   trial straight away. The invitation is made either way.
-- A **banner** on the board when an organization needs a subscription: until when it can keep
-  working, or that the board is read-only. Owners get the buttons; other members are asked to
-  talk to an owner.
+- A **Billing** row in the [status popover](status.md) when an organization needs a
+  subscription: until when it can keep working, or that the board is read-only (the status
+  icon's dot is then red). Owners get **Billing**, which opens **Organization → Billing**; other
+  members are asked to talk to an owner.
 
 ## Individuals
 

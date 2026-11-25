@@ -6,11 +6,13 @@ import { state } from "./state.js";
 import { orgSection } from "./accountsheet.js";
 import { copyBlock } from "./prefs.js";
 import { agoText } from "../time.js";
+import { setStatus } from "./status.js";
 
 // ------------------------------------------------------------------ Claude's status
 // Claude's status page (status.claude.com) posts its incidents to this Dash's
-// webhook, which a platform admin sets up in Organization → Claude status. A pill
-// in the top bar shows while something is wrong; it opens the incidents.
+// webhook, which a platform admin sets up in Organization → Claude status. While
+// something is wrong it is a row in the status popover, lighting the status
+// icon's dot; the row opens the incidents.
 // Always the hub's (this Dash's), whichever project is open.
 const INDICATOR = { none: "All systems operational", minor: "Minor outage", major: "Partial outage", critical: "Major outage", maintenance: "Maintenance" };
 const TONE = { none: "ok", minor: "warn", maintenance: "warn", major: "bad", critical: "bad" };
@@ -50,25 +52,21 @@ export function onClaudeStatus(st) {
   }
 }
 
-// The page's own indicator covers every component, so it doesn't turn the
-// pill on by itself: only what counts does.
+// The page's own indicator covers every component, so it doesn't light the
+// status icon by itself: only what counts does.
 const troubled = (st) => !!st?.enabled && (counted(st.active).length > 0 || counted(st.components).length > 0);
 
 export function renderClaudeStatus() {
   const st = state.claudeStatus;
-  const pill = $("#claude-pill");
-  pill.hidden = !troubled(st);
-  if (!pill.hidden) {
+  if (!troubled(st)) setStatus("claude", null);
+  else {
     const active = counted(st.active), comps = counted(st.components);
     // Red only when something the sheet shows red counts; else yellow.
-    const tone = claudePillTone(active, comps);
-    pill.className = `usage-pill claude-pill claude-${tone}`;
-    // In a span so a long text ends in "…" inside the pill, beside its dot.
-    const text = document.createElement("span");
-    text.className = "claude-pill-text";
-    text.textContent = claudePillText(active, comps);
-    pill.replaceChildren(text);
-    pill.title = `${[...active.map((i) => i.name), ...comps.map((c) => c.name)].join(", ")} (status.claude.com)`;
+    setStatus("claude", {
+      tone: claudePillTone(active, comps), label: "Claude", text: claudePillText(active, comps),
+      title: `${[...active.map((i) => i.name), ...comps.map((c) => c.name)].join(", ")} (status.claude.com)`,
+      action: { label: "Details", run: attempt(openClaudeStatus) },
+    });
   }
   if ($("#claude-status-sheet").open) renderSheet();
 }
@@ -132,7 +130,7 @@ function renderSheet() {
     ignored ? h("details", { class: "claude-ignored" },
       h("summary", {}, h("span", { class: "section-head" }, `Not counted (${ignored})`)),
       h("p", { class: "hint" }, isAdmin() ? "These affect only components Dash doesn't watch. Choose them in Organization → Claude status → Components."
-        : "These affect only components Dash doesn't watch, so the Claude pill stays off for them."),
+        : "These affect only components Dash doesn't watch, so they don't light the status icon."),
       ignComps.length ? compList(ignComps) : null,
       ignActive.length ? incidentList(ignActive) : null) : null,
     h("h3", { class: "section-head" }, "Resolved this week"),
@@ -151,7 +149,6 @@ export async function openClaudeStatus() {
   await loadClaudeStatus().catch(() => {});
 }
 
-$("#claude-pill").addEventListener("click", attempt(openClaudeStatus));
 $("#claude-status-sync").addEventListener("click", attempt(async () => {
   await api("POST", "/api/admin/claude-status/sync", null, "");
   await loadClaudeStatus();

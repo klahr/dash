@@ -43,24 +43,24 @@ adds later is not checked. **Use the defaults** goes back to these three.
 
 Choose **Check now** first to list all the page's components.
 
-Only these count for the pill and the notices:
+Only these count for the status icon and the notices:
 
 - a checked component that isn't operational;
 - an incident or maintenance that affects a checked component;
 - an incident that names no component, so a general outage isn't missed.
 
-The page's overall status covers every component, so it doesn't turn the pill on by itself.
+The page's overall status covers every component, so it doesn't light the status icon by itself.
 
 ## What people see
 
-- **The Claude pill** in the top bar (just its dot on a phone) shows while something that
-  counts is wrong. It counts the affected services that count, from the components and the
-  incidents, each once: for example "Claude: 3 services affected", or "Claude: Claude Code
-  degraded performance" for one. An incident that names no service shows as "Claude: major
-  incident". It is red for partial and major outages, and amber for minor ones and maintenance.
-- **Click the pill** to see the affected services, the active incidents with each update,
+- **The [status icon](status.md)** in the top bar shows a dot while something that counts is
+  wrong: red for partial and major outages, amber for minor ones and maintenance. Its popover
+  has a **Claude** row that counts the affected services, from the components and the
+  incidents, each once: for example "3 services affected", or "Claude Code degraded
+  performance" for one. An incident that names no service shows as "major incident".
+- **Details** on that row shows the affected services, the active incidents with each update,
   and the incidents resolved in the last week. What doesn't count is folded under **Not
-  counted**, so it is clear why the pill is off. **Status page** opens status.claude.com.
+  counted**, so it is clear why the icon stays quiet. **Status page** opens status.claude.com.
 - **A notice** pops up when an incident that counts starts and when it is resolved.
 - The command palette has **Claude status** too.
 

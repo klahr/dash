@@ -12,7 +12,7 @@ import { activityNodes } from "./activity.js";
 import { canStartNow, closeDetail, openDetail, pacing, renderActions, renderDetail, startNow, startNowHelp } from "./detail.js";
 import { canPreview, previewOf, previewTag, previewTodo } from "./preview.js";
 import { reviewTodo } from "./drawmode.js";
-import { renderRunnerBanner, runnerName, welcomeScreen } from "./runners.js";
+import { renderRunnerStatus, runnerName, welcomeScreen } from "./runners.js";
 import { updateNeedsYou } from "./notifications.js";
 import { loadRemote } from "./origin.js";
 import { loadGraph } from "./history.js";
@@ -249,7 +249,7 @@ function renderBoardNow() {
   }
   empty.hidden = true;
   $("#new-todo").hidden = false;
-  renderRunnerBanner();
+  renderRunnerStatus();
   renderGoalFilter();
   renderMineFilter();
   const tagged = renderTagFilter();

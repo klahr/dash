@@ -1,4 +1,5 @@
 import { $ } from "./dom.js";
+import { setStatus } from "./status.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on, signIn } from "./api.js";
 import { fail, toast } from "./dialogs.js";
@@ -142,10 +143,11 @@ export function multi() { return (state.machines || []).length > 1; }
 // else its default branch.
 export function baseBranch(p) { return p?.work_branch || p?.default_branch || ""; }
 export function refreshLive() { setLive(!!sockets.get(state.project?.machine || state.machines?.[0]?.name)?.live); }
+// The live connection is the status icon's first row: offline lights its dot.
 function setLive(on) {
-  $("#live").classList.toggle("on", on);
-  $("#live").title = on ? "Live updates connected" : "Live updates disconnected — reconnecting";
-  $("#live-label").textContent = on ? "Live" : "Offline";
+  setStatus("live", on
+    ? { tone: "ok", label: "Live updates", text: "Connected" }
+    : { tone: "bad", label: "Live updates", text: "Offline, reconnecting…", title: "The board doesn't update until Dash reconnects.", action: { label: "Reload", run: () => location.reload() } });
 }
 
 // A project's tasks and permission requests are fetched over REST and then
@@ -265,7 +267,10 @@ function onEvent(ev, m = { name: "" }) {
       if (mine) refreshGraph();
       break;
     case "merge.queue":
-      if (sameMachine) $("#merge-status").textContent = ev.data.pending ? `${ev.data.pending} in merge queue` : "";
+      if (sameMachine) {
+        setStatus("merge", ev.data.pending ? { tone: "info", label: "Merge queue", text: `${ev.data.pending} waiting to land`,
+          action: { label: "Board", run: () => $('.nav > button[data-view="board"]').click() } } : null);
+      }
       break;
     case "process.updated":
       if (mine) loadProcs().catch(fail);

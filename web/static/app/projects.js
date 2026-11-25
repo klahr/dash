@@ -3,6 +3,7 @@ import { $, $$, h, ib, ico, plural, resizeHandle, setLabel } from "./dom.js";
 import { sizeText } from "./lightbox.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
+import { setStatus } from "./status.js";
 import { api, on } from "./api.js";
 import { changed, findProject, initial } from "./routes.js";
 import { start as startRouter } from "./router.js";
@@ -15,7 +16,7 @@ import { renderBoard } from "./branches.js";
 import { ghMark, ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
 import { closeDetail } from "./detail.js";
 import { syncPrefs } from "./prefs.js";
-import { loadRunners, openRunners, renderSideRunners, startRunner } from "./runners.js";
+import { loadRunners, openRunners, renderRunnersStatus, startRunner } from "./runners.js";
 import { loadMe, openOrg, renameOrg, sendInvite, setOrgName, setRequire2FA } from "./account.js";
 import { askToPay, loadBilling, newOrg } from "./billing.js";
 import { createToken } from "./tokens.js";
@@ -168,12 +169,14 @@ export function renderProjectHeader() {
   $("#project-menu").hidden = !p;
   renderTryButton(); // Run, and its ▾ menu's Run tests, Push and Builds…
   renderPaused(p);
-  const warn = $("#sync-warn");
-  warn.hidden = !p?.sync_error;
-  if (p?.sync_error) {
-    warn.replaceChildren(h("strong", {}, `Can't sync ${baseBranch(p)} with GitHub`), h("span", {}, p.sync_error),
-      h("span", { class: "hint" }, `Fix it in ${p.path}; Dash retries on the next merge.`));
-  }
+  // Syncing the base branch with GitHub failed: a row in the status popover,
+  // with the Shell (which runs in the project's checkout) to fix it in.
+  setStatus("sync", p?.sync_error ? {
+    tone: "warn", label: "GitHub sync", text: `Can't sync ${baseBranch(p)}`,
+    detail: h("div", {}, h("p", { class: "status-err" }, p.sync_error),
+      h("p", { class: "hint" }, `Fix it in ${p.path}; Dash retries on the next merge.`)),
+    action: { label: "Shell", run: () => $('.nav > button[data-view="run"]').click() },
+  } : null);
 }
 
 // A paused project says so above the board, and its menu offers Resume.
@@ -846,7 +849,7 @@ export function renderSideProjects() {
   }
   $("#side-project-list").replaceChildren(...(items.length ? items : [h("li", { class: "machine-empty" }, "No projects yet")]));
   syncStarMenu();
-  renderSideRunners();
+  renderRunnersStatus();
 }
 
 // toggleStar stars or unstars p (the current project without one), in the

@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { saveField } from "./autosave.js";
 import { state } from "./state.js";
-import * as store from "./store.js";
+import { setStatus } from "./status.js";
 import { aheadOfPace, paceMs, paceStateText, paceText } from "../usagetime.js";
 import { HOUR, resetText } from "../time.js";
 
@@ -31,16 +31,13 @@ const windowElapsed = (w) => {
 
 export function renderUsage() {
   const u = state.usage;
-  const pill = $("#usage-pill");
-  if (!u || (!u.known && !u.manual_pause)) { pill.hidden = $("#usage-fold").hidden = true; return; }
-  pill.hidden = $("#usage-fold").hidden = false;
+  if (!u || (!u.known && !u.manual_pause)) { setStatus("usage", null); return; }
   const live = (u.windows || []).filter((w) => new Date(w.resets_at) > new Date());
   const top = live.reduce((a, w) => (!a || w.utilization > a.utilization ? w : a), null);
   const overPace = (w) => { const e = windowElapsed(w); return e !== null && w.utilization > e; };
   // Waiting only to stay on the weekly pace is the queue working as asked, not a stop.
   const stopped = u.paused && !u.pacing;
-  pill.className = `usage-pill${stopped ? " paused" : u.pacing || (top && (top.utilization >= 0.7 || overPace(top))) ? " warn" : ""}`;
-  pill.title = u.paused ? u.reason : top && overPace(top) ? "Claude subscription usage, ahead of pace" : "Claude subscription usage";
+  const tone = stopped ? "bad" : u.pacing || (top && (top.utilization >= 0.7 || overPace(top))) ? "warn" : "ok";
 
   const reason = u.paused
     ? `${u.reason}. No new tasks start${u.until && !u.manual_pause ? ` until ${fmtTime(u.until)}` : ""}; running ones finish.`
@@ -81,23 +78,15 @@ export function renderUsage() {
           d.reset, pacing ? ` · ${pacing}` : null)
         : pacing ? h("div", { class: `meter-pace${d.over ? " over" : ""}`, title: d.exact }, pacing) : null);
   };
-  const pie = (w) => {
-    const d = describe(w);
-    const { pct, pace } = d;
-    const cls = w.utilization >= 1 ? " full" : w.utilization >= 0.7 ? " warn" : "";
-    const pacing = d.gap === null ? "" : ` · ${paceText(d.gap)}`;
-    return h("span", { class: "pie-wrap", title: `${windowLabel(w.name)}: ${d.exact}${pacing} · ${d.reset} (${fmtTime(w.resets_at)})` },
-      h("span", { class: `pie${cls}${pace !== null ? " paced" : ""}`, style: `--p:${Math.min(100, pct)};--e:${pace ?? 0}`, role: "img", "aria-label": `${windowLabel(w.name)} ${pct}%` },
-        h("b", {}, pct)),
-      h("small", {}, shortLabel(w.name)));
-  };
-  pill.replaceChildren(
-    h("span", { class: "usage-pies" }, live.map(pie)),
-    h("span", { class: "usage-sum" }, u.pacing ? "Pacing" : u.paused ? "Queue paused" : top ? `${shortLabel(top.name)} ${Math.round(top.utilization * 100)}%${overPace(top) ? " ▲" : ""}` : "Usage"),
-    h("span", { class: "usage-detail" },
-      h("span", { class: "usage-head" }, h("span", {}, "Claude usage"), h("span", {}, u.pacing ? "Waiting for pace" : u.paused ? "Paused" : "Queue running")),
-      u.paused ? h("span", { class: `usage-reason${u.pacing ? " pacing" : ""}` }, reason) : null,
-      live.map((w) => meter(w, true))));
+  // In the status popover: a summary, why the queue waits, and a compact meter per window.
+  setStatus("usage", {
+    tone, label: "Claude usage",
+    text: u.pacing ? "Waiting for pace" : u.paused ? "Queue paused" : top ? `${shortLabel(top.name)} ${Math.round(top.utilization * 100)}%${overPace(top) ? ", ahead of pace" : ""}` : "Queue running",
+    detail: h("div", { class: "status-usage" },
+      u.paused ? h("p", { class: `usage-reason${u.pacing ? " pacing" : ""}` }, reason) : null,
+      live.map((w) => meter(w, true))),
+    action: { label: "Details", run: openUsage },
+  });
 
   $("#usage-reason").textContent = reason;
   $("#usage-meters").replaceChildren(...live.map((w) => meter(w, false)));
@@ -170,24 +159,7 @@ $("#pace-follow").addEventListener("change", savePace);
 $("#pace-max").addEventListener("change", savePace);
 $("#pace-boost").addEventListener("change", savePace);
 
-// Folding the sidebar's usage card leaves one line, its pies and a summary,
-// so the projects list above it gets the room. Kept per browser.
-function foldUsage(folded) {
-  $("#usage-box").classList.toggle("folded", folded);
-  const btn = $("#usage-fold");
-  const text = folded ? "Show Claude usage in full" : "Fold Claude usage";
-  btn.setAttribute("aria-expanded", String(!folded));
-  btn.setAttribute("aria-label", text);
-  btn.title = text;
-}
-foldUsage(store.flag("dash.usageFolded"));
-$("#usage-fold").addEventListener("click", () => {
-  const folded = !$("#usage-box").classList.contains("folded");
-  store.setFlag("dash.usageFolded", folded);
-  foldUsage(folded);
-});
-
-$("#usage-pill").addEventListener("click", () => { renderUsage(); $("#usage-sheet").showModal(); });
+export function openUsage() { renderUsage(); $("#usage-sheet").showModal(); }
 $("#pm-queue").addEventListener("click", attempt(async () => {
   state.usage = await api("POST", state.usage?.manual_pause ? "/api/queue/resume" : "/api/queue/pause");
   renderUsage();

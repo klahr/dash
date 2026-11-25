@@ -4,9 +4,9 @@ import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
 import { checked, saveField } from "./autosave.js";
 import { changed } from "./routes.js";
 import { state } from "./state.js";
-import * as store from "./store.js";
+import { closeStatus, setStatus } from "./status.js";
 import { refreshMachines } from "./events.js";
-import { isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, selectProject, setMenu } from "./projects.js";
+import { isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, selectProject } from "./projects.js";
 import { renderBoard } from "./branches.js";
 import { agoText } from "../time.js";
 import { ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
@@ -106,23 +106,22 @@ function runnerNeeded(p) {
 // worksForMe reports whether runner r takes the viewer's tasks: it is
 // theirs, or it takes other members' tasks.
 const worksForMe = (r) => !!(r.mine || r.takes_others);
-// renderRunnerBanner says above the board when the open project's git,
-// files and commands can't be reached (no runner with its labels, none of
-// the viewer's, or none online), with a way to change that.
-export function renderRunnerBanner() {
-  const el = $("#runner-banner");
+// renderRunnerStatus says in the status popover when the open project's
+// git, files and commands can't be reached (no runner with its labels, none
+// of the viewer's, or none online), with a way to change that.
+export function renderRunnerStatus() {
   const p = state.project;
   const why = isHub() && p && !p.prefix && state.runners?.length ? runnerNeeded(p) : "";
-  el.hidden = !why;
-  if (!why) return el.replaceChildren();
+  if (!why) { setStatus("runner", null); return; }
+  const row = { tone: "warn", label: "Runner" };
   if (why.startsWith(noRunnerOfMine)) {
-    return el.replaceChildren(`${noRunnerOfMine} `,
-      h("button", { type: "button", class: "link inline", onclick: attempt(() => openAddRunner()) }, "Add a runner"),
-      ", or ask an admin for a shared runner. Your tasks wait until then.");
+    setStatus("runner", { ...row, text: noRunnerOfMine, detail: h("p", { class: "hint" }, "Add one, or ask an admin for a shared runner. Your tasks wait until then."),
+      action: { label: "Add a runner", run: attempt(() => openAddRunner()) } });
+    return;
   }
-  el.replaceChildren(why, " ", needsRunner(p)
-    ? h("button", { type: "button", class: "link inline", onclick: () => { openSettings(); $("#settings-runners-field")?.scrollIntoView({ block: "center" }); } }, "Change its labels")
-    : h("button", { type: "button", class: "link inline", onclick: attempt(() => openRunners()) }, "Runners"));
+  setStatus("runner", { ...row, text: why, action: needsRunner(p)
+    ? { label: "Change its labels", run: () => { openSettings(); $("#settings-runners-field")?.scrollIntoView({ block: "center" }); } }
+    : { label: "Runners", run: attempt(() => openRunners()) } });
 }
 
 // showRunnerNeeded fills a .runner-note element for p, hidden when nothing is missing.
@@ -232,18 +231,25 @@ function diskSettings(r) {
       unit(input("trim_go_cache_gb", "Trim the Go build cache above GB", { placeholder: "Off" }), "GB")));
 }
 
-// renderDiskBanner says on the board, for everyone in the org, which
-// runners are nearly out of disk space, until they have enough again.
+// renderDiskBanner says, for everyone in the org, which runners are nearly
+// out of disk space, until they have enough again. A full one starts no
+// task, so it is a banner on the board as well; a nearly full one is only a
+// row in the status popover.
 export function renderDiskBanner() {
   const el = $("#disk-banner");
   if (!el) return;
   const low = (state.runners || []).filter((r) => r.disk_low);
-  el.hidden = !low.length;
-  el.classList.toggle("full", low.some((r) => r.disk_full));
-  if (!low.length) return el.replaceChildren();
-  el.replaceChildren(...low.map((r) => h("span", {},
-    h("strong", {}, r.disk_full ? "Runner disk full: " : "Runner disk nearly full: "), diskWarning(r), " ",
-    h("button", { type: "button", class: "link inline", onclick: attempt(() => openRunners(r.id)) }, "See what uses it"))));
+  const full = low.filter((r) => r.disk_full);
+  const line = (r, head) => h("span", {}, h("strong", {}, head), diskWarning(r), " ",
+    h("button", { type: "button", class: "link inline", "data-focus-key": `disk:${r.id}`,
+      onclick: attempt(async () => { closeStatus(); await openRunners(r.id); }) }, "See what uses it"));
+  el.hidden = !full.length;
+  el.replaceChildren(...full.map((r) => line(r, "Runner disk full: ")));
+  setStatus("disk", low.length ? {
+    tone: full.length ? "bad" : "warn", label: "Disk space",
+    text: full.length ? `${plural(full.length, "runner")} full` : `${plural(low.length, "runner")} nearly full`,
+    detail: h("div", { class: "status-lines" }, ...low.map((r) => line(r, r.disk_full ? "Full: " : "Nearly full: "))),
+  } : null);
 }
 
 // runnerDisk is runner r's Disk section: free space per disk, the warning
@@ -312,15 +318,14 @@ function runnerUsageMeters(r) {
     }));
 }
 
-// The sidebar's Runners block (only on a hub): a row per runner with its
-// dot, name and tasks running of its slots, online ones first; past
-// sideRunnerRows the offline rest fold into one line. ⬆ marks a runner that
+// The status popover's Runners row (only on a hub): a line per runner with
+// its dot, name and tasks running of its slots, online ones first; past
+// runnerRows the offline rest fold into one line. ⬆ marks a runner that
 // runs another Dash version than the hub; its tooltip has the update command.
-const sideRunnerRows = 6;
-export function renderSideRunners() {
-  const box = $("#side-runners"), list = state.runners;
-  box.hidden = !Array.isArray(list);
-  if (box.hidden) return;
+const runnerRows = 6;
+export function renderRunnersStatus() {
+  const list = state.runners;
+  if (!Array.isArray(list)) { setStatus("runners", null); return; }
   // The dot takes the runner's tone from runnerStatus, as in the Runners
   // sheet: yellow while it runs tasks or is paused, green idle, red offline.
   const dot = { off: "down", busy: "some", paused: "some", on: "ok" };
@@ -331,49 +336,36 @@ export function renderSideRunners() {
     const update = outdated ? `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run on ${r.name}:\n${installCmd(runnerInfo.hub)}` : "";
     const diskWarn = diskWarning(r);
     return h("li", {}, h("button", {
-      type: "button", class: "side-runner", title: [`${r.name}: ${st.text}`, runnerOS(r)?.label, diskWarn, update].filter(Boolean).join("\n"),
-      onclick: attempt(async () => { setMenu(false); await openRunners(r.id); }),
+      type: "button", class: "status-runner", title: [`${r.name}: ${st.text}`, runnerOS(r)?.label, diskWarn, update].filter(Boolean).join("\n"),
+      "data-focus-key": `runner:${r.id}`,
+      onclick: attempt(async () => { closeStatus(); await openRunners(r.id); }),
     },
-    h("span", { class: "side-runner-icon", "aria-hidden": "true" }, h("span", { class: `machine-dot ${dot[st.tone]}` }), outdated ? h("span", { class: "side-runner-badge" }, "⬆") : null),
-    h("span", { class: "side-runner-name" }, r.name),
-    osLogo(r, "side-runner-os"),
-    diskWarn ? h("span", { class: "side-runner-disk", "aria-hidden": "true" }, ico("alert")) : null,
-    outdated ? h("span", { class: "side-runner-update", "aria-hidden": "true" }, "⬆") : null,
-    h("span", { class: "side-runner-count" }, count),
+    h("span", { class: `machine-dot ${dot[st.tone]}`, "aria-hidden": "true" }),
+    h("span", { class: "status-runner-name" }, r.name),
+    osLogo(r, "status-runner-os"),
+    diskWarn ? h("span", { class: "status-runner-disk", "aria-hidden": "true" }, ico("alert")) : null,
+    outdated ? h("span", { class: "status-runner-update", "aria-hidden": "true" }, "⬆") : null,
+    h("span", { class: "status-runner-count" }, count),
     diskWarn || outdated ? h("span", { class: "sr-only" }, (diskWarn ? ", disk nearly full" : "") + (outdated ? ", update available" : "")) : null));
   };
-  // Folded, the head says what the rows would: how many are online and
-  // how many tasks run on them.
+  // The row's summary: how many are online and how many tasks run on them.
   const online = list.filter((r) => r.online);
   const running = online.reduce((n, r) => n + (r.running || 0), 0);
-  $("#side-runners-sum").textContent = !list.length ? "" : `${online.length}/${list.length} online${running ? ` · ${running} running` : ""}`;
   const sorted = [...list].sort(byStatus);
   // Past the limit, only offline runners fold: online ones always show.
-  const cut = sorted.length > sideRunnerRows ? Math.max(sideRunnerRows - 1, sorted.filter((r) => r.online).length) : sorted.length;
+  const cut = sorted.length > runnerRows ? Math.max(runnerRows - 1, sorted.filter((r) => r.online).length) : sorted.length;
   const top = sorted.slice(0, cut), rest = sorted.slice(cut);
-  const manage = (label, title) => h("li", {}, h("button", { type: "button", class: "side-runner side-runner-more", title,
-    onclick: attempt(async () => { setMenu(false); await openRunners(); }) }, label));
-  $("#side-runner-list").replaceChildren(...[
-    ...(list.length ? top.map(row) : [h("li", { class: "machine-empty" }, "No runners yet")]),
-    rest.length ? manage(`+${rest.length} offline`, rest.map((r) => r.name).join("\n")) : null,
-    manage("Manage runners", "Open the Runners page"),
-  ].filter(Boolean));
+  const more = rest.length ? h("li", {}, h("button", {
+    type: "button", class: "status-runner status-runner-more", title: rest.map((r) => r.name).join("\n"), "data-focus-key": "runner:more",
+    onclick: attempt(async () => { closeStatus(); await openRunners(); }),
+  }, `+${rest.length} offline`)) : null;
+  setStatus("runners", {
+    tone: "ok", label: "Runners",
+    text: list.length ? `${online.length}/${list.length} online${running ? ` · ${running} running` : ""}` : "None yet",
+    detail: list.length ? h("ul", { class: "status-runner-list", "aria-label": "Runners" }, ...top.map(row), more) : null,
+    action: { label: list.length ? "Manage" : "Add a runner", run: attempt(() => list.length ? openRunners() : openAddRunner()) },
+  });
 }
-
-// Folding the sidebar's Runners block leaves its head, with the summary, so
-// the projects list above it gets the room. Kept per browser.
-function foldSideRunners(folded) {
-  $("#side-runners").classList.toggle("folded", folded);
-  const btn = $("#side-runners-fold");
-  btn.setAttribute("aria-expanded", String(!folded));
-  btn.title = folded ? "Show the runners" : "Fold the runners";
-}
-foldSideRunners(store.flag("dash.runnersFolded"));
-$("#side-runners-fold").addEventListener("click", () => {
-  const folded = !$("#side-runners").classList.contains("folded");
-  store.setFlag("dash.runnersFolded", folded);
-  foldSideRunners(folded);
-});
 
 // The projects runner r builds (it has the labels they run on): their tasks run there.
 const runnerProjects = (r) => (state.projects || []).filter((p) => !p.prefix && servesProject(r, p));

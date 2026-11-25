@@ -6,7 +6,7 @@ import { attempt, copy, openSheet, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { renderBoard } from "./branches.js";
 import { openDetail, renderActions } from "./detail.js";
-import { canRework, draw, endDraw, popMenu, previewsSheet, renderPreviewsBtn, reworkTodo, startDraw } from "./drawmode.js";
+import { canRework, draw, endDraw, popMenu, previewsSheet, renderPreviewsStatus, reworkTodo, startDraw } from "./drawmode.js";
 import { procTerminal } from "./terminal.js";
 
 // ------------------------------------------------------------------ live preview
@@ -58,7 +58,7 @@ export function previewEvent(p, m) {
 }
 
 function previewsChanged() {
-  renderPreviewsBtn();
+  renderPreviewsStatus();
   renderBoard();
   const t = state.todos.get(state.detail);
   if (t) { renderActions(t); renderPreview(); }

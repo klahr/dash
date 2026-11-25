@@ -41,11 +41,11 @@ func TestBrowserMainFlows(t *testing.T) {
 	b := newBrowser(t, chrome)
 	b.signIn(h)
 
-	// The sidebar lists the runner with its tasks running of its slots, and
-	// opens its page in the Runners sheet.
-	b.waitJS("the runner in the sidebar", `/^(idle|busy) \d+\/\d+$/.test(document.querySelector("#side-runner-list .side-runner .side-runner-count")?.textContent || "")`)
+	// The status popover lists the runner with its tasks running of its
+	// slots, and opens its page in the Runners sheet.
+	b.openStatus(`/^(idle|busy) \d+\/\d+$/.test(document.querySelector("#status-list .status-runner .status-runner-count")?.textContent || "")`)
 	b.until("open the runner's page", `document.querySelector("#runners-sheet").open && !!document.querySelector("#runners-main .current .runner-title")`,
-		chromedp.Click(chromedp.CSS(`#side-runner-list .side-runner:not(.side-runner-more)`)))
+		chromedp.Click(chromedp.CSS(`#status-list .status-runner:not(.status-runner-more)`)))
 	b.until("close the Runners sheet", `!document.querySelector("#runners-sheet").open`, chromedp.KeyEvent(kb.Escape))
 
 	// Create a task from the quick sheet, queued right away.
@@ -478,7 +478,7 @@ func TestBrowserTerminalPreview(t *testing.T) {
 	b.waitJS("the terminal preview", `!document.querySelector("#pv-term").hidden && !!document.querySelector("#pv-term .xterm") && document.querySelector("#d-preview").dataset.state === "live"`)
 	b.waitJS("no Draw button", `getComputedStyle(document.querySelector("#pv-draw-btn")).display === "none" && document.querySelector("#pv-iframe").hidden`)
 	b.waitJS("the Live badge", `document.querySelector("#pv-state").textContent.includes("Live")`)
-	b.waitJS("the Previews (1) button", `!document.querySelector("#previews-btn").hidden && document.querySelector("#previews-label").textContent.includes("(1)")`)
+	b.waitJS("Previews (1) in the status", `document.querySelector("#status-list .status-row[data-key=previews]")?.textContent.includes("Previews (1)")`)
 
 	// Type a command: its output shows in the terminal.
 	rows := `[...document.querySelectorAll("#pv-term .xterm-rows > div")].map((r) => r.textContent.trimEnd())`
@@ -960,6 +960,19 @@ func (b *browser) fail(what string, err error) {
 		b.t.Logf("the page's text:\n%s", text)
 	}
 	b.t.Fatalf("%s: %v", what, err)
+}
+
+// openStatus opens the top bar's status popover, until it is open and expr
+// (if any) is true. A click while it is open lands on its backdrop and
+// closes it, so a try that finds expr false opens it afresh on the next.
+func (b *browser) openStatus(expr string) {
+	b.t.Helper()
+	open := `document.querySelector("#status-pop").open`
+	if expr != "" {
+		open += " && " + expr
+	}
+	b.until("open the status", open, chromedp.Click(chromedp.ID("status-btn")))
+	b.waitJS("the status popover settled", `!document.querySelector("#status-pop").getAnimations().length`)
 }
 
 // openDrawer opens the phone's drawer with Menu, until it is open and expr
@@ -1545,7 +1558,7 @@ func TestBrowserInlineEdit(t *testing.T) {
 }
 
 // A runner low on disk space: with thresholds that make its real disk
-// "low", the board shows the banner, and the runner's page in Runners its
+// "low", the status popover says so (a full one is a banner on the board), and the runner's page in Runners its
 // Disk section with the warning and the thresholds to change; set back to
 // the defaults, the warning goes. On a wide screen and a phone's.
 func TestBrowserRunnerDiskWarning(t *testing.T) {
@@ -1572,20 +1585,22 @@ func TestBrowserRunnerDiskWarning(t *testing.T) {
 		}
 	}
 	h.api.must("PATCH", path, map[string]any{"disk": map[string]any{"warn_percent": 99, "warn_gb": 100000, "min_free_gb": 0.01}}, http.StatusOK, nil)
-	b.waitJS("the banner on the board", `!document.querySelector("#disk-banner").hidden && document.querySelector("#disk-banner").textContent.includes("free of")`)
-	b.until("open the runner from the banner", `document.querySelector("#runners-sheet").open && !!document.querySelector("#runners-main .current .runner-disk-warn")`,
-		chromedp.Click(chromedp.CSS(`#disk-banner button`)))
+	// Nearly full: the status icon's dot and a row in its popover, not a banner.
+	b.waitJS("the status dot", `document.querySelector("#status-btn").dataset.tone !== "ok" && document.querySelector("#disk-banner").hidden`)
+	b.openStatus(`document.querySelector("#status-list .status-row[data-key=disk]")?.textContent.includes("free of")`)
+	b.until("open the runner from the status", `document.querySelector("#runners-sheet").open && !!document.querySelector("#runners-main .current .runner-disk-warn")`,
+		chromedp.Click(chromedp.CSS(`#status-list .status-row[data-key=disk] button`)))
 	b.waitJS("its thresholds", `document.querySelector("#runner-detail .runner-disk-settings input[aria-label^='Warn below percent']")?.value === "99"`)
 	b.waitJS("the rail marks it", `document.querySelector("#runners-nav .runner-rail-warn")?.title === "Disk nearly full"`)
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("no sideways scrolling", `document.querySelector("#runners-main").scrollWidth <= document.querySelector("#runners-main").clientWidth + 1`)
 	b.until("close the Runners sheet", `!document.querySelector("#runners-sheet").open`, chromedp.KeyEvent(kb.Escape))
-	// Too full to start a task: the banner says so.
+	// Too full to start a task: that blocks work, so it is a banner on the board.
 	h.api.must("PATCH", path, map[string]any{"disk": map[string]any{"min_free_gb": 100000}}, http.StatusOK, nil)
-	b.waitJS("the banner says full", `document.querySelector("#disk-banner").classList.contains("full") && document.querySelector("#disk-banner").textContent.includes("starts no tasks")`)
+	b.waitJS("the banner says full", `!document.querySelector("#disk-banner").hidden && document.querySelector("#disk-banner").textContent.includes("starts no tasks") && document.querySelector("#status-btn").dataset.tone === "bad"`)
 
 	h.api.must("PATCH", path, map[string]any{"disk": map[string]any{"warn_percent": 0.01, "warn_gb": 0.001, "min_free_gb": 0.01}}, http.StatusOK, nil)
-	b.waitJS("the banner gone", `document.querySelector("#disk-banner").hidden`)
+	b.waitJS("the banner and the row gone", `document.querySelector("#disk-banner").hidden && !document.querySelector("#status-list .status-row[data-key=disk]")`)
 }
 
 // Build on: a merged task is listed under Build on in the full task form;

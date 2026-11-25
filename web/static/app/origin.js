@@ -1,9 +1,10 @@
-import { $, clockTime, h, plural } from "./dom.js";
+import { clockTime, h, plural } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { projectKey } from "./events.js";
 import { agoText } from "../time.js";
+import { setStatus } from "./status.js";
 
 // ------------------------------------------------------------------ origin (background fetch)
 // Dash fetches origin's default branch when a project is selected and every
@@ -16,24 +17,27 @@ export async function loadRemote(fetch, force) {
   if (projectKey(state.project) === projectKey(p)) { state.remote = st; renderRemote(); }
 }
 
+// The default branch compared with origin's: a row in the status popover
+// while they differ or the fetch fails, with Fetch now.
 export function renderRemote() {
-  const st = state.remote, pill = $("#remote-pill");
-  pill.hidden = !(st?.enabled && (st.behind || st.ahead || st.error));
-  if (pill.hidden) return;
+  const st = state.remote;
+  if (!(st?.enabled && (st.behind || st.ahead || st.error))) { setStatus("remote", null); return; }
   const b = st.branch;
   const parts = [st.behind && `origin is ${plural(st.behind, "commit")} ahead`, st.ahead && `local is ${plural(st.ahead, "commit")} ahead`].filter(Boolean);
-  pill.classList.toggle("remote-error", !!st.error);
-  pill.textContent = st.error ? "Can't reach origin" : st.behind && st.ahead ? `${b}: ↓${st.behind} ↑${st.ahead}` : st.behind ? `origin/${b} +${st.behind}` : `${b} +${st.ahead} unpushed`;
-  pill.title = [
+  const why = [
     parts.length ? `${b}: ${parts.join(", ")}.` : "",
     st.behind && !st.ahead ? "New tasks start from origin's version." : "",
     st.behind && st.ahead ? "The next merge reconciles them." : "",
     st.error ? `Last fetch failed: ${st.error}. Retrying ${st.retry_at ? `at ${clockTime(st.retry_at)}` : "soon"}.` : "",
-    st.fetched ? `Fetched ${agoText(st.fetched)}. Click to fetch now.` : "Click to fetch now.",
+    st.fetched ? `Fetched ${agoText(st.fetched)}.` : "",
   ].filter(Boolean).join(" ");
-  pill.setAttribute("aria-label", pill.title);
+  setStatus("remote", {
+    tone: "warn", label: "Origin",
+    text: st.error ? "Can't reach origin" : st.behind && st.ahead ? `${b}: ↓${st.behind} ↑${st.ahead}` : st.behind ? `origin/${b} +${st.behind}` : `${b} +${st.ahead} unpushed`,
+    detail: h("p", { class: "hint" }, why),
+    action: { label: "Fetch now", run: attempt(async () => { await loadRemote(true, true); toast("Fetching origin"); }) },
+  });
 }
-$("#remote-pill").addEventListener("click", attempt(async () => { await loadRemote(true, true); toast("Fetching origin"); }));
 // Checkouts behind origin: when another runner pushes, the project's other
 // runners fetch at once and bring their checkouts up to date. A clone a
 // runner made itself (dash_owned) always follows: whatever is in the way is
@@ -49,10 +53,11 @@ export async function loadCheckouts() {
   if (projectKey(state.project) === projectKey(p)) { state.checkouts = list || []; renderCheckouts(); }
 }
 
+// They are a row in the status popover, with a line (and Pull) per checkout.
 export function renderCheckouts() {
-  const box = $("#checkouts"), list = (state.checkouts || []).filter((c) => !c.dash_owned || c.stuck);
-  box.hidden = !list.length;
-  box.replaceChildren(...list.map((c) => {
+  const list = (state.checkouts || []).filter((c) => !c.dash_owned || c.stuck);
+  if (!list.length) { setStatus("checkouts", null); return; }
+  const box = h("div", { class: "checkouts", role: "group", "aria-label": "Checkouts behind origin" }, ...list.map((c) => {
     const where = c.runner_name || "This checkout";
     const n = plural(c.behind, "commit");
     if (c.dash_owned) {
@@ -63,6 +68,7 @@ export function renderCheckouts() {
     return h("div", { class: "checkout-behind", title: `${where}: ${c.branch} is ${n} behind origin. ${why}` },
       h("span", {}, `${where}: ${n} behind origin`, h("span", { class: "hint" }, c.stuck || `catching up on ${c.branch}`)),
       h("button", { class: "btn small", type: "button", title: "Fast-forward to origin (only if nothing local is in the way)",
+        "data-focus-key": `pull:${c.runner || ""}`,
         onclick: attempt(async (e) => {
           e.currentTarget.disabled = true;
           const q = c.runner ? `?runner=${encodeURIComponent(c.runner)}` : "";
@@ -74,6 +80,7 @@ export function renderCheckouts() {
           }
         }) }, "Pull"));
   }));
+  setStatus("checkouts", { tone: "warn", label: "Checkouts", text: `${plural(list.length, "checkout")} behind origin`, detail: box });
 }
 
 // Keep the open project marked as selected so the server keeps fetching it.

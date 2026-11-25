@@ -22,9 +22,9 @@ func TestBrowserLabelChips(t *testing.T) {
 	b.signIn(h)
 
 	// The runner's own labels: type one, Enter saves it.
-	b.waitJS("the runner in the sidebar", `!!document.querySelector("#side-runner-list .side-runner:not(.side-runner-more)")`)
+	b.openStatus(`!!document.querySelector("#status-list .status-runner:not(.status-runner-more)")`)
 	b.until("open the runner's page", `!!document.querySelector("#runner-detail .runner-own-labels .label-picker-input")`,
-		chromedp.Click(chromedp.CSS(`#side-runner-list .side-runner:not(.side-runner-more)`)))
+		chromedp.Click(chromedp.CSS(`#status-list .status-runner:not(.status-runner-more)`)))
 	b.do("type a label", chromedp.SendKeys(`#runner-detail .runner-own-labels .label-picker-input`, "gpu"+kb.Enter))
 	b.waitJS("its chip", `[...document.querySelectorAll("#runner-detail .runner-own-labels .label-chip")].map((c) => c.textContent).join() === "gpu"`)
 	// The chip shows as soon as it's picked; the save follows it.

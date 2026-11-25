@@ -215,8 +215,8 @@ When GitHub rate limits `gh`, Dash pauses these polls on that computer until the
 - A **primary** limit (the hourly one): until it resets, as `gh api rate_limit` says, else an hour.
 - When GitHub limits again right after a pause, the pause doubles each time, up to 15 minutes.
 
-The sidebar then says **GitHub rate limit (secondary): paused until 14:05**. Hover it for GitHub's
-message, and click it for the builds. Dash logs each limit once. Things you do still try once:
+The [status popover](status.md) then has a **GitHub rate limit** row: **Builds paused until
+14:05**. Hover it for GitHub's message, and choose **Builds** for the builds. Dash logs each limit once. Things you do still try once:
 opening, merging or approving a pull request, or re-running a build. If GitHub limits that too, the
 task stays in review with GitHub's message and the time the pause ends. Approve it again after that.
 

@@ -124,7 +124,17 @@ func TestBrowserNavigation(t *testing.T) {
 	// would open it again over the phone's page.
 	b.waitJS("the URL without the sheet", `!new URLSearchParams(location.search).has("sheet")`)
 	b.waitJS("Push isn't in the top bar", `!document.querySelector(".topbar #push-main")`)
-	b.waitJS("the live dot says so", `document.querySelector("#live-label").offsetWidth > 0 && document.querySelector("#live-label").textContent === "Live"`)
+	b.waitJS("the status icon is quiet and live", `(() => {
+		const s = document.querySelector("#status-btn");
+		return s.offsetWidth > 0 && s.dataset.live === "on" && s.dataset.tone === "ok" && getComputedStyle(s.querySelector(".status-dot")).display === "none";
+	})()`)
+	// It opens the popover under it, with the connection first; Esc closes it and the focus goes back.
+	b.openStatus(`document.querySelector("#status-list .status-row[data-key=live]")?.textContent.includes("Connected")`)
+	b.waitJS("the popover under the icon", `(() => {
+		const p = document.querySelector("#status-pop").getBoundingClientRect(), s = document.querySelector("#status-btn").getBoundingClientRect();
+		return p.top >= s.bottom - 8 && p.width < innerWidth / 2;
+	})()`)
+	b.until("Esc closes the status", `!document.querySelector("#status-pop").open && document.activeElement?.id === "status-btn"`, chromedp.KeyEvent(kb.Escape))
 
 	// A phone: the bottom nav is Board · Chat · Planning · Goals, left to right, with no
 	// divider; History and Code are in the menu drawer.

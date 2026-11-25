@@ -96,6 +96,7 @@ Using Dash:
 - [Live previews](docs/previews.md) and [Draw](docs/draw.md)
 - [Scans](docs/scans.md): their findings, and problems Claude reports, become tagged drafts on the Board
 - [Task boards](docs/boards.md)
+- [Status](docs/status.md): the top bar's status icon and what it lists
 - [Notifications](docs/notifications.md)
 - [Claude status](docs/claude-status.md)
 - [Codex](docs/codex.md)

@@ -1,8 +1,9 @@
-import { $, dateText, fill, h, plural } from "./dom.js";
+import { $, dateText, h, plural } from "./dom.js";
 import { api } from "./api.js";
-import { ask, attempt, openSheet, toast } from "./dialogs.js";
+import { ask, attempt, openSheet, railOf, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { switchOrg } from "./myaccount.js";
+import { setStatus } from "./status.js";
 
 // ------------------------------------------------------------------ billing
 // Only when the hub has Stripe configured: an org with two or more members
@@ -16,7 +17,7 @@ export async function loadBilling() {
   if (!org) return null;
   const b = await api("GET", `/api/orgs/${org.id}/billing`);
   state.billing = b;
-  renderBillingBanner();
+  renderBillingStatus();
   return b;
 }
 document.addEventListener("dash:billing-read-only", () => loadBilling().catch(() => {}));
@@ -87,10 +88,12 @@ export function askToPay(b) {
   });
 }
 
-function renderBillingBanner() {
+// renderBillingStatus says in the status popover when the organization
+// needs a subscription (red once the board is read-only); owners get
+// Billing, in Organization.
+function renderBillingStatus() {
   const b = state.billing;
-  const el = $("#billing-banner");
-  if (!b?.enabled || !b.required) { el.hidden = true; return; }
+  if (!b?.enabled || !b.required) { setStatus("billing", null); return; }
   const pastDue = b.status === "past_due" || b.status === "unpaid";
   const head = b.read_only ? "This board is read-only" :
     pastDue ? "The last payment failed" : `${state.me.org.name} needs a subscription`;
@@ -99,10 +102,16 @@ function renderBillingBanner() {
     `Organizations with two or more members are billed per member. Until ${dateText(b.grace_until)} the board works as usual; after that it becomes read-only.`;
   if (pastDue && b.has_account) text += " Update the card in the billing portal.";
   if (!b.can_manage) text += " Ask an owner of the organization to subscribe.";
-  el.classList.toggle("read-only", !!b.read_only);
-  fill(el, h("strong", {}, head), h("span", {}, text),
-    b.can_manage ? h("div", { class: "billing-actions" }, ...billingButtons(b)) : null);
-  el.hidden = false;
+  setStatus("billing", {
+    tone: b.read_only ? "bad" : "warn", label: "Billing", text: head, detail: h("p", { class: "hint" }, text),
+    action: b.can_manage ? { label: "Billing", run: attempt(openOrgBilling) } : null,
+  });
+}
+
+async function openOrgBilling() {
+  const { openOrg } = await import("./account.js");
+  await openOrg();
+  railOf("org-sheet").show("billing");
 }
 
 // freeText is a platform admin's override as members see it, or "".

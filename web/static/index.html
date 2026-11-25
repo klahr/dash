@@ -49,12 +49,12 @@
         <a class="run-at" id="run-at" hidden></a>
       </div>
       <div class="lane-chips" id="lane-chips" role="group" aria-label="Minimized columns"></div>
-      <!-- Claude's status page (status.claude.com): shown while something is wrong, when a platform admin turned it on. -->
-      <button class="usage-pill claude-pill" id="claude-pill" type="button" hidden aria-haspopup="dialog" title="Claude's status"></button>
-      <button class="previews-btn" id="previews-btn" type="button" hidden aria-haspopup="dialog" title="Running previews">
-        <span class="pv-dot" aria-hidden="true"></span><span id="previews-label">Previews</span>
+      <!-- Status (app/status.js): quiet while all is well, a dot coloured by the worst thing that
+           needs you, and a popover (#status-pop) with every status and where to fix it. -->
+      <button class="icon-btn status-btn" id="status-btn" type="button" data-tone="ok" data-live="off" aria-haspopup="dialog" aria-expanded="false" aria-controls="status-pop" aria-label="Status" title="Status">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 5 12 2.5-6h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="status-dot" aria-hidden="true"></span>
       </button>
-      <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only live-label" id="live-label">Offline</span></span>
       <!-- Voice commands (app/voice.js): shown while the preference is on. -->
       <button class="icon-btn voice-btn" id="voice-open" type="button" aria-label="Voice commands" title="Voice commands (Ctrl-Shift-,)" aria-pressed="false" data-icon="mic"></button>
       <button class="icon-btn" id="palette-open" type="button" aria-label="Search everything" title="Search everything (Ctrl-k)" aria-haspopup="dialog" data-icon="palette"></button>
@@ -64,7 +64,7 @@
         <!-- Managing the project, in groups: its setup, its queue, then housekeeping and
              deleting it. Running things are elsewhere: Run in the top bar, Deploy on
              History → Deploys, Run tests, Push and Builds… in Run's ▾ menu; status is the
-             sidebar's pills. -->
+             top bar's status icon. -->
         <div class="foot-menu-list">
           <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
           <!-- Star / Unstar project: starred projects come first in the sidebar (app/stars.js). -->
@@ -137,31 +137,9 @@
             <span>Code</span>
           </button>
         </div>
-        <button class="usage-pill remote-pill" id="remote-pill" type="button" hidden title="The default branch compared with origin's"></button>
-        <!-- GitHub rate limits the gh that reads this project's builds: Dash pauses its polls (app/actions.js). -->
-        <button class="usage-pill github-limit-pill" id="github-limit-pill" type="button" aria-haspopup="dialog" hidden></button>
-        <div class="checkouts" id="checkouts" role="group" hidden aria-label="Checkouts behind origin"></div>
-        <!-- The org's runners, each with its tasks running of its slots (hub only).
-             Its head folds the list to one line, to leave the room to the projects. -->
-        <div class="side-runners" id="side-runners" role="group" aria-labelledby="side-runners-title" hidden>
-          <h2 class="side-projects-head side-fold-head" id="side-runners-title">
-            <button class="side-fold" id="side-runners-fold" type="button" aria-expanded="true" aria-controls="side-runner-list" title="Fold the runners">
-              <span>Runners</span><span class="side-fold-sum" id="side-runners-sum"></span>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-          </h2>
-          <ul class="side-runner-list" id="side-runner-list"></ul>
-        </div>
-        <!-- Claude usage and the account: always at the bottom of the sidebar / drawer. -->
+        <!-- The account: always at the bottom of the sidebar / drawer. -->
         <div class="side-bottom">
-        <div class="usage-box" id="usage-box">
-          <button class="usage-pill" id="usage-pill" hidden aria-haspopup="dialog" title="Claude usage"></button>
-          <button class="icon-btn usage-fold" id="usage-fold" type="button" hidden aria-expanded="true" aria-controls="usage-pill" aria-label="Fold Claude usage" title="Fold Claude usage">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-        </div>
         <div class="nav-foot">
-          <span class="merge-status" id="merge-status"></span>
           <details class="foot-menu account-menu" id="foot-menu">
             <summary aria-label="Account menu" title="Account menu"><span class="foot-avatar" id="foot-avatar" aria-hidden="true"></span><span class="foot-who"><span class="foot-user" id="foot-user"></span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
             <div class="foot-menu-list">
@@ -197,11 +175,9 @@
           <div class="tag-filter" id="tag-filter" hidden></div>
         </div>
         <div class="merge-bar" id="merge-bar" role="toolbar" aria-label="Selected drafts" hidden></div>
-        <div class="sync-warn billing-warn" id="billing-banner" role="status" hidden></div>
+        <!-- Banners only for what blocks work; everything else is in the status popover. -->
         <div class="sync-warn disk-warn" id="disk-banner" role="alert" hidden></div>
-        <div class="sync-warn" id="sync-warn" role="alert" hidden></div>
         <div class="sync-warn paused-warn" id="paused-banner" role="status" hidden></div>
-        <div class="sync-warn" id="runner-banner" role="status" hidden></div>
         <div class="perm-list" id="perm-banner" hidden></div>
         <div class="board" id="board"></div>
         <div class="empty" id="board-empty" hidden></div>
@@ -1024,6 +1000,19 @@
         <button class="btn danger" value="ok" data-icon="trash" id="delete-project-ok">Delete project</button>
       </footer>
     </form>
+  </dialog>
+
+  <!-- Status: what the top bar's status icon opens (app/status.js). Under the icon on a
+       wide screen, a full-width sheet on a phone. -->
+  <dialog class="status-pop" id="status-pop" aria-labelledby="status-title">
+    <div class="status-pop-inner">
+      <header class="status-pop-head">
+        <h2 id="status-title" tabindex="-1">Status</h2>
+        <span class="hint" id="status-sum"></span>
+        <button class="icon-btn" type="button" id="status-close" aria-label="Close" data-icon="x"></button>
+      </header>
+      <ul class="status-list" id="status-list"></ul>
+    </div>
   </dialog>
 
   <!-- Usage & queue -->
@@ -2015,6 +2004,7 @@
                 <tr><th scope="row"><code>:cleanup</code></th><td>Clean up leftovers</td></tr>
                 <tr><th scope="row"><code>:pause</code> <code>:resume</code></th><td>The whole queue, every project (platform admins)</td></tr>
                 <tr><th scope="row"><code>:usage</code></th><td>Claude usage</td></tr>
+                <tr><th scope="row"><code>:status</code></th><td>Status: the connection, origin, runners, previews and what needs you</td></tr>
                 <tr><th scope="row"><code>:settings</code> <code>:prefs</code></th><td>Project settings / preferences</td></tr>
                 <tr><th scope="row"><code>:connector</code></th><td>Connect Claude</td></tr>
                 <tr><th scope="row"><code>:runners</code> <code>:org</code> <code>:account</code></th><td>Runners, Organization, Account</td></tr>

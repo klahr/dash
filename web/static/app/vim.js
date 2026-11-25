@@ -22,6 +22,7 @@ import { openRunners } from "./runners.js";
 import { openConnector } from "./wallview.js";
 import { toggleNotifications } from "./notifications.js";
 import { renderUsage } from "./usage.js";
+import { openStatus } from "./status.js";
 import { openCI } from "./actions.js";
 import { openSettings } from "./settings.js";
 import { activeChat, toggleChatPane, togglePin } from "./chatpane.js";
@@ -214,6 +215,7 @@ export async function runCommand(line) {
       renderUsage();
       return toast(name === "pause" ? "Queue paused" : "Queue resumed");
     case "usage": renderUsage(); return $("#usage-sheet").showModal();
+    case "status": return openStatus();
     case "settings": need(); return openSettings();
     case "prefs": case "preferences": return openPrefs();
     case "connector": case "connect": return openConnector();

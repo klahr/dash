@@ -33,9 +33,9 @@ func TestBrowserRunnerAgents(t *testing.T) {
 	}
 
 	b.do("a wide screen", chromedp.EmulateViewport(1280, 900))
-	b.waitJS("the runner in the sidebar", `!!document.querySelector("#side-runner-list .side-runner:not(.side-runner-more)")`)
+	b.openStatus(`!!document.querySelector("#status-list .status-runner:not(.status-runner-more)")`)
 	b.until("open the runner's page", `!!document.querySelector("#runner-detail .runner-agent")`,
-		chromedp.Click(chromedp.CSS(`#side-runner-list .side-runner:not(.side-runner-more)`)))
+		chromedp.Click(chromedp.CSS(`#status-list .status-runner:not(.status-runner-more)`)))
 	b.waitJS("Claude Code with its features", `(() => {
 		const a = document.querySelector("#runner-detail .runner-agent");
 		return a.querySelector("strong").textContent === "Claude Code"

@@ -53,6 +53,7 @@ import "./app/glide.js";
 import "./app/avatar.js";
 import "./app/people.js";
 import "./app/stars.js";
+import "./app/status.js";
 import "./app/billing.js";
 import "./app/tokens.js";
 import "./app/teamsetup.js";

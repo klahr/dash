@@ -3,7 +3,7 @@
 When a project has a start server command (`run_command`, which gets `$PORT`), tasks in review
 get a **Preview** button: it starts that command in the task's worktree and shows the app next to
 the task (full screen on a phone). The board marks running previews **Live**, and **Previews (n)**
-in the top bar lists them all, with Stop all. One preview runs per task. It stops when the task is
+in the [status popover](status.md) lists them all, with Stop all. One preview runs per task. It stops when the task is
 approved, sent back or merged, and after 30 minutes without traffic (`-preview-idle`). If the
 server crashes, its log opens, and **Rework with this log…** hands it to Claude as rework notes.
 

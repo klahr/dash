@@ -2,6 +2,7 @@ import { COLORS, drawSurface } from "../draw.js";
 import { renderMarkdown } from "../editor.js";
 import { $, $$, dateTimeText, h, ib, ico, plural } from "./dom.js";
 import * as store from "./store.js";
+import { setStatus } from "./status.js";
 import { desktop } from "./viewport.js";
 import { api, here, on } from "./api.js";
 import { ask, attempt, fail, openSheet, toast } from "./dialogs.js";
@@ -381,22 +382,22 @@ addEventListener("keydown", (e) => {
   if (["1", "2", "3"].includes(k)) { s.color = Object.values(COLORS)[k - 1]; return; }
 }, true);
 
-// "Previews (n)" in the top bar: every running preview, on every computer.
+// "Previews (n)" in the status popover: every running preview, on every
+// computer; a crashed one lights the status icon's dot.
 export let previewsSheet = null;
-export function renderPreviewsBtn() {
+export function renderPreviewsStatus() {
   const list = [...state.previews.values()];
-  const btn = $("#previews-btn");
-  btn.hidden = !list.length;
-  btn.dataset.state = list.some((p) => p.state === "crashed") ? "crashed" : list.some((p) => p.state === "live") ? "live" : "starting";
-  // The dot's colour alone isn't enough (WCAG 1.4.1): say a crash in words too.
+  if (!list.length) { setStatus("previews", null); return; }
   const crashed = list.filter((p) => p.state === "crashed").length;
-  $("#previews-label").replaceChildren(h("span", { class: "pv-word" }, "Previews "), `(${list.length})`,
-    crashed ? h("span", { class: "pv-warn" }, " · crashed") : "");
-  btn.title = plural(list.length, "running preview") +
-    (crashed ? `, ${crashed} crashed` : "");
+  const starting = list.filter((p) => p.state !== "live" && p.state !== "crashed").length;
+  setStatus("previews", {
+    tone: crashed ? "warn" : "info", label: `Previews (${list.length})`,
+    text: [plural(list.length, "running preview"), starting ? `${starting} starting` : "", crashed ? `${crashed} crashed` : ""].filter(Boolean).join(", "),
+    action: { label: "Show", run: openPreviews },
+  });
 }
 
-$("#previews-btn").addEventListener("click", () => {
+export function openPreviews() {
   const body = h("div", { class: "pv-list" });
   const { dialog: d } = openSheet({
     title: "Running previews", cls: "previews-sheet", body: [body],
@@ -427,7 +428,7 @@ $("#previews-btn").addEventListener("click", () => {
   };
   previewsSheet = { render };
   render();
-});
+}
 
 async function stopAllPreviews() {
   const prefixes = new Set([...state.previews.values()].map((p) => p.prefix));

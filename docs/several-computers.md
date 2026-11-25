@@ -438,14 +438,14 @@ key ([Whose work a runner does](#whose-work-a-runner-does)). From then on:
     although it has its files (the folder then fails every git command with "this operation
     must be run in a work tree"; a stray `git init` run with `GIT_DIR` pointing at one of its
     worktrees does that), the runner sets it back to `false`, logs a warning naming the clone, and
-    syncs as usual. The sidebar shows such a clone only when syncing it fails for another reason
+    syncs as usual. The [status popover](status.md) shows such a clone only when syncing it fails for another reason
     (it can't write the files, say), as "beta: can't sync with origin" with the reason, and the
     backup branch if one was made; it retries on its own. A fetch that fails (offline, no access)
-    shows on the project's origin pill as usual.
+    shows on the status popover's **Origin** row as usual.
   - **An adopted clone** (it was already there, see below) may hold your own work, so it only
     ever fast-forwards: on that branch, clean and strictly behind. With uncommitted changes or
     commits of its own it is left alone; the project then shows "beta: 2 commits behind origin" in
-    the sidebar, with a **Pull** button that fast-forwards only and says why when it can't. A
+    the status popover's **Checkouts** row, with a **Pull** button that fast-forwards only and says why when it can't. A
     webhook can be told when a checkout is left behind (`checkout.behind`, off unless you tick
     it; at most once every 6 hours per runner); a clone the runner made that fails to sync tells it
     too.
@@ -1029,8 +1029,9 @@ See it in **Runners → the runner → Disk**.
 
 When a disk has less free than the smaller of 10% of its size and 10 GB:
 
-- **Runners** marks the runner, and the board shows a banner to everyone in the organization
-  until there is space again.
+- **Runners** marks the runner, and the [status popover](status.md) has a **Disk space** row for
+  everyone in the organization until there is space again. When a runner is too full to start a
+  task, the board also shows a banner.
 - The hub notifies once (push notifications and the `runner.disk` webhook event of the runner's
   projects), not on every heartbeat. It notifies again only after the runner had enough space,
   and at most every 6 hours per runner.
@@ -1076,7 +1077,7 @@ a certificate).
 
 A hub's task previews on the runner that ran it, since its worktree is only there. **Preview** on
 the hub starts it there, and the pane, **Open**, **Copy link** and **Draw** use the hub's address
-for it. **Previews (n)** and the board list them like any other. If that runner is offline, the
+for it. **Previews (n)** in the status popover and the board list them like any other. If that runner is offline, the
 hub says so; no other runner can preview the task. The runner previews a task only for a member
 it works for (its owner, or anyone when it is shared), and opens a terminal preview only for its
 owner. The runner keeps a second connection to the hub just for preview traffic, so a

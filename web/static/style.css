@@ -39,7 +39,7 @@
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Type scale */
-  --fs-3xs: 10px; /* counts on tiny badges and pies */
+  --fs-3xs: 10px; /* counts on tiny badges */
   --fs-2xs: 11px;
   --fs-xs: 12px;
   --fs-code: 12.5px;
@@ -1435,8 +1435,8 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .runner-owner .ico { width: 14px; height: 14px; }
 /* A runner's operating system: its logo (devicon, TECH_ICONS) and name. */
 .runner-os { display: inline-flex; align-items: center; gap: 4px; }
-.runner-os .ico, .runner-rail-os .ico, .side-runner-os .ico { width: 14px; height: 14px; }
-.runner-rail-os, .side-runner-os { flex: none; display: inline-flex; color: var(--muted); }
+.runner-os .ico, .runner-rail-os .ico, .status-runner-os .ico { width: 14px; height: 14px; }
+.runner-rail-os, .status-runner-os { flex: none; display: inline-flex; color: var(--muted); }
 .runner-signin { display: inline-flex; align-items: center; gap: 4px; }
 .runner-signin .ico { width: 14px; height: 14px; }
 .runner-signin.shared { color: var(--accent); }
@@ -1520,10 +1520,10 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .runner-setting-unit > input { width: 5.5em; min-height: 36px; padding: 0 8px; }
 @media (max-width: 560px) { .runner-setting:has(.runner-setting-pair) { flex-direction: column; align-items: flex-start; gap: 8px; } }
 /* The board's banner: nearly full in the warning colour, full (no task starts) in red. */
-.sync-warn.disk-warn.full { border-left-color: var(--failed); background: color-mix(in srgb, var(--failed) 10%, transparent); }
-.sync-warn.disk-warn.full strong { color: var(--failed); }
-.side-runner-disk { flex: none; display: inline-flex; color: var(--failed); }
-.side-runner-disk .ico { width: 13px; height: 13px; }
+.sync-warn.disk-warn { border-left-color: var(--failed); background: color-mix(in srgb, var(--failed) 10%, transparent); }
+.sync-warn.disk-warn strong { color: var(--failed); }
+.status-runner-disk { flex: none; display: inline-flex; color: var(--failed); }
+.status-runner-disk .ico { width: 13px; height: 13px; }
 /* A runner's agents: each one's name, version, login and label, then its features as chips. */
 .runner-agents { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .runner-agent { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); min-width: 0; }
@@ -1776,15 +1776,6 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .project-list .path { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); overflow-wrap: anywhere; }
 
 /* ---------- usage ---------- */
-.usage-pill {
-  --c: var(--muted);
-  display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; min-height: 32px; padding: 0 10px; border-radius: var(--r-pill);
-  border: 1px solid var(--line); color: var(--text); font-size: var(--fs-s); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
-}
-.usage-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
-.usage-pill.warn { --c: var(--running); }
-.usage-pill.paused { --c: var(--failed); border-color: color-mix(in srgb, var(--failed) 50%, var(--line)); }
-.usage-detail { display: none; }
 .meters { display: flex; flex-direction: column; gap: 14px; margin: 12px 0; }
 .meter-head { display: flex; justify-content: space-between; gap: 12px; font-size: var(--fs-m); margin-bottom: 6px; }
 .meter-head span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -2087,7 +2078,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .sheet .site-footer { text-align: left; }
 
 /* ---------- menu: sidebar on desktop, drawer on mobile ---------- */
-.remote-pill, .checkouts, .side-runners { order: 5; margin-top: 8px; }
 /* Mobile: the pages the bottom nav has no room for (History, Code), in the drawer;
    on desktop the same buttons are in the side rail (.nav-views, below). */
 .menu-views { order: 4; display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
@@ -2100,51 +2090,13 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .nav-sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .nav > .nav-sep { display: none; } /* the bottom nav has no room for a divider before Planning */
 .menu-view .badge { position: static; margin-left: auto; }
-/* Usage and the account sit at the bottom: pushed down when there is room, kept in
+/* The account sits at the bottom: pushed down when there is room, kept in
    view (sticky) when the projects make the sidebar or drawer scroll. The scroller has
    no bottom padding so nothing shows below; the group pads itself instead. */
 .side-bottom {
   order: 6; position: sticky; bottom: 0; z-index: 1; display: flex; flex-direction: column;
   margin-top: auto; padding: 8px 0 12px; background: var(--surface);
 }
-#usage-pill { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px 8px; padding: 10px; border-radius: var(--r-m); white-space: normal; text-align: left; font-weight: 400; }
-#usage-pill:hover { border-color: var(--accent); }
-#usage-pill .usage-sum { display: none; }
-#usage-pill .usage-detail { display: contents; }
-#usage-pill .usage-head { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
-#usage-pill .usage-head span:last-child { color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
-#usage-pill .usage-reason, #usage-pill .usage-detail > div { grid-column: 1 / -1; }
-#usage-pill .usage-reason { font-size: var(--fs-xs); color: var(--failed); }
-#usage-pill .usage-reason.pacing { color: var(--running); }
-#usage-pill .meter-head { font-size: var(--fs-s); margin-bottom: 4px; }
-#usage-pill .meter { height: 6px; }
-#usage-pill .meter-pace { margin-top: 3px; font-size: var(--fs-2xs); }
-/* The usage card's fold button sits in its top-right corner, over the pill (a sibling, as a
-   button can't hold another); folded, the card is one row: its pies and the summary. */
-.usage-box { position: relative; display: flex; flex-direction: column; }
-.usage-fold { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; min-height: 0; color: var(--muted); }
-.usage-fold svg { width: 14px; height: 14px; transform: rotate(90deg); transition: transform .15s var(--ease); }
-.usage-fold[aria-expanded="false"] svg { transform: none; }
-.usage-fold:hover { color: var(--text); }
-.usage-box:has(.usage-fold:not([hidden])) #usage-pill .usage-head { padding-right: 26px; }
-.app:not(.side-collapsed) .usage-box.folded #usage-pill { display: flex; align-items: center; gap: 10px; padding: 6px 40px 6px 10px; }
-.app:not(.side-collapsed) .usage-box.folded #usage-pill .usage-detail { display: none; }
-.app:not(.side-collapsed) .usage-box.folded #usage-pill .usage-pies { display: flex; gap: 8px; }
-.app:not(.side-collapsed) .usage-box.folded #usage-pill .usage-sum { display: inline; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.app:not(.side-collapsed) .usage-box.folded .usage-fold { top: 50%; transform: translateY(-50%); }
-.usage-pies { display: none; }
-.pie-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.pie-wrap small { font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; }
-.pie {
-  --pc: var(--merged);
-  position: relative; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
-  background: conic-gradient(var(--pc) calc(var(--p) * 1%), var(--raised) 0);
-}
-.pie.warn { --pc: var(--running); }
-.pie.full { --pc: var(--failed); }
-.pie.paced { background: conic-gradient(from calc(var(--e) * 3.6deg - 2deg), var(--text) 0 4deg, transparent 0), conic-gradient(var(--pc) calc(var(--p) * 1%), var(--raised) 0); }
-.pie::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--surface); }
-.pie > b { position: relative; font-size: var(--fs-3xs); font-weight: 600; font-variant-numeric: tabular-nums; }
 .nav-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; margin-top: 6px; padding: 0 4px 0 10px; color: var(--muted); font-size: var(--fs-s); }
 .foot-menu { position: relative; margin-left: auto; }
 .foot-menu > summary { list-style: none; width: 36px; height: 36px; cursor: pointer; }
@@ -2218,8 +2170,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .project-picker-list .picker-new:has(+ .picker-new) { border-radius: 0; }
 .project-picker-list .picker-new + .picker-new { margin-top: 0; border-top: 0; }
 .project-picker-list .side-machine { padding: 8px 10px 2px; }
-.merge-status:empty { display: none; }
-.merge-status { flex-basis: 100%; }
 .side-projects {
   order: 3; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; margin: 14px 0 4px; padding: 12px 0;
   border-block: 1px solid var(--line);
@@ -2283,16 +2233,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 @media (hover: none) { .side-star { opacity: 1; } }
 /* Other projects (N): the projects not starred fold away under Starred, in their groups. */
 .side-project-list li.side-others { display: block; margin-top: 8px; }
-.side-fold.side-others-fold { gap: 10px; padding-left: 8px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
-.side-others-icon { position: relative; flex: none; display: grid; place-items: center; width: 22px; height: 22px; }
-.side-fold .side-others-icon .ico { width: 16px; height: 16px; margin: 0; transform: none; }
-.side-others-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-other-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.side-other-list[hidden] { display: none; }
-/* The Runners block under the project buttons: its natural height, while the projects list takes the rest. */
-.side-runners { flex: none; display: flex; flex-direction: column; }
-/* Its head is a button that folds the list away, leaving a summary beside the name. */
-.side-fold-head { padding: 0 0 4px; }
 .side-fold {
   display: flex; align-items: center; gap: 6px; width: 100%; min-height: 28px; padding: 0 8px 0 10px; border-radius: var(--r-m);
   font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; text-align: left;
@@ -2300,18 +2240,12 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .side-fold:hover { background: var(--raised); color: var(--muted); }
 .side-fold svg { flex: none; width: 14px; height: 14px; margin-left: auto; transform: rotate(90deg); transition: transform .15s var(--ease); }
 .side-fold[aria-expanded="false"] svg { transform: none; }
-.side-fold-sum { display: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; letter-spacing: 0; text-transform: none; font-size: var(--fs-xs); }
-.side-runners.folded .side-fold-sum { display: inline; }
-.side-runners.folded .side-runner-list { display: none; }
-.side-runner-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.side-runner { width: 100%; display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 0 8px; border-radius: var(--r-m); color: var(--muted); font-size: var(--fs-s); text-align: left; }
-.side-runner:hover { background: var(--raised); color: var(--text); }
-.side-runner-icon { position: relative; flex: none; display: grid; place-items: center; width: 22px; height: 22px; }
-.side-runner-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-runner-update { flex: none; color: var(--running); font-size: var(--fs-xs); }
-.side-runner-badge { display: none; position: absolute; top: -4px; right: -6px; font-size: var(--fs-3xs); line-height: 1; color: var(--running); }
-.side-runner-count { flex: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--faint); }
-.side-runner-more { padding-left: 40px; color: var(--faint); font-size: var(--fs-xs); }
+.side-fold.side-others-fold { gap: 10px; padding-left: 8px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.side-others-icon { position: relative; flex: none; display: grid; place-items: center; width: 22px; height: 22px; }
+.side-fold .side-others-icon .ico { width: 16px; height: 16px; margin: 0; transform: none; }
+.side-others-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-other-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.side-other-list[hidden] { display: none; }
 /* Project lists' two-line label: the name, and under it the owner/repo. */
 .project-label { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .project-sub { font-size: .85em; font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2321,10 +2255,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .shared-mark .ico { width: 13px; height: 13px; }
 .project-name .shared-mark { margin-left: 6px; vertical-align: -1px; }
 .menu-btn { position: relative; margin-left: -10px; }
-.app:has(.usage-pill.paused:not([hidden])) .menu-btn::after {
-  content: ""; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%;
-  background: var(--failed); box-shadow: 0 0 0 2px var(--bg);
-}
 @media (max-width: 1023px) {
   .menu {
     position: fixed; inset: 0 auto 0 0; z-index: 50; width: min(320px, 86vw);
@@ -2345,10 +2275,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-project-list { overflow: visible; }
   .side-project { min-height: 44px; font-size: var(--fs-body); }
   .side-ci-build { width: 40px; }
-  .side-new-project, .side-runner, .side-fold { min-height: 44px; }
-  .usage-fold { top: 0; right: 0; width: 44px; height: 44px; }
-  .usage-box:has(.usage-fold:not([hidden])) #usage-pill .usage-head { padding-right: 34px; }
-  .app:not(.side-collapsed) .usage-box.folded #usage-pill { padding-right: 48px; }
+  .side-new-project, .side-fold { min-height: 44px; }
   .foot-menu > summary { width: 44px; height: 44px; }
   .foot-menu.account-menu > summary { width: 100%; height: auto; min-height: 44px; }
   .foot-menu-list button { min-height: 44px; }
@@ -2408,7 +2335,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 /* ---------- desktop ---------- */
 @media (min-width: 1024px) {
   .app { display: grid; grid-template: "top top" var(--top-h) "side main" 1fr / var(--side-w) 1fr; height: 100dvh; }
-  /* Top bar across the full width: brand, current project, live dot, project menu.
+  /* Top bar across the full width: brand, current project, status icon, project menu.
      Below it one sidebar column: sections, projects (fills and scrolls), then
      quick actions and account status. The sidebar list is the switcher, so the
      header's project button just focuses it. */
@@ -2457,8 +2384,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   /* The live dot says Live or Offline beside it. */
   .live { display: flex; gap: 6px; width: auto; padding: 0 2px; color: var(--muted); font-size: var(--fs-xs); }
   .live .live-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
-  /* The top bar's menu button collapses the sidebar to its icons. */
-  .app:not(.side-collapsed) .menu-btn::after { display: none; }
   /* A drag handle on the sidebar's right edge sets --side-w-set; the cap keeps main usable. */
   .app { --side-w: min(var(--side-w-set, 240px), 40vw); }
   /* A vertical drag handle on a pane's edge: a 7px hit area with a line on hover, focus and drag. */
@@ -2476,21 +2401,12 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-collapsed :is(.nav > button, .menu-view) > span:not(.badge),
   .side-collapsed .side-projects-head, .side-collapsed .side-project-text, .side-collapsed .side-project-branch, .side-collapsed .shared-mark,
   .side-collapsed .side-machine, .side-collapsed .machine-empty,
-  .side-collapsed .side-new-project span,
-  .side-collapsed .side-runners .side-projects-head, .side-collapsed .side-runner > span:not(.side-runner-icon), .side-collapsed .side-runner-more,
-  .side-collapsed .sidebar .usage-pill:not(#usage-pill), .side-collapsed .usage-fold, .side-collapsed .merge-status { display: none; }
-  /* Collapsed to icons, the runners show as dots whether folded or not: there is no head to unfold them with. */
-  .side-collapsed .side-runners.folded .side-runner-list { display: flex; }
-  .side-collapsed #usage-pill { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; }
-  .side-collapsed #usage-pill .usage-detail { display: none; }
-  .side-collapsed #usage-pill .usage-pies { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .side-collapsed .side-new-project span { display: none; }
   .side-collapsed .nav .badge { position: absolute; top: 3px; right: 1px; margin: 0; }
   .side-collapsed .nav .board-dot { top: 6px; left: auto; right: 6px; }
   .side-collapsed .side-project-list { display: flex; flex-direction: column; gap: 4px; }
   .side-collapsed .side-project-list li.current { box-shadow: none; background: none; }
   .side-collapsed .side-project { justify-content: center; padding: 0; min-height: 40px; }
-  .side-collapsed .side-runner { justify-content: center; padding: 0; }
-  .side-collapsed .side-runner-badge { display: block; }
   .side-collapsed .side-project-icon { width: 32px; height: 32px; font-size: var(--fs-s); }
   .side-collapsed .side-project-list li.current { position: relative; }
   .side-collapsed .side-ci-build { position: absolute; right: 2px; bottom: 0; width: 18px; height: 18px; margin: 0; }
@@ -2871,25 +2787,12 @@ a.revert-tag { text-decoration: underline; }
 .sync-warn { display: grid; gap: 2px; margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid var(--running); border-radius: 0 var(--r-s) var(--r-s) 0; background: color-mix(in srgb, var(--running) 10%, transparent); overflow-wrap: anywhere; animation: chip-in .25s var(--ease); }
 .sync-warn strong { color: var(--running); }
 .paused-warn .btn { justify-self: start; margin-top: 6px; }
-.billing-warn.read-only { border-left-color: var(--failed); background: color-mix(in srgb, var(--failed) 10%, transparent); }
-.billing-warn.read-only strong { color: var(--failed); }
 .billing-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
 /* ---- builds (GitHub Actions) ---- */
 
 @keyframes pulse-dot { 50% { opacity: .35; } }
 /* ---- Claude's status (status.claude.com) ---- */
-/* In the top bar, beside the live dot: it shrinks to its dot before the bar runs out of room. */
-.claude-pill { --c: var(--running); flex: 0 1 auto; max-width: 280px; min-width: 0; overflow: hidden; background: var(--surface); }
-.claude-pill:hover { border-color: var(--c); }
-.claude-pill::before { flex: none; }
-@media (max-width: 639px) {
-  .claude-pill { flex: none; justify-content: center; width: 32px; padding: 0; }
-  .claude-pill-text { display: none; }
-}
-.claude-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.claude-pill.claude-bad { --c: var(--failed); border-color: color-mix(in srgb, var(--failed) 50%, var(--line)); color: var(--failed); }
-.claude-pill::before { animation: pulse-dot 1.4s ease-in-out infinite; }
 .claude-summary { --c: var(--muted); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; margin: 0; padding: 10px 12px; border-left: 3px solid var(--c); border-radius: 0 var(--r-s) var(--r-s) 0; background: color-mix(in srgb, var(--c) 10%, transparent); }
 .claude-summary strong { color: var(--c); }
 .claude-components, .claude-incidents { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -2921,11 +2824,7 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .claude-watch .hint { flex: none; color: var(--c); font-size: var(--fs-s); }
 /* Tones last: they override the boxes' own colour. */
 .claude-ok { --c: var(--merged); } .claude-warn { --c: var(--running); } .claude-bad { --c: var(--failed); } .claude-muted { --c: var(--muted); }
-/* ---- origin ahead/behind (background fetch) ---- */
-.remote-pill { --c: var(--running); }
-.remote-pill.remote-error { --c: var(--muted); color: var(--muted); font-weight: 400; }
 /* ---- GitHub rate limit: polls paused ---- */
-.github-limit-pill { order: 5; margin-top: 8px; --c: var(--running); white-space: normal; text-align: left; padding-block: 4px; }
 .ci-limit { color: var(--running); }
 /* ---- checkouts left behind origin (another runner pushed) ---- */
 .checkouts { display: flex; flex-direction: column; gap: 6px; }
@@ -2934,6 +2833,70 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .checkout-behind > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .checkout-behind .hint { display: block; font-size: var(--fs-xs); }
 .checkout-behind button { flex: none; min-height: 28px; padding: 0 10px; }
+
+/* ---- status: the top bar's icon and its popover (app/status.js) ---- */
+/* Quiet while all is well; a dot, coloured by the worst row, when something needs the user. */
+.status-btn { position: relative; color: var(--muted); }
+.status-btn:hover, .status-btn[aria-expanded="true"] { color: var(--text); }
+.status-dot { display: none; position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
+.status-btn:is([data-tone="warn"], [data-tone="bad"]) .status-dot { display: block; }
+.status-btn[data-tone="warn"] .status-dot { background: var(--running); }
+.status-btn[data-tone="bad"] .status-dot { background: var(--failed); }
+.status-btn[data-tone="bad"] { color: var(--failed); }
+.status-btn[data-live="off"][data-tone="bad"] .status-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .status-btn .status-dot { animation: none !important; } }
+/* The popover: under the icon on a wide screen; a full-width sheet from the bottom on a phone. */
+.status-pop {
+  position: fixed; inset: calc(var(--top-h, 56px) - 4px) 12px auto auto; margin: 0; padding: 0;
+  width: min(400px, calc(100vw - 24px)); max-height: calc(100dvh - var(--top-h, 56px) - 16px);
+  border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface); color: var(--text);
+  box-shadow: 0 12px 32px rgb(0 0 0 / .35);
+}
+.status-pop[open] { display: flex; flex-direction: column; animation: fade-in .12s var(--ease); }
+.status-pop::backdrop { background: transparent; }
+.status-pop-inner { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 4px 12px 12px; }
+.status-pop-head { display: flex; align-items: center; gap: 8px; padding: 4px 0 8px; }
+.status-pop-head h2 { margin: 0; font-size: var(--fs-l, 16px); }
+.status-pop-head h2:focus { outline: none; }
+.status-pop-head .hint { flex: 1; min-width: 0; }
+@media (max-width: 639px) {
+  .status-pop {
+    inset: auto 0 0 0; width: 100%; max-width: 100%; max-height: 85dvh;
+    border-width: 1px 0 0; border-radius: var(--r-l) var(--r-l) 0 0; box-shadow: none;
+  }
+  .status-pop::backdrop { background: var(--scrim); }
+  .status-pop[open] { animation: sheet-up .22s var(--ease); }
+  .status-pop-inner { padding-bottom: calc(12px + var(--safe-b, 0px)); }
+}
+.status-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.status-row { --c: var(--muted); display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.status-row.status-ok { --c: var(--merged); }
+.status-row.status-warn { --c: var(--running); }
+.status-row.status-bad { --c: var(--failed); }
+.status-row-dot { flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--c); }
+.status-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-s); overflow-wrap: anywhere; }
+.status-row-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.status-row-text { color: var(--muted); }
+:is(.status-warn, .status-bad) .status-row-text { color: var(--c); font-weight: 600; }
+.status-row-body p { margin: 0; }
+.status-row-act { flex: none; }
+.status-err { font-family: var(--mono); font-size: var(--fs-xs); white-space: pre-wrap; }
+.status-lines { display: flex; flex-direction: column; gap: 4px; }
+.status-usage { display: flex; flex-direction: column; gap: 8px; }
+.status-usage .usage-reason { font-size: var(--fs-xs); color: var(--failed); }
+.status-usage .usage-reason.pacing { color: var(--running); }
+.status-usage .meter-head { font-size: var(--fs-s); margin-bottom: 4px; }
+.status-usage .meter { height: 6px; }
+.status-usage .meter-pace { margin-top: 3px; font-size: var(--fs-2xs); }
+/* The runners, each with its dot, name and tasks running of its slots. */
+.status-runner-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.status-runner { width: 100%; display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 0 8px; border-radius: var(--r-m); color: var(--muted); font-size: var(--fs-s); text-align: left; }
+.status-runner:hover { background: var(--raised); color: var(--text); }
+.status-runner-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-runner-update { flex: none; color: var(--running); font-size: var(--fs-xs); }
+.status-runner-count { flex: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--faint); }
+.status-runner-more { padding-left: 26px; color: var(--faint); font-size: var(--fs-xs); }
+@media (pointer: coarse) { .status-runner { min-height: 44px; } }
 .ci-tag, .sentback-tag { color: var(--failed); }
 .err-text { color: var(--failed); }
 .link.inline { min-height: 0; padding: 0; font: inherit; font-weight: 600; gap: 4px; vertical-align: bottom; }
@@ -3026,16 +2989,6 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .pv-tag.starting { color: var(--running); }
 .pv-tag.crashed { color: var(--failed); }
 
-.previews-btn {
-  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px; flex: none;
-  border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface); font-size: var(--fs-s); font-weight: 600; white-space: nowrap;
-}
-.previews-btn:hover { border-color: var(--merged); }
-.previews-btn .pv-dot { background: var(--merged); }
-.previews-btn[data-state="starting"] .pv-dot { background: var(--running); }
-.previews-btn[data-state="crashed"] .pv-dot { background: var(--failed); }
-.previews-btn .pv-warn { color: var(--failed); font-weight: 600; }
-@media (max-width: 639px) { .previews-btn .pv-word { display: none; } }
 
 .preview { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
 .pv-bar { display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }

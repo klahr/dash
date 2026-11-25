@@ -154,6 +154,7 @@ Type `:` and a command.
 | `:cleanup`                      | clean up leftovers                                        |
 | `:pause` `:resume`              | pause or resume the whole queue, every project (platform admins only) |
 | `:usage`                        | Claude usage                                              |
+| `:status`                       | the status popover                                        |
 | `:settings` `:prefs`            | **Project settings** / preferences                        |
 | `:connector`                    | connect Claude                                            |
 | `:runners` `:org` `:account`    | **Runners**, **Organization**, **Account**                |
