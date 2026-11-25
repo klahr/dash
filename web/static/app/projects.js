@@ -166,7 +166,7 @@ export function renderProjectHeader() {
   app.classList.toggle("has-project-color", !!p?.color);
   $('meta[name="theme-color"]').content = p?.color || "#101722";
   renderProjectBranch();
-  $("#project-menu").hidden = !p;
+  $("#pm-project").hidden = !p; // the ⋮ menu's project items; Chat and Voice stay
   renderTryButton(); // Run, and its ▾ menu's Run tests, Push and Builds…
   renderPaused(p);
   // Syncing the base branch with GitHub failed: a row in the status popover,

@@ -55,29 +55,34 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 5 12 2.5-6h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span class="status-dot" aria-hidden="true"></span>
       </button>
-      <!-- Voice commands (app/voice.js): shown while the preference is on. -->
-      <button class="icon-btn voice-btn" id="voice-open" type="button" aria-label="Voice commands" title="Voice commands (Ctrl-Shift-,)" aria-pressed="false" data-icon="mic"></button>
       <button class="icon-btn" id="palette-open" type="button" aria-label="Search everything" title="Search everything (Ctrl-k)" aria-haspopup="dialog" data-icon="palette"></button>
-      <button class="icon-btn" id="pc-open" type="button" aria-label="Chat" title="Chat (gc)" aria-pressed="false" aria-controls="chat-pane" data-icon="comment"><span class="badge chat-badge" hidden></span></button>
-      <details class="foot-menu top-menu" id="project-menu" hidden>
-        <summary class="icon-btn" aria-label="Project menu" title="Project menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
-        <!-- Managing the project, in groups: its setup, its queue, then housekeeping and
-             deleting it. Running things are elsewhere: Run in the top bar, Deploy on
-             History → Deploys, Run tests, Push and Builds… in Run's ▾ menu; status is the
-             top bar's status icon. -->
+      <!-- The ⋮ menu: Chat and Voice commands first (each with its shortcut), then managing
+           the project (only with one open), in groups: its setup, its queue, then deleting it.
+           Running things are elsewhere: Run in the top bar, Deploy on History → Deploys, Run
+           tests, Push and Builds… in Run's ▾ menu; status is the top bar's status icon.
+           Its badge is the chat's (renderChatBadge), on a desktop. -->
+      <details class="foot-menu top-menu" id="project-menu">
+        <summary class="icon-btn" aria-label="More" title="More"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg><span class="badge chat-badge" hidden></span></summary>
         <div class="foot-menu-list">
-          <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
-          <!-- Star / Unstar project: starred projects come first in the sidebar (app/stars.js). -->
-          <button id="pm-star" type="button" data-icon="star" hidden>Star project</button>
-          <button id="pm-branch" type="button" data-icon="branch">Switch branch…</button>
-          <!-- The project's scans: run them, their schedules and settings (app/scans.js) -->
-          <button id="pm-scans" type="button" data-icon="scan">Scans…</button>
-          <hr class="menu-sep">
-          <button id="pm-pause" type="button" data-icon="pause" title="Pause this project's running tasks, keeping their work; none of its tasks starts until you resume it">Pause this project</button>
-          <!-- Platform admins: the queue every project of this Dash shares (app/usage.js) -->
-          <button id="pm-queue" type="button" data-icon="pause" hidden title="No new task starts in any project of this Dash; running tasks finish">Pause queue (all projects)</button>
-          <hr class="menu-sep">
-          <button id="pm-delete" type="button" data-icon="trash" class="danger">Delete project…</button>
+          <!-- Desktop only: a phone has Chat in the bottom nav. -->
+          <button id="pc-open" type="button" aria-pressed="false" aria-controls="chat-pane" data-icon="comment"><span class="menu-label">Chat</span><span class="badge chat-badge" hidden></span><kbd class="menu-key">g c</kbd></button>
+          <!-- Voice commands (app/voice.js): shown while the preference is on. -->
+          <button class="voice-btn" id="voice-open" type="button" aria-pressed="false" data-icon="mic"><span class="menu-label">Voice commands</span><kbd class="menu-key">Ctrl-Shift-,</kbd></button>
+          <div class="menu-group" id="pm-project" hidden>
+            <hr class="menu-sep">
+            <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
+            <!-- Star / Unstar project: starred projects come first in the sidebar (app/stars.js). -->
+            <button id="pm-star" type="button" data-icon="star" hidden>Star project</button>
+            <button id="pm-branch" type="button" data-icon="branch">Switch branch…</button>
+            <!-- The project's scans: run them, their schedules and settings (app/scans.js) -->
+            <button id="pm-scans" type="button" data-icon="scan">Scans…</button>
+            <hr class="menu-sep">
+            <button id="pm-pause" type="button" data-icon="pause" title="Pause this project's running tasks, keeping their work; none of its tasks starts until you resume it">Pause this project</button>
+            <!-- Platform admins: the queue every project of this Dash shares (app/usage.js) -->
+            <button id="pm-queue" type="button" data-icon="pause" hidden title="No new task starts in any project of this Dash; running tasks finish">Pause queue (all projects)</button>
+            <hr class="menu-sep">
+            <button id="pm-delete" type="button" data-icon="trash" class="danger">Delete project…</button>
+          </div>
         </div>
       </details>
     </header>
@@ -92,7 +97,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M12 4v9M18 4v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="18" cy="18" r="2"/></svg>
         <span>Board</span><span class="badge" id="review-badge" hidden></span><span class="badge board-dot" id="board-dot" hidden></span>
       </button>
-      <!-- Mobile only: the chat page, on the current project's chat (desktop has #pc-open). -->
+      <!-- Mobile only: the chat page, on the current project's chat (desktop has Chat in the top bar's ⋮ menu, #pc-open). -->
       <button class="nav-chat" id="nav-chat" type="button" title="Chat (gc)" aria-label="Chat" aria-controls="chat-pane">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Chat</span><span class="badge chat-badge" id="chat-badge" hidden></span>
@@ -1346,7 +1351,7 @@
             <p class="hint">The browser turns your speech into text. Chrome sends the audio to Google to transcribe it; Safari may do it on the device.
               <kbd><span data-mod>Ctrl</span>-Shift-.</kbd> starts or stops it in the field you are in.</p>
             <label class="toggle"><input type="checkbox" name="voice" form="prefs-form"><span>Voice commands <em>say “send”, “queue this task”, “approve”, “next card”…</em></span></label>
-            <p class="hint">Start them with the mic in the top bar, or <kbd><span data-mod>Ctrl</span>-Shift-,</kbd>. <kbd>Esc</kbd> or “stop listening” ends them.
+            <p class="hint">Start them with <strong>⋮ → Voice commands</strong> in the top bar, or <kbd><span data-mod>Ctrl</span>-Shift-,</kbd>. <kbd>Esc</kbd> or “stop listening” ends them.
               Like dictation, the browser does the speech recognition: Chrome sends the audio to Google; Safari may do it on the device.
               <a data-docs="dictation.md#voice-commands" target="_blank" rel="noopener">The commands</a></p>
             <p class="hint warn" id="dictation-missing" hidden>This browser has no speech recognition (Firefox). Use your system's dictation instead: <a data-docs="dictation.md" target="_blank" rel="noopener">How</a>.</p>

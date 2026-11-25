@@ -11,7 +11,7 @@ import (
 )
 
 // Voice commands (docs/dictation.md#voice-commands): off until turned on in
-// Account → Voice; then a mic in the top bar or Ctrl-Shift-, listens for
+// Account → Voice; then Voice commands in the top bar's ⋮ menu or Ctrl-Shift-, listens for
 // commands, shows a bar while it does, runs "send" in the chat it was started
 // from with a toast of what it heard, opens sections, ignores other speech,
 // and stops on Esc and on "stop listening". While dictating, "send" said on
@@ -29,7 +29,9 @@ func TestBrowserVoiceCommands(t *testing.T) {
 	shown := func(sel string) string {
 		return `(() => { const b = document.querySelector(` + jsq(sel) + `); return !!b && getComputedStyle(b).display !== "none" && b.getClientRects().length > 0; })()`
 	}
-	b.waitJS("no mic in the top bar while it is off", `!!document.querySelector("#voice-open") && !`+shown("#voice-open"))
+	// Voice commands in the ⋮ menu: shown (once the menu opens) while they are on.
+	inMenu := `getComputedStyle(document.querySelector("#voice-open")).display !== "none"`
+	b.waitJS("no Voice commands in the ⋮ menu while they are off", `!!document.querySelector("#voice-open") && !`+inMenu)
 
 	// Turn voice commands and dictation on in Account → Voice.
 	section := `#account-sheet [data-section=voice]`
@@ -42,13 +44,13 @@ func TestBrowserVoiceCommands(t *testing.T) {
 	b.until("turn dictation on", `localStorage.getItem("dash.dictation") === "1"`,
 		chromedp.Click(chromedp.CSS(section+` input[name=dictation] + span`)))
 	b.until("close Account", `!document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
-	b.waitJS("the mic in the top bar", shown("#voice-open"))
+	b.waitJS("Voice commands in the ⋮ menu", inMenu)
 
 	// Start from the chat with Ctrl-Shift-,: "send" sends what is in it.
 	composer := `#chat-pane .chat-panel:not([hidden]) form.composer`
 	box := `document.querySelector(` + jsq(composer+" textarea") + `)`
 	listening := `e2eRec()?.state === "listening" && document.querySelector("#voice-open").getAttribute("aria-pressed") === "true" && !!document.querySelector("#toasts .voice-bar")`
-	b.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("pc-open")))
+	b.topMenu("pc-open", `!document.querySelector("#chat-pane").hidden`)
 	b.do("type", chromedp.SendKeys(chromedp.CSS(composer+` textarea`), "Hello voice"))
 	b.until("start voice commands", listening+` && e2eRec().lang === navigator.language`,
 		chromedp.KeyEvent(",", chromedp.KeyModifiers(chromedp.ModifierCtrl|chromedp.ModifierShift)))
@@ -64,11 +66,12 @@ func TestBrowserVoiceCommands(t *testing.T) {
 	b.until("Esc stops", `e2eRec().state === "aborted" && !document.querySelector(".voice-bar") && document.querySelector("#voice-open").getAttribute("aria-pressed") === "false"`,
 		chromedp.KeyEvent(kb.Escape))
 
-	// The button, on a phone: the mic and the bar fit; "stop listening" stops.
+	// The menu item, on a phone: the ⋮ menu and the bar fit; "stop listening" stops.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the toasts out of the way", `(document.querySelectorAll(".toast").forEach((t) => t.remove()), true)`)
-	b.waitJS("the mic fits the top bar", shown("#voice-open")+` && document.querySelector("#voice-open").getBoundingClientRect().right <= innerWidth`)
-	b.until("start from the mic", listening, chromedp.Click(chromedp.ID("voice-open")))
+	b.until("open the ⋮ menu", `document.querySelector("#project-menu").open`, chromedp.Click(chromedp.CSS(`#project-menu > summary`)))
+	b.waitJS("Voice commands fit the screen", shown("#voice-open")+` && document.querySelector("#voice-open").getBoundingClientRect().right <= innerWidth`)
+	b.until("start from the ⋮ menu", listening, chromedp.Click(chromedp.ID("voice-open")))
 	b.waitJS("the bar fits", `(() => { const r = document.querySelector(".voice-bar").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; })()`)
 	b.waitJS("stop listening", `(e2eRec().say("stop listening", true), e2eRec().state === "aborted" && !document.querySelector(".voice-bar"))`)
 	b.do("a wide screen again", chromedp.EmulateViewport(1600, 1000))

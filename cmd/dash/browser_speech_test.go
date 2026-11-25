@@ -63,7 +63,7 @@ func TestBrowserSpokenReplies(t *testing.T) {
 	// A finished reply in the project chat is read aloud.
 	const panel = `#chat-pane .chat-panel[data-chat]:not([hidden])`
 	btn := `document.querySelector(` + jsq(panel+" .msg.assistant:not(.pending) .speak-btn") + `)`
-	b.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("pc-open")))
+	b.topMenu("pc-open", `!document.querySelector("#chat-pane").hidden`)
 	b.do("ask", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "Hi there\r"))
 	b.waitJS("the reply read aloud, its button pressed", `!!`+btn+` && e2eHeard("Hello from the runner") && `+btn+`.getAttribute("aria-pressed") === "true"`)
 	b.until("Esc stops it, the chat stays", btn+`.getAttribute("aria-pressed") === "false" && e2eCancels > 0 && !document.querySelector("#chat-pane").hidden`,

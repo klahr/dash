@@ -7,6 +7,9 @@ changes). Each conversation is saved, so it survives reloads and restarts. On a 
 runs on one of your own runners, with its Claude login (see
 [Several computers](several-computers.md#claude-runs-on-each-users-own-runner)).
 
+Open the chat pane with **⋯ → Chat** in the top bar, or press `gc`. On a phone, tap **Chat** in
+the bottom bar.
+
 ## A planner's chat
 
 A [planner](users.md#planners) has the general chat only: **Chat** in their sidebar. It runs on

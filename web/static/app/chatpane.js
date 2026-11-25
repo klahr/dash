@@ -484,7 +484,7 @@ $("#pc-open").addEventListener("click", () => toggleChatPane());
 // The mobile bottom nav's Chat tab: opens the chat page on the current project's chat.
 // Like any other tab, tapping it while it's shown keeps it.
 $("#nav-chat").addEventListener("click", () => { if (!pane.open) toggleChatPane(true, state.project ? "project" : "general"); });
-// The Chat buttons' badge (the bottom nav's and the top bar's): a pane chat waits
+// The Chat buttons' badge (the bottom nav's, and the top bar's ⋮ menu and its Chat item): a pane chat waits
 // on a permission request ("!"), is streaming an answer (a breathing dot), or has
 // a reply you haven't read (a green dot), in that order.
 export function renderChatBadge() {
@@ -502,10 +502,14 @@ export function renderChatBadge() {
     b.textContent = waiting ? "!" : "";
     b.title = kind === "unread" ? "New reply" : says || "";
   }
-  for (const btn of [$("#nav-chat"), $("#pc-open")]) {
-    btn.setAttribute("aria-label", says ? `Chat: ${says}` : "Chat");
-    btn.title = says ? `Chat: ${says} (gc)` : "Chat (gc)";
-  }
+  const nav = $("#nav-chat");
+  nav.setAttribute("aria-label", says ? `Chat: ${says}` : "Chat");
+  nav.title = says ? `Chat: ${says} (gc)` : "Chat (gc)";
+  // The ⋮ menu's Chat item shows its shortcut; the menu's button wears the badge too.
+  $("#pc-open").setAttribute("aria-label", says ? `Chat: ${says}` : "Chat");
+  const more = $("#project-menu > summary");
+  more.setAttribute("aria-label", says ? `More (chat: ${says})` : "More");
+  more.title = says ? `More · Chat: ${says}` : "More";
 }
 $("#pc-close").addEventListener("click", () => toggleChatPane(false));
 $("#pc-pin").addEventListener("click", togglePin);

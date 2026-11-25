@@ -131,7 +131,7 @@ offline, red when none is, grey when there are none yet.
 ### Star the projects you work on
 
 Hover a project in the **Projects** list and click its star (on a phone, the star is always
-shown). You can also use **Star project** in the top bar's project menu, or in the command palette
+shown). You can also use **Star project** in the top bar's **⋯** menu, or in the command palette
 (`Ctrl-k`).
 
 Starred projects come first, under **Starred**. The rest fold away under **Other projects (N)**,

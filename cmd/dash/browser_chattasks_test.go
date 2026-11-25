@@ -22,7 +22,7 @@ func TestBrowserChatDraftCards(t *testing.T) {
 	wide.signIn(h)
 	phone.signIn(h)
 	phone.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
-	wide.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("pc-open")))
+	wide.topMenu("pc-open", `!document.querySelector("#chat-pane").hidden`)
 	phone.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("nav-chat")))
 	const panel = `#chat-pane .chat-panel[data-chat]:not([hidden])`
 	card := func(title string) string {
@@ -87,7 +87,7 @@ func TestBrowserChatDraftCards(t *testing.T) {
 
 	// Loaded again: the cards and notes come back, as the tasks are now.
 	wide.do("reload", chromedp.Reload())
-	wide.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("pc-open")))
+	wide.topMenu("pc-open", `!document.querySelector("#chat-pane").hidden`)
 	wide.waitJS("the cards, as they are now", buttons("Fix login redirect")+` === "Open" && `+state("Old idea")+` === "Deleted" && `+
 		has("You queued Fix login redirect.")+` && `+has("You discarded Old idea."))
 }

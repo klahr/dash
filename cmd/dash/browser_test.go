@@ -590,7 +590,7 @@ func TestBrowserChatTabs(t *testing.T) {
 		b.waitJS("the tabs "+want, `[...document.querySelectorAll("#chat-tabs .chat-tab-name")].map((n) => n.textContent).join(",") === `+fmt.Sprintf("%q", want))
 	}
 	options := `[...document.querySelectorAll("#chat-tab-options button .project-name")].map((n) => n.textContent).join(",")`
-	b.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("pc-open")))
+	b.topMenu("pc-open", `!document.querySelector("#chat-pane").hidden`)
 	tabs("This project,General")
 	if stored, _ := chromedp.Run(b.ctx, chromedp.Evaluate[string](`localStorage.getItem("dash.chatPane")`)); strings.Contains(stored, `"tabs"`) || strings.Contains(stored, "nope") {
 		t.Fatalf("the old tabs are still stored: %s", stored)
@@ -677,7 +677,7 @@ func TestBrowserProjectChatOnTwoDevices(t *testing.T) {
 	wide.signIn(h)
 	phone.signIn(h)
 	phone.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
-	wide.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("pc-open")))
+	wide.topMenu("pc-open", `!document.querySelector("#chat-pane").hidden`)
 	phone.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("nav-chat")))
 	const panel = `#chat-pane .chat-panel[data-chat]:not([hidden])`
 	has := func(texts ...string) string {
@@ -986,6 +986,32 @@ func (b *browser) openDrawer(expr string) {
 	}
 	b.until("open the drawer", open, chromedp.Click(chromedp.ID("menu-open")))
 	b.waitJS("the drawer slid in", `!document.querySelector("#menu").getAnimations().length`)
+}
+
+// topMenu opens the top bar's ⋮ menu and clicks its item with the id item
+// (pc-open: Chat, voice-open: Voice commands, pm-…: the project's items)
+// until a JavaScript expression is true; when it already is, it clicks nothing.
+// The menu closes on a click, so each try opens it again.
+func (b *browser) topMenu(item, expr string) {
+	b.t.Helper()
+	isTrue := func(js string) bool {
+		ok, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`!!(`+js+`)`))
+		return err == nil && ok
+	}
+	const open = `document.querySelector("#project-menu").open`
+	for range 10 {
+		for range 20 {
+			if isTrue(expr) {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if !isTrue(open) {
+			b.until("open the ⋮ menu", open, chromedp.Click(chromedp.CSS(`#project-menu > summary`)))
+		}
+		b.try("choose #"+item+" in the ⋮ menu", 10*time.Second, chromedp.Click(chromedp.ID(item)))
+	}
+	b.fail("choose #"+item+" in the ⋮ menu", fmt.Errorf("still false: %s", expr))
 }
 
 func cardSel(id string) string { return fmt.Sprintf(`#board .todo[data-id=%q]`, id) }

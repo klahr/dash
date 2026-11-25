@@ -42,17 +42,18 @@ turn them on, and are a setting of this browser.
 1. Open **Account → Voice**.
 2. Turn on **Voice commands**.
 
-A mic shows in the top bar. Chrome, Edge and Safari have voice commands; Firefox doesn't.
+**Voice commands** shows in the top bar's **⋯** menu. Chrome, Edge and Safari have voice
+commands; Firefox doesn't.
 
 ### Start and stop
 
-- Click the mic in the top bar, or press `Ctrl-Shift-,` (`⌘-Shift-,` on a Mac). Allow the
-  microphone the first time.
+- Press `Ctrl-Shift-,` (`⌘-Shift-,` on a Mac), or choose **⋯ → Voice commands** in the top bar.
+  Allow the microphone the first time.
 - A **Listening for commands** bar shows what Dash heard.
-- Say "stop listening", press `Esc`, or click **Stop** to end. Hiding the page or an error ends
-  it too.
+- Say "stop listening", press `Esc`, or click **Stop** (or **⋯ → Stop voice commands**) to end.
+  Hiding the page or an error ends it too.
 
-Click the mic or use the shortcut while the cursor is in a chat, so "send" knows what to send.
+Press the shortcut while the cursor is in a chat, so "send" knows what to send.
 
 ### The commands
 

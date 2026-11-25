@@ -150,7 +150,7 @@ Merged tasks can be reverted with one click (`u`).
 ## Work on another branch
 
 Tasks start from the project's default branch (`main` or `master`) and land on it, unless you pick
-another one: click the branch button in the top bar (or **Switch branch…** in the project menu).
+another one: click the branch button in the top bar (or **⋯ → Switch branch…**).
 The switcher lists the checkout's branches and origin's (it fetches them when it opens); type to
 filter, or type a new name to create that branch from the current one. Once switched, new tasks
 start from that branch and are merged into it (or, in pull request mode, open their pull requests

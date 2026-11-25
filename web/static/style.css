@@ -260,20 +260,23 @@ textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: 
 }
 .nav .board-dot.done { background: var(--merged); animation: none; box-shadow: 0 0 0 2px var(--surface); }
 .nav .chat-badge.perm { top: 8px; left: calc(50% + 6px); min-width: 18px; width: auto; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--review); animation: none; }
-/* The top bar's Chat button (desktop) wears the same badge in its corner. */
-#pc-open { position: relative; }
-#pc-open .chat-badge {
-  position: absolute; top: 8px; right: 8px; width: 9px; height: 9px; border-radius: 50%;
+/* The top bar's ⋮ menu (desktop) wears the same badge in its corner, and its Chat item beside its name. */
+.top-menu > summary { position: relative; }
+:is(.top-menu > summary, #pc-open) .chat-badge {
+  width: 9px; height: 9px; border-radius: 50%;
   background: var(--running); animation: breathe 1.8s ease-in-out infinite;
 }
-/* A count in an icon button's corner: the chat's approvals. */
-#pc-open .chat-badge.perm {
-  position: absolute; top: 4px; right: 2px; width: auto; min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-pill);
+.top-menu > summary .chat-badge { position: absolute; top: 8px; right: 8px; }
+#pc-open .chat-badge { flex: none; }
+/* A count: the chat's approvals. */
+:is(.top-menu > summary, #pc-open) .chat-badge.perm {
+  width: auto; min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-pill);
   background: var(--review); color: var(--on-review); font-size: var(--fs-3xs); font-weight: 700; line-height: 16px; text-align: center; animation: none;
 }
+.top-menu > summary .chat-badge.perm { top: 4px; right: 2px; }
 /* A finished reply you haven't read: a steady green dot, ringed so it stands off the icon. */
 .chat-badge.unread { background: var(--merged); animation: none; box-shadow: 0 0 0 2px var(--surface); }
-#pc-open .chat-badge.unread { box-shadow: 0 0 0 2px var(--bg); }
+.top-menu > summary .chat-badge.unread { box-shadow: 0 0 0 2px var(--bg); }
 @media (max-width: 400px) { .nav > button { font-size: var(--fs-2xs); letter-spacing: -.01em; } }
 .sidebar { display: contents; }
 
@@ -742,12 +745,13 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .chat-mode button:disabled { opacity: .5; cursor: default; }
 .composer.rework-mode textarea { border-color: var(--running); }
 .composer.rework-mode .icon-btn.primary { background: var(--running); }
-/* Dictation's mic button (app/dictation.js) and the top bar's voice commands mic (app/voice.js):
-   shown while their preference is on; red and breathing while they listen. */
+/* Dictation's mic button (app/dictation.js) and Voice commands in the top bar's ⋮ menu (app/voice.js):
+   shown while their preference is on; red while they listen (the mic breathing too). */
 :root:not(.dictation-on) .dictate-btn, :root:not(.voice-on) .voice-btn { display: none; }
-:is(.dictate-btn, .voice-btn).listening { color: var(--failed); border-color: var(--failed); animation: dictate-breathe 1.6s ease-in-out infinite; }
+.dictate-btn.listening { color: var(--failed); border-color: var(--failed); animation: dictate-breathe 1.6s ease-in-out infinite; }
+.voice-btn.listening { color: var(--failed); }
 @keyframes dictate-breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--failed) 45%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
-@media (prefers-reduced-motion: reduce) { :is(.dictate-btn, .voice-btn).listening, .voice-bar .toast-icon { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dictate-btn.listening, .voice-bar .toast-icon { animation: none; } }
 /* Voice commands' listening bar: the last of the toasts, until command mode ends. */
 .toast.voice-bar { --c: var(--failed); order: 1; flex-wrap: wrap; padding-bottom: 10px; }
 .voice-bar .toast-icon { animation: dictate-breathe 1.6s ease-in-out infinite; }
@@ -2159,6 +2163,12 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
    overlays): lift the bar above it while the menu is open. */
 .topbar:has(.top-menu[open]) { z-index: 47; }
 .top-menu .foot-menu-list { top: calc(100% + 4px); bottom: auto; }
+/* Its project items, shown with a project open. */
+.top-menu .menu-group { display: contents; }
+/* An item's shortcut, at its right end. */
+.foot-menu-list .menu-key { margin-left: auto; color: var(--muted); font-weight: 500; }
+.foot-menu-list .menu-label { margin-right: 10px; }
+@media (hover: none) { .foot-menu-list .menu-key { display: none; } }
 .project-picker-list { top: calc(100% + 4px); bottom: auto; left: 0; right: auto; min-width: 260px; max-width: 420px; max-height: min(70vh, 520px); overflow-y: auto; }
 .project-picker-list button { display: flex; justify-content: space-between; gap: 16px; flex: none; }
 .project-picker-list button[aria-current="true"] { background: var(--raised); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
@@ -2292,8 +2302,12 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 
   /* Bottom nav: Board · Chat · Planning · Goals, put in that order here (the DOM
      order is the desktop sidebar's). History and Code are in the menu drawer (.menu-views);
-     the Chat tab replaces the top bar's chat button. */
-  #pc-open { display: none; }
+     the Chat tab (and its badge) replaces Chat in the top bar's ⋮ menu. */
+  #pc-open, .top-menu > summary .chat-badge { display: none; }
+  /* Without Voice commands the ⋮ menu starts with the project's items (no line above them), and has
+     nothing without a project. */
+  :root:not(.voice-on) #pm-project > .menu-sep:first-child { display: none; }
+  :root:not(.voice-on) .top-menu:has(#pm-project[hidden]) { display: none; }
   .nav > .nav-chat { order: 1; }
   .nav > button[data-view="planning"] { order: 2; }
   .nav > button[data-view="goals"] { order: 3; }

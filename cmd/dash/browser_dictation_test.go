@@ -88,7 +88,7 @@ func TestBrowserDictation(t *testing.T) {
 
 	// The chat, on a phone: the button fits beside Send, and typing ends dictation keeping the words.
 	composer := `#chat-pane .chat-panel:not([hidden]) form.composer`
-	b.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("pc-open")))
+	b.topMenu("pc-open", `!document.querySelector("#chat-pane").hidden`)
 	b.waitJS("the mic beside Send", shown(composer+" .dictate-btn"))
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the mic in the composer", shown(composer+" .dictate-btn")+` && document.querySelector(`+jsq(composer+" .dictate-btn")+`).getBoundingClientRect().right <= innerWidth`)

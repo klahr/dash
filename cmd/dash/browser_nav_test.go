@@ -110,7 +110,7 @@ func TestBrowserNavigation(t *testing.T) {
 
 	// The project menu: groups, no Clean up any more (it moved to Project settings → General).
 	b.until("open the project menu", `document.querySelector("#project-menu").open`, chromedp.Click(chromedp.CSS(`#project-menu > summary`)))
-	b.waitJS("grouped, without Builds or Clean up", `document.querySelectorAll("#project-menu .menu-sep").length === 2 && !document.querySelector("#project-menu #pm-builds, #project-menu #pm-cleanup")`)
+	b.waitJS("grouped, without Builds or Clean up", `document.querySelectorAll("#pm-project .menu-sep").length === 3 && !document.querySelector("#project-menu #pm-builds, #project-menu #pm-cleanup")`)
 	// Project settings → General: Clean up with its own icon; it says what it removed.
 	b.until("open the settings", `document.querySelector("#settings-sheet").open`, chromedp.Click(chromedp.ID("pm-settings")))
 	b.until("show its repository, in General", `document.querySelector('#settings-sheet .rail-section[data-section="general"]').classList.contains("current")`,

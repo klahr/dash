@@ -91,7 +91,7 @@ Dash refuses, and says why, while:
 - you are the only owner of an organization with other members. Make someone else an owner in
   **Organization** first.
 - an organization only you are in still has projects. Delete each with
-  **Project menu → Delete project…**.
+  **⋯ → Delete project…** in the top bar.
 - an organization only you are in has a subscription. Cancel it in **Organization → Billing & usage**.
 
 The account `DASH_USERNAME` describes can't be deleted: Dash makes it again on every start. The

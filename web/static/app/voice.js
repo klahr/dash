@@ -1,4 +1,4 @@
-import { $, docsURL, h, ico } from "./dom.js";
+import { $, docsURL, h, ico, isApple } from "./dom.js";
 import { raiseToasts, toast } from "./dialogs.js";
 import * as store from "./store.js";
 import { state } from "./state.js";
@@ -14,7 +14,7 @@ import { toggleChatPane } from "./chatpane.js";
 // browser's Web Speech API, like dictation (dictation.js). A preference of this
 // browser (Account → Voice), off by default, hidden where the API is missing.
 //
-// Command mode starts from the mic in the top bar or Ctrl/⌘-Shift-, and listens
+// Command mode starts from Voice commands in the top bar's ⋮ menu or Ctrl/⌘-Shift-, and listens
 // until Esc, "stop listening", an error or the page is hidden. A bar in the
 // toasts' corner shows it listens and what it heard. Speech that isn't a
 // command is ignored. Commands that change something say what was heard and
@@ -147,6 +147,7 @@ speech.fieldCommand = (result, ctl) => {
 
 // ---- command mode
 const btn = $("#voice-open");
+const SHORTCUT = isApple ? "⌘-Shift-," : "Ctrl-Shift-,";
 const MESSAGES = {
   "not-allowed": "Dash can't use the microphone. Allow it in the browser's site settings.",
   "service-not-allowed": "This browser doesn't allow speech recognition here.",
@@ -234,10 +235,15 @@ function startCommands() {
   status("Say a command, or “stop listening”.");
   $("#toasts").append(bar);
   raiseToasts();
-  btn.classList.add("listening");
-  btn.setAttribute("aria-pressed", "true");
-  btn.setAttribute("aria-label", "Stop voice commands");
-  btn.title = "Stop voice commands (Esc)";
+  renderButton(true);
+}
+
+// The ⋮ menu's Voice commands item says what a click does, with its shortcut.
+function renderButton(on) {
+  btn.classList.toggle("listening", on);
+  btn.setAttribute("aria-pressed", String(on));
+  btn.querySelector(".menu-label").textContent = on ? "Stop voice commands" : "Voice commands";
+  btn.querySelector(".menu-key").textContent = on ? "Esc" : SHORTCUT;
 }
 
 export function stopCommands() {
@@ -247,16 +253,12 @@ export function stopCommands() {
   s.off.abort();
   try { s.rec?.abort(); } catch { /* already ended */ }
   bar.remove();
-  btn.classList.remove("listening");
-  btn.setAttribute("aria-pressed", "false");
-  btn.setAttribute("aria-label", "Voice commands");
-  btn.title = "Voice commands (Ctrl-Shift-,)";
+  renderButton(false);
 }
 speech.stopCommands = stopCommands;
 speech.commandsListening = () => !!session;
 
-// The top bar's mic keeps the focus where it was, so "send" finds the field.
-for (const ev of ["pointerdown", "mousedown"]) btn.addEventListener(ev, (e) => e.preventDefault());
+renderButton(false);
 btn.addEventListener("click", toggleCommands);
 // Ctrl/⌘-Shift-, toggles command mode anywhere, in a field too.
 document.addEventListener("keydown", (e) => {
