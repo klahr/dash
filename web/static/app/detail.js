@@ -148,7 +148,15 @@ function liveMeta(t) {
 // A deploy going live changes where tasks are live: read it again.
 export function forgetLive(projectID) { liveCache.delete(projectID); }
 
-let promptFold = ""; // the task and fold state the prompt was last opened or folded for
+let promptFold = ""; // the task the prompt was last folded for
+
+// firstLine is the prompt's first line with text, as plain words: without a
+// heading's #, a list's bullet, a quote's > or emphasis marks.
+function firstLine(md) {
+  const line = (md || "").split("\n").map((l) => l.trim()).find((l) => l && !/^(```|~~~|---+$|\*\*\*+$)/.test(l)) || "";
+  return line.replace(/^(#{1,6}\s+|>\s*|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+)/, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`~]+/g, "").trim();
+}
 export function renderDetail() {
   const t = state.todos.get(state.detail);
   if (!t) return;
@@ -181,18 +189,17 @@ export function renderDetail() {
   const gallery = $("#d-attach");
   gallery.hidden = !t.attachments?.length;
   gallery.replaceChildren(...(t.attachments || []).map((a) => attachThumb(a)));
-  renderChecks(t);
   renderRunStats(t);
+  renderChecks(t); // after the run stats: it shows or hides the fold they share
   renderPerms();
   $("#d-prompt").replaceChildren(
     ib({ type: "button", class: "btn small copy-prompt", title: "Copy the raw markdown", onclick: attempt(() => copy(t.prompt, "Prompt copied")) }, "copy", "Copy"),
     ...(inlineEdits(t) ? [ib({ type: "button", class: "btn small copy-prompt edit-prompt", title: "Edit the instructions here (or click them; e)", onclick: () => editPrompt() }, "edit", "Edit")] : []),
     h("div", { class: "md", innerHTML: renderMarkdown(t.prompt) }),
     ...(t.feedback?.length ? [h("ol", { class: "feedback-list" }, t.feedback.map((f) => h("li", { class: "md", innerHTML: renderMarkdown(f) })))] : []));
-  // Folded once the task has a worktree (its timeline matters more), except
-  // where it is edited in place. Only on a change, so a fold by hand stays.
-  const fold = `${t.id}:${!t.worktree || inlineEdits(t)}`;
-  if (promptFold !== fold) { promptFold = fold; $("#d-prompt-wrap").open = !t.worktree || inlineEdits(t); }
+  $("#d-prompt-first").textContent = firstLine(t.prompt);
+  // Folded to its first line each time a task opens; Show unfolds it.
+  if (promptFold !== t.id) { promptFold = t.id; $("#d-prompt-wrap").open = false; }
   const why = t.error ? t.error + (t.resumable && t.runner && agentCan(state.project, "resume") ? ` — retry to continue on ${runnerName(t.runner)}, where its session is kept.` : "")
     : t.status === "queued" && t.waiting ? t.waiting : "";
   $("#d-error").hidden = !why;

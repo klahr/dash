@@ -1430,7 +1430,8 @@ func TestBrowserInlineEdit(t *testing.T) {
 	b.waitCard(task.ID, "draft")
 	b.openTask(task.ID)
 	b.waitJS("the editable pane", `document.querySelector("#d-title").classList.contains("editable") && !document.querySelector("#d-meta-edit").hidden &&
-		document.querySelector("#d-prompt-wrap").open && !!document.querySelector("#d-prompt .edit-prompt") &&
+		!document.querySelector("#d-prompt-wrap").open && document.querySelector("#d-prompt-first").textContent === "Old instructions" &&
+		!!document.querySelector("#d-prompt .edit-prompt") &&
 		![...document.querySelectorAll("#d-actions .btn")].some((e) => e.textContent.trim() === "Edit")`)
 	var td struct {
 		Title, Prompt, Model string
@@ -1456,6 +1457,8 @@ func TestBrowserInlineEdit(t *testing.T) {
 
 	// The instructions: Esc cancels, Ctrl+Enter saves.
 	editor := `#d-prompt-edit .cm-content`
+	// The prompt opens folded to its first line; Show unfolds it.
+	b.until("unfold the instructions", `document.querySelector("#d-prompt-wrap").open`, chromedp.Click(chromedp.CSS(`#d-prompt-wrap > summary`)))
 	b.until("edit the instructions", `!document.querySelector("#d-prompt-edit").hidden`, chromedp.Click(chromedp.CSS(`#d-prompt .edit-prompt`)))
 	b.waitJS("the editor focused", `document.activeElement?.matches(`+fmt.Sprintf("%q", editor)+`)`)
 	b.do("type and cancel", chromedp.KeyEvent(" discarded"), chromedp.KeyEvent(kb.Escape))

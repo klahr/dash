@@ -501,6 +501,12 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .prompt[open] summary::after { content: "Hide"; }
 .prompt[open] summary { position: sticky; top: calc(-1 * var(--pad-t)); z-index: 6; background: var(--surface); border-radius: var(--r-m) var(--r-m) 0 0; }
 .prompt-text { display: flow-root; padding: 0 14px 14px; overflow-wrap: anywhere; max-width: 72ch; }
+/* Folded, the prompt shows its first line beside the label; unfolded, the whole of it below. */
+.prompt summary { gap: 10px; align-items: baseline; }
+.prompt-label { flex: none; }
+.prompt-first { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--text); }
+.prompt[open] .prompt-first { display: none; }
+.prompt summary::after { flex: none; }
 .feedback-list li + li { margin-top: 8px; }
 .msg .copy-raw { float: right; margin: -2px -6px 4px 10px; color: var(--muted); }
 .msg .copy-raw:hover { color: var(--text); }
@@ -743,7 +749,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .chat-mode button[aria-checked="true"] { background: var(--raised); color: var(--text); }
 .chat-mode button[data-mode="rework"][aria-checked="true"] { background: color-mix(in srgb, var(--running) 18%, var(--raised)); }
 .chat-mode button:disabled { opacity: .5; cursor: default; }
-.chat-mode-note { font-weight: 400; }
 .composer.rework-mode textarea { border-color: var(--running); }
 .composer.rework-mode .icon-btn.primary { background: var(--running); }
 /* Dictation's mic button (app/dictation.js) and the top bar's voice commands mic (app/voice.js):
@@ -1829,6 +1834,12 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .checks-state.running { --c: var(--running); gap: 6px; } .checks-state.running::before { display: none; }
 .checks-meta { color: var(--muted); font-size: var(--fs-s); font-family: var(--mono); overflow-wrap: anywhere; }
 .checks .log { margin: 0 12px 12px; max-height: 320px; overflow: auto; }
+/* Details: the checks and token use folded together, each a row inside it. */
+.detail-fold > summary { font-weight: 600; color: var(--muted); }
+.detail-fold > summary::after { content: "Show"; margin-left: auto; color: var(--accent); font-size: var(--fs-m); font-weight: 400; }
+.detail-fold[open] > summary::after { content: "Hide"; }
+.fold-badge { font-size: var(--fs-xs); font-weight: 600; color: var(--failed); padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--failed) 14%, transparent); }
+.detail-fold .checks { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; animation: none; }
 /* Token use: one line per Claude run, name · kind · numbers; on a phone the numbers wrap below. */
 .runs .checks-state::before { display: none; }
 .run-stats { list-style: none; margin: 0 14px 12px; padding: 0; display: grid; grid-template-columns: auto auto 1fr; gap: 4px 12px; font-size: var(--fs-s); }

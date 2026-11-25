@@ -118,8 +118,10 @@ read the diff on the **Changes** tab. **Ask Claude** has Claude review it first.
 - Not right? Click **Rework…**, say what to change, and it goes back to Claude.
 - For a small fix, click **Edit** on a changed file: saving commits your edit on the task's
   branch, so approving merges it with the rest.
-- **Token use** lists each Claude run on the task: its tokens (and how many were cached), turns
-  and cost.
+- The task's prompt shows folded to its first line. Click **Show** to read all of it.
+- **Details**, folded above the tabs, holds the test results and **Token use**: each Claude run
+  on the task, with its tokens (and how many were cached), turns and cost. When the tests failed,
+  **Details** has a **Tests fail** badge.
 
 ## Approve
 

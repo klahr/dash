@@ -18,14 +18,14 @@ and links to the setup steps. See [A planner's runner](several-computers.md#a-pl
 ## Task chat: Ask Claude or Rework
 
 A switch above the task chat's message box says where your message goes. The send button's label
-follows it:
+follows it. Hover over either for a reminder of where it sends.
 
-- **Ask Claude (side chat)**: a side conversation about the task. Claude sees the task's
-  instructions and changes, so it can help you sharpen a draft into a better prompt. The agent
-  working on the task doesn't see this chat. The button says **Ask**, and **Reply** once Claude
+- **Ask Claude**: a side conversation about the task. Claude sees the task's instructions and
+  changes, so it can help you sharpen a draft into a better prompt. The agent working on the task
+  doesn't see this chat. The button says **Ask**, and **Reply** once Claude
   has answered in it.
-- **Rework (to the agent)**: sends the message (and any pictures or files attached to it) to the
-  agent as rework notes. It continues in the task's worktree. The button says **Rework**; with an
+- **Rework**: sends the message (and any pictures or files attached to it) to the agent as
+  rework notes. It continues in the task's worktree. The button says **Rework**; with an
   empty box it opens the **Rework** sheet. Only for a task in review or failed that has a worktree.
 
 <kbd>Enter</kbd> sends either way. Opening another task switches back to **Ask Claude**.

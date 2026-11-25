@@ -463,7 +463,8 @@
       <div class="detail-body">
         <div class="finding-note" id="d-finding" hidden></div>
         <details class="prompt" id="d-prompt-wrap">
-          <summary>Prompt</summary>
+          <!-- Folded to the prompt's first line; Show unfolds the rest -->
+          <summary><span class="prompt-label">Prompt</span><span class="prompt-first" id="d-prompt-first"></span></summary>
           <div class="prompt-text" id="d-prompt"></div>
           <div class="prompt-edit" id="d-prompt-edit" hidden>
             <textarea id="d-prompt-input" rows="8" aria-label="Instructions for Claude" placeholder="Describe the change you want. Markdown works."></textarea>
@@ -479,13 +480,19 @@
         <div class="attach-gallery" id="d-attach" hidden></div>
         <div class="error-note" id="d-error" hidden></div>
         <div class="perm-list" id="d-perms" hidden></div>
-        <details class="checks" id="d-checks" hidden>
-          <summary><span class="checks-state" id="d-checks-state"></span><span class="checks-meta" id="d-checks-meta"></span></summary>
-          <pre class="log" id="d-checks-output"></pre>
-        </details>
-        <details class="checks runs" id="d-runs" hidden>
-          <summary><span class="checks-state">Token use</span><span class="checks-meta" id="d-runs-meta"></span></summary>
-          <ol class="run-stats" id="d-runs-list"></ol>
+        <!-- Checks and token use, folded together; a badge on it when the tests failed -->
+        <details class="checks detail-fold" id="d-fold" hidden>
+          <summary><span class="fold-label">Details</span><span class="fold-badge" id="d-fold-badge" hidden>Tests fail</span></summary>
+          <div class="fold-body">
+            <details class="checks" id="d-checks" hidden>
+              <summary><span class="checks-state" id="d-checks-state"></span><span class="checks-meta" id="d-checks-meta"></span></summary>
+              <pre class="log" id="d-checks-output"></pre>
+            </details>
+            <details class="checks runs" id="d-runs" hidden>
+              <summary><span class="checks-state">Token use</span><span class="checks-meta" id="d-runs-meta"></span></summary>
+              <ol class="run-stats" id="d-runs-list"></ol>
+            </details>
+          </div>
         </details>
         <div class="pane-tabs">
           <div class="segmented" role="tablist">
@@ -502,8 +509,8 @@
           <form class="composer" id="d-chat-form">
             <!-- Where the message goes: the side chat, or the agent (Rework) -->
             <div class="chat-mode-row"><div class="segmented chat-mode" id="d-chat-mode" role="radiogroup" aria-label="Send to">
-              <button type="button" role="radio" aria-checked="true" data-mode="chat" data-icon="comment">Ask Claude <span class="chat-mode-note">(side chat)</span></button>
-              <button type="button" role="radio" aria-checked="false" data-mode="rework" data-icon="redo" disabled>Rework <span class="chat-mode-note">(to the agent)</span></button>
+              <button type="button" role="radio" aria-checked="true" data-mode="chat" data-icon="comment" title="Ask Claude in a side chat about this task: the agent doesn't see it" aria-description="A side chat about this task: the agent doesn't see it">Ask Claude</button>
+              <button type="button" role="radio" aria-checked="false" data-mode="rework" data-icon="redo" disabled title="Rework is for a task in review that has a worktree" aria-description="Sent to the agent, which continues in its worktree">Rework</button>
             </div></div>
             <textarea name="q" rows="1" placeholder="Ask Claude about this task" aria-label="Ask Claude about this task in the side chat; the agent doesn't see it"></textarea>
             <button class="icon-btn primary labeled" aria-label="Ask Claude in the side chat">

@@ -61,7 +61,15 @@ export async function sendComments(t) {
 }
 
 // ------------------------------------------------------------------ tests (checks)
+// The checks and the token use sit in one Details fold, which shows when
+// either has something, with a badge on it while the last test run failed.
 export function renderChecks(t) {
+  fillChecks(t);
+  $("#d-fold").hidden = $("#d-checks").hidden && $("#d-runs").hidden;
+  $("#d-fold-badge").hidden = $("#d-checks").hidden || !$("#d-checks-state").classList.contains("fail");
+}
+
+function fillChecks(t) {
   const box = $("#d-checks");
   const c = t.checks;
   const st = $("#d-checks-state");
