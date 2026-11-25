@@ -272,6 +272,7 @@ async function openSheet(k, section) {
 for (const k of SHEETS) {
   const d = $(`#${SHEET_ID(k)}`);
   if (!d) continue;
-  d.addEventListener("close", () => document.dispatchEvent(new CustomEvent("dash:route", { detail: "close" })));
+  // Not when it was opened again before the close event came (it comes a moment after close()).
+  d.addEventListener("close", () => { if (!d.open) document.dispatchEvent(new CustomEvent("dash:route", { detail: "close" })); });
   d.addEventListener("railchange", () => document.dispatchEvent(new CustomEvent("dash:route", { detail: "replace" })));
 }

@@ -267,7 +267,12 @@ function railLayout(dialog) {
   }, true);
   // Content showing or hiding (runners, webhooks, billing…) adds or drops sections.
   new MutationObserver(() => apply()).observe(main, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
-  dialog.addEventListener("close", () => { wanted = first; apply(); nav.scrollLeft = 0; });
+  // The close event comes a moment after close(): if the sheet was opened
+  // again in between (at another section), it is that one's, not this.
+  dialog.addEventListener("close", () => {
+    if (dialog.open) return;
+    wanted = first; apply(); nav.scrollLeft = 0;
+  });
   apply();
   const rail = { show, key, get current() { return shown.dataset.rail; } };
   railLayouts.set(dialog.id, rail);
