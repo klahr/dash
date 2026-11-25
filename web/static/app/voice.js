@@ -4,11 +4,13 @@ import * as store from "./store.js";
 import { state } from "./state.js";
 import { showView } from "./nav.js";
 import { dictationSupported, fieldControl, speech, stopDictation } from "./dictation.js";
-import { cursorTodo, keys, laneCount, laneTodos, moveCursor, permKey, todoKey } from "./vim.js";
+import { cursorTodo, keys, laneCount, laneTodos, moveCursor, pendingPerm, permKey, todoKey } from "./vim.js";
 import { title } from "./branches.js";
 import { openDetail } from "./detail.js";
 import { toggleChatPane } from "./chatpane.js";
-import { hasReadAll, readAll, speechOn } from "./speech.js";
+import { hasReadAll, readAll, speakable, speechOn } from "./speech.js";
+import { describePerm, isQuestion } from "./chatparts.js";
+import { matchAlternatives, normalize, phrases } from "../voiceloop.js";
 
 // ------------------------------------------------------------------ voice commands (docs/dictation.md)
 // Spoken commands that run what Dash's buttons and keys run, with the
@@ -53,24 +55,50 @@ const COMMANDS = [
   { id: "stop", say: ["stop listening", "stop", "stop voice commands", "stop dictating", "thats all"], field: ["stop listening", "stop dictating"], run: () => stopCommands() },
 ];
 
-// Words recognizers hear for the command words, and words around a command.
-const SOUNDS_LIKE = { cue: "queue", q: "queue", kew: "queue", approved: "approve", denied: "deny", sent: "send" };
-const FILLER = new Set(["the", "this", "that", "a", "an", "please", "now", "ok", "okay", "hey", "dash"]);
-export function normalize(text) {
-  return text.toLowerCase().replace(/['’]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(" ")
-    .map((w) => SOUNDS_LIKE[w] || w).filter((w) => w && !FILLER.has(w)).join(" ");
-}
-const PHRASES = new Map(COMMANDS.flatMap((c) => c.say.map((p) => [normalize(p), c])));
+// The matching (normalize, the words recognizers mishear) is in
+// voiceloop.js, which voice mode (voicemode.js) shares.
+const PHRASES = phrases(COMMANDS);
 
 // match returns the command a result says, trying each alternative the
 // recognizer offers, and the words heard: { cmd, said } or null.
-function match(result) {
-  for (let i = 0; i < result.length; i++) {
-    const said = result[i].transcript.trim();
-    const cmd = PHRASES.get(normalize(said));
-    if (cmd) return { cmd, said };
+const match = (result) => matchAlternatives(PHRASES, result);
+
+// ---- for voice mode (voicemode.js), which runs these commands too
+// commandOf is the id of the command one of a result's alternatives says,
+// or null. Voice mode has its own stop and read it all.
+export function commandOf(result) {
+  const id = match(result)?.cmd.id;
+  return id && id !== "stop" && id !== "readall" ? id : null;
+}
+
+// runVoiceCommand runs command id for voice mode: { ok, text }, text what it
+// did (a command that changes something) or why it couldn't.
+export async function runVoiceCommand(id) {
+  const cmd = COMMANDS.find((c) => c.id === id);
+  try {
+    const done = await cmd.run();
+    return { ok: true, text: cmd.changes && done !== null ? (done || cmd.does) : "" };
+  } catch (e) {
+    return { ok: false, text: e.message || String(e) };
   }
-  return null;
+}
+
+// describeCommand is what voice mode reads back before it runs a command
+// that changes something ({ text }), or why it can't run ({ error }).
+export function describeCommand(id) {
+  if (id === "approve") {
+    const p = pendingPerm();
+    if (!p) return { error: "No permission request waiting." };
+    if (isQuestion(p)) return { error: "Claude asked a question. Answer it on the screen." };
+    return { text: `Approve: Claude wants to ${speakable(describePerm(p).title).replace(/[.\s]+$/, "")}` };
+  }
+  if (id === "queue") {
+    const t = state.detail ? state.todos.get(state.detail) : keys.active && state.view === "board" ? cursorTodo() : null;
+    if (!t) return { error: "Open a draft first." };
+    if (t.status !== "draft") return { error: `${title(t)} isn't a draft.` };
+    return { text: `Queue the draft: ${title(t)}` };
+  }
+  return { error: "That can't run here." };
 }
 
 // ---- what they run (the functions the buttons and keys call)

@@ -38,6 +38,7 @@ import { closeGoal, goalsOn, gp, openGoalSheet, stepGoal } from "./goals.js";
 import { closeDeploy, dp, stepDeploy } from "./deploys.js";
 import { cardOpen, closeCard } from "./planning.js";
 import { focusTry, openTry } from "./try.js";
+import { startVoiceMode } from "./voicemode.js";
 import { BOUND, VIEWS, openKeys, cursorTodo, enterKey, isTyping, keys, laneCount, laneSkipped, laneTodos, moveCursor, openCommandLine, openDialog, permKey, runCommand, scrollBy, scroller, setMode, stepLane, todoKey } from "./vim.js";
 
 // ------------------------------------------------------------------ palette
@@ -77,6 +78,7 @@ function paletteCommands() {
     p && ["Scans", "scan", go("scans"), "gn", "scan security review dependency audit schedule cron run board"],
     p && [boardFilter.showScans ? "Show every task" : "Show only tasks from scans", "bug", () => { closeDetail(); showView("board"); setScanFilter(); }, "", "from scans filter board drafts findings issues"],
     ["Toggle chat", "comment", () => toggleChatPane(), "gc", "chat open close claude ask project general"],
+    ["Start voice mode", "mic", startVoiceMode, "gv", "voice hands-free speak listen dictate microphone talk"],
     [pane.pinned ? "Unpin chat" : "Pin chat", "pin", togglePin, ":pin", "pin unpin chat overlay dock"],
     ["Code: Shell", "terminal", go("run"), "gs", "shell run terminal processes view main checkout"],
     p && ["Code: Shell at a commit (try)", "terminal", openTry, ":try", "try commit older version cli runner worktree"],
@@ -387,6 +389,7 @@ async function handleNormal(k, n, hadCount) {
     case "gd": return showView("deploys");
     case "gf": return showView("files");
     case "gp": return showView("planning");
+    case "gv": return startVoiceMode();
     case "gn": return showView("scans");
     case "p": return openProjects();
     case "J": case "K": return stepProject(k === "J" ? n : -n);

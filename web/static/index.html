@@ -68,6 +68,8 @@
           <button id="pc-open" type="button" aria-pressed="false" aria-controls="chat-pane" data-icon="comment"><span class="menu-label">Chat</span><span class="badge chat-badge" hidden></span><kbd class="menu-key">g c</kbd></button>
           <!-- Voice commands (app/voice.js): shown while the preference is on. -->
           <button class="voice-btn" id="voice-open" type="button" aria-pressed="false" data-icon="mic"><span class="menu-label">Voice commands</span><kbd class="menu-key">Ctrl-Shift-,</kbd></button>
+          <!-- Voice mode (app/voicemode.js): a full-screen view for hands-free work. Always here; it says so where the browser can't listen. -->
+          <button id="voicemode-open" type="button" data-icon="mic"><span class="menu-label">Start voice mode</span><kbd class="menu-key">g v</kbd></button>
           <div class="menu-group" id="pm-project" hidden>
             <hr class="menu-sep">
             <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
@@ -663,6 +665,32 @@
   <!-- Quick add (FAB, n): one field per task -->
   <!-- The project's tags, offered in a task's tag input (app/tags.js) -->
   <datalist id="task-tag-options"></datalist>
+
+  <!-- Voice mode (app/voicemode.js, docs/dictation.md#voice-mode): full screen, listening
+       until it is left. #vm-state is a live region, so a screen reader hears each change. -->
+  <dialog class="voice-mode" id="voice-mode" aria-labelledby="vm-title">
+    <div class="vm-head">
+      <h2 id="vm-title">Voice mode</h2>
+      <button type="button" class="btn" id="vm-pause" aria-pressed="false">Pause</button>
+      <button type="button" class="btn primary" id="vm-leave">Leave <kbd>Esc</kbd></button>
+    </div>
+    <p class="vm-where" id="vm-where"></p>
+    <p class="vm-state" id="vm-state" role="status" aria-live="polite" aria-atomic="true">Listening</p>
+    <p class="vm-error" id="vm-error" role="alert" hidden></p>
+    <p class="vm-note" id="vm-note"></p>
+    <section class="vm-box vm-heard" id="vm-heard-box" aria-labelledby="vm-heard-h" hidden>
+      <h3 id="vm-heard-h">Dictated</h3>
+      <p id="vm-heard"></p>
+    </section>
+    <section class="vm-box" aria-labelledby="vm-said-h">
+      <h3 id="vm-said-h">Dash said</h3>
+      <p id="vm-said">Nothing yet.</p>
+    </section>
+    <section class="vm-box" aria-labelledby="vm-hints-h">
+      <h3 id="vm-hints-h">You can say</h3>
+      <ul class="vm-hints" id="vm-hints"></ul>
+    </section>
+  </dialog>
 
   <dialog class="sheet" id="quick-sheet" aria-labelledby="quick-title">
     <form method="dialog" id="quick-form">
@@ -1847,6 +1875,7 @@
                 <tr><th scope="row"><kbd>gf</kbd></th><td>Code → Files</td></tr>
                 <tr><th scope="row"><kbd>gs</kbd></th><td>Code → Shell</td></tr>
                 <tr><th scope="row"><kbd>gp</kbd></th><td>Planning (the organization's)</td></tr>
+                <tr><th scope="row"><kbd>gv</kbd></th><td>Start voice mode (hands-free)</td></tr>
                 <tr><th scope="row"><kbd>gt</kbd> <kbd>gT</kbd></th><td>Next / previous section</td></tr>
               </tbody>
             </table>

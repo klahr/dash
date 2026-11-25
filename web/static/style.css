@@ -2306,8 +2306,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   #pc-open, .top-menu > summary .chat-badge { display: none; }
   /* Without Voice commands the ⋮ menu starts with the project's items (no line above them), and has
      nothing without a project. */
-  :root:not(.voice-on) #pm-project > .menu-sep:first-child { display: none; }
-  :root:not(.voice-on) .top-menu:has(#pm-project[hidden]) { display: none; }
   .nav > .nav-chat { order: 1; }
   .nav > button[data-view="planning"] { order: 2; }
   .nav > button[data-view="goals"] { order: 3; }
@@ -2681,6 +2679,40 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 @keyframes chip-in { from { opacity: 0; transform: scale(.92); } }
 dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: -8px; }
 .composer .attach { flex: 0 0 100%; margin: 0; }
+
+/* ---- voice mode: full screen, large text, hands-free (app/voicemode.js) ---- */
+dialog.voice-mode {
+  position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; max-width: none; max-height: none; margin: 0; border: 0;
+  padding: max(16px, env(safe-area-inset-top)) clamp(16px, 5vw, 64px) max(16px, env(safe-area-inset-bottom));
+  background: var(--bg); color: var(--text); display: none; flex-direction: column; gap: 14px; overflow-y: auto;
+}
+dialog.voice-mode[open] { display: flex; }
+dialog.voice-mode::backdrop { background: var(--bg); }
+.vm-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.vm-head .btn.primary kbd { background: transparent; border-color: color-mix(in srgb, var(--on-accent) 40%, transparent); color: var(--on-accent); }
+.vm-head h2 { margin: 0 auto 0 0; font-size: var(--fs-body); color: var(--muted); font-weight: 600; }
+.vm-where { margin: 0; font-size: clamp(18px, 2.6vw, 26px); color: var(--muted); overflow-wrap: anywhere; }
+.vm-where strong { color: var(--text); }
+.vm-state {
+  margin: 0; font-size: clamp(40px, 9vw, 88px); font-weight: 700; line-height: 1.05;
+  display: flex; align-items: center; gap: .3em; --c: var(--accent); color: var(--c);
+}
+.vm-state::before { content: ""; width: .45em; height: .45em; border-radius: 50%; background: var(--c); flex: none; }
+.voice-mode[data-state="listening"] .vm-state::before { animation: dictate-breathe 1.6s ease-in-out infinite; }
+.voice-mode[data-state="dictating"] .vm-state { --c: var(--failed); }
+.voice-mode[data-state="dictating"] .vm-state::before { animation: dictate-breathe 1s ease-in-out infinite; }
+.voice-mode[data-state="confirming"] .vm-state { --c: var(--running); }
+.voice-mode[data-state="speaking"] .vm-state { --c: var(--merged); }
+.voice-mode[data-state="paused"] .vm-state, .voice-mode[data-state="off"] .vm-state { --c: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .vm-state::before { animation: none !important; } }
+.vm-error { margin: 0; font-size: clamp(18px, 2.6vw, 24px); color: var(--failed); }
+.vm-note { margin: 0; min-height: 1.4em; font-size: clamp(16px, 2.2vw, 20px); color: var(--muted); overflow-wrap: anywhere; }
+.vm-box { border-top: 1px solid var(--line); padding-top: 10px; }
+.vm-box h3 { margin: 0 0 6px; font-size: var(--fs-s); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.vm-box p { margin: 0; font-size: clamp(20px, 3.2vw, 32px); line-height: 1.3; overflow-wrap: anywhere; white-space: pre-wrap; }
+.vm-heard .vm-interim { color: var(--muted); }
+.vm-hints { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.vm-hints li { font-size: clamp(16px, 2.2vw, 20px); padding: 4px 12px; border-radius: 999px; background: var(--raised); border: 1px solid var(--line); }
 
 /* ---- lightbox: a file's preview over the page (app/lightbox.js) ---- */
 dialog.lightbox {

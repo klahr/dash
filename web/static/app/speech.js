@@ -29,15 +29,22 @@ import { api } from "./api.js";
 // Esc, sending a message or pressing a speaker button again stops it. Dash
 // doesn't speak while dictation or voice commands listen (they send
 // "dash:listening" as they start), so it doesn't hear itself.
+//
+// Voice mode (voicemode.js) sets hands.on: then everything is read, in short,
+// whatever the settings, while it listens; it takes turns itself, through
+// hands.onSpeak (Dash starts to say text) and hands.onQuiet (it stopped).
 
 const synth = window.speechSynthesis;
 export const speechSupported = !!synth && typeof window.SpeechSynthesisUtterance === "function";
 
 const KEY = "dash.speech";
 export const speechOn = () => speechSupported && store.flag(KEY);
+export const hands = { on: false, onSpeak: null, onQuiet: null };
+const on = () => speechOn() || (speechSupported && hands.on);
 // The kinds of news to read: on unless switched off.
 const KINDS = { replies: "dash.speech.replies", approvals: "dash.speech.approvals", status: "dash.speech.status" };
 export const speechKind = (kind) => store.get(KINDS[kind]) !== "0";
+const wants = (kind) => hands.on || speechKind(kind);
 export const setSpeechKind = (kind, on) => store.setFlag(KINDS[kind], on);
 export const speechVoice = () => store.get("dash.speech.voice", "");
 export const setSpeechVoice = (uri) => store.set("dash.speech.voice", uri || null);
@@ -202,7 +209,7 @@ const SUMMARY_WAIT = 10000; // ms
 const MIN_WORDS = 40;
 const summaries = new Map(); // key → Promise of the summary
 export function summary(kind, text, key = `${kind}:${text}`) {
-  if (!speechSummaries() || String(text).trim().split(/\s+/).length < MIN_WORDS) return Promise.resolve("");
+  if (!(speechSummaries() || hands.on) || String(text).trim().split(/\s+/).length < MIN_WORDS) return Promise.resolve("");
   if (summaries.has(key)) return summaries.get(key);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), SUMMARY_WAIT);
@@ -220,12 +227,12 @@ export function summary(kind, text, key = `${kind}:${text}`) {
 // last is the full text of the latest item said in short (a summary, or
 // the first part of a long reply), for readAll.
 let last = "";
-export const hasReadAll = () => speechOn() && !!last;
+export const hasReadAll = () => on() && !!last;
 
 // readAll reads the latest item said in short in full ("read it all").
 // false when there's none, or Spoken replies are off.
 export function readAll() {
-  if (!speechOn() || !last) return false;
+  if (!on() || !last) return false;
   say(last, { now: true });
   return true;
 }
@@ -253,13 +260,16 @@ function say(text, { btn = null, now = false, short = null, full = "" } = {}) {
   queue.push({ text, btn, short, full });
   if (!current) next();
 }
-const canSay = () => speechOn() && !listening();
+const canSay = () => on() && (hands.on || !listening());
+
+// sayLine says text for voice mode (now: at once, cutting off what is said).
+export function sayLine(text, now = false) { say(text, { now }); }
 
 // next reads the next item: once its summary is in, when it waits for one
 // (the items after it wait too, so they stay in order).
 function next() {
   const item = current = queue.shift() || null;
-  if (!item) return;
+  if (!item) { hands.onQuiet?.(); return; }
   if (item.short) {
     const short = item.short;
     item.short = null;
@@ -276,6 +286,7 @@ function next() {
 
 function next1(item) {
   press(item.btn, true);
+  hands.onSpeak?.(item.text);
   const voice = pickVoice(), rate = speechRate();
   const parts = chunks(item.text);
   if (!parts.length) { finish(item); return; }
@@ -307,17 +318,18 @@ export function stopSpeaking() {
   current = null;
   if (item) press(item.btn, false);
   if (speechSupported && (item || synth.speaking || synth.pending)) synth.cancel();
+  if (item) hands.onQuiet?.();
 }
 
 // Esc stops speaking (and does nothing else, so a sheet stays open).
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !current) return;
+  if (e.key !== "Escape" || !current || hands.on) return; // voice mode has its own keys
   e.preventDefault();
   e.stopPropagation();
   stopSpeaking();
 }, true);
 // Dictation (or a voice command) starting to listen stops it, so Dash doesn't hear itself.
-document.addEventListener("dash:listening", stopSpeaking);
+document.addEventListener("dash:listening", () => { if (!hands.on) stopSpeaking(); });
 addEventListener("pagehide", stopSpeaking);
 
 // speechSample reads a line in the chosen voice and speed. Called from the
@@ -340,7 +352,7 @@ export function speakButton(content) {
 // speakReply reads a reply that has just finished (btn: its speaker
 // button): in short, or as it is (up to its first part, or all of it).
 export function speakReply(content, btn = null) {
-  if (!canSay() || !speechKind("replies")) return;
+  if (!canSay() || !wants("replies")) return;
   const text = speakable(content);
   say(speechLong() === "all" ? text : firstPart(text), { btn, short: summary("reply", content), full: text });
 }
@@ -348,7 +360,7 @@ export function speakReply(content, btn = null) {
 // speakApproval reads approval request p in short: what Claude wants to do
 // (where: the project, when it isn't the one shown).
 export function speakApproval(p, where = "") {
-  if (!canSay() || !speechKind("approvals")) return;
+  if (!canSay() || !wants("approvals")) return;
   const d = describePerm(p);
   let text;
   if (isQuestion(p)) {
@@ -370,7 +382,7 @@ export function speakApproval(p, where = "") {
 // speakStatus reads a task's news (head: "Ready for review", "Failed", …),
 // for the tasks the user hears about (Account → Notifications → Tasks).
 export function speakStatus(head, t, where = "") {
-  if (!canSay() || !speechKind("status")) return;
+  if (!canSay() || !wants("status")) return;
   const by = t?.created_by || 0;
   if (state.pushTasks === "mine" && by > 0 && by !== state.me?.user?.id) return;
   const name = inline(t?.title || String(t?.prompt || "").split("\n")[0].slice(0, 120) || "a task");

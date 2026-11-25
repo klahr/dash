@@ -1,7 +1,7 @@
 # Dictation
 
 Speak instead of typing in Dash's prompt fields. To have Dash read Claude's replies aloud, see
-[Spoken replies](#spoken-replies).
+[Spoken replies](#spoken-replies). To work hands-free, see [Voice mode](#voice-mode).
 
 A mic button sits on:
 
@@ -93,9 +93,91 @@ Your operating system can control every button by voice, in every app:
 - **macOS:** Voice Control, in **System Settings → Accessibility → Voice Control**.
 - **Windows:** Voice Access, in **Settings → Accessibility → Speech**.
 
+## Voice mode
+
+Voice mode is a full-screen view for working without keyboard or mouse. It listens all the time
+until you leave it, and Dash talks back. There is no wake word: starting voice mode is your OK to
+listen.
+
+Chrome, Edge and Safari have it. It needs no setting: Dash reads aloud in voice mode even with
+**Spoken replies** off.
+
+### Start and leave it
+
+- Choose **⋯ → Start voice mode** in the top bar, or press `gv`. Allow the microphone the first
+  time.
+- To leave, say "exit voice mode", press `Esc`, or click **Leave**. The microphone and all speech
+  stop.
+
+Nothing listens outside voice mode, except dictation and voice commands when you start them.
+
+### What it shows
+
+In large text: the project and the open task with its state, what Dash is doing (**Listening**,
+**Dictating**, **Say yes or no**, **Speaking**, **Paused**), what you dictate as you say it, the
+last thing Dash said, and what you can say now.
+
+A short sound plays on each change, so you know the state without looking: rising when it
+listens, higher when you dictate, a double beep when it waits for yes or no, falling when it
+pauses, low when it stops.
+
+### What to say
+
+Say a command on its own, after a pause.
+
+| Say                              | Does                                                            |
+|----------------------------------|-----------------------------------------------------------------|
+| "new task"                       | dictate a new task for the current project                     |
+| "dictate"                        | dictate a message: to the open task's side chat, or else the project's chat |
+| "done", "send"                   | end dictating; Dash reads it back                              |
+| "scratch that"                   | while dictating, takes the last part out                       |
+| "cancel"                         | drops what you dictated                                         |
+| "yes", "no"                      | answer a read-back. "no" goes back to dictating                 |
+| "repeat"                         | says the last thing again                                       |
+| "stop"                           | cuts Dash off                                                   |
+| "read it all"                    | reads the last thing said in short, in full                     |
+| "pause", "resume"                | stop and start acting on what you say. Paused, only "resume" and "exit voice mode" work |
+| "help"                           | says what you can say now                                       |
+| "exit voice mode"                | leaves voice mode                                               |
+
+The [voice commands](#the-commands) work too: "approve", "deny", "queue this task", "next card",
+"previous card", "open board" and the others. While you dictate, they are words, not commands.
+
+### Read back before acting
+
+Before Dash queues a task, sends a message or approves a permission request, it reads it back
+and waits:
+
+> Queue a new task: fix the login redirect. Say yes to confirm.
+
+Say "yes" to do it. Anything else does nothing. Merging, deploying, deleting and rolling back
+stay buttons you click.
+
+### Turn-taking
+
+Dash says replies, approval requests and task results in short (see [Summaries](#summaries)).
+While it speaks, it only hears "stop", "pause" and "exit voice mode", so it doesn't act on its own
+voice. When it's done, it listens again. Press any key but `Esc` to cut it off.
+
+If you speak while Dash is talking, wait for it to finish, or say "stop" first.
+
+### Shared rooms
+
+Use headphones. Dash then doesn't hear itself, and the people around you aren't heard as
+commands. Pause voice mode ("pause") when you talk to someone.
+
+### When it stops listening
+
+The browser ends a listen after a silence or a minute, and on network errors. Voice mode listens
+again on its own, waiting a little longer after each failure. It keeps listening while the page
+is hidden, where the browser allows it.
+
+It stops, and shows and says why, only when it can't go on: the microphone isn't allowed, there
+is no microphone, or the browser has no speech recognition. Fix that, then start voice mode again.
+
 ## Privacy
 
-The browser does the speech recognition for dictation and voice commands, not Dash. Chrome
+The browser does the speech recognition for dictation, voice commands and voice mode, not Dash. Chrome
 sends the audio to Google to transcribe it. Safari may transcribe it on the device. Dash only
 gets the text you send.
 
@@ -146,7 +228,8 @@ as it is, and each message is summarised once.
 If a summary fails, or takes more than 10 seconds, Dash reads the text as it would without
 summaries.
 
-To hear all of it, say "read it all" with [voice commands](#voice-commands) on. Dash reads the
+To hear all of it, say "read it all" with [voice commands](#voice-commands) on, or in
+[voice mode](#voice-mode). Dash reads the
 last thing it said in short, in full, with code blocks named as above. Voice commands stop first,
 so Dash doesn't hear itself. The **Read aloud** button under a reply reads it all too.
 
@@ -158,7 +241,8 @@ Summaries are on by default. Turn off **Summarise spoken replies** to hear the t
 - Click **Read aloud** again.
 - Send a message.
 
-Dash doesn't speak while dictation or voice commands listen, so it doesn't hear itself.
+Dash doesn't speak while dictation or voice commands listen, so it doesn't hear itself. Voice
+mode takes turns instead: see [Turn-taking](#turn-taking).
 
 ### Privacy
 

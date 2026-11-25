@@ -42,6 +42,7 @@ import "./app/install.js";
 import "./app/dictation.js";
 import "./app/speech.js";
 import "./app/voice.js";
+import "./app/voicemode.js";
 import "./app/prefs.js";
 import "./app/labelpicker.js";
 import "./app/runners.js";

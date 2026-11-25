@@ -40,7 +40,7 @@ import { dismissNote } from "./tags.js";
 export const VIEWS = ["board", "goals", "history", "code", "planning"];
 export const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gn|gc|gs|gh|go|gf|gp|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gn|gc|gs|gh|go|gf|gp|gv|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 export const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 export const openDialog = () => document.querySelector("dialog[open]");
 
@@ -142,8 +142,12 @@ export async function todoKey(t, k) {
 
 // y / A / X answer the permission request in view: the open todo's, else the oldest.
 // It returns false when none waits and true when it answered one.
+// pendingPerm is the permission request y / X answer: the open task's, or
+// with none open, the first waiting. null when there's none.
+export const pendingPerm = () => state.perms.find((x) => x.todo_id === state.detail) || (!state.detail && state.perms[0]) || null;
+
 export async function permKey(k) {
-  const p = state.perms.find((x) => x.todo_id === state.detail) || (!state.detail && state.perms[0]);
+  const p = pendingPerm();
   if (!p) return false;
   const decision = { y: "allow", A: "always", X: "deny" }[k];
   if (isQuestion(p) && decision !== "deny") return toast("Answer Claude's question in its card");
