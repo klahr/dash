@@ -80,7 +80,7 @@ its severity and its source (`scan:<scan name>` or `reported`).
 - A problem that comes back after its task was merged gets a new draft that names that task.
 - Drafts from scans below `high` severity show only under the **From scans (N)** chip, which
   shows only the tasks scans added. **Scans…** beside it opens the scans.
-- To combine drafts, tick them and click **Merge**. **Clear** unticks them.
+- To combine drafts into one, tick two or more and click **Combine**. **Clear** unticks them.
 
 See [Scans](scans.md#findings-on-the-board) for how Dash spots the same problem twice.
 
@@ -112,7 +112,8 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 ## Review
 
 When Claude is done the task lands in *Review*. Click **Review** on the card (or open it) and
-read the diff on the **Changes** tab. **Ask Claude** has Claude review it first. A changed image
+read the diff on the **Changes** tab. The spark button on the card (**Ask Claude**) has Claude
+review it first. A changed image
 (PNG, JPEG, GIF or WebP) shows as pictures, before and after, here and in **History**.
 
 - Not right? Click **Rework…**, say what to change, and it goes back to Claude.
@@ -126,7 +127,24 @@ read the diff on the **Changes** tab. **Ask Claude** has Claude review it first.
 ## Approve
 
 Click **Approve**. The task goes through *Merging* and ends up in *Merged*, as one squashed
-commit on the default branch, pushed if you like. See [Merge queue](merge-queue.md).
+commit on the default branch, pushed if you like. See [Merge queue](merge-queue.md). The
+*Merging* column shows only while a task is merging.
+
+**Approve** on a card waits a few seconds before the merge starts: click **Undo** in the toast to
+keep the task in *Review*. In a narrow column the card's **Approve** is a check-mark button.
+
+## Move cards
+
+Drag a card to another column to act on it (on a phone, long-press it and drop it on a button
+at the bottom). While you drag, each column you can drop on says what the drop does:
+
+- On *Queued*: **Queue** a draft, or **Send back** a task in *Review* for rework.
+- On *Drafts*: **Cancel task**. A task with an open pull request has it closed. The toast has
+  **Undo** for a few seconds before anything happens.
+- On *Merged*: **Approve** (or **Close** a task with no changes), with **Undo** as on the card.
+- In the same column: change the order.
+
+When the columns don't fit the window, the board scrolls sideways and its edge is shaded.
 
 In a GitHub project (with pull requests, the default) the review happens on GitHub instead: when
 Claude finishes, Dash opens a pull request and the task waits in *Review* with it linked. Reviews

@@ -14,7 +14,7 @@ import { openScans, scansRunning } from "./scans.js";
 // finding, Claude's report_issue) has its type, severity and source as tags,
 // and its issues in t.finding. Here: the tags on cards and in a task's pane,
 // the Board's filters (From scans (N): only what scans added, with Scans…
-// beside it; a tag filter), and picking drafts to Merge.
+// beside it; a tag filter), and picking drafts to Combine.
 
 export const SEVERITIES = ["critical", "high", "medium", "low", "info"];
 const sevRank = (s) => { const i = SEVERITIES.indexOf(s); return i < 0 ? SEVERITIES.length : i; };
@@ -146,15 +146,15 @@ export function tagRow(t) {
     tags.length > shown.length ? h("span", { class: "reports-tag", title: tags.slice(shown.length).join(", ") }, `+${tags.length - shown.length}`) : null);
 }
 
-// ------------------------------------------------------------------ picking drafts to merge
+// ------------------------------------------------------------------ picking drafts to combine
 // picked are the drafts chosen on the Board, in the order they were chosen:
-// Merge combines them into the first.
+// Combine makes them one task, the first.
 export const picked = new Set();
 
 export function pickBox(t) {
   if (t.status !== "draft") return null;
   const on = picked.has(t.id);
-  return h("label", { class: "todo-pick", title: on ? "Unselect" : "Select, to merge with other drafts", onclick: (e) => e.stopPropagation(), onpointerdown: (e) => e.stopPropagation() },
+  return h("label", { class: "todo-pick", onclick: (e) => e.stopPropagation(), onpointerdown: (e) => e.stopPropagation() },
     h("input", { type: "checkbox", checked: on, "aria-label": `Select ${title(t)}`, onchange: (e) => { if (e.target.checked) picked.add(t.id); else picked.delete(t.id); renderBoard(); } }));
 }
 
@@ -164,32 +164,34 @@ export function clearPicked() {
   renderBoard();
 }
 
-// renderMergeBar shows "N selected · Merge · Clear" while drafts are picked
-// (only drafts that are still drafts count).
-export function renderMergeBar() {
+// renderCombineBar shows "N selected · Combine · Clear" while drafts are
+// picked (only drafts that are still drafts count); Combine from two on.
+export function renderCombineBar() {
   sameProject();
   for (const id of [...picked]) if (state.todos.get(id)?.status !== "draft") picked.delete(id);
-  const bar = $("#merge-bar");
+  const bar = $("#combine-bar");
   const n = picked.size;
   document.body.classList.toggle("picking", n > 0);
   bar.hidden = !n;
   if (!n) { bar.replaceChildren(); return; }
-  const merge = h("button", { type: "button", class: "btn small primary", disabled: n < 2, title: n < 2 ? "Select at least two drafts" : "Combine them into the first one you selected: its issues, tags and report counts together", onclick: attempt(mergePicked) }, ico("merge"), "Merge");
-  bar.replaceChildren(h("span", { class: "merge-count" }, `${n} selected`), merge,
+  bar.replaceChildren(h("span", { class: "combine-count" }, `${n} selected`),
+    n > 1 ? h("button", { type: "button", class: "btn small primary combine", onclick: attempt(combinePicked) }, ico("box"), "Combine") : null,
     h("button", { type: "button", class: "link", onclick: clearPicked }, "Clear"));
 }
 
-async function mergePicked() {
+// combinePicked makes the picked drafts one task: the first picked, with
+// the others' issues, tags and report counts.
+async function combinePicked() {
   const ids = [...picked];
   if (ids.length < 2) return;
   const t = await api("POST", `/api/projects/${state.project.id}/todos/merge`, { ids });
   picked.clear();
   renderBoard();
-  toast(title(t), { tone: "ok", icon: "merge", head: `Merged ${plural(ids.length, "draft")}`, action: { label: "Open", run: () => openDetail(t.id) } });
+  toast(title(t), { tone: "ok", icon: "box", head: `Combined ${plural(ids.length, "draft")}`, action: { label: "Open", run: () => openDetail(t.id) } });
 }
 
 // pickDrafts picks the drafts among ids (a scan run's new ones), showing
-// the quiet ones too, so they can be merged or looked through on the Board.
+// the quiet ones too, so they can be combined or looked through on the Board.
 export function pickDrafts(ids) {
   sameProject();
   picked.clear();

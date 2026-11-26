@@ -18,19 +18,27 @@ export function leave(el, cls, done, ms = 180) {
 const TOAST_ICONS = { info: "bell", ok: "check", error: "x", review: "eye", approval: "flag", pr: "merge" };
 export function toast(msg, opts = {}) {
   if (typeof opts === "boolean") opts = { tone: opts ? "error" : "info" };
-  const { tone = "info", head, where, action, icon = TOAST_ICONS[tone] || "bell" } = opts;
+  const { tone = "info", head, where, action, icon = TOAST_ICONS[tone] || "bell", onClose } = opts;
   const ms = opts.ms ?? (tone === "error" || action ? 7000 : 3500);
   let timer, start, left = ms, held = 0, gone = false;
-  const close = () => { if (gone) return; gone = true; clearTimeout(timer); leave(t, "leaving", () => t.remove()); };
+  // onClose(acted) runs once the toast goes, however it goes; acted: its action was clicked.
+  const close = (acted = false) => {
+    if (gone) return;
+    gone = true;
+    clearTimeout(timer);
+    leave(t, "leaving", () => t.remove());
+    onClose?.(acted);
+  };
   const t = h("div", { class: `toast ${tone}`, role: tone === "error" ? "alert" : "status", style: `--ms: ${ms}ms` },
     h("span", { class: "toast-icon" }, ico(icon)),
     h("div", { class: "toast-body" }, where ? h("small", { class: "toast-where" }, where) : null, head ? h("strong", {}, head) : null, msg ? h("span", {}, msg) : null),
-    action ? h("button", { class: "toast-action", type: "button", onclick: () => { close(); attempt(action.run)(); } }, action.label) : null,
-    ib({ class: "toast-close", type: "button", "aria-label": "Dismiss", title: "Dismiss", onclick: close }, "x"),
+    action ? h("button", { class: "toast-action", type: "button", onclick: () => { close(true); attempt(action.run)(); } }, action.label) : null,
+    ib({ class: "toast-close", type: "button", "aria-label": "Dismiss", title: "Dismiss", onclick: () => close() }, "x"),
     h("span", { class: "toast-bar" }));
   const run = () => { start = Date.now(); timer = setTimeout(close, left); };
   const hold = () => { if (held++) return; clearTimeout(timer); left -= Date.now() - start; t.classList.add("held"); };
   const release = () => { if (--held) return; t.classList.remove("held"); run(); };
+  t.dismiss = () => close();
   t.addEventListener("pointerenter", hold);
   t.addEventListener("pointerleave", release);
   t.addEventListener("focusin", hold);
@@ -38,7 +46,7 @@ export function toast(msg, opts = {}) {
   const box = $("#toasts");
   box.append(t);
   // Voice commands' listening bar (voice.js) lives here too, and stays.
-  for (let ts = box.querySelectorAll(":scope > .toast:not(.voice-bar)"), i = 0; i < ts.length - 4; i++) ts[i].remove();
+  for (let ts = box.querySelectorAll(":scope > .toast:not(.voice-bar)"), i = 0; i < ts.length - 4; i++) { ts[i].dismiss?.(); ts[i].remove(); }
   run();
   raiseToasts();
 }

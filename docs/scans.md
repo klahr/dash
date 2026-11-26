@@ -211,8 +211,8 @@ To keep the Board usable when scans find a lot:
 - Drafts from scans with severity `critical` or `high` show on the Board. Lower ones show only
   under **From scans (N)** above the board. Click it to see every task scans added.
 - Click a tag on a card to show only tasks with that tag. Remove the filter with its chip.
-- Tick drafts and click **Merge** to combine them into one draft. The merged draft keeps all
-  their fingerprints, so later reports of any of them land on it, and adds up their counts.
+- Tick two or more drafts and click **Combine** to make them one draft. It keeps all their
+  fingerprints, so later reports of any of them land on it, and adds up their counts.
 
 ## API
 

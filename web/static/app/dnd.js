@@ -3,7 +3,8 @@ import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { EASE, ask, fail, leave, reduceMotion, toast } from "./dialogs.js";
 import { LANES, state } from "./state.js";
-import { approvable, closable, hasPriority, laneItems, renderBoard } from "./branches.js";
+import { approvable, closable, hasPriority, laneItems, moveWithUndo, renderBoard } from "./branches.js";
+import { laneHidden } from "./vim.js";
 import { hoverCard } from "./hovercard.js";
 import { dropBefore, edgeScroller, glide, restRect } from "./glide.js";
 
@@ -22,16 +23,21 @@ function dropAction(t, lane) {
   if (!to) return null;
   if (to.statuses.includes(from)) return ["draft", "queued", "review"].includes(lane) && from !== "failed" ? { kind: "reorder" } : null;
   if (t.reviewing) return null; // locked until the review finishes
-  const go = (verb, label) => ({ kind: "action", verb, label });
-  if (lane === "queued" && ["draft", "failed"].includes(from)) return go("enqueue", "Added to queue");
-  if (lane === "queued" && from === "review") return { kind: "rework" };
+  // drop: the column's label while a card is dragged over it; undo: the move
+  // waits while its toast offers Undo (it closes a pull request, merges or closes).
+  const go = (verb, drop, label, undo = false) => ({ kind: "action", verb, drop, label, undo });
+  if (lane === "queued" && ["draft", "failed"].includes(from)) return go("enqueue", "Queue", "Added to queue");
+  if (lane === "queued" && from === "review") return { kind: "rework", drop: closable(t) ? "Ask for changes" : "Send back", danger: true };
   if (lane === "draft" && ["queued", "review", "failed"].includes(from)) {
-    return go("cancel", t.pr?.state === "OPEN" ? `Moved to drafts; pull request #${t.pr.number} closed` : "Moved to drafts");
+    const pr = t.pr?.state === "OPEN";
+    return { ...go("cancel", pr ? `Cancel task · close PR #${t.pr.number}` : from === "queued" ? "Move to drafts" : "Cancel task",
+      pr ? `Moved to drafts; pull request #${t.pr.number} closed` : "Moved to drafts", from !== "queued"), danger: from !== "queued" };
   }
-  // A task that changed no files is closed: nothing to merge.
-  if (["merging", "done"].includes(lane) && closable(t)) return { ...go("close", "Closed"), status: "merged" };
+  // A task that changed no files is closed: nothing to merge. Merging is
+  // folded away while empty, so Merged takes these drops too.
+  if (["merging", "done"].includes(lane) && closable(t)) return { ...go("close", "Close", "Closed", true), status: "merged" };
   // A task whose pull request is open is approved (and merged) on GitHub.
-  if (lane === "merging" && from === "review" && approvable(t)) return go("approve", "Approved — merging");
+  if (["merging", "done"].includes(lane) && from === "review" && approvable(t)) return { ...go("approve", "Approve", "Approved — merging", true), status: "merging" };
   return null;
 }
 
@@ -104,26 +110,31 @@ function startDrag(x, y) {
   moveDrag(x, y);
 }
 
+// The lanes shown, by key (Merging folds away while empty; a desktop's minimized ones aren't columns).
+const shownLanes = () => LANES.filter((l) => !laneHidden(l.key));
+
 // On phones the other lanes are off-screen, so a drag shows a bar of large
-// drop targets for exactly the moves this card allows.
-const DROP_LABEL = { enqueue: "Queue", cancel: "Move to drafts", approve: "Approve", close: "Close" };
+// drop targets for exactly the moves this card allows, each saying what it does.
 function showDropBar() {
   if (desktop.matches) return;
-  const zones = LANES.map((l) => [l, dropAction(drag.t, l.key)])
-    .filter(([l, a]) => a && a.kind !== "reorder")
-    .map(([l, a]) => h("div", { class: `drop-zone s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key },
-      a.kind === "rework" ? (closable(drag.t) ? "Ask for changes…" : "Rework…") : DROP_LABEL[a.verb] || l.label));
-  const bar = h("div", { class: "drop-bar", id: "drop-bar" },
-    zones.length ? zones : h("div", { class: "drop-zone none" }, "Drag up or down to reorder"));
-  document.body.append(bar);
+  const seen = new Set();
+  const zones = shownLanes().map((l) => [l, dropAction(drag.t, l.key)])
+    .filter(([, a]) => a && a.kind !== "reorder" && !seen.has(a.drop) && seen.add(a.drop))
+    .map(([l, a]) => h("div", { class: `drop-zone s-${l.key === "done" ? "merged" : l.key}${a.danger ? " danger" : ""}`, "data-lane": l.key }, a.drop));
+  if (!zones.length) return;
+  document.body.append(h("div", { class: "drop-bar", id: "drop-bar" }, zones));
 }
 
-// Highlight lanes (columns and mobile tabs) where this card may be dropped.
+// Highlight lanes (columns and mobile tabs) where this card may be dropped;
+// a column it would move to says, at its top, what the drop does.
 function markTargets() {
   for (const el of $$(".col[data-lane], .lane-tab[data-lane]")) {
-    const ok = !!dropAction(drag.t, el.dataset.lane);
-    el.classList.toggle("drop-ok", ok);
-    el.classList.toggle("drop-no", !ok);
+    const a = dropAction(drag.t, el.dataset.lane);
+    el.classList.toggle("drop-ok", !!a);
+    el.classList.toggle("drop-no", !a);
+    if (a?.drop && el.matches(".col")) {
+      el.querySelector(".col-head").after(h("div", { class: `drop-label${a.danger ? " danger" : ""}`, "aria-hidden": "true" }, a.drop));
+    }
   }
 }
 
@@ -188,6 +199,7 @@ function cleanupDrag() {
   drag.card?.classList.remove("dragging");
   document.body.classList.remove("is-dragging");
   $$(".drop-ok, .drop-no, .drop-over").forEach((el) => el.classList.remove("drop-ok", "drop-no", "drop-over"));
+  $$(".drop-label").forEach((el) => el.remove());
   drag.active = false;
   drag.suppressClick = true;
   setTimeout(() => { drag.suppressClick = false; }, 0);
@@ -223,6 +235,11 @@ async function endDrag() {
       if (feedback === null) return;
       await api("POST", `/api/todos/${t.id}/rework`, { feedback });
       toast(closable(t) ? "Sent to Claude" : "Sent for rework");
+    } else if (target.action.undo) {
+      // Shown in its new lane at once; sent once the toast's Undo has passed.
+      const lane = LANES.find((l) => l.key === target.lane);
+      moveWithUndo(t, { verb: target.action.verb, status: target.action.status || lane.statuses[0], head: target.action.label,
+        icon: { cancel: "draft", approve: "merge" }[target.action.verb] || "check" });
     } else {
       // Optimistic: show it in the new lane right away; the server event confirms.
       const lane = LANES.find((l) => l.key === target.lane);

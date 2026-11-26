@@ -6,7 +6,7 @@ import { LANES, projectFirst, state } from "./state.js";
 import { showView } from "./nav.js";
 import { cleanup, isHub, loadProjects, openNewProject, openProjects, selectProject } from "./projects.js";
 import { pushDone } from "./board.js";
-import { closable, closeTodo, hasPriority, laneItems, renderBoard, title, toggleMine } from "./branches.js";
+import { closable, closeTodo, hasPriority, laneItems, renderBoard, shownTodo, title, toggleMine } from "./branches.js";
 import { multiMember } from "./people.js";
 import { openTodoForm } from "./todos.js";
 import { editTodo } from "./inlineedit.js";
@@ -63,8 +63,11 @@ export function cursorTodo() { return laneTodos(keys.cur.lane)[keys.cur.row] || 
 export function laneSkipped(li) { return (desktop.matches && state.collapsed.has(LANES[li].key)) || laneHidden(LANES[li].key); }
 // With auto approve, finished work skips Review; the lane only shows while
 // something still waits there (failing tests, a merge that came back).
+// Merging is folded away while nothing merges.
 export function laneHidden(key) {
-  return key === "review" && !!state.project?.auto_approve && ![...state.todos.values()].some((t) => ["review", "failed"].includes(t.status));
+  const has = (...ss) => [...state.todos.values()].some((t) => ss.includes(shownTodo(t).status));
+  if (key === "merging") return !has("merging");
+  return key === "review" && !!state.project?.auto_approve && !has("review", "failed");
 }
 export function stepLane(lane, d) {
   const step = Math.sign(d);

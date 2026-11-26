@@ -1479,9 +1479,11 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	}
 	b.waitJS("Review hidden", `document.querySelector(".lane-tab[data-lane=review]")?.hidden && document.querySelector('#board .col[data-lane="review"]').hidden`)
 	b.until("show Running", `document.querySelector("#board .col.active")?.dataset.lane === "in_progress"`, chromedp.Click(chromedp.CSS(`.lane-tab[data-lane=in_progress]`)))
-	swipe("swipe left past Review", 300, 500, 120, 500, 0)
-	lane("merging")
-	swipe("swipe right past Review", 120, 500, 300, 500, 0)
+	// Nor is Merging, while nothing merges.
+	b.waitJS("Merging folded away", `document.querySelector(".lane-tab[data-lane=merging]")?.hidden`)
+	swipe("swipe left past Review and Merging", 300, 500, 120, 500, 0)
+	lane("done")
+	swipe("swipe right past Merging and Review", 120, 500, 300, 500, 0)
 	lane("in_progress")
 	b.until("show Merged", `document.querySelector("#board .col.active")?.dataset.lane === "done"`, chromedp.Click(chromedp.CSS(`.lane-tab[data-lane=done]`)))
 	swipe("swipe left on the last lane", 300, 500, 120, 500, 0)
@@ -1500,7 +1502,7 @@ func TestBrowserSwipeLanes(t *testing.T) {
 		b.fail("count the slide-ins", err)
 	}
 	swipe("swipe right with reduced motion", 120, 500, 300, 500, 0)
-	lane("merging")
+	lane("in_progress")
 	b.waitJS("no slide-in", fmt.Sprintf(`window.e2eSlides === %d`, before))
 }
 

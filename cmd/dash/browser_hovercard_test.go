@@ -138,22 +138,22 @@ func TestBrowserHoverCard(t *testing.T) {
 	// Tick five in a row, straight down the column.
 	for i, id := range cards {
 		click(pick(id), 0)
-		b.waitJS(fmt.Sprintf("%d picked", i+1), fmt.Sprintf(`/%d selected/.test(document.querySelector("#merge-bar").textContent) && document.querySelector(%q).classList.contains("picked")`, i+1, cardSel(id)))
+		b.waitJS(fmt.Sprintf("%d picked", i+1), fmt.Sprintf(`/%d selected/.test(document.querySelector("#combine-bar").textContent) && document.querySelector(%q).classList.contains("picked")`, i+1, cardSel(id)))
 	}
 	none("while picking", 0)
 	glide(body(cards[2]))
 	none("resting on a card while picking", 900*time.Millisecond)
 	b.do("clear the picks", chromedp.KeyEvent(kb.Escape))
-	b.waitJS("no picks", `document.querySelector("#merge-bar").hidden`)
+	b.waitJS("no picks", `document.querySelector("#combine-bar").hidden`)
 
 	// The copy's pick box ticks the draft.
 	glide(pt{cur.X + 400, cur.Y})
 	glide(body(cards[3]))
 	b.waitJS("the copy of the fourth card", float(cards[3]))
 	click(at(".todo-float .todo-pick", 0.5, 0.5), 0)
-	b.waitJS("the copy's pick box picks the draft", fmt.Sprintf(`/1 selected/.test(document.querySelector("#merge-bar").textContent) && document.querySelector(%q).classList.contains("picked")`, cardSel(cards[3])))
+	b.waitJS("the copy's pick box picks the draft", fmt.Sprintf(`/1 selected/.test(document.querySelector("#combine-bar").textContent) && document.querySelector(%q).classList.contains("picked")`, cardSel(cards[3])))
 	b.do("clear the picks", chromedp.KeyEvent(kb.Escape))
-	b.waitJS("no picks", `document.querySelector("#merge-bar").hidden`)
+	b.waitJS("no picks", `document.querySelector("#combine-bar").hidden`)
 
 	// A click on the copy is a click on the card, with its keys.
 	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {

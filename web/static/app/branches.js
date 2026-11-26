@@ -1,7 +1,7 @@
 import { $, $$, avatar, dateTimeText, h, ib, ico, plural } from "./dom.js";
 import { ago, agoText, clockText } from "../time.js";
 import * as store from "./store.js";
-import { api } from "./api.js";
+import { api, here, on } from "./api.js";
 import { EASE, art, ask, attempt, busy, reduceMotion, toast } from "./dialogs.js";
 import { clip } from "./attachments.js";
 import { DAY, LANES, state } from "./state.js";
@@ -26,7 +26,7 @@ import { chatPage } from "./nav.js";
 import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
 import { creator, mineOn, multiMember, myID, people, setMine } from "./people.js";
 import { isQuestion } from "./chatparts.js";
-import { onBoard, pickBox, picked, renderMergeBar, renderTagFilter, tagRow } from "./tags.js";
+import { onBoard, pickBox, picked, renderCombineBar, renderTagFilter, tagRow } from "./tags.js";
 
 // ------------------------------------------------------------------ branches
 // The open switcher's GET /branches answer, for the project it was opened on.
@@ -168,7 +168,8 @@ const isOld = (t) => t.status === "merged" && Date.now() - new Date(t.finished_a
 export function laneItems(all = false) {
   const out = Object.fromEntries(LANES.map((l) => [l.key, []]));
   const mine = mineOn() && myID();
-  for (const t of state.todos.values()) {
+  for (const x of state.todos.values()) {
+    const t = shownTodo(x);
     if (!state.showOld && isOld(t)) continue;
     if (!all && state.goalFilter && t.goal_id !== state.goalFilter) continue;
     if (!all && mine && t.created_by !== mine) continue;
@@ -186,10 +187,22 @@ export function renderBoard() {
   if (drag.active) return; // don't rebuild under the user's finger; we re-render on drop
   const before = flipFirst();
   renderBoardNow();
+  syncBoardEdges();
   syncRunClocks();
   flipPlay(before);
   hoverCard.sync();
 }
+
+// On a desktop the columns scroll sideways when they don't fit: the board's
+// edges are shaded where there is more of it (.more-left, .more-right).
+function syncBoardEdges() {
+  const b = $("#board");
+  const room = b.scrollWidth - b.clientWidth;
+  b.classList.toggle("more-left", desktop.matches && b.scrollLeft > 1);
+  b.classList.toggle("more-right", desktop.matches && b.scrollLeft < room - 1);
+}
+$("#board").addEventListener("scroll", syncBoardEdges, { passive: true });
+new ResizeObserver(syncBoardEdges).observe($("#board"));
 
 // FLIP: cards glide from where they were to where they are now, so a live
 // status change reads as movement instead of a jump. New cards fade in.
@@ -229,7 +242,7 @@ function renderBoardNow() {
     $("#lane-chips").replaceChildren();
     $("#new-todo").hidden = true;
     $("#board-filters").hidden = true;
-    $("#merge-bar").hidden = true;
+    $("#combine-bar").hidden = true;
     // Until the projects and runners are in, don't flash a welcome, a board
     // or "create your first project" that one of the others then replaces.
     empty.hidden = !state.projectsLoaded || state.runners === undefined;
@@ -254,7 +267,7 @@ function renderBoardNow() {
   renderMineFilter();
   const tagged = renderTagFilter();
   $("#board-filters").hidden = $("#goal-filter").hidden && $("#mine-filter").hidden && !tagged;
-  renderMergeBar();
+  renderCombineBar();
 
   // A task just added may already have moved on (a queued task picked up at
   // once is Running): follow it rather than show its old lane empty.
@@ -814,9 +827,9 @@ export function todoRow(t, li = -1, ri = -1) {
       t.run_on ? runOnTag(t.run_on) : null,
       hasPriority(t) ? h("span", { class: `prio-tag prio-${priorityLevel(t.priority)}`, title: `${PRIORITY_LEVELS[priorityLevel(t.priority)]} priority: runs before tasks without one` }, PRIORITY_LEVELS[priorityLevel(t.priority)]) : null,
       creatorEl(t),
-      t.status === "review" && !t.reviewing ? reviewActions(t) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null,
-      paced ? h("span", { class: "card-actions" }, startNowChip(t)) : null));
+      paced ? h("span", { class: "card-actions" }, startNowChip(t)) : null),
+    t.status === "review" && !t.reviewing ? reviewActions(t) : null);
 }
 
 // runOnTag names the runner a task is set to run on, on its card.
@@ -879,18 +892,22 @@ function redrawBusy(id) {
   if (t) renderActions(t);
 }
 
-// reviewActions is a card's buttons in review: Preview · Review · Ask Claude,
-// then Approve, Merge pull request or Close. All disabled while one runs.
+// reviewActions is a card's row of buttons in review: Review first (Close,
+// for a task that changed nothing), then Approve or Merge pull request,
+// then Ask Claude and Preview as icons. All disabled while one runs.
 function reviewActions(t) {
-  const el = h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, closable(t) ? null : reviewChip(t), closable(t) ? null : askClaudeChip(t),
-    closable(t) ? closeChip(t) : approvable(t) ? approveChip(t) : canMergePR(t) ? mergeChip(t) : null);
+  const el = h("span", { class: "card-actions review-actions" },
+    closable(t) ? closeChip(t) : reviewChip(t),
+    closable(t) ? null : approvable(t) ? approveChip(t) : canMergePR(t) ? mergeChip(t) : null,
+    closable(t) ? null : askClaudeChip(t),
+    canPreview(t) ? previewChip(t) : null);
   const label = busyTodos.get(t.id);
   if (label == null) return el;
   el.classList.add("busy");
   el.setAttribute("aria-busy", "true");
   for (const b of el.querySelectorAll("button")) b.disabled = true;
   for (const a of el.querySelectorAll("a")) { a.setAttribute("aria-disabled", "true"); a.tabIndex = -1; }
-  const main = el.querySelector(".approve-chip");
+  const main = closable(t) ? el.querySelector(".review-chip") : el.querySelector(".approve-chip");
   if (main) main.lastChild.textContent = label;
   return el;
 }
@@ -927,17 +944,18 @@ export async function mergePR(t) {
 // cardChip is an action button on a card: a click (or press) on it runs
 // run, with its errors shown, and doesn't reach the card under it, which
 // would open the task or start a drag. icon is an icon's name or a node.
+// Without a label it is an icon button, named by its title.
 function cardChip(cls, title, icon, label, run) {
   const stop = (e) => e.stopPropagation();
   return h("button", {
-    type: "button", class: cls, title,
+    type: "button", class: `${cls}${label ? "" : " icon-chip"}`, title: title || null, "aria-label": label ? null : title,
     onpointerdown: stop,
     onclick: (e) => { stop(e); attempt(run)(); },
-  }, typeof icon === "string" ? ico(icon) : icon, label);
+  }, typeof icon === "string" ? ico(icon) : icon, label ? h("span", { class: "chip-label" }, label) : null);
 }
 
 function mergeChip(t) {
-  return cardChip("approve-chip", `Merge pull request #${t.pr.number} on GitHub`, "merge", "Merge pull request", () => mergePR(t));
+  return cardChip("approve-chip", `Merge pull request #${t.pr.number}`, "merge", "Merge PR", () => mergePR(t));
 }
 
 // What a task's pull request waits for, as Dash last saw it.
@@ -989,31 +1007,81 @@ function reviewChip(t) {
   if (t.pr) {
     return h("a", {
       class: "review-chip", href: t.pr.url, target: "_blank", rel: "noopener",
-      title: `Review pull request #${t.pr.number} on GitHub`, onpointerdown: stop, onclick: stop,
-    }, ico("eye"), "Review");
+      title: `Pull request #${t.pr.number}`, onpointerdown: stop, onclick: stop,
+    }, ico("eye"), h("span", { class: "chip-label" }, "Review"));
   }
-  return cardChip("review-chip", "Open the diff to review it yourself", "eye", "Review", () => openDetail(t.id, { pane: "diff" }));
+  return cardChip("review-chip", "", "eye", "Review", () => openDetail(t.id, { pane: "diff" }));
 }
 
 // Claude reviews it (the task view's "Review with Claude").
 function askClaudeChip(t) {
-  return cardChip("ask-claude-chip", "Have Claude review the changes", "spark", "Ask Claude", async () => { await openDetail(t.id); reviewTodo(); });
+  return cardChip("ask-claude-chip", "Ask Claude", "spark", "", async () => { await openDetail(t.id); reviewTodo(); });
 }
 
 // Opens the task with its live preview, starting the server if needed.
 function previewChip(t) {
   const p = previewOf(t.id);
-  return cardChip("preview-chip", "Open the live preview", p ? h("span", { class: `pv-dot ${p.state}`, "aria-hidden": "true" }) : "window", "Preview", () => previewTodo(t));
+  return cardChip("preview-chip", "Preview", p ? h("span", { class: `pv-dot ${p.state}`, "aria-hidden": "true" }) : "window", "", () => previewTodo(t));
 }
 
 function approveChip(t) {
-  return cardChip("approve-chip", "Approve and merge without opening the diff", "check", "Approve",
-    async () => { await whileBusy(t, "Merging…", () => api("POST", `/api/todos/${t.id}/approve`)); toast("Approved — merging"); });
+  return cardChip("approve-chip", "Approve", "check", "Approve", () => approveWithUndo(t));
 }
 
 function closeChip(t) {
-  return cardChip("approve-chip", "Close the task: it changed no files, so there is nothing to merge", "check", "Close", () => closeTodo(t));
+  return cardChip("review-chip", "", "check", "Close", () => closeTodo(t));
 }
+
+// approveWithUndo approves task t from the board: it shows in Merging at
+// once, and the merge starts once its toast has gone without Undo.
+export function approveWithUndo(t) {
+  const retry = waitsOnGitHub(t);
+  moveWithUndo(t, { verb: "approve", status: "merging", icon: retry ? "pr" : "merge", head: retry ? "Pushing the pull request again" : "Approved — merging" });
+}
+
+// ------------------------------------------------------------------ moves with Undo
+// A move from the board that is hard to take back (approve: it merges;
+// to drafts: it closes the pull request) waits while its toast shows Undo.
+// Meanwhile the card shows where it goes; the request is sent once the toast
+// has gone without Undo, or at once when the page is left.
+export const UNDO_MS = 5000;
+const pendingMoves = new Map(); // task id → { status, send }
+
+// shownTodo is task t as the board shows it: with a move waiting, in the status it moves to.
+export function shownTodo(t) {
+  const m = pendingMoves.get(t.id);
+  return m && m.status !== t.status ? { ...t, status: m.status } : t;
+}
+
+// moveWithUndo moves task t: POST /api/todos/<id>/<verb>, which puts it in
+// status, once the Undo in its toast (head) has passed. Not if the task has
+// moved on meanwhile (approved in its pane, say).
+export function moveWithUndo(t, { verb, status, head, icon }) {
+  if (pendingMoves.has(t.id) || busyTodos.has(t.id)) return;
+  const prefix = here(), path = `/api/todos/${t.id}/${verb}`;
+  const m = { status, send: () => fetch(on(prefix, path), { method: "POST", keepalive: true }) };
+  pendingMoves.set(t.id, m);
+  renderBoard();
+  toast(title(t), {
+    head, icon, ms: UNDO_MS, action: { label: "Undo", run: () => {} },
+    onClose: attempt(async (undone) => {
+      if (pendingMoves.get(t.id) !== m) return; // sent already: the page was left
+      const now = state.todos.get(t.id);
+      if (undone || (now && now.status !== t.status)) { pendingMoves.delete(t.id); renderBoard(); return; }
+      try {
+        await api("POST", path, null, prefix);
+      } finally {
+        pendingMoves.delete(t.id);
+        renderBoard();
+      }
+    }),
+  });
+}
+
+addEventListener("pagehide", () => {
+  for (const m of pendingMoves.values()) m.send();
+  pendingMoves.clear();
+});
 
 function enqueueChip(t) {
   return cardChip("enqueue-chip", "Queue it", "queue", "Queue", () => todoKey(t, "s"));

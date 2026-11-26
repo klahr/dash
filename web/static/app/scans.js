@@ -598,7 +598,7 @@ function scanReport(r, compact = false, lead = false) {
       since(st.fixed, "fixed", "Drafts from this run that were merged since"),
       since(st.gone, "deleted", "Drafts from this run deleted since (which dismissed their issues) or merged into another draft"),
       lead ? null : badge,
-      pickable > 1 ? ib({ type: "button", class: "btn small scan-select", title: "Select this run's drafts on the Board, to merge them or look through them", onclick: () => showRunTasks(r) }, "checks", `Select ${pickable} on the Board`) : null);
+      pickable > 1 ? ib({ type: "button", class: "btn small scan-select", onclick: () => showRunTasks(r) }, "checks", `Select ${pickable} on the Board`) : null);
     if (lead && !body.children.length) body = null;
   } else if (!lead || r.status === "failed") {
     body = h("p", { class: `scan-msg${r.status === "failed" ? " error" : ""}` }, r.status === "running" ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, scanSummary(r));

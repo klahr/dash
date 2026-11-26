@@ -68,7 +68,7 @@ func TestBrowserCloseNoChanges(t *testing.T) {
 			return c.querySelector(".nochange-tag")?.textContent === "No changes" &&
 				c.querySelector(".todo-sub")?.textContent === %q &&
 				chips.includes("Close") && !chips.includes("Approve") &&
-				c.querySelector(".approve-chip").getBoundingClientRect().right <= innerWidth;
+				c.querySelector(".review-chip").textContent === "Close" && c.querySelector(".review-chip").getBoundingClientRect().right <= innerWidth;
 		})()`, card, sum.Summary))
 		shot("nochanges-card-" + size.name)
 

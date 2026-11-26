@@ -418,11 +418,24 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
    is in it then keeps inside it, and the long ones (a link, a runner's name) end in an ellipsis. */
 .todo-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 0; color: var(--faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; padding-top: 2px; }
 .todo-side > * { max-width: 100%; }
-/* Below desktop the side column sits beside the title; a card in review has four
-   action chips, too wide for that, so its side goes under the title (as on desktop). */
-@media (max-width: 1023.98px) {
-  .todo:has(.ask-claude-chip) > .todo-side { grid-column: 2 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0; min-width: 0; }
-  .todo:has(.ask-claude-chip) > .todo-side .card-actions { margin-top: 0; }
+/* A card in review: its title on the whole width, one line of what it is
+   (runner, diff, time…), then one row of actions. The line doesn't wrap: a
+   long runner's name gives way first, and what doesn't fit is cut (the hover
+   copy shows it all). */
+.todo:has(> .review-actions) { container-type: inline-size; }
+.todo:has(> .review-actions) > .todo-main { grid-column: 2 / -1; }
+.todo:has(> .review-actions) > .todo-side {
+  grid-column: 2 / -1; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 10px; padding: 0; min-width: 0; overflow: hidden;
+  mask-image: linear-gradient(to left, transparent, #000 14px);
+}
+.todo:has(> .review-actions) > .todo-side > * { flex: none; white-space: nowrap; }
+.todo:has(> .review-actions) > .todo-side > .runner-tag { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; }
+.todo-float > .todo:has(> .review-actions) > .todo-side { flex-wrap: wrap; mask-image: none; }
+.todo > .review-actions { grid-column: 2 / -1; flex-wrap: nowrap; margin-top: 4px; position: relative; z-index: 1; }
+/* In a narrow column Approve is its icon, named by its title. */
+@container (max-width: 229px) {
+  .review-actions .approve-chip { width: 28px; padding: 0; justify-content: center; }
+  .review-actions .approve-chip .chip-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 /* A running task's stopwatch: it ticks, so it keeps its width (tabular digits) and its line. */
 .run-clock { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
@@ -2030,6 +2043,16 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .col.drop-over { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .col.drop-ok .col-head { color: var(--text); }
 .lane-tab.drop-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--text); }
+/* What a drop on a column does, at its top while a card is dragged (app/dnd.js: markTargets). */
+.drop-label {
+  --c: var(--accent);
+  margin: 0 12px 8px; padding: 8px 10px; border-radius: var(--r-m);
+  border: 2px dashed color-mix(in srgb, var(--c) 55%, transparent); background: color-mix(in srgb, var(--c) 10%, var(--bg));
+  color: var(--text); font-size: var(--fs-s); font-weight: 600; text-align: center; overflow-wrap: anywhere;
+  animation: fade-in .15s var(--ease);
+}
+.drop-label.danger, .drop-zone.danger { --c: var(--failed); }
+.col.drop-over .drop-label { border-style: solid; background: color-mix(in srgb, var(--c) 22%, var(--bg)); }
 @media (hover: hover) { .todo[data-id], .todo-float > .todo { cursor: grab; } }
 
 /* Resting the mouse on a board card (desktop) shows a widened copy of it,
@@ -2070,9 +2093,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   color: var(--text); font-weight: 700; box-shadow: var(--shadow-3); transition: transform .12s var(--ease), background-color .12s;
 }
 .drop-zone.drop-over { transform: scale(1.03); border-style: solid; background: color-mix(in srgb, var(--c) 28%, var(--surface)); }
-.drop-zone.none { --c: var(--faint); font-weight: 500; color: var(--muted); }
-.drop-zone.s-merging { --c: var(--merged); }
-.drop-zone.s-draft { --c: var(--faint); }
+.drop-zone:is(.s-merging, .s-merged) { --c: var(--merged); }
+.drop-zone.s-draft:not(.danger) { --c: var(--faint); }
 
 /* ---------- illustrations ---------- */
 .empty-art { display: block; width: min(280px, 70vw); height: auto; margin: 0 auto 18px; border-radius: var(--r-l); }
@@ -2570,7 +2592,18 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .board {
     flex: 1; display: flex; gap: 0; overflow-x: auto; padding: 0;
   }
-  .col, .col.active { display: flex; flex-direction: column; flex: 1 1 0; min-width: 200px; min-height: 0; border-right: 1px solid var(--line); }
+  /* Five columns fit from 1100px (Merging folds away while empty). Where they
+     still don't (a pinned chat), the edge with more board past it is shaded
+     (app/branches.js: syncBoardEdges sets .more-left and .more-right). */
+  .board::before, .board::after {
+    content: ""; position: sticky; z-index: 3; flex: none; width: 28px; pointer-events: none;
+    opacity: 0; transition: opacity .15s var(--ease);
+  }
+  .board::before { order: -1; left: 0; margin-right: -28px; background: linear-gradient(to right, var(--scroll-edge), transparent); }
+  .board::after { order: 99; right: 0; margin-left: -28px; background: linear-gradient(to left, var(--scroll-edge), transparent); }
+  .board { --scroll-edge: color-mix(in srgb, var(--text) 16%, transparent); }
+  .board.more-left::before, .board.more-right::after { opacity: 1; }
+  .col, .col.active { display: flex; flex-direction: column; flex: 1 1 0; min-width: 164px; min-height: 0; border-right: 1px solid var(--line); }
   .col-head { display: flex; align-items: center; gap: 8px; padding: 18px 16px 10px; font-weight: 600; position: sticky; top: 0; background: var(--bg); z-index: 2; }
   .col-head::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
   .col-head .n { color: var(--faint); font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -2587,6 +2620,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .todo-side { grid-column: 2; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0; min-width: 0; }
   .todo-side .card-actions { flex-wrap: wrap; margin-top: 0; }
   .todo-side:empty { display: none; }
+  /* A review card's actions use the card's whole width, the node's column too. */
+  .todo > .review-actions { grid-column: 1 / -1; }
   .rail::before { left: 25px; }
   .fab { right: 28px; bottom: 28px; width: auto; padding: 0 20px 0 16px; }
   .fab > span { display: inline; }
@@ -2923,18 +2958,21 @@ dialog.lightbox::backdrop { background: transparent; }
 }
 .review-chip .ico, .preview-chip .ico, .approve-chip .ico, .enqueue-chip .ico, .ask-claude-chip .ico { width: 14px; height: 14px; flex: none; }
 a.review-chip { text-decoration: none; }
-.review-chip { background: var(--raised); color: var(--text); }
-.review-chip .ico { color: var(--review); }
-.review-chip:hover { border-color: var(--review); background: color-mix(in srgb, var(--review) 10%, var(--raised)); }
-.approve-chip { background: var(--review); border-color: var(--review); color: var(--on-review); }
-.approve-chip:hover { background: color-mix(in srgb, var(--review) 85%, white); border-color: color-mix(in srgb, var(--review) 85%, white); }
+/* Review (or Close) leads a review card; Approve is quieter, Ask Claude and Preview are icons. */
+.review-chip { background: var(--review); border-color: var(--review); color: var(--on-review); }
+.review-chip:hover { background: color-mix(in srgb, var(--review) 85%, white); border-color: color-mix(in srgb, var(--review) 85%, white); }
+.approve-chip { background: var(--raised); color: var(--text); }
+.approve-chip .ico { color: var(--review); }
+.approve-chip:hover { border-color: var(--review); background: color-mix(in srgb, var(--review) 10%, var(--raised)); }
 :is(.preview-chip, .enqueue-chip) { background: var(--raised); color: var(--text); }
 :is(.preview-chip, .enqueue-chip) .ico { color: var(--accent); }
 :is(.preview-chip, .enqueue-chip):hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--raised)); }
-/* Less prominent than Review: no fill, muted until hovered. */
+.icon-chip { width: 28px; padding: 0; justify-content: center; flex: none; }
+.icon-chip.preview-chip { background: transparent; border-color: transparent; color: var(--muted); }
 .ask-claude-chip { background: transparent; border-color: transparent; color: var(--muted); padding: 0 8px; }
+.ask-claude-chip.icon-chip { padding: 0; }
 .ask-claude-chip .ico { color: currentColor; }
-.ask-claude-chip:hover { color: var(--text); border-color: var(--line); background: var(--raised); }
+.ask-claude-chip:hover, .icon-chip.preview-chip:hover { color: var(--text); border-color: var(--line); background: var(--raised); }
 .review-chip:active, .preview-chip:active, .approve-chip:active, .enqueue-chip:active, .ask-claude-chip:active { transform: translateY(1px); }
 /* Approving, merging or closing: every button on the card waits for it. */
 .card-actions.busy :is(button, a) { opacity: .55; cursor: progress; transform: none; }
@@ -3359,7 +3397,7 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .scans-open .badge[hidden] { display: none; }
 .tag-filter-pick { min-height: 26px; max-width: 14rem; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted); font: inherit; font-size: var(--fs-xs); }
 @media (pointer: coarse) { .filter-chip, .tag-filter-pick { min-height: 32px; } }
-/* Picking drafts to merge: a box over the card's node, shown on hover, while
+/* Picking drafts to combine: a box over the card's node, shown on hover, while
    picking and on touch screens; the bar floats above the bottom edge. */
 .todo-pick { position: absolute; left: 16px; top: 12px; z-index: 2; display: grid; place-items: center; width: 24px; height: 24px; opacity: 0; cursor: pointer; }
 .todo-pick input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
@@ -3367,14 +3405,14 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .todo:has(> .todo-pick:is(:hover, :focus-within)) > .node, .todo:hover:has(> .todo-pick) > .node, .picking .todo:has(> .todo-pick) > .node { opacity: 0; }
 @media (hover: none) { .todo-pick { opacity: 1; } .todo:has(> .todo-pick) > .node { opacity: 0; } }
 .todo.picked { background: color-mix(in srgb, var(--accent) 9%, transparent); }
-.merge-bar {
+.combine-bar {
   position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + var(--safe-b) + 16px);
   display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 24px); padding: 8px 12px 8px 16px; border-radius: var(--r-m);
   background: color-mix(in srgb, var(--accent) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
   box-shadow: 0 6px 16px -8px rgb(0 0 0 / .5);
 }
-.merge-bar[hidden] { display: none; }
-.merge-count { font-weight: 600; white-space: nowrap; }
+.combine-bar[hidden] { display: none; }
+.combine-count { font-weight: 600; white-space: nowrap; }
 .picking .fab { display: none; }
 /* Scans → Dismissed: issues whose drafts were deleted, each with Undo. */
 .scan-dismissed { margin-top: 24px; }

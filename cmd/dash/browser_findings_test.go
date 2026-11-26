@@ -69,18 +69,18 @@ func TestBrowserFindingDrafts(t *testing.T) {
 	}
 	scanFilter(true, fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardSel(low1), cardSel(plain.ID)))
 	still()
-	b.until("pick a low draft", `document.querySelector("#merge-bar")?.offsetWidth > 0 && /1 selected/.test(document.querySelector("#merge-bar").textContent) && document.querySelector("#merge-bar .btn.primary").disabled`,
+	b.until("pick a low draft", `document.querySelector("#combine-bar")?.offsetWidth > 0 && /1 selected/.test(document.querySelector("#combine-bar").textContent) && !document.querySelector("#combine-bar .combine")`,
 		chromedp.Click(chromedp.CSS(cardSel(low1)+` .todo-pick input`)))
 	still()
-	b.until("pick the other", `/2 selected/.test(document.querySelector("#merge-bar").textContent) && !document.querySelector("#merge-bar .btn.primary").disabled`,
+	b.until("pick the other", `/2 selected/.test(document.querySelector("#combine-bar").textContent) && document.querySelector("#combine-bar .combine")?.textContent === "Combine"`,
 		chromedp.Click(chromedp.CSS(cardSel(low2)+` .todo-pick input`)))
-	b.until("Esc clears the picks", `document.querySelector("#merge-bar").hidden`, chromedp.KeyEvent(kb.Escape))
+	b.until("Esc clears the picks", `document.querySelector("#combine-bar").hidden`, chromedp.KeyEvent(kb.Escape))
 	still()
 	b.do("pick them again", chromedp.Click(chromedp.CSS(cardSel(low1)+` .todo-pick input`)))
 	still()
 	b.do("and the other", chromedp.Click(chromedp.CSS(cardSel(low2)+` .todo-pick input`)))
-	b.until("merge them", fmt.Sprintf(`!document.querySelector(%q) && !!document.querySelector(%q) && document.querySelector("#merge-bar").hidden`, cardSel(low2), cardSel(low1)),
-		chromedp.Click(chromedp.CSS(`#merge-bar .btn.primary`)))
+	b.until("combine them", fmt.Sprintf(`!document.querySelector(%q) && !!document.querySelector(%q) && document.querySelector("#combine-bar").hidden`, cardSel(low2), cardSel(low1)),
+		chromedp.Click(chromedp.CSS(`#combine-bar .combine`)))
 	b.waitJS("the merged draft has both issues", fmt.Sprintf(`/Fix 2 issues/.test(document.querySelector(%q)?.textContent)`, cardSel(low1)))
 
 	// The pane: the issues it has, and tags to edit.
@@ -105,10 +105,10 @@ func TestBrowserFindingDrafts(t *testing.T) {
 	still()
 	b.do("tap another", chromedp.Click(chromedp.CSS(cardSel(plain.ID)+` .todo-pick input`)))
 	b.waitJS("the bar on screen, above the nav", `(() => {
-		const r = document.querySelector("#merge-bar").getBoundingClientRect(), nav = document.querySelector(".nav").getBoundingClientRect();
-		return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.bottom <= nav.top && /2 selected/.test(document.querySelector("#merge-bar").textContent);
+		const r = document.querySelector("#combine-bar").getBoundingClientRect(), nav = document.querySelector(".nav").getBoundingClientRect();
+		return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.bottom <= nav.top && /2 selected/.test(document.querySelector("#combine-bar").textContent);
 	})()`)
-	b.do("clear", chromedp.Click(chromedp.CSS(`#merge-bar .link`)))
+	b.do("clear", chromedp.Click(chromedp.CSS(`#combine-bar .link`)))
 	b.do("a wide screen", chromedp.EmulateReset())
 
 	// Old links to Issues open the Board, or the draft an issue became.
