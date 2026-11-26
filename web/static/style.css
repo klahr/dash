@@ -2679,6 +2679,9 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .toasts { right: calc(28px + var(--fab-space, 0px)); bottom: 28px; }
   /* The overlaid chat covers the FAB: toasts sit just left of the pane. */
   .app.chat-open .toasts { right: calc(var(--chat-pane-w) + 28px); }
+  /* Nor over the task's pane beside the board (its Approve, Close…): left of it. */
+  .app.detail-beside .toasts { right: calc(var(--detail-beside-w) + 28px); }
+  .app.detail-beside.chat-open .toasts { right: calc(max(var(--detail-beside-w), var(--chat-pane-w)) + 28px); }
   .sheet > .toasts { right: 28px; }
 
   .detail { left: auto; bottom: 0; width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: var(--shadow-pane); }
@@ -2775,6 +2778,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
      scrim, detail sheet, status line, menus and toasts. */
   .chat-pinned .chat-pane { grid-area: chat; position: relative; inset: auto; z-index: 15; width: auto; min-height: 0; animation: none; }
   .chat-pinned.chat-open .toasts { right: calc(var(--chat-pane-w) + 28px + var(--fab-space, 0px)); }
+  .chat-pinned.chat-open.detail-beside .toasts { right: calc(var(--chat-pane-w) + var(--detail-beside-w) + 28px); }
   .chat-pinned.chat-open :is(.detail, .statusline) { right: var(--chat-pane-w); }
 }
 
