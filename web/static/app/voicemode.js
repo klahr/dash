@@ -6,7 +6,7 @@ import { cursorTodo, keys } from "./vim.js";
 import { stopDictation } from "./dictation.js";
 import { hands, hasReadAll, readAll, sayLine, stopSpeaking } from "./speech.js";
 import { commandOf, describeCommand, runVoiceCommand, stopCommands } from "./voice.js";
-import { setTodoChatMode, todoChat } from "./chat.js";
+import { todoChat } from "./chat.js";
 import { projectChatFor, toggleChatPane } from "./chatpane.js";
 import { showNewTasks } from "./todos.js";
 import { afterEnd, backoff, classify, hints, initial, modeWord, step } from "../voiceloop.js";
@@ -44,7 +44,6 @@ const FATAL = {
 // vm is voice mode while it is on: { m (the machine), rec, run (the current
 // listen), timer, bo (backoff), fatal, interim, audio, off, ticker }.
 let vm = null;
-export const voiceModeOn = () => !!vm;
 
 // What the machine asks of the app (voiceloop.js step's ctx).
 const openTask = () => (state.detail && state.todos.get(state.detail)) || null;
@@ -174,8 +173,7 @@ async function act(a) {
       if (t?.id && state.project === p) showNewTasks("queued", [t.id]);
       speak("Queued.");
     } else if (a.kind === "message") {
-      sendMessage(a.text);
-      speak("Sent.");
+      speak(sendMessage(a.text) === "queued" ? "Queued." : "Sent.");
     } else {
       const r = await runVoiceCommand(a.id);
       speak(r.ok ? r.text || "Done." : r.text);
@@ -186,19 +184,13 @@ async function act(a) {
 }
 
 // sendMessage sends text to the open task's side chat (Ask: the agent
-// doesn't see it), or else to the project's chat, as its Send button does.
+// doesn't see it), or else to the project's chat. What is written in the
+// composer and its mode stay. It returns "sent" or "queued" (a reply runs).
 function sendMessage(text) {
-  let c;
-  if (openTask()) {
-    setTodoChatMode("chat");
-    c = todoChat;
-  } else {
-    if (!state.project) throw new Error("Open a project first.");
-    toggleChatPane(true, "project");
-    c = projectChatFor(state.project).chat;
-  }
-  c.input.value = text;
-  c.input.form.requestSubmit();
+  if (openTask()) return todoChat.post(text);
+  if (!state.project) throw new Error("Open a project first.");
+  toggleChatPane(true, "project");
+  return projectChatFor(state.project).chat.post(text);
 }
 
 // ---- listening

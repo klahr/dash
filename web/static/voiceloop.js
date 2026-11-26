@@ -60,7 +60,6 @@ export const CONFIRMED = new Set(["queue", "approve"]);
 // for commands, dictating (a task or a message), confirming (a read-back
 // waits for "yes") and speaking (Dash talks: only "stop", "pause" and
 // "exit voice mode" are heard, so Dash doesn't obey its own voice).
-export const STATES = ["paused", "listening", "dictating", "confirming", "speaking"];
 
 // initial is the machine as voice mode starts.
 export const initial = () => ({ state: "listening", target: null, draft: [], pending: null, after: null, last: "" });

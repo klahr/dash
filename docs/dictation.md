@@ -153,6 +153,9 @@ and waits:
 Say "yes" to do it. Anything else does nothing. Merging, deploying, deleting and rolling back
 stay buttons you click.
 
+A message goes on its own: what you typed or attached in the chat stays there. While Claude
+answers, the message waits in the chat's queue and Dash says "Queued."
+
 ### Turn-taking
 
 Dash says replies, approval requests and task results in short (see [Summaries](#summaries)).

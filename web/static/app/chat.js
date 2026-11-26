@@ -102,7 +102,15 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   chatJump(c);
   chatPlace(c, cwd, where);
   c.socket = chatSocket(c, { saved, resume, onRunner, onStream: chatStreamHandler(c) });
-  return { ...turns, ...composer, toEnd: c.toEnd, place: c.place.render, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
+  // post sends q as a message without the composer (what is written or
+  // attached there stays, and so does the mode): queued while a reply streams.
+  // It returns "queued" or "sent".
+  const post = (q) => {
+    if (c.current) { c.queued.push({ q, files: [] }); return "queued"; }
+    c.send(q, []);
+    return "sent";
+  };
+  return { ...turns, ...composer, post, toEnd: c.toEnd, place: c.place.render, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
 }
 
 // chatView renders the conversation in log (empty: what shows while it has

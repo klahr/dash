@@ -321,9 +321,10 @@ export function stopSpeaking() {
   if (item) hands.onQuiet?.();
 }
 
-// Esc stops speaking (and does nothing else, so a sheet stays open).
+// Esc stops speaking (and does nothing else, so a sheet stays open). Only
+// while something is read: not while a summary is still awaited.
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !current || hands.on) return; // voice mode has its own keys
+  if (e.key !== "Escape" || !current?.utts || hands.on) return; // voice mode has its own keys
   e.preventDefault();
   e.stopPropagation();
   stopSpeaking();
