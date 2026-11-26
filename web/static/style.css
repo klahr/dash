@@ -3027,8 +3027,10 @@ dialog.lightbox::backdrop { background: transparent; }
   .lb-text { padding: 12px; }
 }
 /* Messages queued while Claude answers, above the composer. */
-.chat-queue { flex: 0 0 100%; display: flex; flex-direction: column; gap: 6px; }
-.queued { display: flex; align-items: center; border: 1px dashed var(--line); border-radius: var(--r-m); background: var(--raised); animation: chip-in .22s var(--ease); }
+/* min-width and inline-size containment keep a long one-line message from widening the composer
+   (and the page) past the screen: it ends in an ellipsis instead. */
+.chat-queue { flex: 0 0 100%; min-width: 0; contain: inline-size; display: flex; flex-direction: column; gap: 6px; }
+.queued { min-width: 0; display: flex; align-items: center; border: 1px dashed var(--line); border-radius: var(--r-m); background: var(--raised); animation: chip-in .22s var(--ease); }
 .queued-text { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 4px 4px 12px; border: 0; background: none; color: var(--text); font: inherit; font-size: var(--fs-m); text-align: left; cursor: pointer; }
 .queued-tag { flex: none; font-size: var(--fs-2xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .queued-body { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
