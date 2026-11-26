@@ -2030,7 +2030,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .btn:active, .icon-btn:active, .fab:active { transform: scale(.97); }
 .fab { transition: transform .2s var(--ease), box-shadow .2s, background-color .15s; }
 .fab:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: var(--shadow-3); }
-.detail.closing { animation: slide-out .18s var(--ease) forwards; }
+/* A closing pane takes no clicks: they go to what it uncovers (detailpane.js). */
+.detail.closing { animation: slide-out .18s var(--ease) forwards; pointer-events: none; }
 @keyframes slide-out { to { transform: translateX(24px); opacity: 0; } }
 .scrim { animation: fade-in .2s var(--ease); }
 @keyframes fade-in { from { opacity: 0; } }

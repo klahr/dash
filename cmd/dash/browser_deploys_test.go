@@ -108,7 +108,8 @@ func TestBrowserDeploys(t *testing.T) {
 	b.waitJS("approve on the card", `document.querySelector('#env-cards [data-env="production"] .env-awaiting button.primary')`)
 	b.waitJS("it awaits approval in the list", `document.querySelector("#deploy-list li .status.d-awaiting_approval")`)
 	shot("deploys-approval-wide")
-	b.until("ask to approve it", `document.querySelector("#ask-sheet").open && /^Approve the deploy of 1\.0\.0.* to production\?$/.test(document.querySelector("#ask-title").textContent)`,
+	// Named by its commit: the deploy gets its tag when the runner starts it.
+	b.until("ask to approve it", `document.querySelector("#ask-sheet").open && /^Approve the deploy of (1\.0\.0|[0-9a-f]{7}).* to production\?$/.test(document.querySelector("#ask-title").textContent)`,
 		chromedp.Click(chromedp.CSS(`#env-cards [data-env="production"] .env-awaiting button.primary`)))
 	b.until("approve it", `!document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.ID("ask-ok")))
 	b.waitJS("the deploy live in the list", `document.querySelector("#deploy-list li .status.d-live")`)
