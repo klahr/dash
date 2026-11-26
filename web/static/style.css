@@ -4045,23 +4045,24 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-head [hidden] { display: none !important; }
 .pl-board-add { margin-right: auto; width: 34px; height: 34px; color: var(--muted); }
 .pl-board-add:hover { color: var(--text); }
-/* The boards' tabs: the one shown in the title's weight, with ⋯ (its menu). */
-.pl-boards { flex: 0 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.pl-boards::-webkit-scrollbar { display: none; }
+/* The boards' tabs: the one shown in the title's weight; after them ⋯ (its
+   menu). The box a board is renamed in lies over its tab, hidden meanwhile. */
+.pl-boards-wrap { flex: 0 1 auto; position: relative; display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.pl-boards-wrap::-webkit-scrollbar { display: none; }
+.pl-boards { flex: none; display: flex; align-items: center; gap: 2px; }
 .pl-board-tab {
   display: inline-flex; align-items: center; flex: none; min-height: 36px; padding: 0 10px;
   border: 1px solid transparent; border-radius: var(--r-s); color: var(--muted); font-size: var(--fs-l); font-weight: 600; white-space: nowrap;
 }
 .pl-board-tab:hover { color: var(--text); background: var(--raised); }
 .pl-board-tab[aria-selected="true"] { color: var(--text); }
-.pl-board-tab[data-board=all][aria-selected="true"] { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
-.pl-board-on { display: inline-flex; align-items: center; flex: none; border-radius: var(--r-s); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
-.pl-board-on .pl-board-tab { padding-right: 4px; }
-.pl-board-on .pl-board-tab:hover { background: none; }
-.pl-board-more { width: 28px; height: 28px; min-height: 0; margin-right: 4px; color: var(--faint); }
+.pl-board-tab[aria-selected="true"] { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.pl-board-tab.editing { visibility: hidden; }
+.pl-board-more { flex: none; width: 28px; height: 28px; min-height: 0; margin-right: 4px; color: var(--faint); }
 .pl-board-more:hover, .pl-board-more[aria-expanded="true"] { color: var(--text); }
 .pl-board-name { max-width: 16em; overflow: hidden; text-overflow: ellipsis; }
 input.pl-board-input { flex: none; width: auto; min-width: 8em; height: 36px; padding: 0 10px; font-size: var(--fs-l); font-weight: 600; }
+input.pl-board-input.over { position: absolute; }
 /* Search: the magnifier; open (or holding text), the field beside it. */
 .pl-search { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .pl-search .icon-btn { width: 34px; height: 34px; }
@@ -4077,14 +4078,14 @@ input.pl-board-input { flex: none; width: auto; min-width: 8em; height: 36px; pa
 .pop-menu .side-project-icon { flex: none; width: 18px; height: 18px; font-size: var(--fs-3xs); }
 @media (max-width: 1023px) {
   .pl-head { gap: 2px; min-height: 0; padding: 6px 8px 6px var(--pad-x); }
-  .pl-boards { flex: 1; }
+  .pl-boards-wrap { flex: 1; }
   .pl-board-tab { font-size: var(--fs-m); min-height: 34px; }
   .pl-board-add, .pl-mine, .pl-new, .pl-tag-filter { display: none !important; }
   .pl-head-more { display: inline-grid; place-items: center; }
   .pl-filter-btn { width: 34px; height: 34px; min-height: 0; padding: 0; justify-content: center; position: relative; border-color: transparent; background: none; }
   .pl-filter-btn .pl-filter-label { display: none; }
   .pl-filter-btn .n { position: absolute; top: 0; right: -2px; min-width: 16px; line-height: 16px; padding: 0 4px; }
-  .pl-head.searching .pl-boards { display: none; }
+  .pl-head.searching .pl-boards-wrap { display: none; }
   .pl-head.searching .pl-search { flex: 1; }
   .pl-head.searching .pl-search input { flex: 1; width: auto; }
   /* The lanes: all four fit the strip. A lane's count shows only when it has cards, and an

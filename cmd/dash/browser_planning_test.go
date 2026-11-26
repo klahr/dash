@@ -406,7 +406,7 @@ func TestBrowserPlanningBoards(t *testing.T) {
 	b.until("open Planning", `document.querySelector("#view-planning.active")`,
 		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
 	b.waitJS("a tab for each board, the default one shown", `(() => { const t = [...document.querySelectorAll("#pl-boards .pl-board-tab")];
-		return t.map((x) => x.textContent).join() === "All boards,Main,Mobile" && t[1].getAttribute("aria-selected") === "true" && !document.querySelector("#pl-boards .n") && !!document.querySelector("#pl-boards .pl-board-on .pl-board-more"); })()`)
+		return t.map((x) => x.textContent).join() === "All boards,Main,Mobile" && t[1].getAttribute("aria-selected") === "true" && !document.querySelector("#pl-boards .n") && !document.querySelector("#pl-boards .pl-board-more") && !document.querySelector("#pl-board-more").hidden && [...document.querySelectorAll("#pl-boards > *")].every((x) => x.getAttribute("role") === "tab"); })()`)
 	b.waitJS("only the default board's cards", fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardOf(onMain.ID), cardOf(onMobile.ID)))
 	b.until("show Mobile", fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardOf(onMobile.ID), cardOf(onMain.ID)),
 		chromedp.Click(chromedp.CSS(fmt.Sprintf(`#pl-boards .pl-board-tab[data-board=%q]`, mobile.ID))))
@@ -452,12 +452,12 @@ func TestBrowserPlanningBoards(t *testing.T) {
 	b.do("add Web", chromedp.KeyEvent("Web"), chromedp.KeyEvent(kb.Enter))
 	b.waitJS("Web added, last, and shown", tabs+` === "Main,Mobile,Web" && document.querySelector("#pl-boards [aria-selected=true]")?.textContent === "Web"`)
 	// A double click renames it.
-	b.run("double-click Web", `(() => { document.querySelector("#pl-boards .pl-board-on .pl-board-tab").dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); return true; })()`)
-	b.waitJS("its name in a box", `document.activeElement?.matches(".pl-board-input") && document.activeElement.value === "Web"`)
+	b.run("double-click Web", `(() => { document.querySelector("#pl-boards .pl-board-tab[aria-selected=true]").dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); return true; })()`)
+	b.waitJS("its name in a box, outside the tabs", `document.activeElement?.matches(".pl-board-input") && document.activeElement.value === "Web" && !document.activeElement.closest("#pl-boards")`)
 	b.do("rename it", chromedp.KeyEvent(kb.End), chromedp.KeyEvent("site"), chromedp.KeyEvent(kb.Enter))
 	b.waitJS("renamed", tabs+` === "Main,Mobile,Website"`)
 	// Its menu (⋯ on the tab shown, or a right click) moves it.
-	b.menuPick("#pl-boards .pl-board-more", "Move left", tabs+` === "Main,Website,Mobile"`, "")
+	b.menuPick("#pl-board-more", "Move left", tabs+` === "Main,Website,Mobile"`, "")
 	b.waitJS("the default board has no Delete", `(() => { document.querySelector("#pl-boards .pl-board-tab[data-board]:not([data-board=all])").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
 		const m = document.querySelector(".pop-menu"); return !!m && m.textContent.includes("Rename") && !m.textContent.includes("Delete"); })()`)
 	b.do("close the menu", chromedp.KeyEvent(kb.Escape))
@@ -469,7 +469,7 @@ func TestBrowserPlanningBoards(t *testing.T) {
 		t.Fatalf("Main's cards after deleting Mobile: %v", got)
 	}
 	// Default makes another board the default one.
-	b.menuPick("#pl-boards .pl-board-more", "Default", `!!document.querySelector("#pl-boards .pl-board-on")`, "")
+	b.menuPick("#pl-board-more", "Default", `!document.querySelector("#pl-board-more").hidden`, "")
 	var boards []struct {
 		Name    string
 		Default bool

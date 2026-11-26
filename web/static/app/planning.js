@@ -70,7 +70,7 @@ const pl = {
   mine: store.flag("dash.planning.mine"),
   q: "", // the search: only the cards with each of its words in their title or description
   searching: false, // the search field is open
-  boardEdit: null, // a board's name being typed in its tab: { id ("": a new board), input }
+  boardEdit: null, // a board's name being typed, over its tab: { id ("": a new board), input }
   loaded: false,
   open: null, // the open card's id
   detail: null, // its view, with its discussion
@@ -165,7 +165,12 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
       // card and + are under ⋯, and the open search takes the tabs' place.
       h("header", { class: "pl-head", id: "pl-head" },
         h("h2", { class: "sr-only" }, "Planning"),
-        h("div", { class: "pl-boards", id: "pl-boards", role: "tablist", "aria-label": "Boards", onkeydown: boardTabsKey }),
+        // The tablist holds the tabs only: the shown board's ⋯ and the box
+        // a board's name is typed in sit beside it (the box over its tab).
+        h("div", { class: "pl-boards-wrap", id: "pl-boards-wrap" },
+          h("div", { class: "pl-boards", id: "pl-boards", role: "tablist", "aria-label": "Boards", onkeydown: boardTabsKey }),
+          ib({ type: "button", class: "icon-btn pl-board-more", id: "pl-board-more", "aria-label": "Board menu", title: "Board menu", "aria-haspopup": "menu", "aria-expanded": "false", hidden: true,
+            onclick: (e) => { const b = pl.boards.find((x) => x.id === boardShown()); if (b && !allBoards()) boardMenu(b, e.currentTarget); } }, "more")),
         ib({ type: "button", class: "icon-btn pl-board-add", id: "pl-board-add", "aria-label": "Add board", title: "Add board", onclick: () => editBoard("") }, "plus"),
         h("div", { class: "pl-search", id: "pl-search", role: "search" },
           ib({ type: "button", class: "icon-btn", id: "pl-search-open", "aria-label": "Search cards", title: "Search cards", "aria-controls": "pl-search-input", "aria-expanded": "false",
@@ -396,7 +401,7 @@ function setSearch(q) {
 // ---- the boards: a tab each at the head of the page (All boards first,
 // when there is more than one). Arrows, Home and End move between them, as
 // between tabs; F2 renames the one focused. A tab's menu (right click, or ⋯
-// on the tab shown) renames, moves, makes default or deletes its board.
+// after the tabs, for the board shown) renames, moves, makes default or deletes its board.
 
 function renderBoards() {
   const el = $("#pl-boards");
@@ -406,33 +411,39 @@ function renderBoards() {
     type: "button", role: "tab", class: "pl-board-tab", "data-board": id, "aria-selected": String(id === on), tabindex: id === on ? "0" : "-1",
     onclick: () => pickBoard(id), ...props,
   }, h("span", { class: "pl-board-name" }, name));
-  const kids = pl.boards.map((b) => {
-    if (pl.boardEdit?.id === b.id) return pl.boardEdit.input;
-    const t = tab(b.id, b.name, { ondblclick: () => editBoard(b.id), oncontextmenu: (e) => { e.preventDefault(); boardMenu(b, e.currentTarget); } });
-    if (b.id !== on) return t;
-    return h("span", { class: "pl-board-on", role: "none" }, t,
-      ib({ type: "button", class: "icon-btn pl-board-more", "aria-label": `${b.name}: board menu`, title: "Board menu", "aria-haspopup": "menu", "aria-expanded": "false",
-        onclick: (e) => boardMenu(b, e.currentTarget) }, "more"));
-  });
-  if (pl.boards.length > 1) kids.unshift(tab(BOARDS_ALL, "All boards"));
-  if (pl.boardEdit?.id === "") kids.push(pl.boardEdit.input);
-  // Keep the box being typed in where it is, with its text and focus. Moving
-  // it takes its focus (a blur): that isn't leaving the box, so it doesn't save.
   const edit = pl.boardEdit;
-  const focused = edit && (document.activeElement === edit.input || edit.moving);
-  if (focused) edit.moving = true;
+  const kids = pl.boards.map((b) => tab(b.id, b.name, {
+    class: edit?.id === b.id ? "pl-board-tab editing" : "pl-board-tab",
+    ondblclick: () => editBoard(b.id), oncontextmenu: (e) => { e.preventDefault(); boardMenu(b, e.currentTarget); },
+  }));
+  if (pl.boards.length > 1) kids.unshift(tab(BOARDS_ALL, "All boards"));
   fill(el, ...kids);
-  if (focused) {
-    edit.input.focus();
-    queueMicrotask(() => {
-      edit.moving = false;
-      if (pl.boardEdit === edit && edit.input.isConnected && document.activeElement !== edit.input) edit.input.focus();
-    });
-  }
+  const shown = !allBoards() && pl.boards.find((b) => b.id === on);
+  const more = $("#pl-board-more");
+  more.hidden = !shown;
+  more.setAttribute("aria-label", shown ? `${shown.name}: board menu` : "Board menu");
+  // The box a name is typed in stays where it is (with its text and focus):
+  // a new board's after the tabs, a renamed one's over its tab.
+  const wrap = el.parentElement;
+  for (const x of $$(".pl-board-input", wrap)) if (x !== edit?.input) x.remove();
+  if (edit && !edit.input.isConnected) wrap.insertBefore(edit.input, edit.id ? null : more);
+  placeBoardEdit();
+}
+
+// placeBoardEdit puts the box a board is renamed in over its tab, which
+// keeps its place in the row (hidden, as wide as the box).
+function placeBoardEdit() {
+  const edit = pl.boardEdit;
+  if (!edit?.id) return;
+  const t = $(`#pl-boards .pl-board-tab[data-board="${edit.id}"]`);
+  edit.input.classList.toggle("over", !!t);
+  if (!t) return;
+  t.style.width = `${edit.input.offsetWidth}px`;
+  edit.input.style.left = `${t.offsetLeft}px`;
+  edit.input.style.top = `${t.offsetTop + (t.offsetHeight - edit.input.offsetHeight) / 2}px`;
 }
 
 function boardTabsKey(e) {
-  if (e.target.matches?.(".pl-board-input")) return;
   const tabs = $$(".pl-board-tab", e.currentTarget);
   const i = tabs.indexOf(document.activeElement);
   if (i < 0) return;
@@ -515,15 +526,14 @@ function editBoard(id) {
       end(id || "");
     }
   };
-  input.addEventListener("input", () => { input.size = Math.max(8, input.value.length + 2); });
+  input.addEventListener("input", () => { input.size = Math.max(8, input.value.length + 2); placeBoardEdit(); });
   input.addEventListener("keydown", (e) => {
     if (e.isComposing) return;
     if (e.key === "Enter") { e.preventDefault(); save(); }
     else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done = true; end(id || ""); }
   });
-  const edit = { id, input, moving: false };
-  input.addEventListener("blur", () => { if (document.hasFocus() && !done && !edit.moving) save(); });
-  pl.boardEdit = edit;
+  input.addEventListener("blur", () => { if (document.hasFocus() && !done) save(); });
+  pl.boardEdit = { id, input };
   renderBoards();
   input.focus();
   input.select();
