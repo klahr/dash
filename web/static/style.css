@@ -3455,11 +3455,6 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .filter-chip[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .filter-chip[aria-pressed="true"].hued { color: var(--tag); border-color: var(--tag); background: color-mix(in srgb, var(--tag) 14%, transparent); }
 .filter-chip .x { font-size: 15px; line-height: 1; }
-.scan-filter-group { display: inline-flex; }
-.scan-filter-group .scan-filter { border-radius: var(--r-pill) 0 0 var(--r-pill); }
-.scan-filter-group .scans-open { margin-left: -1px; border-radius: 0 var(--r-pill) var(--r-pill) 0; }
-.scans-open .badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-pill); background: var(--running); color: var(--bg); font-size: var(--fs-3xs); line-height: 16px; text-align: center; }
-.scans-open .badge[hidden] { display: none; }
 .tag-filter-pick { min-height: 26px; max-width: 14rem; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted); font: inherit; font-size: var(--fs-xs); }
 @media (pointer: coarse) { .filter-chip, .tag-filter-pick { min-height: 32px; } }
 /* A draft's Queue and pick box, in its top right corner over the title's end:

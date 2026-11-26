@@ -12,7 +12,7 @@ import { PRIORITY_LEVELS, levelPriority, priorityLevel } from "./dnd.js";
 import { servesProject } from "../groups.js";
 import { agentCan, cantSay } from "./agents.js";
 import { dictation } from "./dictation.js";
-import { tagInput } from "./tags.js";
+import { dismissNote, tagInput } from "./tags.js";
 import { addTag } from "../tagtext.js";
 
 // ------------------------------------------------------------------ the task form
@@ -184,7 +184,9 @@ function discardDraft() {
   draft.discard();
   const t = editing;
   const f = $("#todo-form");
+  const project = f.project.value;
   f.reset();
+  f.project.value = project;
   if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.priority.value = priorityLevel(t.priority); }
   setModelField(f, t?.model || "");
   todoAttach.reset(t?.attachments || []);
@@ -392,12 +394,34 @@ split.sheet.addEventListener("close", attempt(async () => {
   const enqueue = action === "queue";
   const replaced = editing;
   $("#todo-sheet").close("split");
-  if (replaced) await api("DELETE", `/api/todos/${replaced.id}`);
+  if (replaced && !await replaceSplit(replaced, project, parts)) {
+    toast(`${enqueue ? `Queued ${plural(parts.length, "task")}` : `Saved ${plural(parts.length, "draft")}`}; kept “${title(replaced)}”`);
+    return;
+  }
   const n = parts.length;
   const other = projectKey(project) !== projectKey(state.project);
   toast(`${enqueue ? `Queued ${n} task${n > 1 ? "s" : ""}` : `Saved ${n} draft${n > 1 ? "s" : ""}`}${replaced ? ` in place of “${title(replaced)}”` : ""}${other ? ` in ${project.name}` : ""}`);
   if (!other) showNewTasks(enqueue ? "queued" : "draft", parts.map((x) => x.id));
 }));
+// replaceSplit deletes the task the parts were split from. Tasks in its
+// project that depended on it depend on the last part instead; when deleting
+// loses more than that (its scan issues, dependents in another project), it
+// asks first. False: kept.
+async function replaceSplit(t, project, parts) {
+  const last = parts.at(-1).id;
+  const same = projectKey(project) === projectKey(state.project) && t.project_id === project.id;
+  const dependents = [...state.todos.values()].filter((o) => o.depends_on?.includes(t.id));
+  const lost = same ? "" : dependents.length ? ` ${plural(dependents.length, "task")} that depended on it no longer wait for it.` : "";
+  const note = dismissNote(t) + lost;
+  if (note && !await ask({ title: `Delete “${title(t)}”?`, body: `The new tasks replace it.${note}`, ok: "Delete", danger: true })) return false;
+  if (same) {
+    await Promise.all(dependents.map((o) => api("PATCH", `/api/todos/${o.id}`,
+      { depends_on: [...new Set(o.depends_on.map((d) => d === t.id ? last : d))] })));
+  }
+  await api("DELETE", `/api/todos/${t.id}`);
+  return true;
+}
+
 // acceptGoalPlan saves the goal's plan as the sheet has it: its tasks are
 // made as drafts, or queued. If that fails the sheet opens again.
 async function acceptGoalPlan(action) {

@@ -224,6 +224,7 @@ async function endDrag() {
   const target = drag.target, t = drag.t;
   if (!target) return abortDrag();
   cleanupDrag();
+  let optimistic = false; // t is shown in its new lane before the server has it
   try {
     if (target.action.kind === "reorder") {
       await reorder(t, target.lane, target.index, true);
@@ -244,13 +245,18 @@ async function endDrag() {
       // Optimistic: show it in the new lane right away; the server event confirms.
       const lane = LANES.find((l) => l.key === target.lane);
       state.todos.set(t.id, { ...t, status: target.action.status || lane.statuses[0] });
+      optimistic = true;
       renderBoard();
       await api("POST", `/api/todos/${t.id}/${target.action.verb}`);
+      optimistic = false;
       toast(target.action.label);
       if (target.lane === "queued" && Number.isFinite(target.index)) await reorder(state.todos.get(t.id), "queued", target.index);
     }
   } catch (err) {
-    state.todos.set(t.id, t); // undo the optimistic move
+    // Undo the optimistic move: only the status, so events that came in
+    // meanwhile stay. A failed reorder puts its own cards right (reorder).
+    const cur = state.todos.get(t.id);
+    if (optimistic && cur) state.todos.set(t.id, { ...cur, status: t.status });
     renderBoard();
     fail(err);
   }
@@ -295,7 +301,18 @@ async function reorder(t, laneKey, index, inLane = false) {
   if (!changes.length) { renderBoard(); return; }
   for (const [x, p] of changes) state.todos.set(x.id, { ...state.todos.get(x.id), priority: p });
   renderBoard();
-  await Promise.all(changes.map(([x, p]) => api("PATCH", `/api/todos/${x.id}`, { priority: p })));
+  const failed = (await Promise.allSettled(changes.map(([x, p]) => api("PATCH", `/api/todos/${x.id}`, { priority: p }))))
+    .find((r) => r.status === "rejected");
+  if (!failed) return;
+  // Some PATCHes may have landed and others not: show every changed card as
+  // the server has it now, or failing that its old priority.
+  await Promise.all(changes.map(async ([x]) => {
+    const fresh = await api("GET", `/api/todos/${x.id}`).catch(() => null);
+    const cur = state.todos.get(x.id);
+    if (cur) state.todos.set(x.id, fresh?.id === x.id ? fresh : { ...cur, priority: x.priority });
+  }));
+  renderBoard();
+  throw failed.reason;
 }
 
 // Priority as the forms offer it: None, High or Urgent, over the numeric

@@ -54,7 +54,8 @@ model, tags, dependencies, the task it builds on and attachments.
   The card shows a priority and a model as chips beside its tags.
 - **Split…** has Claude propose smaller tasks for a large one, each reviewed and merged on its
   own. Edit, remove or add to them, then save them all, each one waiting for the tasks it builds
-  on.
+  on. Split from a saved task, the new tasks replace it: tasks that waited for it wait for the
+  last new one. Dash asks first when deleting it also dismisses its scan issues.
 
 ## The board
 

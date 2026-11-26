@@ -276,14 +276,7 @@ document.addEventListener("keydown", (e) => {
   if (k === "Tab") return;
   // Keyboard users activating a focused control keep the browser's behaviour
   // (except sections, which also close the open todo and leave the list).
-  // Enter on a focused Review card approves it, like its Approve chip;
-  // on a Draft card it enqueues, like its Queue chip.
-  const card = k === "Enter" && state.todos.get(target.closest?.(".todo-open")?.closest(".todo.s-review, .todo.s-draft")?.dataset.id);
-  if (card && enterKey(card)) {
-    e.preventDefault();
-    attempt(todoKey)(card, enterKey(card));
-    return;
-  }
+  // Enter on a focused card's open button opens the task; it never approves.
   if ((k === "Enter" || k === " ") && target.closest?.("button, a, summary, input, [role=tab]") && sidebarList(target) !== SECTIONS) return;
 
   // Counts: 5j, 10G …
