@@ -4,12 +4,15 @@ import "time"
 
 // GitHubHook is the webhook a hub registered on a GitHub repository so
 // GitHub tells it of workflow runs (internal/ci, hooks.go). There is one
-// per repository, whatever number of projects use it.
+// per organization and repository, whatever number of the org's projects
+// use it: orgs never share a webhook or its secret.
 type GitHubHook struct {
+	OrgID  int64  `json:"org_id,omitempty"`
 	Repo   string `json:"repo"`              // OWNER/REPO, lower case
 	HookID int64  `json:"hook_id,omitempty"` // GitHub's id; 0 while none is registered
 	// Secret signs GitHub's deliveries. It never leaves the hub but to the
-	// runner whose gh registers it: never in JSON.
+	// runner of the org whose gh registers it, new at each registration:
+	// never in JSON.
 	Secret string `json:"-"`
 	URL    string `json:"url,omitempty"` // where GitHub delivers
 	// State is the last registration's outcome (ci.Hook*), Reason why it

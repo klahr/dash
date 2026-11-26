@@ -904,7 +904,7 @@ func (a *app) setupHub() {
 		a.builds.Hooks, apiSrv.GitHubHooks = hooks, hooks
 		a.storeEvents.chain(hooks.Observe)
 		go hooks.Run(ctx)
-		slog.Info("github webhooks on", "url", hooks.URL())
+		slog.Info("github webhooks on", "url", strings.TrimRight(o.publicURL, "/")+ci.HookPath)
 	} else {
 		slog.Info("github webhooks off (no -public-url): builds are polled")
 	}

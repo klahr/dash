@@ -62,15 +62,16 @@ func releaseWait(hook bool, rel Release, now time.Time, every, slow, noBuild tim
 	return slow
 }
 
-// HookRun takes a workflow_run delivery for repo: run runID, of branch (or
-// tag) as the payload says. For each project of repo, it reads the run
+// HookRun takes a workflow_run delivery to org's webhook of repo: run runID,
+// of branch (or tag) as the payload says. For each of org's projects of
+// repo, it reads the run
 // again from GitHub, never trusting the payload's state, and when it is
 // one of a release tag's builds updates that release as a poll would
 // (settleRelease); a run on the default branch refreshes the project's
 // builds soon. Projects and tags it doesn't concern are left alone.
-func (w *Watcher) HookRun(ctx context.Context, repo string, runID int64, branch string) {
+func (w *Watcher) HookRun(ctx context.Context, org int64, repo string, runID int64, branch string) {
 	for _, p := range w.Store.ListProjects() {
-		if hookRepo(p) == repo && w.watched(p) && ctx.Err() == nil {
+		if p.OrgID == org && hookRepo(p) == repo && w.watched(p) && ctx.Err() == nil {
 			w.hookRun(ctx, p, runID, branch)
 		}
 	}
@@ -134,11 +135,11 @@ func (w *Watcher) releaseOf(p model.Project, tag string) (rel Release, ok, found
 	return Release{ProjectID: p.ID, Tag: tag, State: ReleaseBuilding, Runs: []gitops.Run{}, Found: true}, true, true
 }
 
-// HookRelease takes a release delivery (published) for repo: a project
-// following that tag's build checks it soon.
-func (w *Watcher) HookRelease(repo, tag string) {
+// HookRelease takes a release delivery (published) to org's webhook of
+// repo: a project of org following that tag's build checks it soon.
+func (w *Watcher) HookRelease(org int64, repo, tag string) {
 	for _, p := range w.Store.ListProjects() {
-		if hookRepo(p) != repo || !w.watched(p) {
+		if p.OrgID != org || hookRepo(p) != repo || !w.watched(p) {
 			continue
 		}
 		if cur, ok := w.followed(p.ID); ok && cur.Tag == tag && cur.State == ReleaseBuilding {

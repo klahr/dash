@@ -1,6 +1,7 @@
 package ci
 
 import (
+	"cmp"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,8 +22,13 @@ import (
 	"github.com/klahr/dash/internal/store"
 )
 
-// HookPath is where GitHub delivers the webhooks Hooks registers.
+// HookPath is where GitHub delivers the webhooks Hooks registers, with
+// ?org=ID (HookOrgParam) so Deliver knows whose secret signs a delivery.
 const HookPath = "/api/github/hook"
+
+// HookOrgParam is the query parameter of HookPath that names the webhook's
+// org.
+const HookOrgParam = "org"
 
 // HookEvents are the events the webhooks send.
 var HookEvents = []string{"workflow_run", "release"}
@@ -91,8 +98,11 @@ var (
 // projects, so GitHub tells the hub of workflow runs (Deliver) instead of
 // the hub polling for them. Only a hub with a public URL GitHub can reach
 // has one; without it, or while a webhook doesn't work, Dash polls as
-// before. One webhook (and secret) per repository, saved in the store,
-// whatever number of projects use it.
+// before. One webhook (and secret) per org and repository, saved in the
+// store, whatever number of the org's projects use it. An org's webhook is
+// registered only through its own projects' runners, and each registration
+// makes a new secret: a runner is code its org runs and may change, so it
+// never gets another org's secret, nor an older one of its own org.
 type Hooks struct {
 	Store *store.Store
 	API   HookAPI
@@ -113,8 +123,21 @@ func (h *Hooks) now() time.Time {
 	return time.Now()
 }
 
-// URL is where GitHub delivers.
-func (h *Hooks) URL() string { return strings.TrimRight(h.PublicURL, "/") + HookPath }
+// URL is where GitHub delivers org's webhooks.
+func (h *Hooks) URL(org int64) string {
+	return h.legacyURL() + "?" + HookOrgParam + "=" + strconv.FormatInt(org, 10)
+}
+
+// legacyURL is where GitHub delivered before webhooks were per org. No org
+// registers on it anymore: a webhook on it is the repository's earlier one,
+// which the first org to register takes over rather than add a second.
+func (h *Hooks) legacyURL() string { return strings.TrimRight(h.PublicURL, "/") + HookPath }
+
+// hookKey names a webhook: an org's, of a repository.
+type hookKey struct {
+	org  int64
+	repo string
+}
 
 // hookRepo is project p's GitHub repository, OWNER/REPO in lower case, or "".
 func hookRepo(p model.Project) string {
@@ -127,9 +150,9 @@ func (h *Hooks) Status(p model.Project) *HookStatus {
 	if repo == "" {
 		return nil
 	}
-	rec, err := h.Store.GitHubHook(repo)
+	rec, err := h.Store.GitHubHook(p.OrgID, repo)
 	if err != nil {
-		return &HookStatus{State: HookPending, URL: h.URL(),
+		return &HookStatus{State: HookPending, URL: h.URL(p.OrgID),
 			Reason: "Not registered yet: Dash registers it with the gh of a runner linked to the project. Until then it polls GitHub."}
 	}
 	return h.status(rec)
@@ -229,46 +252,55 @@ func (h *Hooks) Observe(ev model.Event) {
 
 // Check registers the webhooks repositories of projects lack, pings those
 // gone quiet, and forgets those of repositories no project uses anymore.
+// Each org's projects of a repository have a webhook of their own.
 func (h *Hooks) Check(ctx context.Context) {
-	byRepo := map[string][]model.Project{}
+	byKey := map[hookKey][]model.Project{}
 	for _, p := range h.Store.ListProjects() {
 		if repo := hookRepo(p); repo != "" {
-			byRepo[repo] = append(byRepo[repo], p)
+			k := hookKey{p.OrgID, repo}
+			byKey[k] = append(byKey[k], p)
 		}
 	}
 	if recs, err := h.Store.GitHubHooks(); err == nil {
 		for _, rec := range recs {
-			if _, used := byRepo[rec.Repo]; !used {
+			if _, used := byKey[hookKey{rec.OrgID, rec.Repo}]; !used {
 				// Its project went another way than Remove: no runner of it
 				// is left to delete it on GitHub.
-				slog.Info("github webhook: no project uses the repository anymore", "repo", rec.Repo, "hook", rec.HookID)
-				_ = h.Store.DeleteGitHubHook(rec.Repo)
+				slog.Info("github webhook: no project uses the repository anymore", "org", rec.OrgID, "repo", rec.Repo, "hook", rec.HookID)
+				_ = h.Store.DeleteGitHubHook(rec.OrgID, rec.Repo)
 			}
 		}
 	}
-	repos := make([]string, 0, len(byRepo))
-	for repo := range byRepo {
-		repos = append(repos, repo)
+	keys := make([]hookKey, 0, len(byKey))
+	for k := range byKey {
+		keys = append(keys, k)
 	}
-	slices.Sort(repos)
-	for _, repo := range repos {
+	slices.SortFunc(keys, func(a, b hookKey) int {
+		if a.org != b.org {
+			return cmp.Compare(a.org, b.org)
+		}
+		return strings.Compare(a.repo, b.repo)
+	})
+	for _, k := range keys {
 		if ctx.Err() != nil {
 			return
 		}
-		h.checkRepo(ctx, repo, byRepo[repo])
+		h.checkRepo(ctx, k, byKey[k])
 	}
 }
 
-// checkRepo makes sure repo, which projects ps use, has a working webhook.
-func (h *Hooks) checkRepo(ctx context.Context, repo string, ps []model.Project) {
+// checkRepo makes sure k's repository has a working webhook for k's org,
+// whose projects ps use it.
+func (h *Hooks) checkRepo(ctx context.Context, k hookKey, ps []model.Project) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	rec, err := h.Store.GitHubHook(repo)
+	repo := k.repo
+	rec, err := h.Store.GitHubHook(k.org, repo)
 	if err != nil {
-		rec = model.GitHubHook{Repo: repo}
+		rec = model.GitHubHook{OrgID: k.org, Repo: repo}
 	}
 	now := h.now()
-	if rec.HookID != 0 && rec.URL == h.URL() {
+	if rec.HookID != 0 && rec.URL == h.URL(k.org) {
 		last := rec.LastDelivery
 		if rec.LastPing.After(last) {
 			last = rec.LastPing
@@ -277,6 +309,9 @@ func (h *Hooks) checkRepo(ctx context.Context, repo string, ps []model.Project) 
 			return
 		}
 		for _, p := range ps {
+			if p.OrgID != rec.OrgID {
+				continue // never through another org's runner
+			}
 			err = h.API.PingHook(ctx, p.ID, p.Path, rec.HookID)
 			if err == nil {
 				rec.LastPing = now
@@ -308,22 +343,24 @@ func newHookSecret() string {
 }
 
 // register registers (or updates) rec's webhook with the gh of the first
-// of ps that can, and saves the outcome.
+// of ps, rec's org's projects, that can, and saves the outcome. Each
+// registration has a new secret: the one before it never goes to a runner.
 func (h *Hooks) register(ctx context.Context, rec model.GitHubHook, ps []model.Project) {
-	if rec.Secret == "" {
-		rec.Secret = newHookSecret()
-	}
+	rec.Secret = newHookSecret()
 	prevID := rec.HookID
-	rec.URL, rec.Checked = h.URL(), h.now()
+	rec.URL, rec.Checked = h.URL(rec.OrgID), h.now()
 	cfg := gitops.HookConfig{URL: rec.URL, Secret: rec.Secret, Events: HookEvents}
 	var err error
 	for _, p := range ps {
+		if p.OrgID != rec.OrgID {
+			continue // never through another org's runner
+		}
 		var id int64
 		if id, err = h.registerWith(ctx, p, prevID, cfg); err == nil {
 			rec.HookID, rec.State, rec.Reason, rec.Registered, rec.LastPing = id, HookPending, "", h.now(), time.Time{}
 			h.put(rec)
 			slog.Info("github webhook registered", "repo", rec.Repo, "hook", id, "url", rec.URL)
-			h.notify(rec.Repo)
+			h.notify(rec.OrgID, rec.Repo)
 			return
 		}
 	}
@@ -342,19 +379,20 @@ func (h *Hooks) register(ctx context.Context, rec model.GitHubHook, ps []model.P
 	}
 	h.put(rec)
 	slog.Info("github webhook not registered: polling", "repo", rec.Repo, "state", rec.State, "err", err)
-	h.notify(rec.Repo)
+	h.notify(rec.OrgID, rec.Repo)
 }
 
 // registerWith registers cfg with project p's gh: it updates the
-// repository's webhook that already delivers to cfg.URL (or is prevID)
-// instead of adding a second one.
+// repository's webhook that already delivers to cfg.URL (or is prevID, or
+// delivers to the URL of before webhooks were per org) instead of adding a
+// second one.
 func (h *Hooks) registerWith(ctx context.Context, p model.Project, prevID int64, cfg gitops.HookConfig) (int64, error) {
 	hooks, err := h.API.Hooks(ctx, p.ID, p.Path)
 	if err != nil {
 		return 0, err
 	}
 	for _, x := range hooks {
-		if x.URL == cfg.URL || (prevID != 0 && x.ID == prevID) {
+		if x.URL == cfg.URL || x.URL == h.legacyURL() || (prevID != 0 && x.ID == prevID) {
 			if err := h.API.UpdateHook(ctx, p.ID, p.Path, x.ID, cfg); err != nil {
 				return 0, err
 			}
@@ -374,34 +412,34 @@ func (h *Hooks) put(rec model.GitHubHook) {
 	}
 }
 
-// notify shows the projects of repo their webhook's new state.
-func (h *Hooks) notify(repo string) {
+// notify shows org's projects of repo their webhook's new state.
+func (h *Hooks) notify(org int64, repo string) {
 	if h.Watcher == nil {
 		return
 	}
 	for _, p := range h.Store.ListProjects() {
-		if hookRepo(p) == repo {
+		if p.OrgID == org && hookRepo(p) == repo {
 			h.Watcher.publish(p.ID)
 		}
 	}
 }
 
 // Remove deletes project p's webhook from GitHub and forgets it, unless
-// another project uses the same repository. Call it before p is deleted:
-// it needs p's runner.
+// another project of p's org uses the same repository. Call it before p is
+// deleted: it needs p's runner.
 func (h *Hooks) Remove(ctx context.Context, p model.Project) {
 	repo := hookRepo(p)
 	if repo == "" {
 		return
 	}
 	for _, o := range h.Store.ListProjects() {
-		if o.ID != p.ID && hookRepo(o) == repo {
+		if o.ID != p.ID && o.OrgID == p.OrgID && hookRepo(o) == repo {
 			return // still theirs
 		}
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	rec, err := h.Store.GitHubHook(repo)
+	rec, err := h.Store.GitHubHook(p.OrgID, repo)
 	if err != nil {
 		return
 	}
@@ -413,11 +451,11 @@ func (h *Hooks) Remove(ctx context.Context, p model.Project) {
 			slog.Info("github webhook deleted", "repo", repo, "hook", rec.HookID)
 		}
 	}
-	_ = h.Store.DeleteGitHubHook(repo)
+	_ = h.Store.DeleteGitHubHook(p.OrgID, repo)
 }
 
-// ErrHookRefused is a delivery Dash doesn't take: of a repository it has no
-// webhook for, or not signed with its secret.
+// ErrHookRefused is a delivery Dash doesn't take: of a repository the org
+// has no webhook for, or not signed with its secret.
 var ErrHookRefused = errors.New("delivery refused")
 
 // ValidSignature reports whether sig, an X-Hub-Signature-256 header
@@ -452,29 +490,31 @@ type delivery struct {
 	} `json:"release"`
 }
 
-// Deliver takes a delivery of event (X-GitHub-Event) signed sig
-// (X-Hub-Signature-256): ErrHookRefused unless the repository's secret
-// signed it. A ping only shows the webhook works; a workflow_run has the
-// run read again from GitHub and the projects' builds updated
-// (Watcher.HookRun) after Deliver returns; a published release has its
-// build checked. Other events are taken and ignored.
-func (h *Hooks) Deliver(event, sig string, body []byte) error {
+// Deliver takes a delivery to org's webhook (HookOrgParam) of event
+// (X-GitHub-Event) signed sig (X-Hub-Signature-256): ErrHookRefused unless
+// the secret of org's webhook of the repository signed it. A ping only
+// shows the webhook works; a workflow_run has the run read again from
+// GitHub and org's projects' builds updated (Watcher.HookRun) after Deliver
+// returns; a published release has its build checked. Other events are
+// taken and ignored. Other orgs' projects of the repository are left alone:
+// their own webhooks tell them.
+func (h *Hooks) Deliver(org int64, event, sig string, body []byte) error {
 	var d delivery
 	if err := json.Unmarshal(body, &d); err != nil || d.Repository.FullName == "" {
 		return ErrHookRefused
 	}
 	repo := strings.ToLower(d.Repository.FullName)
-	rec, err := h.Store.GitHubHook(repo)
+	rec, err := h.Store.GitHubHook(org, repo)
 	if err != nil || !ValidSignature(rec.Secret, sig, body) {
 		return ErrHookRefused
 	}
 	was := h.status(rec).State
 	rec.LastDelivery = h.now()
-	if err := h.Store.GitHubHookDelivered(repo, rec.LastDelivery); err != nil {
+	if err := h.Store.GitHubHookDelivered(org, repo, rec.LastDelivery); err != nil {
 		slog.Debug("github webhook: note delivery", "repo", repo, "err", err)
 	}
 	if h.status(rec).State != was {
-		h.notify(repo)
+		h.notify(org, repo)
 	}
 	if h.Watcher == nil {
 		return nil
@@ -482,11 +522,11 @@ func (h *Hooks) Deliver(event, sig string, body []byte) error {
 	switch event {
 	case "workflow_run":
 		if id, branch := d.WorkflowRun.ID, d.WorkflowRun.HeadBranch; id != 0 {
-			h.later(func(ctx context.Context) { h.Watcher.HookRun(ctx, repo, id, branch) })
+			h.later(func(ctx context.Context) { h.Watcher.HookRun(ctx, org, repo, id, branch) })
 		}
 	case "release":
 		if tag := d.Release.TagName; d.Action == "published" && tag != "" {
-			h.later(func(context.Context) { h.Watcher.HookRelease(repo, tag) })
+			h.later(func(context.Context) { h.Watcher.HookRelease(org, repo, tag) })
 		}
 	}
 	return nil

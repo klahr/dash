@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -30,6 +31,8 @@ type fakeGH struct {
 	pings   int
 	deleted []int64
 	hookErr error // every hook call fails with it
+	// sent are the secrets each project's runner was given (Create, Update).
+	sent map[string][]string
 }
 
 func newFakeGH() *fakeGH {
@@ -68,23 +71,32 @@ func (f *fakeGH) Hooks(context.Context, string, string) ([]gitops.Hook, error) {
 	defer f.mu.Unlock()
 	return append([]gitops.Hook(nil), f.hooks...), f.hookErr
 }
-func (f *fakeGH) CreateHook(_ context.Context, _, _ string, c gitops.HookConfig) (int64, error) {
+func (f *fakeGH) note(projectID, secret string) {
+	if f.sent == nil {
+		f.sent = map[string][]string{}
+	}
+	f.sent[projectID] = append(f.sent[projectID], secret)
+}
+
+func (f *fakeGH) CreateHook(_ context.Context, projectID, _ string, c gitops.HookConfig) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.hookErr != nil {
 		return 0, f.hookErr
 	}
+	f.note(projectID, c.Secret)
 	f.nextID++
 	f.hooks = append(f.hooks, gitops.Hook{ID: f.nextID, URL: c.URL, Events: c.Events, Active: true})
 	f.secrets[f.nextID] = c.Secret
 	return f.nextID, nil
 }
-func (f *fakeGH) UpdateHook(_ context.Context, _, _ string, id int64, c gitops.HookConfig) error {
+func (f *fakeGH) UpdateHook(_ context.Context, projectID, _ string, id int64, c gitops.HookConfig) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.hookErr != nil {
 		return f.hookErr
 	}
+	f.note(projectID, c.Secret)
 	f.secrets[id] = c.Secret
 	return nil
 }
@@ -146,7 +158,7 @@ func runPayload(repo string, id int64, branch string) []byte {
 
 func secretOf(t *testing.T, h *Hooks, repo string) string {
 	t.Helper()
-	rec, err := h.Store.GitHubHook(repo)
+	rec, err := h.Store.GitHubHook(0, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,32 +192,32 @@ func TestDeliverChecksSignature(t *testing.T) {
 	secret := secretOf(t, h, "o/r")
 	ping := []byte(`{"zen":"hi","hook_id":101,"repository":{"full_name":"O/r"}}`)
 
-	if err := h.Deliver("ping", "", ping); !errors.Is(err, ErrHookRefused) {
+	if err := h.Deliver(0, "ping", "", ping); !errors.Is(err, ErrHookRefused) {
 		t.Fatalf("missing signature: %v", err)
 	}
-	if err := h.Deliver("ping", sign("wrong", ping), ping); !errors.Is(err, ErrHookRefused) {
+	if err := h.Deliver(0, "ping", sign("wrong", ping), ping); !errors.Is(err, ErrHookRefused) {
 		t.Fatalf("wrong secret: %v", err)
 	}
-	if err := h.Deliver("ping", sign(secret, ping)[:20], ping); !errors.Is(err, ErrHookRefused) {
+	if err := h.Deliver(0, "ping", sign(secret, ping)[:20], ping); !errors.Is(err, ErrHookRefused) {
 		t.Fatalf("invalid signature: %v", err)
 	}
-	if rec, _ := h.Store.GitHubHook("o/r"); !rec.LastDelivery.IsZero() {
+	if rec, _ := h.Store.GitHubHook(0, "o/r"); !rec.LastDelivery.IsZero() {
 		t.Fatal("a refused delivery counted")
 	}
-	if err := h.Deliver("ping", sign(secret, ping), ping); err != nil {
+	if err := h.Deliver(0, "ping", sign(secret, ping), ping); err != nil {
 		t.Fatalf("valid: %v", err)
 	}
-	if rec, _ := h.Store.GitHubHook("o/r"); rec.LastDelivery.IsZero() {
+	if rec, _ := h.Store.GitHubHook(0, "o/r"); rec.LastDelivery.IsZero() {
 		t.Fatal("the ping didn't count")
 	}
 	// Unknown repository: nothing to verify it with.
 	other := []byte(`{"repository":{"full_name":"x/y"}}`)
-	if err := h.Deliver("ping", sign(secret, other), other); !errors.Is(err, ErrHookRefused) {
+	if err := h.Deliver(0, "ping", sign(secret, other), other); !errors.Is(err, ErrHookRefused) {
 		t.Fatalf("unknown repo: %v", err)
 	}
 	// Events Dash doesn't use are taken.
 	push := []byte(`{"ref":"refs/heads/main","repository":{"full_name":"o/r"}}`)
-	if err := h.Deliver("push", sign(secret, push), push); err != nil {
+	if err := h.Deliver(0, "push", sign(secret, push), push); err != nil {
 		t.Fatalf("other event: %v", err)
 	}
 }
@@ -217,7 +229,7 @@ func TestSecretStaysOutOfJSON(t *testing.T) {
 	if len(secret) < 32 {
 		t.Fatalf("weak secret %q", secret)
 	}
-	rec, _ := h.Store.GitHubHook("o/r")
+	rec, _ := h.Store.GitHubHook(0, "o/r")
 	for _, v := range []any{rec, w.Status(p.ID), h.Status(p)} {
 		b, _ := json.Marshal(v)
 		if strings.Contains(string(b), secret) {
@@ -237,7 +249,7 @@ func TestHookRunMovesRelease(t *testing.T) {
 			deliver := func(id int64, branch string) {
 				t.Helper()
 				body := runPayload("o/r", id, branch)
-				if err := h.Deliver("workflow_run", sign(secret, body), body); err != nil {
+				if err := h.Deliver(0, "workflow_run", sign(secret, body), body); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -274,7 +286,7 @@ func TestHookRunDoesNotTrustPayload(t *testing.T) {
 	// The payload names the tag, but the run is a fork's pull request.
 	gh.runs[40] = gitops.Run{ID: 40, Workflow: "Release", Status: "completed", Conclusion: "failure", SHA: "ccc", Branch: "v1.0.0", Event: "pull_request"}
 	body := runPayload("o/r", 40, "v1.0.0")
-	if err := h.Deliver("workflow_run", sign(secret, body), body); err != nil {
+	if err := h.Deliver(0, "workflow_run", sign(secret, body), body); err != nil {
 		t.Fatal(err)
 	}
 	if rel := w.Status(p.ID).Release; rel.State != ReleaseBuilding || len(rel.Runs) != 0 {
@@ -291,7 +303,7 @@ func TestHookRunIgnoresOthers(t *testing.T) {
 	// A tag not in the project's format, and a feature branch: not read.
 	for i, branch := range []string{"nightly", "feature/x"} {
 		body := runPayload("o/r", int64(50+i), branch)
-		if err := h.Deliver("workflow_run", sign(secret, body), body); err != nil {
+		if err := h.Deliver(0, "workflow_run", sign(secret, body), body); err != nil {
 			t.Fatalf("%s: %v", branch, err)
 		}
 	}
@@ -299,13 +311,13 @@ func TestHookRunIgnoresOthers(t *testing.T) {
 		t.Fatalf("read runs %v", gh.fetched)
 	}
 	// Another repository's run, straight to the watcher: no project, no error.
-	w.HookRun(context.Background(), "x/y", 60, "v1.0.0")
+	w.HookRun(context.Background(), 0, "x/y", 60, "v1.0.0")
 	if len(gh.fetched) != 0 {
 		t.Fatalf("read runs %v", gh.fetched)
 	}
 	// A run GitHub says is of another tag than the payload: left alone.
 	gh.runs[61] = gitops.Run{ID: 61, Workflow: "Release", Status: "completed", Conclusion: "success", SHA: "ccc", Branch: "v2.0.0", Event: "push"}
-	w.HookRun(context.Background(), "o/r", 61, "v1.0.0")
+	w.HookRun(context.Background(), 0, "o/r", 61, "v1.0.0")
 	if rel := w.Status(p.ID).Release; rel.State != ReleaseBuilding || len(rel.Runs) != 0 {
 		t.Fatalf("another tag's run counted: %+v", rel)
 	}
@@ -316,7 +328,7 @@ func TestHookRunFindsNewRelease(t *testing.T) {
 	w, h, gh, p, _ := newHookWatcher(t)
 	h.Check(context.Background())
 	gh.runs[70] = gitops.Run{ID: 70, Workflow: "Release", Status: "queued", SHA: "ddd", Branch: "v2.0.0", Event: "push", CreatedAt: time.Now()}
-	w.HookRun(context.Background(), "o/r", 70, "v2.0.0")
+	w.HookRun(context.Background(), 0, "o/r", 70, "v2.0.0")
 	rel := w.Status(p.ID).Release
 	if rel == nil || rel.Tag != "v2.0.0" || rel.SHA != "ddd" || rel.State != ReleaseBuilding || !rel.Found {
 		t.Fatalf("found: %+v", rel)
@@ -330,10 +342,10 @@ func TestHookRegistration(t *testing.T) {
 		t.Fatalf("before: %+v", st)
 	}
 	h.Check(ctx)
-	if len(gh.hooks) != 1 || gh.hooks[0].URL != "https://dash.example.com/api/github/hook" {
+	if len(gh.hooks) != 1 || gh.hooks[0].URL != "https://dash.example.com/api/github/hook?org=0" {
 		t.Fatalf("hooks: %+v", gh.hooks)
 	}
-	rec, _ := h.Store.GitHubHook("o/r")
+	rec, _ := h.Store.GitHubHook(0, "o/r")
 	if rec.HookID != gh.hooks[0].ID || gh.secrets[rec.HookID] != rec.Secret || rec.State != HookPending {
 		t.Fatalf("saved: %+v", rec)
 	}
@@ -342,7 +354,7 @@ func TestHookRegistration(t *testing.T) {
 	}
 	// A ping arrives: it works.
 	ping := []byte(`{"repository":{"full_name":"o/r"}}`)
-	if err := h.Deliver("ping", sign(rec.Secret, ping), ping); err != nil {
+	if err := h.Deliver(0, "ping", sign(rec.Secret, ping), ping); err != nil {
 		t.Fatal(err)
 	}
 	if !h.Active(p) {
@@ -366,9 +378,9 @@ func TestHookRegistration(t *testing.T) {
 
 	// Lost its saved state (a restored backup): the webhook with the
 	// same URL is updated, not doubled, with a new secret.
-	_ = h.Store.DeleteGitHubHook("o/r")
+	_ = h.Store.DeleteGitHubHook(0, "o/r")
 	h.Check(ctx)
-	rec2, _ := h.Store.GitHubHook("o/r")
+	rec2, _ := h.Store.GitHubHook(0, "o/r")
 	if len(gh.hooks) != 1 || rec2.HookID != rec.HookID || gh.secrets[rec2.HookID] != rec2.Secret {
 		t.Fatalf("reused: %+v %+v", gh.hooks, rec2)
 	}
@@ -378,7 +390,7 @@ func TestHookRegistration(t *testing.T) {
 	if len(gh.deleted) != 1 || gh.deleted[0] != rec.HookID || len(gh.hooks) != 0 {
 		t.Fatalf("deleted %v, left %+v", gh.deleted, gh.hooks)
 	}
-	if _, err := h.Store.GitHubHook("o/r"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := h.Store.GitHubHook(0, "o/r"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("still saved: %v", err)
 	}
 }
@@ -485,7 +497,7 @@ func TestPollPaceFollowsHook(t *testing.T) {
 	}
 	h.Check(context.Background())
 	ping := []byte(`{"repository":{"full_name":"o/r"}}`)
-	if err := h.Deliver("ping", sign(secretOf(t, h, "o/r"), ping), ping); err != nil {
+	if err := h.Deliver(0, "ping", sign(secretOf(t, h, "o/r"), ping), ping); err != nil {
 		t.Fatal(err)
 	}
 	if w.active(p) {
@@ -517,7 +529,7 @@ func TestReleaseEndedCallback(t *testing.T) {
 	deliver := func() {
 		t.Helper()
 		body := runPayload("o/r", 31, "v1.0.0")
-		if err := h.Deliver("workflow_run", sign(secret, body), body); err != nil {
+		if err := h.Deliver(0, "workflow_run", sign(secret, body), body); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -537,5 +549,85 @@ func TestReleaseEndedCallback(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("not told the build ended")
+	}
+}
+
+// Two orgs with projects of the same repository each have their own webhook
+// and secret: one org's runner never gets the other's secret, a delivery
+// signed with one org's secret counts for its own projects only, and
+// removing one org's project leaves the other's webhook be.
+func TestHookPerOrg(t *testing.T) {
+	ctx := context.Background()
+	w, h, gh, p, _ := newHookWatcher(t)
+	// Another org's project of the same repository, older or not: its runner
+	// may be anything its org runs.
+	q, err := h.Store.CreateProject(model.Project{Name: "q", DefaultBranch: "main", RemoteURL: "https://github.com/o/r.git", OrgID: p.OrgID + 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.Check(ctx)
+	mine, err := h.Store.GitHubHook(p.OrgID, "o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := h.Store.GitHubHook(q.OrgID, "o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mine.Secret == theirs.Secret || mine.URL == theirs.URL || len(gh.hooks) != 2 {
+		t.Fatalf("shared: %+v %+v %+v", mine, theirs, gh.hooks)
+	}
+	if !strings.HasSuffix(theirs.URL, "?org="+strconv.FormatInt(q.OrgID, 10)) {
+		t.Fatalf("url %q", theirs.URL)
+	}
+	for _, sec := range gh.sent[q.ID] {
+		if sec == mine.Secret {
+			t.Fatal("the other org's runner got this org's secret")
+		}
+	}
+	// Re-registering makes a new secret, never resends the old one.
+	_ = h.Store.PutGitHubHook(model.GitHubHook{OrgID: q.OrgID, Repo: "o/r", Secret: theirs.Secret})
+	h.Check(ctx)
+	again, _ := h.Store.GitHubHook(q.OrgID, "o/r")
+	if again.Secret == theirs.Secret {
+		t.Fatal("secret reused")
+	}
+
+	// Their secret signs nothing of this org's.
+	releaseEvery = time.Hour
+	w.WatchRelease(p.ID, "v1.0.0", "ccc")
+	body := runPayload("o/r", 90, "v1.0.0")
+	if err := h.Deliver(p.OrgID, "workflow_run", sign(again.Secret, body), body); !errors.Is(err, ErrHookRefused) {
+		t.Fatalf("other org's secret: %v", err)
+	}
+	if err := h.Deliver(q.OrgID, "workflow_run", sign(again.Secret, body), body); err != nil {
+		t.Fatal(err)
+	}
+	if h.Active(p) {
+		t.Fatal("their delivery made this org's webhook active")
+	}
+	if len(gh.fetched) != 0 {
+		t.Fatalf("read runs for this org's project %v", gh.fetched)
+	}
+
+	// Removing their project deletes their webhook only.
+	h.Remove(ctx, q)
+	if _, err := h.Store.GitHubHook(q.OrgID, "o/r"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("theirs kept: %v", err)
+	}
+	if rec, err := h.Store.GitHubHook(p.OrgID, "o/r"); err != nil || rec.HookID != mine.HookID {
+		t.Fatalf("mine: %+v %v", rec, err)
+	}
+}
+
+// A webhook of before they were per org (no ?org=) is taken over, not
+// doubled.
+func TestHookTakesOverLegacy(t *testing.T) {
+	_, h, gh, p, _ := newHookWatcher(t)
+	gh.hooks = []gitops.Hook{{ID: 5, URL: "https://dash.example.com/api/github/hook", Active: true}}
+	h.Check(context.Background())
+	rec, err := h.Store.GitHubHook(p.OrgID, "o/r")
+	if err != nil || rec.HookID != 5 || len(gh.hooks) != 1 || gh.secrets[5] != rec.Secret {
+		t.Fatalf("took over: %+v %v %+v", rec, err, gh.hooks)
 	}
 }

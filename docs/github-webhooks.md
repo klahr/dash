@@ -8,17 +8,22 @@ builds then show up as published or failed within seconds.
 
 - When you add a project with a GitHub repository, and when the hub starts, Dash registers a
   webhook on the repository. It sends `workflow_run` and `release` events to
-  `https://dash.example.com/api/github/hook`.
-- Each repository gets its own secret. GitHub signs every delivery with it, and Dash refuses
-  deliveries it can't verify. The secret stays on the hub and shows up in no page, API answer or log.
+  `https://dash.example.com/api/github/hook?org=ID`, where `ID` is the project's organization.
+- Each organization gets its own webhook and secret for a repository. When two organizations have
+  projects of the same repository, each one registers its own webhook with its own runners. GitHub
+  signs every delivery with the secret, and Dash refuses deliveries it can't verify. Dash makes a
+  new secret each time it registers the webhook. The secret stays on the hub and the runner that
+  registers it, and shows up in no page, API answer or log.
 - Dash never trusts what a delivery says about a run. It reads the run again from GitHub, then
   updates the release build the same way a poll would.
 - A run on the default branch makes Dash check the project's builds a few seconds later.
 - When a webhook with the same URL is already on the repository, Dash updates it. It doesn't add a second one.
-- When you remove the last project that uses the repository, Dash deletes the webhook.
+  A webhook from an older Dash, on `https://dash.example.com/api/github/hook` without `?org=`, is updated too.
+- When you remove an organization's last project that uses the repository, Dash deletes that
+  organization's webhook.
 
 The hub has no `gh` of its own. It registers the webhook with the `gh` of a runner linked to the
-project, so a runner must be online.
+project, so a runner must be online. It never uses another organization's runner.
 
 ## What it needs
 

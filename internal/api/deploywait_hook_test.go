@@ -162,7 +162,7 @@ func TestBuildWaitPollFollowsHook(t *testing.T) {
 		t.Fatalf("no hook: %v", got)
 	}
 	now := time.Now()
-	if err := raw(s).PutGitHubHook(model.GitHubHook{Repo: "o/r", HookID: 1, URL: s.CI.Hooks.URL(), State: ci.HookActive,
+	if err := raw(s).PutGitHubHook(model.GitHubHook{OrgID: p.OrgID, Repo: "o/r", HookID: 1, URL: s.CI.Hooks.URL(p.OrgID), State: ci.HookActive,
 		Registered: now.Add(-time.Minute), LastDelivery: now}); err != nil {
 		t.Fatal(err)
 	}

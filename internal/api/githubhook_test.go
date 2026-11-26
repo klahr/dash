@@ -20,9 +20,14 @@ import (
 func TestGitHubHookEndpoint(t *testing.T) {
 	s, _, _ := boardServer(t)
 	h := s.Routes()
+	var postTo func(path, body, sig string) *httptest.ResponseRecorder
 	post := func(body, sig string) *httptest.ResponseRecorder {
 		t.Helper()
-		r := httptest.NewRequest("POST", ci.HookPath, strings.NewReader(body))
+		return postTo(ci.HookPath+"?org=0", body, sig)
+	}
+	postTo = func(path, body, sig string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest("POST", path, strings.NewReader(body))
 		r.Header.Set("X-GitHub-Event", "ping")
 		r.Header.Set("Content-Type", "application/json")
 		if sig != "" {
@@ -58,8 +63,14 @@ func TestGitHubHookEndpoint(t *testing.T) {
 	if w := post(ping, good); w.Code != http.StatusOK {
 		t.Fatalf("signed: %d %s", w.Code, w.Body)
 	}
-	if rec, _ := st.GitHubHook("o/r"); rec.LastDelivery.IsZero() {
+	if rec, _ := st.GitHubHook(0, "o/r"); rec.LastDelivery.IsZero() {
 		t.Fatal("delivery not noted")
+	}
+	// Signed with the secret, but to no org's webhook, or another org's.
+	for _, path := range []string{ci.HookPath, ci.HookPath + "?org=2", ci.HookPath + "?org=x"} {
+		if w := postTo(path, ping, good); w.Code != http.StatusUnauthorized {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body)
+		}
 	}
 	big := `{"repository":{"full_name":"o/r"},"pad":"` + strings.Repeat("x", maxHookBody) + `"}`
 	if w := post(big, good); w.Code != http.StatusRequestEntityTooLarge {
