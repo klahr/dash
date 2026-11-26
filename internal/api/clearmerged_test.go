@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 )
 
 // A project with a ClearMergedZone loses its merged tasks once a new day
-// starts there; its other tasks, today's merged ones and other projects'
-// merged tasks stay.
+// starts there; its other tasks, today's merged ones, other projects'
+// merged tasks and those of a hub's project on this runner stay.
 func TestClearMergedOnNewDay(t *testing.T) {
 	s, _, p := boardServer(t)
 	other, err := raw(s).CreateProject(model.Project{Name: "keeps"})
@@ -22,6 +23,14 @@ func TestClearMergedOnNewDay(t *testing.T) {
 	}
 	if p, err = raw(s).UpdateProject(p.ID, func(x *model.Project) error { x.ClearMergedZone = "Europe/Stockholm"; return nil }); err != nil {
 		t.Fatal(err)
+	}
+	// The hub's project, with a zone set: its tasks are the hub's to delete.
+	hub, err := raw(s).CreateProject(model.Project{Name: "hub's", HubProjectID: "hp1", ClearMergedZone: "Europe/Stockholm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hub.HubProjectID == "" || hub.ClearMergedZone == "" {
+		t.Fatalf("the hub's project lost its settings: %+v", hub)
 	}
 	merged := func(p model.Project) model.Todo {
 		td := reviewTask(t, s, p, nil)
@@ -34,7 +43,7 @@ func TestClearMergedOnNewDay(t *testing.T) {
 		}
 		return td
 	}
-	done, inReview, elsewhere := merged(p), reviewTask(t, s, p, nil), merged(other)
+	done, inReview, elsewhere, hubs := merged(p), reviewTask(t, s, p, nil), merged(other), merged(hub)
 
 	ctx := context.Background()
 	if n := s.clearMerged(ctx, time.Now()); n != 0 {
@@ -46,7 +55,7 @@ func TestClearMergedOnNewDay(t *testing.T) {
 	if _, err := raw(s).GetTodo(done.ID); err == nil {
 		t.Fatal("want the merged task deleted")
 	}
-	for _, id := range []string{inReview.ID, elsewhere.ID} {
+	for _, id := range []string{inReview.ID, elsewhere.ID, hubs.ID} {
 		if _, err := raw(s).GetTodo(id); err != nil {
 			t.Fatalf("want task %s kept: %v", id, err)
 		}
@@ -68,9 +77,34 @@ func TestStartOfDay(t *testing.T) {
 // The setting takes an IANA time zone or "", and refuses others.
 func TestClearMergedZoneSetting(t *testing.T) {
 	s, _, p := boardServer(t)
+	s.Git = gitops.New(nil)
 	w := httptest.NewRecorder()
 	s.mux().ServeHTTP(w, asOwner(t, s, httptest.NewRequest("PATCH", "/api/projects/"+p.ID, strings.NewReader(`{"clear_merged_zone":"Mars/Olympus"}`))))
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "time zone") {
 		t.Fatalf("unknown zone: %d %s", w.Code, w.Body)
+	}
+	patch := func(body string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		s.mux().ServeHTTP(w, asOwner(t, s, httptest.NewRequest("PATCH", "/api/projects/"+p.ID, strings.NewReader(body))))
+		return w
+	}
+	// "Local" loads, but is the server's zone, not one the user chose.
+	for _, z := range []string{"Local", "local"} {
+		if w := patch(`{"clear_merged_zone":"` + z + `"}`); w.Code != http.StatusBadRequest {
+			t.Fatalf("%s: %d %s", z, w.Code, w.Body)
+		}
+	}
+	if w := patch(`{"clear_merged_zone":" Europe/Stockholm "}`); w.Code != http.StatusOK {
+		t.Fatalf("set: %d %s", w.Code, w.Body)
+	}
+	if x, err := raw(s).GetProject(p.ID); err != nil || x.ClearMergedZone != "Europe/Stockholm" {
+		t.Fatalf("set: zone %q, %v", x.ClearMergedZone, err)
+	}
+	// "" turns it off.
+	if w := patch(`{"clear_merged_zone":""}`); w.Code != http.StatusOK {
+		t.Fatalf("off: %d %s", w.Code, w.Body)
+	}
+	if x, err := raw(s).GetProject(p.ID); err != nil || x.ClearMergedZone != "" {
+		t.Fatalf("off: zone %q, %v", x.ClearMergedZone, err)
 	}
 }
