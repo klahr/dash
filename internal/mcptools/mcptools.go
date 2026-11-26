@@ -170,8 +170,109 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
+	if req.Method == "tools/call" && acceptsStream(r) {
+		s.serveStream(w, r, req)
+		return
+	}
 	result, rerr := s.Handle(req)
 	_ = json.NewEncoder(w).Encode(response(req.ID, result, rerr))
+}
+
+// streamAfter is how long a tool call answers as plain JSON; one that
+// takes longer (run_tests) answers as an event stream instead, with a
+// progress notification every streamEvery. A client gives up on a request
+// that sends nothing for a while (Claude Code's HTTP client after 300s,
+// whatever its MCP_TOOL_TIMEOUT), and progress also restarts a client's
+// tool timeout where it allows that.
+var streamAfter, streamEvery = 5 * time.Second, 30 * time.Second
+
+// acceptsStream reports whether the client of r takes an event stream as
+// the answer, as the streamable HTTP transport requires of it.
+func acceptsStream(r *http.Request) bool {
+	for _, v := range r.Header.Values("Accept") {
+		if strings.Contains(v, "text/event-stream") {
+			return true
+		}
+	}
+	return false
+}
+
+// serveStream answers tool call req: as JSON when it ends within
+// streamAfter, else as an event stream of progress notifications ending
+// with its result.
+func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, req Request) {
+	type answer struct {
+		result any
+		rerr   *Error
+	}
+	done := make(chan answer, 1)
+	go func() {
+		result, rerr := s.Handle(req)
+		done <- answer{result, rerr}
+	}()
+	start := time.Now()
+	wait := time.NewTimer(streamAfter)
+	defer wait.Stop()
+	select {
+	case a := <-done:
+		_ = json.NewEncoder(w).Encode(response(req.ID, a.result, a.rerr))
+		return
+	case <-r.Context().Done():
+		return
+	case <-wait.C:
+	}
+	var p struct {
+		Meta struct {
+			ProgressToken json.RawMessage `json:"progressToken"`
+		} `json:"_meta"`
+	}
+	_ = json.Unmarshal(req.Params, &p)
+	token := p.Meta.ProgressToken
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	event := func(v any) error {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", b); err != nil {
+			return err
+		}
+		return rc.Flush()
+	}
+	beat := func() error {
+		if len(token) == 0 || string(token) == "null" {
+			// No token to report progress on: a comment keeps the stream alive.
+			if _, err := io.WriteString(w, ": still running\n\n"); err != nil {
+				return err
+			}
+			return rc.Flush()
+		}
+		took := time.Since(start).Round(time.Second)
+		return event(map[string]any{"jsonrpc": "2.0", "method": "notifications/progress", "params": map[string]any{
+			"progressToken": token, "progress": took.Seconds(), "message": "still running (" + took.String() + ")",
+		}})
+	}
+	if beat() != nil {
+		return
+	}
+	tick := time.NewTicker(streamEvery)
+	defer tick.Stop()
+	for {
+		select {
+		case a := <-done:
+			_ = event(response(req.ID, a.result, a.rerr))
+			return
+		case <-r.Context().Done():
+			return
+		case <-tick.C:
+			if beat() != nil {
+				return
+			}
+		}
+	}
 }
 
 // ---- tools ----

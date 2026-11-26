@@ -53,12 +53,13 @@ var ErrMergeQueueFull = errors.New("merge queue is full")
 // requests and runs its cleanups, since those move the default branch or
 // remove worktrees too.
 type MergeQueue struct {
-	Store       *store.Store
-	Git         *gitops.Git
-	Pub         Publisher
-	Log         *TodoLog
-	Perms       *perm.Broker
-	Kick        func() // wake the todo engine after sending a todo back or merging one
+	Store *store.Store
+	Git   *gitops.Git
+	Pub   Publisher
+	Log   *TodoLog
+	Perms *perm.Broker
+	Kick  func() // wake the todo engine after sending a todo back or merging one
+	// TestTimeout: as TodoEngine.TestTimeout.
 	TestTimeout time.Duration
 	// Shared: as TodoEngine.Shared, for the checks of other members' work.
 	Shared *SharedWork
@@ -124,7 +125,7 @@ type lane struct {
 }
 
 func NewMergeQueue(s *store.Store, g *gitops.Git, pub Publisher, log *TodoLog, capacity int) *MergeQueue {
-	return &MergeQueue{Store: s, Git: g, Pub: pub, Log: log, TestTimeout: 20 * time.Minute, PRPoll: time.Minute,
+	return &MergeQueue{Store: s, Git: g, Pub: pub, Log: log, PRPoll: time.Minute,
 		Remote: &RemoteSync{Store: s, Git: g, Pub: pub}, capacity: capacity}
 }
 

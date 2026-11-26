@@ -56,7 +56,7 @@ type UpdateProjectInput struct {
 // settingValues are p's settings by their ProjectSettings names.
 func settingValues(p model.Project) map[string]any {
 	return map[string]any{
-		"name": p.Name, "run_command": p.RunCommand, "test_command": p.TestCommand, "environments": p.Environments,
+		"name": p.Name, "run_command": p.RunCommand, "test_command": p.TestCommand, "test_timeout_minutes": p.TestTimeoutMinutes, "environments": p.Environments,
 		"preview_kind": p.PreviewKind, "preview_command": p.PreviewCommand, "setup_command": p.SetupCommand,
 		"copy_files": p.CopyFiles, "allowed_tools": p.AllowedTools, "chat_permission_mode": p.ChatPermissionMode,
 		"review_prompt": p.ReviewPrompt, "task_instructions": p.TaskInstructions, "max_auto_fixes": p.MaxAutoFixes,

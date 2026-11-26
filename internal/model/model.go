@@ -90,6 +90,10 @@ type Project struct {
 	ClearMergedZone string `json:"clear_merged_zone,omitempty"`
 	RunCommand      string `json:"run_command,omitempty"`  // e.g. "npm run dev" — gets $PORT
 	TestCommand     string `json:"test_command,omitempty"` // e.g. "go test ./..."
+	// TestTimeoutMinutes is how long one run of TestCommand may take before
+	// Dash stops it and counts it as failed; 0 means the default (see
+	// TestTimeout). A busy runner can need more than the default.
+	TestTimeoutMinutes int `json:"test_timeout_minutes,omitempty"`
 	// Environments are where the project is deployed, and how (see
 	// deploy.go). Each deploy to one is a Deploy record.
 	Environments []Environment `json:"environments,omitempty"`
@@ -277,6 +281,10 @@ func (p Project) InvestigatesCI() bool { return p.InvestigateCI == nil || *p.Inv
 const (
 	DefaultMaxAutoFixes  = 2
 	DefaultMaxRunMinutes = 60
+	// DefaultTestTimeoutMinutes is a run of the Test command's time limit
+	// when Project.TestTimeoutMinutes is 0; MaxTestTimeoutMinutes bounds it.
+	DefaultTestTimeoutMinutes = 20
+	MaxTestTimeoutMinutes     = 24 * 60
 	// DefaultMaxParallel is a new project's Project.MaxParallel.
 	DefaultMaxParallel = 5
 	// MaxProjectParallel bounds Project.MaxParallel.
@@ -403,6 +411,15 @@ func (p Project) RunMinutes() int {
 		return p.MaxRunMinutes
 	}
 	return DefaultMaxRunMinutes
+}
+
+// TestTimeout is the time limit for one run of the Test command.
+func (p Project) TestTimeout() time.Duration {
+	m := p.TestTimeoutMinutes
+	if m <= 0 {
+		m = DefaultTestTimeoutMinutes
+	}
+	return time.Duration(min(m, MaxTestTimeoutMinutes)) * time.Minute
 }
 
 // TurnLimit is the --max-turns for one Claude run.

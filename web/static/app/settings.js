@@ -23,6 +23,7 @@ export function openSettings() {
   const f = $("#settings-form");
   f.elements.name.value = p.name || "";
   f.test_command.value = p.test_command || "";
+  f.test_timeout_minutes.value = p.test_timeout_minutes || "";
   f.max_auto_fixes.value = p.max_auto_fixes ?? 2;
   f.setup_command.value = p.setup_command || "";
   f.copy_files.value = (p.copy_files || []).join("\n");
@@ -537,6 +538,7 @@ const lines = (v) => v.split("\n").map((x) => x.trim()).filter(Boolean);
 const FIELDS = {
   name: { read: (f) => f.elements.name.value.trim(), check: (v) => { if (!v) throw new Error("Give the project a name."); } },
   test_command: { read: (f) => f.test_command.value.trim() },
+  test_timeout_minutes: { read: (f) => Math.min(1440, Math.max(0, Math.round(Number(f.test_timeout_minutes.value) || 0))) },
   max_auto_fixes: { read: (f) => Math.max(0, Number(f.max_auto_fixes.value) || 0) },
   setup_command: { read: (f) => f.setup_command.value.trim() },
   copy_files: { read: (f) => lines(f.copy_files.value) },

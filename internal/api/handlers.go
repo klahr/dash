@@ -441,11 +441,13 @@ type projectUpdate struct {
 	MergeBatch      *int    `json:"merge_batch"`
 	InvestigateCI   *bool   `json:"investigate_ci"`
 	MaxRunMinutes   *int    `json:"max_run_minutes"`
-	MaxTurns        *int    `json:"max_turns"`
-	MaxParallel     *int    `json:"max_parallel"`
-	Color           *string `json:"color"`
-	Icon            *string `json:"icon"`
-	TagFormat       *string `json:"tag_format"`
+	// TestTimeout is model.Project.TestTimeoutMinutes (0: the default).
+	TestTimeout *int    `json:"test_timeout_minutes"`
+	MaxTurns    *int    `json:"max_turns"`
+	MaxParallel *int    `json:"max_parallel"`
+	Color       *string `json:"color"`
+	Icon        *string `json:"icon"`
+	TagFormat   *string `json:"tag_format"`
 	// CloneURL is the hub's project's model.Project.CloneURL ("" clears
 	// it). Runners that cloned the project already keep their origin.
 	CloneURL *string `json:"clone_url"`
@@ -709,6 +711,9 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	}
 	if req.MaxRunMinutes != nil {
 		p.MaxRunMinutes = max(0, *req.MaxRunMinutes)
+	}
+	if req.TestTimeout != nil {
+		p.TestTimeoutMinutes = max(0, min(*req.TestTimeout, model.MaxTestTimeoutMinutes))
 	}
 	if req.MergeBatch != nil {
 		p.MergeBatch = max(0, min(*req.MergeBatch, model.MaxMergeBatch))

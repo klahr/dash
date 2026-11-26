@@ -29,6 +29,10 @@ passed in Claude's session aren't run a second time. A task whose tests fail the
 Claude instead of onto the default branch. Make it run what your CI runs (formatting, linters,
 tests), so a red build never reaches the default branch.
 
+A run of the Test command that takes more than 20 minutes is stopped and counts as failed. If your
+tests take longer, for example on a runner busy with many tasks at once, raise **Project settings →
+Commands → Test time limit**. On runners, the hub's setting applies.
+
 ## Add a task
 
 Click **New task** (or press <kbd>n</kbd>) and write what Claude should do, as you would in a

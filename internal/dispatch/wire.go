@@ -84,6 +84,10 @@ type Link struct {
 	// times failing tests or merge conflicts go back to Claude on their own.
 	// Nil (older hubs) keeps the runner's setting.
 	MaxAutoFixes *int `json:"max_auto_fixes,omitempty"`
+	// TestTimeoutMinutes is the hub project's model.Project.TestTimeoutMinutes:
+	// how long a run of TestCommand may take (0: the default). Nil (older
+	// hubs) keeps the runner's setting.
+	TestTimeoutMinutes *int `json:"test_timeout_minutes,omitempty"`
 	// The hub project's shell commands (setup, test, run, deploy), which
 	// the runner's clone takes.
 	SetupCommand string `json:"setup_command,omitempty"`

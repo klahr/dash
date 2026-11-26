@@ -309,6 +309,9 @@ func hubSettings(req dispatch.Link, mode string) func(*model.Project) {
 		if req.MaxAutoFixes != nil {
 			x.MaxAutoFixes = max(0, *req.MaxAutoFixes)
 		}
+		if req.TestTimeoutMinutes != nil {
+			x.TestTimeoutMinutes = max(0, min(*req.TestTimeoutMinutes, model.MaxTestTimeoutMinutes))
+		}
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klahr/dash/internal/model"
 )
@@ -158,6 +159,70 @@ func TestRestartTools(t *testing.T) {
 		}
 		if _, ok := tl.schema()["properties"].(map[string]any)["fresh"]; ok && tl.Name == "queue_todo" {
 			t.Error("queue_todo has fresh without a Restarter")
+		}
+	}
+}
+
+// A tool call that takes longer than streamAfter answers as an event
+// stream: progress on the client's token, then the result. A quick one,
+// or a client that takes no stream, gets plain JSON.
+func TestHTTPStreamsSlowToolCalls(t *testing.T) {
+	defer func(a, e time.Duration) { streamAfter, streamEvery = a, e }(streamAfter, streamEvery)
+	streamAfter, streamEvery = 20*time.Millisecond, 20*time.Millisecond
+	s := &Server{Name: "t", Tools: []Tool{
+		{"slow", "", nil, func(Args) (any, error) { time.Sleep(150 * time.Millisecond); return "done", nil }},
+		{"quick", "", nil, func(Args) (any, error) { return "done", nil }},
+	}}
+	call := func(tool, accept string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/mcp", strings.NewReader(
+			`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"`+tool+`","_meta":{"progressToken":"tok"}}}`))
+		r.Header.Set("Accept", accept)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+
+	w := call("slow", "application/json, text/event-stream")
+	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("content type %q, want an event stream", ct)
+	}
+	var progress, result int
+	for _, line := range strings.Split(w.Body.String(), "\n") {
+		data, ok := strings.CutPrefix(line, "data: ")
+		if !ok {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(data), &m); err != nil {
+			t.Fatalf("event %q: %v", data, err)
+		}
+		switch {
+		case m["method"] == "notifications/progress":
+			if p := m["params"].(map[string]any); p["progressToken"] != "tok" {
+				t.Errorf("progress on token %v", p["progressToken"])
+			}
+			if result > 0 {
+				t.Error("progress after the result")
+			}
+			progress++
+		case m["id"] == float64(7):
+			if !strings.Contains(data, `"done"`) {
+				t.Errorf("result %s", data)
+			}
+			result++
+		}
+	}
+	if progress == 0 || result != 1 {
+		t.Fatalf("%d progress notifications and %d results in:\n%s", progress, result, w.Body.String())
+	}
+
+	for _, w := range []*httptest.ResponseRecorder{call("quick", "application/json, text/event-stream"), call("slow", "application/json")} {
+		if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+			t.Errorf("content type %q, want JSON", ct)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil || m["result"] == nil {
+			t.Errorf("answer %s: %v", w.Body, err)
 		}
 	}
 }

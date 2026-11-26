@@ -137,3 +137,33 @@ func TestRunGetsTestsHint(t *testing.T) {
 		t.Fatalf("tool timeout %s, want one past the tests' 2h", req.ToolTimeout)
 	}
 }
+
+// The project's own test time limit sets how long run_tests may take.
+func TestRunToolTimeoutFollowsProjectTestLimit(t *testing.T) {
+	parallel(t)
+
+	h := newHarness(t, writesA(t), model.Project{Name: "p", TestCommand: "true", TestTimeoutMinutes: 90})
+	h.engine.Board, h.engine.BoardURL = &mcptools.Tokens{}, "http://127.0.0.1:1"
+	h.engine.Owner = func(model.Todo) (model.Owner, error) { return model.Owner{User: 1, Org: 1}, nil }
+	h.waitFor(h.add("work").ID, model.StatusReview)
+	if req := h.engine.Exec.(*fakeExec).Calls()[0]; req.ToolTimeout != 95*time.Minute {
+		t.Fatalf("tool timeout %s, want one past the project's 90m", req.ToolTimeout)
+	}
+}
+
+func TestTestTimeout(t *testing.T) {
+	for _, c := range []struct {
+		minutes  int
+		override time.Duration
+		want     time.Duration
+	}{
+		{0, 0, 20 * time.Minute},
+		{60, 0, time.Hour},
+		{60, time.Second, time.Second},
+		{1 << 20, 0, 24 * time.Hour},
+	} {
+		if got := testTimeout(model.Project{TestTimeoutMinutes: c.minutes}, c.override); got != c.want {
+			t.Errorf("%d minutes, override %s: %s, want %s", c.minutes, c.override, got, c.want)
+		}
+	}
+}

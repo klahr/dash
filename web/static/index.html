@@ -1193,6 +1193,7 @@
               <button class="btn small" type="button" id="settings-approve-commands" data-icon="check">Approve commands</button>
             </div>
             <label class="field"><span>Test command <em>runs before review; failures go back to Claude</em></span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
+            <label class="field inline"><span>Test time limit <em>minutes; a run that takes longer fails</em></span><input type="number" name="test_timeout_minutes" min="1" max="1440" inputmode="numeric" placeholder="20"></label>
             <label class="field inline"><span>Automatic fix attempts <em>before Dash asks you</em></span><input type="number" name="max_auto_fixes" min="0" max="10" inputmode="numeric"></label>
             <label class="field inline"><span>Tasks at once <em>most of this project's tasks running in parallel</em></span><input type="number" name="max_parallel" min="1" max="64" inputmode="numeric" placeholder="no limit"></label>
             <label class="field"><span>Setup command <em>runs once in each new worktree</em></span><input name="setup_command" placeholder="npm ci" spellcheck="false"></label>

@@ -244,7 +244,10 @@ without asking:
   returns the exit code and the last lines of output. The run shows in the task's log. When it
   passes and Claude changes no file afterwards, Dash doesn't run the tests again when Claude
   finishes: the log says "✔ tests already passed on <commit>; not running them again". On a
-  runner, a hub's task runs it on the runner, where its worktree is.
+  runner, a hub's task runs it on the runner, where its worktree is. Claude waits for the tests
+  up to the project's **Test time limit** (**Project settings → Commands**), plus 5 minutes.
+  A tool call that takes more than a few seconds answers as an event stream, with a progress
+  notification every 30 seconds, so the client doesn't give up on a long test run.
 
 On a hub, `active_work` covers the whole project: the hub lists the tasks on all its runners and
 asks each task's runner for its files. A runner that can't be reached shows its tasks' files as

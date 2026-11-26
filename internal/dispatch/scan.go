@@ -179,7 +179,8 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, CloneURL: p.CloneURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
 		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, TaskInstructions: p.TaskInstructions, Agent: p.Agent,
 		AutoApprove: &p.AutoApprove, CloseNoChanges: &p.CloseNoChanges, MaxAutoFixes: &p.MaxAutoFixes,
-		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand,
+		TestTimeoutMinutes: &p.TestTimeoutMinutes,
+		SetupCommand:       p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand,
 		Environments: model.CloneEnvironments(p.Environments), PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand}
 	if d.Store != nil {
 		if o, err := d.Store.Accounts().Org(p.OrgID); err == nil {

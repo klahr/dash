@@ -77,7 +77,9 @@ type TodoEngine struct {
 	// Hold reports why an org's queued tasks may not start now, or ""
 	// (nil: they may). Billing holds the tasks of an unpaid org, wherever
 	// they would run: here or on its runners.
-	Hold         func(org int64) string
+	Hold func(org int64) string
+	// TestTimeout, if set, is the Test command's time limit in place of
+	// each project's own (model.Project.TestTimeout).
 	TestTimeout  time.Duration
 	SetupTimeout time.Duration
 	// Shared runs the hub's work for other members than this runner's
@@ -142,9 +144,6 @@ func NewTodoEngine(e *TodoEngine) *TodoEngine {
 	}
 	if e.Usage != nil {
 		e.Usage.SetParallel(e.MaxParallel)
-	}
-	if e.TestTimeout <= 0 {
-		e.TestTimeout = 20 * time.Minute
 	}
 	if e.SetupTimeout <= 0 {
 		e.SetupTimeout = 30 * time.Minute
@@ -892,7 +891,7 @@ func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t m
 		if p.TestCommand != "" && p.Held(model.CmdTest) == "" {
 			system = append(system, fmt.Sprintf(testsHint, p.TestCommand))
 			// Claude waits on run_tests while the tests run.
-			toolTimeout = max(toolTimeout, e.TestTimeout+5*time.Minute)
+			toolTimeout = max(toolTimeout, testTimeout(p, e.TestTimeout)+5*time.Minute)
 		}
 	}
 	req.ToolTimeout = toolTimeout
@@ -1559,6 +1558,15 @@ func (e *TodoEngine) runChecks(ctx context.Context, t model.Todo, p model.Projec
 	return runChecks(ctx, e.Git, e.Log, e.Shared, t, p, dir, stage, e.TestTimeout)
 }
 
+// testTimeout is the time limit for a run of p's Test command: override
+// when set, else the project's own.
+func testTimeout(p model.Project, override time.Duration) time.Duration {
+	if override > 0 {
+		return override
+	}
+	return p.TestTimeout()
+}
+
 func runChecks(ctx context.Context, g *gitops.Git, l *TodoLog, sh *SharedWork, t model.Todo, p model.Project, dir, stage string, timeout time.Duration) model.Checks {
 	return runChecksLog(ctx, g, func(s string) { l.Line(t, s) }, sh, t, p, dir, stage, timeout)
 }
@@ -1566,6 +1574,7 @@ func runChecks(ctx context.Context, g *gitops.Git, l *TodoLog, sh *SharedWork, t
 // runChecksLog is runChecks, with its progress and output going to line
 // (the merge queue's batch logs a run to each task in it).
 func runChecksLog(ctx context.Context, g *gitops.Git, line func(string), sh *SharedWork, t model.Todo, p model.Project, dir, stage string, timeout time.Duration) model.Checks {
+	timeout = testTimeout(p, timeout)
 	if err := sh.ok(t); err != nil {
 		line("✖ tests not run: " + err.Error())
 		return model.Checks{Command: p.TestCommand, ExitCode: -1, Output: err.Error(), Stage: stage, At: time.Now()}
@@ -1586,7 +1595,11 @@ func runChecksLog(ctx context.Context, g *gitops.Git, line func(string), sh *Sha
 		c.Tree = tree // no file changed while they ran
 	}
 	if err != nil {
-		c.Output = strings.TrimSpace(tail + "\n" + err.Error())
+		msg := err.Error()
+		if ctx.Err() == nil && strings.HasPrefix(msg, "timed out after ") {
+			msg += " (raise the limit in Project settings → Commands → Test time limit)"
+		}
+		c.Output = strings.TrimSpace(tail + "\n" + msg)
 	}
 	c.Passed = err == nil && code == 0
 	if c.Passed {
