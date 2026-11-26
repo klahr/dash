@@ -87,11 +87,14 @@ func TestBrowserDeleteGoal(t *testing.T) {
 	stop(wide)
 	// Delete, then Undo: it comes back, and stays.
 	menu("Delete goal", gone(wide))
-	b.clickTextUntil(".toast-action", "Undo", fmt.Sprintf(`!!document.querySelector('#goal-list li[data-id=%q]')`, wide))
+	// It is back, under Done: the list shows the active goals.
+	b.clickTextUntil(".toast-action", "Undo", `!document.querySelector("#goal-show").hidden && document.querySelector("#goal-n-done").textContent === "1"`)
 	time.Sleep(7 * time.Second)
 	if s := status(wide); s != "done" {
 		t.Fatalf("undone delete: goal is %s", s)
 	}
+	b.until("the done goals", fmt.Sprintf(`!!document.querySelector('#goal-list li[data-id=%q]')`, wide),
+		chromedp.Click(chromedp.CSS(`#goal-show [data-show=done]`)))
 	open(wide)
 	del(wide)
 
@@ -218,4 +221,93 @@ func TestBrowserGoalPaneAndChat(t *testing.T) {
 	b.clickTextUntil("#gd-actions button", "Answer", chatGoal+` && getComputedStyle(document.querySelector("#goal-detail")).display === "none" && !document.querySelector("#chat-goal-back").hidden`)
 	b.until("back to the goal", `document.querySelector("#chat-pane").hidden && document.querySelector("#goal-detail").getBoundingClientRect().width > 0`,
 		chromedp.Click(chromedp.CSS("#chat-goal-back")))
+}
+
+// The Goals list takes the page's width (cards in columns, one on a phone),
+// splits active goals from done ones, and lists every project's goals under
+// All projects, each naming its project; one of another project opens with
+// its project selected. The Board badge's "goals" leads there too. New goal
+// asks only what to get done and how its tasks start, with no help texts,
+// and the goal opens at once.
+func TestBrowserGoalsList(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	api, pid := h.api, h.project.ID
+	var shop struct{ ID string }
+	api.must("POST", "/api/projects", map[string]any{"name": "shop", "remote_url": "https://example.com/shop.git", "runs_on": []string{"any"}}, http.StatusCreated, &shop)
+	goal := func(project, title string) string {
+		var g struct{ ID string }
+		api.must("POST", "/api/goals", map[string]any{"project": project, "title": title, "description": title, "mode": "ask"}, http.StatusCreated, &g)
+		return g.ID
+	}
+	plans, _, ended := goal(pid, "Faster search"), goal(pid, "Smaller images"), goal(pid, "Old goal")
+	other := goal(shop.ID, "Checkout in one step")
+	api.must("POST", "/api/goals/"+ended+"/stop", map[string]any{}, http.StatusOK, nil)
+	for deadline := time.Now().Add(time.Minute); ; time.Sleep(100 * time.Millisecond) {
+		var g struct {
+			WaitingFor string `json:"waiting_for"`
+		}
+		api.must("GET", "/api/goals/"+plans, nil, http.StatusOK, &g)
+		if g.WaitingFor == "plan" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("goal %s waits for %q, not a plan", plans, g.WaitingFor)
+		}
+	}
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	row := func(id string) string { return fmt.Sprintf(`#goal-list li[data-id=%q] .goal-open`, id) }
+	const ids = `[...document.querySelectorAll("#goal-list li")].map((li) => li.dataset.id)`
+	// No help texts: no explanations under fields, no placeholders, no tooltips on the page's buttons.
+	const noHelp = `(() => {
+		const sheet = document.querySelector("#goal-sheet");
+		return !sheet.querySelector("em, .hint") && ![...sheet.querySelectorAll("input, textarea")].some((e) => e.placeholder) &&
+			![...document.querySelectorAll("#view-goals [title]")].length && !document.querySelector("#goal-empty p:not(.empty-title)");
+	})()`
+
+	b.do("a wide screen", chromedp.EmulateViewport(1600, 900))
+	b.until("open Goals", `document.querySelector("#view-goals.active") && document.querySelectorAll("#goal-list li").length === 2`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=goals]`)))
+	b.waitJS("the active goals in columns, using the width; Done counts the stopped one", fmt.Sprintf(`(() => {
+		const lis = [...document.querySelectorAll("#goal-list li")], list = document.querySelector("#goal-list").getBoundingClientRect();
+		return list.width > 1000 && Math.abs(lis[0].getBoundingClientRect().top - lis[1].getBoundingClientRect().top) < 2 &&
+			!%s.includes(%q) && document.querySelector("#goal-n-done").textContent === "1" && !document.querySelector("#goal-scope").hidden;
+	})()`, ids, ended))
+	b.until("the done goals", fmt.Sprintf(`%s.join() === %q`, ids, ended), chromedp.Click(chromedp.CSS(`#goal-show [data-show=done]`)))
+	b.until("the active goals again", fmt.Sprintf(`%s.length === 2 && !%s.includes(%q)`, ids, ids, ended), chromedp.Click(chromedp.CSS(`#goal-show [data-show=active]`)))
+
+	// All projects: shop's goal too, naming its project; opening it selects shop.
+	b.until("every project's goals", fmt.Sprintf(`document.querySelector('#goal-list li[data-id=%q] .goal-where')?.textContent === "shop" && %s.length === 3`, other, ids),
+		chromedp.Click(chromedp.CSS(`#goal-scope [data-scope=all]`)))
+	b.until("shop's goal open, in shop", fmt.Sprintf(`!document.querySelector("#goal-detail").hidden && document.querySelector("#gd-title").textContent === "Checkout in one step" &&
+		document.querySelector("#project-name").textContent.includes("shop") && document.querySelector('#goal-list li[data-id=%q].selected')`, other),
+		chromedp.Click(chromedp.CSS(row(other))))
+	b.until("close it", `document.querySelector("#goal-detail").hidden`, chromedp.Click(chromedp.CSS("#gd-close")))
+
+	// New goal: what to get done and how its tasks start; the goal opens at once, named from it.
+	b.until("New goal", `document.querySelector("#goal-sheet").open`, chromedp.Click(chromedp.CSS("#goal-new")))
+	b.waitJS("only what to get done and how tasks start, no help texts", noHelp+` && document.querySelector("#goal-title-field").hidden && document.querySelector("#goal-max-field").hidden &&
+		document.querySelector("#goal-form select[name=mode]").value === "ask" && !document.querySelector("#goal-form [name=weekly_share]")`)
+	b.do("say what to get done", chromedp.SendKeys(`#goal-form textarea[name=description]`, "Ship the new checkout"))
+	b.until("the goal opens", `!document.querySelector("#goal-detail").hidden && document.querySelector("#gd-title").textContent.includes("checkout") && !document.querySelector(".toast")?.textContent.includes("Goal started")`,
+		chromedp.Click(chromedp.CSS("#goal-save")))
+	b.until("close it", `document.querySelector("#goal-detail").hidden`, chromedp.Click(chromedp.CSS("#gd-close")))
+
+	// The Board badge's goals: back in the first project, its goal waiting for you leads to every project's goals.
+	b.until("the project's goals", `document.querySelector("#goal-scope [data-scope=project]").getAttribute("aria-current") === "page"`,
+		chromedp.Click(chromedp.CSS(`#goal-scope [data-scope=project]`)))
+	b.do("the first project's board", chromedp.Navigate(h.base+"/p/"+pid+"/board"))
+	b.waitJS("the badge counts its goal", `/^\d+ goals?$/.test(document.querySelector("#review-badge .rb-goals")?.textContent || "")`)
+	b.until("the badge's goals", `document.querySelector("#view-goals.active") && document.querySelector("#goal-scope [data-scope=all]").getAttribute("aria-current") === "page" && document.querySelectorAll("#goal-list li").length === 4`,
+		chromedp.Click(chromedp.CSS(`#review-badge .rb-goals`)))
+
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("one column, nothing wider than the screen", `(() => {
+		const lis = [...document.querySelectorAll("#goal-list li")];
+		return lis.length >= 2 && lis[1].getBoundingClientRect().top > lis[0].getBoundingClientRect().bottom - 1 &&
+			[...document.querySelectorAll("#view-goals .cl-head > *:not([hidden]), #goal-list li")].every((e) => e.getBoundingClientRect().right <= innerWidth);
+	})()`)
 }

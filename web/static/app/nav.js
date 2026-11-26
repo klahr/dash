@@ -98,7 +98,7 @@ function applyView(name) {
   if (name === "run") requestAnimationFrame(() => { fitTerm(); ensureShell(); });
   if (name === "history") loadGraph().catch(fail);
   else closeCommit();
-  if (name === "goals" && state.project) loadGoals().catch(fail);
+  if (name === "goals") loadGoals().catch(fail);
   else closeGoal();
   if (name === "deploys" && state.project) loadDeploys().catch(fail);
   else closeDeploy();

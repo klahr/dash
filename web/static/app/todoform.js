@@ -308,8 +308,8 @@ function renderSplit() {
   const focus = document.activeElement?.closest?.(".split-dep") && [$$(".split-part", split.list).indexOf(document.activeElement.closest(".split-part")), document.activeElement.textContent];
   const num = (p) => parts.indexOf(p) + 1;
   split.list.replaceChildren(...parts.map((p, i) => {
-    const titleIn = h("input", { class: "split-title", value: p.title, readOnly: !!p.id, placeholder: "Claude names it if empty", autocomplete: "off", "aria-label": `Title of task ${i + 1}`, oninput: () => { p.title = titleIn.value; } });
-    const promptIn = h("textarea", { class: "split-prompt", rows: 4, readOnly: !!p.id, placeholder: "Instructions for Claude", "aria-label": `Instructions for task ${i + 1}`, oninput: () => { p.prompt = promptIn.value; } });
+    const titleIn = h("input", { class: "split-title", value: p.title, readOnly: !!p.id, placeholder: "Title", autocomplete: "off", "aria-label": `Title of task ${i + 1}`, oninput: () => { p.title = titleIn.value; } });
+    const promptIn = h("textarea", { class: "split-prompt", rows: 4, readOnly: !!p.id, placeholder: "Instructions", "aria-label": `Instructions for task ${i + 1}`, oninput: () => { p.prompt = promptIn.value; } });
     promptIn.value = p.prompt;
     // The earlier tasks this one waits for: a toggle each (it starts once they are merged).
     const earlier = parts.slice(0, i);
@@ -317,7 +317,7 @@ function renderSplit() {
       h("span", { class: "hint" }, "After"),
       ...earlier.map((x) => h("button", {
         type: "button", class: "split-dep", "aria-pressed": String(p.after.has(x)),
-        title: `${p.after.has(x) ? "Starts after" : "Doesn't wait for"} task ${num(x)}${x.title ? `: ${x.title}` : ""}`,
+        "aria-label": `Task ${num(x)}${x.title ? `: ${x.title}` : ""}`,
         onclick: () => { p.after.has(x) ? p.after.delete(x) : p.after.add(x); renderSplit(); },
       }, String(num(x))))) : null;
     const after = [...p.after].map(num).sort((a, b) => a - b);
@@ -326,7 +326,7 @@ function renderSplit() {
         h("span", { class: "split-num", "aria-hidden": "true" }, String(i + 1)),
         titleIn,
         p.id ? h("span", { class: "split-saved" }, "Saved") :
-          ib({ type: "button", class: "icon-btn", "aria-label": `Remove task ${i + 1}`, title: "Remove this task", onclick: () => removeSplitPart(p) }, "x")),
+          ib({ type: "button", class: "icon-btn", "aria-label": `Remove task ${i + 1}`, title: "Remove", onclick: () => removeSplitPart(p) }, "x")),
       promptIn,
       deps || (after.length ? h("p", { class: "hint split-after" }, `Builds on ${after.length > 1 ? "tasks" : "task"} ${after.join(", ")}`) : null));
   }));
@@ -424,7 +424,7 @@ async function acceptGoalPlan(action) {
 $("#split-replan").addEventListener("click", attempt(async () => {
   const g = split.goal, p = split.project || state.project;
   if (!g) return;
-  const feedback = await ask({ title: "Plan again", body: "Tell the coordinator what to change. It plans again; the goal is planning until its new plan is in.", input: true, placeholder: "Fewer, larger tasks; leave the API alone…", ok: "Plan again" });
+  const feedback = await ask({ title: "What should change?", input: true, ok: "Plan again" });
   if (feedback === null) return;
   await api("POST", `/api/goals/${g.id}/plan/reject`, { feedback }, p?.prefix || "");
   split.sheet.close("replan");

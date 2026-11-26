@@ -23,7 +23,7 @@ import { tokenTag } from "./runstats.js";
 import { keys, laneHidden, todoKey } from "./vim.js";
 import { desktop } from "./viewport.js";
 import { chatPage } from "./nav.js";
-import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
+import { goalChip, renderGoalFilter, showAllGoals, waitingGoals } from "./goals.js";
 import { creator, mineOn, multiMember, myID, people, setMine } from "./people.js";
 import { isQuestion } from "./chatparts.js";
 import { boardFilter, onBoard, pickBox, picked, renderCombineBar, renderTagFilter, setSearch, startPicking, tagRow } from "./tags.js";
@@ -330,13 +330,24 @@ function renderBoardNow() {
   // The count on a phone (and a folded sidebar); on a desktop the breakdown in words.
   const questions = state.perms.filter(isQuestion).length, approvals = state.perms.length - questions;
   const parts = [every.review.length && `${every.review.length} review`, approvals && plural(approvals, "approval"),
-    questions && plural(questions, "question"), goals && plural(goals, "goal")].filter(Boolean);
-  badge.replaceChildren(h("span", { class: "rb-n", "aria-hidden": "true" }, String(review)), h("span", { class: "rb-text" }, parts.join(" · ")));
+    questions && plural(questions, "question")].filter(Boolean);
+  // "2 goals" leads to every project's goals (goals.js showAllGoals).
+  const goalPart = goals ? h("span", { class: "rb-goals" }, plural(goals, "goal")) : null;
+  badge.replaceChildren(h("span", { class: "rb-n", "aria-hidden": "true" }, String(review)),
+    h("span", { class: "rb-text" }, parts.join(" · "), parts.length && goalPart ? " · " : "", goalPart));
   badge.title = [every.review.length && `${every.review.length} to review`, approvals && `${approvals} waiting for approval`,
     questions && `${plural(questions, "question")} for you`,
     goals && `${goals} goal${goals > 1 ? "s" : ""} waiting for you`].filter(Boolean).join(" · ");
   renderBoardDot(review);
 }
+
+// The badge's "2 goals" opens Goals with every project's goals, not the Board.
+$("#review-badge").addEventListener("click", (e) => {
+  if (!e.target.closest(".rb-goals")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  showAllGoals();
+});
 
 // The Board button's dot when nothing waits on you: yellow while tasks run or
 // merge, green once every task that ran this session has landed in Done.

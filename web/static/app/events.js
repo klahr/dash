@@ -36,7 +36,7 @@ import { loadDismissed, loadScans, onScanRun, scanFinished, scanTasksChanged, sc
 import { checkForUpdate } from "./updates.js";
 import { onPlanningEvent } from "./planning.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
-import { goalTaskChanged, onGoalDeleted, onGoalEvent, showGoal, shownStatus } from "./goals.js";
+import { goalTaskChanged, onAllEvent, onGoalDeleted, onGoalEvent, showGoal, shownStatus } from "./goals.js";
 import { onDeployEvent } from "./deploys.js";
 import { goalChatEvent, goalChatGone, projectChatEvent } from "./chatpane.js";
 
@@ -228,10 +228,12 @@ function onEvent(ev, m = { name: "" }) {
       break;
     case "goal.updated":
       goalChatEvent(ev.data, m); // a wake-up added to the coordinator's conversation
+      onAllEvent(ev, m); // Goals → All projects
       if (mine) onGoalEvent(ev);
       break;
     case "goal.deleted":
       goalChatGone(ev.data, m);
+      onAllEvent(ev, m);
       if (mine) onGoalDeleted(ev.data?.id);
       break;
     case "deploy.updated":

@@ -17,13 +17,16 @@ import { notifyGoal } from "./notifications.js";
 import { showView } from "./nav.js";
 import { linkToCard } from "./planning.js";
 import { changed, linkTo } from "./routes.js";
+import { projectDot, selectProject } from "./projects.js";
+import * as store from "./store.js";
 
 // ------------------------------------------------------------------ goals
 // A goal is something bigger than one task: a coordinator (Claude) plans its
 // tasks, dispatches them and reviews what each one did; approving and
 // merging stay the user's (docs/goals.md). The Goals page lists the
-// project's goals with their progress; one opens in a pane beside the list
-// (full screen with Back on a phone), like a History commit.
+// project's goals with their progress, or every project's (gp.scope), the
+// active ones or the done ones (gp.show); one opens in a pane beside the
+// list (full screen with Back on a phone), like a History commit.
 //
 // On the board, a goal's tasks stay ordinary cards in the usual lanes. Each
 // carries a chip with its goal's name, in a colour of its own; pressing it
@@ -58,6 +61,9 @@ export const gp = {
   editing: null,   // the goal the sheet edits (null: a new one)
   resuming: null,  // the goal out of budget whose Resume asks for its new limits
   descOpen: false, // the open goal's long description shown in full
+  scope: store.get("dash.goals.scope", "project"), // "project": the project's goals; "all": every project's
+  show: "active",  // "active" or "done"
+  all: null,       // with scope "all": every project's goals, by id (GET /api/goals)
 };
 
 // Stop and Delete wait while their toast shows Undo (endWithUndo): the
@@ -73,14 +79,21 @@ const prefix = () => gp.project?.prefix || "";
 
 // goalsOn reports whether project p can have goals here. A runner's own
 // project (one with a /peer/… prefix) can't: its runner doesn't offer goals
-// to the hub, so they're used in the runner's own dashboard.
+// to the hub, so they're used in the runner's own dashboard. New goal… is
+// hidden there.
 export const goalsOn = (p) => !!p && !p.prefix;
-const NO_GOALS = "Goals don't work on a runner's own project from the hub: its runner keeps them. Open the project in that computer's own Dash to use goals, or make it a shared project.";
+
+// homeOf is the project goal g is in (one that can have goals).
+const homeOf = (g) => (state.projects || []).find((p) => goalsOn(p) && p.id === g.project_id) || null;
+// allOffered reports whether All projects has more to show than the project.
+const allOffered = () => (state.projects || []).some((p) => goalsOn(p) && projectKey(p) !== projectKey(state.project));
+const allShown = () => gp.scope === "all" && allOffered();
 
 // loadGoals reads the project's goals. Events seen while the list was on
 // its way are replayed over it. A Dash from before goals has none.
 export async function loadGoals() {
   const p = state.project;
+  if (allShown()) loadAllGoals().catch(fail);
   if (!p) return resetGoals();
   if (!goalsOn(p)) return resetGoals(); // its runner would refuse: renderGoals says why
   let list = [], seen = [];
@@ -100,6 +113,29 @@ export async function loadGoals() {
   renderBoard();
   if (state.detail) renderDetail();
   if (gp.open && !state.goals.has(gp.open)) closeGoal();
+}
+
+// loadAllGoals reads every project's goals, for All projects. Events seen
+// while the list was on its way are replayed over it.
+async function loadAllGoals() {
+  let list = [], seen = [];
+  try {
+    ({ data: list, seen } = await latest(() => api("GET", "/api/goals")));
+  } catch { /* a Dash from before goals */ }
+  const all = new Map((list || []).map((g) => [g.id, g]));
+  for (const { ev, m } of seen) onAllEvent(ev, m, all);
+  gp.all = all;
+  renderGoals();
+}
+
+// onAllEvent keeps every project's goals current while All projects has
+// them: those of this Dash's own projects (m.local), where goals are.
+export function onAllEvent(ev, m, all = gp.all) {
+  if (!all || !m?.local || !ev.data?.id) return;
+  if (ev.type === "goal.updated") all.set(ev.data.id, { ...all.get(ev.data.id), ...ev.data, blocked: ev.data.blocked || "" });
+  else if (ev.type === "goal.deleted") all.delete(ev.data.id);
+  else return;
+  if (all === gp.all && state.view === "goals") renderGoals();
 }
 
 export function resetGoals() {
@@ -178,25 +214,102 @@ function waitText(g) {
   return g.note || "";
 }
 
+// The list: the project's goals or every project's, the active ones or the
+// done ones, what needs you first. The goal open stays listed while it is
+// open, even once it is done (or active again). With no goals, the page is
+// a title and New goal….
+const isDone = (g) => g.status === "done";
+const byNeed = (a, b) => (STATUS_ORDER.indexOf(shownStatus(a)) - STATUS_ORDER.indexOf(shownStatus(b))) || (b.updated_at || "").localeCompare(a.updated_at || "");
+
+function listed(all) {
+  const goals = new Map(all ? gp.all || [] : []);
+  for (const g of state.goals.values()) goals.set(g.id, { ...goals.get(g.id), ...g });
+  return [...goals.values()].filter((g) => ending.get(g.id)?.verb !== "delete").map(shown);
+}
+
 export function renderGoals() {
   const list = $("#goal-list");
   if (!list) return;
-  const goals = gp.list.filter((g) => ending.get(g.id)?.verb !== "delete").sort((a, b) => (STATUS_ORDER.indexOf(shownStatus(a)) - STATUS_ORDER.indexOf(shownStatus(b))) || b.updated_at.localeCompare(a.updated_at));
-  $("#goal-empty").hidden = goals.length > 0;
-  const on = goalsOn(state.project);
-  $("#goal-empty-title").textContent = !state.project ? "No project" : on ? "No goals yet" : "No goals here";
-  $("#goal-empty-text").textContent = !state.project ? "Select a project to see its goals."
-    : on ? "A goal is something bigger than one task. Say what you want done: a coordinator reads the code, plans the tasks and reviews what each one did. Approving and merging stay yours."
-      : NO_GOALS;
-  $("#goal-new").hidden = !on;
+  const on = goalsOn(state.project), all = allShown();
+  const goals = listed(all);
+  const done = goals.filter(isDone), active = goals.filter((g) => !isDone(g));
+  if (!done.length) gp.show = "active";
+  const rows = gp.show === "done" ? done : active;
+  const open = gp.open && goals.find((g) => g.id === gp.open);
+  if (open && !rows.includes(open)) rows.push(open);
+  rows.sort(byNeed);
+
+  const scope = $("#goal-scope");
+  scope.hidden = !allOffered();
+  $("#goal-scope-project").textContent = state.project?.name || "Project";
+  const show = $("#goal-show");
+  show.hidden = !done.length;
+  $("#goal-n-active").textContent = active.length || "";
+  $("#goal-n-done").textContent = done.length || "";
+  const current = (b, on) => (on ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
+  for (const b of $$("button", scope)) current(b, b.dataset.scope === (all ? "all" : "project"));
+  for (const b of $$("button", show)) current(b, b.dataset.show === gp.show);
+
+  const empty = !rows.length;
+  $("#goal-empty").hidden = !empty;
+  $("#goal-empty-title").textContent = !all && !state.project ? "No project"
+    : !all && !on ? "No goals on a runner's own project"
+      : goals.length ? "No active goals" : "No goals yet";
+  $("#goal-empty-new").hidden = !on;
+  $("#goal-new").hidden = !on || empty;
+
   const focused = document.activeElement?.closest?.("#goal-list li")?.dataset.id;
-  list.replaceChildren(...goals.map(shown).map((g) => h("li", { class: `goal${g.id === gp.open ? " selected" : ""}`, "data-id": g.id },
-    h("button", { type: "button", class: "goal-open", "aria-controls": "goal-detail", "aria-current": g.id === gp.open ? "true" : null, onclick: () => openGoal(g.id).catch(fail) },
-      h("span", { class: "goal-row" }, h("span", { class: "goal-title" }, g.title), statusTag(g)),
-      progress(g),
-      goalBlocked(g) ? h("span", { class: "goal-wait" }, g.blocked) : null))));
+  list.replaceChildren(...rows.map((g) => {
+    const home = all ? homeOf(g) : null;
+    return h("li", { class: `goal${g.id === gp.open ? " selected" : ""}`, "data-id": g.id },
+      h("button", { type: "button", class: "goal-open", "aria-controls": "goal-detail", "aria-current": g.id === gp.open ? "true" : null, onclick: () => openListed(g.id).catch(fail) },
+        h("span", { class: "goal-row" }, h("span", { class: "goal-title" }, g.title), statusTag(g)),
+        home ? h("span", { class: "goal-where" }, projectDot(home), home.name) : null,
+        progress(g),
+        goalBlocked(g) ? h("span", { class: "goal-wait" }, g.blocked) : null));
+  }));
   if (focused) $(`#goal-list li[data-id="${focused}"] .goal-open`)?.focus({ preventScroll: true });
   renderGoalBadges();
+}
+
+// openListed opens a goal of the list: one of another project (All
+// projects) opens with its project selected, as its toast's Go does.
+async function openListed(id) {
+  const g = (gp.all && gp.all.get(id)) || state.goals.get(id);
+  const home = g && homeOf(g);
+  if (home && projectKey(home) !== projectKey(state.project)) await selectProject(home, { restore: false });
+  await openGoal(id);
+}
+
+// The page's tabs: this project or all projects, active goals or done ones.
+$("#goal-scope").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-scope]");
+  if (!b) return;
+  showScope(b.dataset.scope);
+});
+$("#goal-show").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-show]");
+  if (!b || b.dataset.show === gp.show) return;
+  gp.show = b.dataset.show;
+  if (gp.open && (isDone(shown(state.goals.get(gp.open) || {})) !== (gp.show === "done"))) closeGoal();
+  renderGoals();
+});
+
+// showScope lists the project's goals ("project") or every project's ("all").
+export function showScope(scope) {
+  gp.scope = scope === "all" ? "all" : "project";
+  store.set("dash.goals.scope", gp.scope);
+  renderGoals();
+  if (gp.scope === "all") loadAllGoals().catch(fail);
+}
+
+// showAllGoals goes to the Goals page with every project's goals (the
+// Board badge's "goals").
+export function showAllGoals() {
+  gp.show = "active";
+  gp.scope = "all";
+  store.set("dash.goals.scope", "all");
+  showView("goals"); // loads them (nav.js)
 }
 
 // The Goals buttons' badges count the goals that wait for you; the Board's
@@ -369,7 +482,7 @@ export function stepGoal(n) {
   const next = ids[Math.max(0, Math.min(ids.length - 1, i < 0 ? (n > 0 ? 0 : ids.length - 1) : i + n))];
   if (next && next !== gp.open) {
     const onRow = document.activeElement?.matches?.("#goal-list .goal-open");
-    openGoal(next).catch(fail);
+    openListed(next).catch(fail);
     if (onRow) $(`#goal-list li[data-id="${next}"] .goal-open`)?.focus({ preventScroll: true });
   }
 }
@@ -384,7 +497,7 @@ function renderGoal() {
   $("#gd-title").textContent = g.title;
   const spent = spend(g);
   fill($("#gd-meta"), statusTag(g),
-    h("span", {}, g.mode === "queue" ? "Queues on its own" : "Asks before queuing"),
+    h("span", {}, g.mode === "queue" ? "Starts tasks on its own" : "Asks before starting tasks"),
     g.created_at ? h("span", { title: dateTimeText(g.created_at) }, `started ${agoText(g.created_at)}`) : null,
     spent && !hasLimit(g) ? h("span", { class: "goal-spend" }, spent) : null);
   renderGoalActions(g);
@@ -748,25 +861,28 @@ function talk(g) {
 }
 
 // ------------------------------------------------------------------ New goal / Edit goal
-// The sheet asks what to get done, a budget and whether its tasks wait for
-// you. A new goal opens in the pane, planning; its plan shows there to
+// New goal asks what to get done and whether its tasks wait for you: the
+// goal is named from what to get done, with no limit. Edit goal adds its
+// name and the most tasks it may make (a weekly share set from the API is
+// kept). A new goal opens in the pane, planning; its plan shows there to
 // accept once the coordinator has one.
 export function openGoalSheet({ goal = null, title: t = "", description = "" } = {}) {
   if (!state.project) throw new Error(projectFirst());
-  if (!goal && !goalsOn(state.project)) throw new Error(NO_GOALS);
+  if (!goal && !goalsOn(state.project)) throw new Error("No goals on a runner's own project.");
   gp.editing = goal;
   const f = $("#goal-form");
   f.reset();
   $("#goal-sheet-title").textContent = goal ? "Edit goal" : "New goal";
   $("#goal-save").lastChild.textContent = goal ? "Save" : "Start goal";
+  $("#goal-title-field").hidden = !goal;
+  $("#goal-max-field").hidden = !goal;
   f.title.value = goal?.title ?? t;
-  f.description.value = goal?.description ?? description;
+  f.description.value = goal?.description ?? (description || t);
   f.max_tasks.value = goal?.budget?.max_tasks || "";
-  f.weekly_share.value = goal?.budget?.weekly_share || "";
   f.mode.value = goal?.mode || "ask";
   $("#goal-sheet").returnValue = "";
   $("#goal-sheet").showModal();
-  (f.description.value ? f.title : f.description).focus();
+  f.description.focus();
 }
 
 const whole = (v, max, what) => {
@@ -786,12 +902,12 @@ $("#goal-sheet").addEventListener("close", attempt(async () => {
   let body;
   try {
     body = {
-      title: f.title.value.trim(),
+      title: f.title.value.trim(), // a new goal's: carried over from the task form, if any
       description: f.description.value.trim(),
-      budget: { max_tasks: whole(f.max_tasks.value, 1000, "Max tasks"), weekly_share: whole(f.weekly_share.value, 100, "The weekly share") },
       mode: f.mode.value || "ask",
     };
-    if (!body.title && !body.description) throw new Error("Say what to get done.");
+    if (goal) body.budget = { max_tasks: whole(f.max_tasks.value, 1000, "Max tasks"), weekly_share: goal.budget?.weekly_share || 0 };
+    if (!body.description && !(goal && body.title)) throw new Error("Say what to get done.");
   } catch (e) { reopen(); throw e; }
   const p = goal ? (gp.project || state.project) : state.project;
   try {
@@ -805,11 +921,11 @@ $("#goal-sheet").addEventListener("close", attempt(async () => {
     if (projectKey(state.project) !== projectKey(p)) return;
     gp.project = p;
     if (!state.goals.has(g.id)) state.goals.set(g.id, { ...g, log: undefined });
-    toast(g.title, { tone: "ok", head: "Goal started", icon: "target" });
     await showGoal(g.id);
   } catch (e) { reopen(); throw e; }
 }));
 $("#goal-new").addEventListener("click", attempt(() => openGoalSheet()));
+$("#goal-empty-new").addEventListener("click", attempt(() => openGoalSheet()));
 
 // ------------------------------------------------------------------ goals on the board
 export const goalName = (id) => state.goals.get(id)?.title || "Goal";
@@ -836,7 +952,6 @@ export function goalChip(t, cls = "") {
   const name = goalName(t.goal_id), on = state.goalFilter === t.goal_id;
   return h("button", {
     type: "button", class: `goal-chip ${cls}`.trim(), style: hue(t.goal_id), "aria-pressed": String(on),
-    title: on ? "Show every task" : `Show only the tasks of goal “${name}”`,
     onpointerdown: (e) => e.stopPropagation(), // not the start of a drag
     onclick: (e) => { e.stopPropagation(); filterGoal(on ? null : t.goal_id); },
   }, h("span", { class: "goal-dot", "aria-hidden": "true" }), h("span", { class: "goal-name" }, name));

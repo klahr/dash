@@ -3708,8 +3708,17 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
    The Goals page (a .page like Issues): a goal per row with its progress
    (.cl-progress) and status; one opens in #goal-detail, beside the list on a
    desktop (laid out there with the commit pane) and full screen on a phone. */
+/* The page takes the width it has: goals as cards in as many columns as fit, one on a phone
+   and fewer while a goal's pane takes the right of the page. */
+.page.goals { max-width: 1440px; }
+.goals-head { flex-wrap: wrap; }
+.goals-head .page-tabs .count { color: var(--faint); font-weight: 500; margin-left: 2px; }
+.goals-head .page-tabs .count:empty { display: none; }
 .goals .cl-head .goal-new { margin-left: auto; }
-.goal-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.goal-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; }
+.goal-where { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-s); color: var(--muted); }
+#review-badge .rb-goals { cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 2px; }
+#review-badge .rb-goals:hover { text-decoration-color: currentColor; }
 .goal-list:empty { display: none; }
 .goal-open {
   display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px 14px; text-align: left;
@@ -3720,7 +3729,7 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .goal-row { display: flex; align-items: baseline; gap: 10px; }
 .goal-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .goal-progress { margin: 0; }
-.goal-wait { font-size: var(--fs-s); color: var(--muted); overflow-wrap: anywhere; }
+.goal-wait { font-size: var(--fs-s); color: var(--muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; } /* in full in the pane */
 .goal-status { flex: none; font-size: var(--fs-s); }
 .goal-status .act-spin { margin-right: -2px; }
 .g-planning { --c: var(--accent); }

@@ -282,17 +282,25 @@
         <div class="empty" id="graph-empty"><p class="empty-title">No history</p><p id="graph-empty-text">Select a project to see its main branch.</p></div>
       </section>
 
-      <!-- Goals: the project's goals, each worked towards by a coordinator; a goal opens in
-           #goal-detail beside the list (app/goals.js) -->
+      <!-- Goals: the project's goals (or every project's), each worked towards by a
+           coordinator, active or done; a goal opens in #goal-detail beside the list (app/goals.js) -->
       <section class="view" id="view-goals" aria-label="Goals">
         <div class="page goals">
-          <header class="cl-head">
+          <header class="cl-head goals-head">
             <h2 class="cl-title page-title">Goals</h2>
+            <nav class="page-tabs" id="goal-scope" aria-label="Projects" hidden>
+              <button type="button" data-scope="project" id="goal-scope-project">Project</button>
+              <button type="button" data-scope="all">All projects</button>
+            </nav>
+            <nav class="page-tabs" id="goal-show" aria-label="Goals shown" hidden>
+              <button type="button" data-show="active">Active <span class="count" id="goal-n-active"></span></button>
+              <button type="button" data-show="done">Done <span class="count" id="goal-n-done"></span></button>
+            </nav>
             <span class="cl-state" id="goal-state" aria-live="polite"></span>
             <button class="btn small goal-new" type="button" id="goal-new" data-icon="plus">New goal…</button>
           </header>
           <ul class="goal-list" id="goal-list"></ul>
-          <div class="empty" id="goal-empty"><p class="empty-title" id="goal-empty-title">No goals yet</p><p id="goal-empty-text">A goal is something bigger than one task. Say what you want done: a coordinator reads the code, plans the tasks and reviews what each one did. Approving and merging stay yours.</p></div>
+          <div class="empty" id="goal-empty"><p class="empty-title" id="goal-empty-title">No goals yet</p><button class="btn primary" type="button" id="goal-empty-new" data-icon="plus">New goal…</button></div>
         </div>
       </section>
 
@@ -777,24 +785,18 @@
     </form>
   </dialog>
 
-  <!-- New goal / Edit goal: what to get done, a budget and whether its tasks wait for you (app/goals.js) -->
+  <!-- New goal: what to get done and whether its tasks wait for you; a goal is named from it.
+       Edit goal adds its name and the most tasks it may make (app/goals.js). -->
   <dialog class="sheet small" id="goal-sheet" aria-labelledby="goal-sheet-title">
     <form method="dialog" id="goal-form">
       <header class="sheet-head"><h2 id="goal-sheet-title">New goal</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
-      <label class="field"><span>Title <em>named from what to get done if empty</em></span><input name="title" placeholder="Faster search" autocomplete="off" maxlength="200"></label>
-      <label class="field"><span>What to get done</span><textarea name="description" rows="5" placeholder="Search answers in under 100 ms, without dropping results." required></textarea></label>
-      <fieldset class="field choice">
-        <legend>Budget <em>empty for no limit</em></legend>
-        <div class="field-row">
-          <label class="field inline"><span>Max tasks</span><input type="number" name="max_tasks" min="0" max="1000" step="1" placeholder="None" inputmode="numeric"></label>
-          <label class="field inline"><span>Share of weekly usage %</span><input type="number" name="weekly_share" min="0" max="100" step="1" placeholder="None" inputmode="numeric"></label>
-        </div>
-      </fieldset>
-      <fieldset class="field choice">
-        <legend>Its tasks</legend>
-        <label class="radio"><input type="radio" name="mode" value="ask" checked><span>Ask me before queuing <em>the plan and new tasks wait for you as drafts</em></span></label>
-        <label class="radio"><input type="radio" name="mode" value="queue"><span>Queue on its own <em>the plan and follow-ups are queued right away</em></span></label>
-      </fieldset>
+      <label class="field" id="goal-title-field"><span>Name</span><input name="title" autocomplete="off" maxlength="200"></label>
+      <label class="field"><span>What to get done</span><textarea name="description" rows="5" required></textarea></label>
+      <label class="field"><span>Tasks</span><select name="mode">
+        <option value="ask">Ask me before starting tasks</option>
+        <option value="queue">Start tasks on its own</option>
+      </select></label>
+      <label class="field" id="goal-max-field"><span>Max tasks</span><input type="number" name="max_tasks" min="0" max="1000" step="1" inputmode="numeric"></label>
       <footer class="sheet-actions">
         <button class="btn primary" value="save" data-icon="target" id="goal-save">Start goal</button>
       </footer>

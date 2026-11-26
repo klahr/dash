@@ -7,9 +7,9 @@ and reviews what each one did. It never approves or merges a task: that stays yo
 Each goal belongs to one project and has:
 
 - a **title** and a **description**: what you want done
-- a **mode**: **ask before queuing** (the default) or **queue on its own**
-- a **budget** (both optional): the most tasks it may create, and the share of the weekly usage
-  window its tasks may use
+- a **mode**: **Ask me before starting tasks** (the default) or **Start tasks on its own**
+- a **budget** (optional): the most tasks it may create (**Max tasks**). The API can also set
+  the share of the weekly usage window its tasks may use
 - a **status**: planning, working, waiting for you (shown as what it waits for: **Plan to
   accept**, **Question for you** or **Drafts to queue**), paused, done, stopped or out of budget;
   a goal whose coordinator can't run shows **Can't run** instead, with the reason
@@ -27,14 +27,19 @@ Goals work on the hub's shared projects and on a Dash of your own. They don't wo
 the runner doesn't offer goals to the hub, so **New goal…** isn't shown there. Open the project
 in that computer's own Dash to use goals, or make it a shared project.
 
+On the **Goals** page, click **New goal…**. Or start from a task:
+
 To start a new project and its first goal from an idea, use [Write a project brief](plan-project.md)
 instead.
 
 1. Open **New task** (the **+** button) or the full task form, and pick **New goal…** (next to
    **Split…** in the form). What you typed is carried over.
-2. Say what to get done. Add a budget if you want one: **Max tasks**, **Share of weekly usage %**, or both.
-   Leave them empty for no limit.
-3. Pick **Ask me before queuing** (the default) or **Queue on its own**, then **Start goal**.
+2. Say what to get done. The goal is named from it.
+3. Under **Tasks**, keep **Ask me before starting tasks** (the default) or pick **Start tasks on
+   its own**, then click **Start goal**.
+
+A new goal has no limit. To set one, use **Edit goal…** in the goal's **⋯** menu: **Max tasks**.
+Leave it empty for no limit.
 
 The goal opens on the **Goals** page, *planning*. In ask mode its plan shows in the goal once the
 coordinator has one: each task under **Tasks**, marked *Proposed*. Click a task to read its
@@ -43,18 +48,25 @@ instructions.
 - **Accept plan** makes the plan's tasks and queues them.
 - **Edit plan…** opens the plan in a sheet. Edit the tasks, remove or add some, and set which
   earlier tasks each one waits for (the numbers after **After**). Then click **Accept and queue**,
-  or **Accept as drafts** to queue them yourself later. **Plan again…** tells the coordinator what
-  to change instead.
+  or **Accept as drafts** to queue them yourself later. **Plan again…** asks what should change
+  and has the coordinator plan again.
 
 ## The Goals page
 
 **Goals** is in the sidebar, next to **Board** and **History** (a tab in the bottom bar on a phone;
-`go` on the keyboard). Each goal shows its status and how many of its tasks are merged ("4 of 7
-merged", a waiting plan's tasks counted). Goals waiting for you, and goals that can't run, come
-first.
+`go` on the keyboard). Each goal is a card with its status and how many of its tasks are merged
+("4 of 7 merged", a waiting plan's tasks counted). Goals waiting for you, and goals that can't
+run, come first. The cards fill the page's width, one column on a phone.
+
+- **Active** and **Done** split the goals that are still going from the ones that are done or
+  stopped. The tabs show once a goal is done.
+- The project's name and **All projects** switch between the project's goals and the goals of
+  every project, each card naming its project. They show when there is more than one project.
+  Pick a goal of another project to open it: Dash switches to that project. The **Board** badge's
+  "2 goals" also opens **All projects**.
 
 Pick a goal to open it beside the list (full screen with **Back** on a phone). The list narrows
-and the goal you picked stays marked in it. `Esc` closes it; `j` and `k` open the next and
+and the goal you picked stays marked in it, even once it is done. `Esc` closes it; `j` and `k` open the next and
 previous goal. Its head shows the status, the mode, when it started and what its tasks spent
 (tokens and cost). Below it:
 
@@ -123,11 +135,11 @@ the goal. To show only one goal's tasks:
 1. **Planning.** When you make a goal, the coordinator reads the code and proposes a plan:
    tasks, each with instructions, and the earlier tasks it needs merged first (they become its
    `depends_on`).
-2. **Your turn (ask before queuing).** The plan waits for you to accept it: the goal is *waiting
+2. **Your turn (Ask me before starting tasks).** The plan waits for you to accept it: the goal is *waiting
    for you*. Accept it, edit it first, or reject it with feedback (the coordinator then plans
    again). **Accept plan** queues its tasks; accepted as drafts, you queue them from the board.
    While drafts of the goal wait, so does the goal.
-   **Queue on its own** skips this: the plan is queued right away.
+   **Start tasks on its own** skips this: the plan is queued right away.
 3. **Wake-ups.** The coordinator wakes only when one of the goal's tasks enters review, fails
    or is merged, never on a timer. It reads the task's diff and log, then may send the task back
    with notes, post a short review note for its **Changes** tab, add a follow-up, or drop or
@@ -136,7 +148,7 @@ the goal. To show only one goal's tasks:
    tasks are all made and finished, or whose tasks used their weekly share, is *out of budget*.
    Either way you are notified, and nothing wakes the coordinator after that.
 
-In **ask before queuing** mode, follow-ups the coordinator adds are drafts for you to queue. It
+In **Ask me before starting tasks** mode, follow-ups the coordinator adds are drafts for you to queue. It
 can still send a task back with notes: that task was already queued by you.
 
 If the coordinator needs a decision, it asks: the goal waits for you, with the question as its
@@ -149,7 +161,7 @@ note. Answer in the goal's chat, or with `message_goal` from Claude (see below).
   meanwhile.
 - **Resume…** on a goal out of budget shows its limits under the actions. Raise them and click
   **Resume**: the budget is saved and the goal resumes in one step.
-- **Edit goal…** changes the title, description, mode or budget.
+- **Edit goal…** changes the name, what to get done, the mode or **Max tasks**.
 - **Stop goal** ends the goal for good: it is *stopped*, and its tasks stay on the board as they
   are. The goal stays in the list. **Undo** in the toast takes it back; the goal is stopped when
   the toast goes.
@@ -165,7 +177,8 @@ then stops first.
 
 - **Max tasks** counts the tasks the coordinator created for the goal (deleted ones don't
   count). It can't create or plan more than that.
-- **Weekly share** is a percentage of the weekly usage window (see
+- **Weekly share** (set with the API or Claude's `update_goal`, `budget.weekly_share`) is a
+  percentage of the weekly usage window (see
   [Weekly pace](tasks.md#weekly-pace)). The goal's use is estimated as the window's
   utilization times its tasks' part of the cost of all the org's tasks since the window started.
   Once it reaches the share, the coordinator can't queue or send back tasks, and the goal is out
@@ -224,7 +237,7 @@ a question the goal waits on. A paused goal, or one out of budget, gets it when 
 | `POST /api/goals/{id}/message` | wake the coordinator with a message: `{"text": "…"}` |
 | `GET /api/goals/{id}/chat` | the coordinator's conversation |
 
-`mode` is `ask` (ask before queuing) or `queue` (queue on its own). Changes to a goal are
+`mode` is `ask` (ask me before starting tasks) or `queue` (start tasks on its own). Changes to a goal are
 broadcast on `/ws/events` as `goal.updated`, and a deleted goal as `goal.deleted`.
 
 ```sh
