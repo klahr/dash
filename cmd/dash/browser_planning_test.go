@@ -446,12 +446,15 @@ func TestBrowserPlanningBoards(t *testing.T) {
 	tabs := `[...document.querySelectorAll("#pl-boards .pl-board-tab:not([data-board=all])")].map((x) => x.textContent).join()`
 	// + adds a board, which is then shown.
 	b.until("+", `document.activeElement?.matches(".pl-board-input")`, chromedp.Click(chromedp.CSS(`#pl-board-add`)))
-	b.do("add Web", chromedp.SendKeys(`#pl-boards .pl-board-input`, "Web"), chromedp.KeyEvent(kb.Enter))
+	// The box has the focus, so the keys go to it as they are. (SendKeys looks
+	// the box up first: a reload of the boards in between moves it, with its
+	// focus and text, but gives it another node id, and the keys fail.)
+	b.do("add Web", chromedp.KeyEvent("Web"), chromedp.KeyEvent(kb.Enter))
 	b.waitJS("Web added, last, and shown", tabs+` === "Main,Mobile,Web" && document.querySelector("#pl-boards [aria-selected=true]")?.textContent === "Web"`)
 	// A double click renames it.
 	b.run("double-click Web", `(() => { document.querySelector("#pl-boards .pl-board-on .pl-board-tab").dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); return true; })()`)
 	b.waitJS("its name in a box", `document.activeElement?.matches(".pl-board-input") && document.activeElement.value === "Web"`)
-	b.do("rename it", chromedp.KeyEvent(kb.End), chromedp.SendKeys(`#pl-boards .pl-board-input`, "site"), chromedp.KeyEvent(kb.Enter))
+	b.do("rename it", chromedp.KeyEvent(kb.End), chromedp.KeyEvent("site"), chromedp.KeyEvent(kb.Enter))
 	b.waitJS("renamed", tabs+` === "Main,Mobile,Website"`)
 	// Its menu (⋯ on the tab shown, or a right click) moves it.
 	b.menuPick("#pl-boards .pl-board-more", "Move left", tabs+` === "Main,Website,Mobile"`, "")
