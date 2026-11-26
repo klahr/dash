@@ -27,6 +27,7 @@ const (
 	ScanKindAccessibility   = "accessibility"
 	ScanKindBreakingChanges = "breaking_changes"
 	ScanKindMaintainability = "maintainability"
+	ScanKindSupplyChain     = "supply_chain"
 	ScanKindCustom          = "custom"
 )
 
@@ -35,7 +36,7 @@ func ScanKinds() []string {
 	return []string{
 		ScanKindSecurity, ScanKindCodeReview, ScanKindDependencies, ScanKindTests, ScanKindDocs,
 		ScanKindPerformance, ScanKindDeadCode, ScanKindFlakyTests, ScanKindAccessibility,
-		ScanKindBreakingChanges, ScanKindMaintainability, ScanKindCustom,
+		ScanKindBreakingChanges, ScanKindMaintainability, ScanKindSupplyChain, ScanKindCustom,
 	}
 }
 
@@ -54,6 +55,7 @@ var scanKindAliases = map[string]string{
 	"breaking": ScanKindBreakingChanges, "breaking_change": ScanKindBreakingChanges, "breaks": ScanKindBreakingChanges,
 	"duplication": ScanKindMaintainability, "duplicate_code": ScanKindMaintainability, "duplicates": ScanKindMaintainability,
 	"complexity": ScanKindMaintainability, "refactor": ScanKindMaintainability, "refactoring": ScanKindMaintainability,
+	"supplychain": ScanKindSupplyChain, "ci": ScanKindSupplyChain, "ci_cd": ScanKindSupplyChain, "cicd": ScanKindSupplyChain,
 }
 
 // NormalizeScanKind is a scan kind's canonical name: lower case, '-' and

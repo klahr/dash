@@ -24,7 +24,8 @@ Scans come from three places, marked on each card:
   interactive elements) and breaking changes (`breaking-changes`: what the checkout's branch
   changes compared with the default branch that breaks callers or users: public API and HTTP
   endpoint changes, schema changes with no migration or a destructive one, removed or renamed
-  flags, config keys and environment variables, and changed file formats), in every project.
+  flags, config keys and environment variables, and changed file formats) and CI/CD and supply
+  chain (`supply-chain`), in every project.
   Breaking changes has scope `since_main` and no suggested schedule: run it with "Run now" while
   the project's folder has the branch to check out. The security scan (suggested daily at
   06:00) traces untrusted input from where it enters to where it is used. It covers injection,
@@ -61,6 +62,22 @@ Scans come from three places, marked on each card:
   lock files and metadata and installs nothing. It has no general shell: it may run only
   `govulncheck`, `npm audit` and `npm audit --json`, `pip-audit --disable-pip …`, `cargo audit` and
   `cargo audit --json`, `pip show` and `cargo metadata` (see [Shell commands](#shell-commands)).
+  The CI/CD and supply chain scan (suggested weekly, Thursdays at 06:00) looks at what changed
+  in the CI configuration (GitHub Actions, GitLab CI, CircleCI, Jenkins, …), Dockerfiles and
+  package manifests since its last run (everything on its first run); it is skipped when nothing
+  changed, and ends early when none of these files did. It reports
+  third-party actions pinned to a tag instead of a commit SHA, `pull_request_target` and
+  `workflow_run` workflows that run a pull request's code, script injection through
+  `${{ github.event.* }}` in `run:`, missing or too broad `GITHUB_TOKEN` permissions, secrets
+  exposed to forks or logs, and self-hosted runners on public repositories; images that run as
+  root, use `:latest` or unpinned base images, keep secrets in build arguments or layers, run
+  `curl | sh`, `ADD` from a URL or have no `.dockerignore`; and lock files that are missing or
+  not used in CI, dependencies from git URLs or open ranges, install scripts, likely
+  typosquatted names and registries over plain HTTP. Each finding's fix is the change to make:
+  the SHA to pin to, the `permissions:` block, the pinned image. Known vulnerabilities and
+  licences are left to the dependency audit, and secrets in files and history to the secrets
+  scan. It uses read-only tools and only runs in
+  repositories with CI configuration, a Dockerfile or a package manifest.
   The dead code scan (suggested monthly) reports unused functions, types, flags, routes, config
   keys and files, and TODO/FIXME comments older than 90 days (dated with git blame) worth
   turning into tasks. It checks "unused" against the whole repository, including references by
@@ -156,6 +173,7 @@ Look for vulnerabilities in {{path}} …
   | `accessibility`    | `a11y`                                                    | bug          |
   | `breaking_changes` | `breaking`, `breaking_change`, `breaks`                   | bug          |
   | `maintainability`  | `duplication`, `duplicate_code`, `complexity`, `refactor` | issue        |
+  | `supply_chain`     | `supplychain`, `ci`, `ci_cd`, `cicd`                      | vuln         |
   | `custom` (default) |                                                           | issue        |
 
   Kinds are case-insensitive and `-` or a space works for `_` (`dead-code`, `Flaky Tests`); the

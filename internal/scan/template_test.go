@@ -114,6 +114,10 @@ func TestKinds(t *testing.T) {
 		{"duplicate-code", KindMaintainability, model.IssueOther},
 		{"Complexity", KindMaintainability, model.IssueOther},
 		{"refactor", KindMaintainability, model.IssueOther},
+		{"supply_chain", KindSupplyChain, model.IssueVuln},
+		{"supply-chain", KindSupplyChain, model.IssueVuln},
+		{"Supply Chain", KindSupplyChain, model.IssueVuln},
+		{"ci-cd", KindSupplyChain, model.IssueVuln},
 		{"custom", KindCustom, model.IssueOther},
 	} {
 		tm, err := ParseTemplate("x", []byte("---\nkind: "+c.kind+"\n---\nGo."))
@@ -130,7 +134,7 @@ func TestKinds(t *testing.T) {
 			t.Errorf("%s: round trip %q %v", c.kind, back.Kind, err)
 		}
 	}
-	if got := len(model.ScanKinds()); got != 12 {
+	if got := len(model.ScanKinds()); got != 13 {
 		t.Errorf("Kinds: %d %v", got, model.ScanKinds())
 	}
 	// The error names every kind.
@@ -202,7 +206,7 @@ func TestBuiltins(t *testing.T) {
 			t.Errorf("%s: builtin %v schedule %q", b.Name, b.Builtin, b.Schedule)
 		}
 	}
-	for _, n := range []string{"security", "secrets", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility", "breaking-changes", "maintainability"} {
+	for _, n := range []string{"security", "secrets", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility", "breaking-changes", "maintainability", "supply-chain"} {
 		if _, ok := names[n]; !ok {
 			t.Errorf("no built-in %s (have %v)", n, names)
 		}
@@ -213,14 +217,16 @@ func TestBuiltins(t *testing.T) {
 		names["performance"].Kind != KindPerformance || names["performance"].Scope != model.ScopeSinceLastScan ||
 		names["dead-code"].Kind != KindDeadCode ||
 		names["maintainability"].Kind != KindMaintainability || names["maintainability"].Scope != model.ScopeRepo ||
+		names["supply-chain"].Kind != KindSupplyChain || names["supply-chain"].Scope != model.ScopeSinceLastScan ||
 		names["flaky-tests"].Kind != KindFlakyTests || names["flaky-tests"].Scope != model.ScopeRepo ||
 		names["accessibility"].Kind != KindAccessibility || names["accessibility"].Scope != model.ScopeSinceLastScan ||
 		names["breaking-changes"].Kind != KindBreakingChanges || names["breaking-changes"].Scope != model.ScopeSinceMain {
 		t.Errorf("kinds: %+v", names)
 	}
-	// Only the accessibility scan is limited to some files: web front ends.
+	// Only the accessibility scan (web front ends) and the supply chain scan
+	// (CI, containers, package manifests) are limited to some files.
 	for _, b := range bs {
-		if (len(b.RequiresFiles) > 0) != (b.Name == "accessibility") {
+		if (len(b.RequiresFiles) > 0) != (b.Name == "accessibility" || b.Name == "supply-chain") {
 			t.Errorf("%s: requires_files %v", b.Name, b.RequiresFiles)
 		}
 	}
@@ -233,6 +239,19 @@ func TestBuiltins(t *testing.T) {
 	for _, f := range []string{"main.go", "internal/api/server.ts", "README.md", "styles.css"} {
 		if requiresMatch(t, a11y.RequiresFiles, f) {
 			t.Errorf("accessibility scan applies to %s", f)
+		}
+	}
+	sc := names["supply-chain"]
+	for _, f := range []string{".github/workflows/ci.yml", ".github/workflows/release.yaml", ".gitlab-ci.yml", ".circleci/config.yml", "Jenkinsfile",
+		"Dockerfile", "deploy/api.Dockerfile", "Dockerfile.dev", "Containerfile", "docker-compose.yml", "compose.yaml",
+		"package.json", "web/package.json", "go.mod", "requirements.txt", "requirements-dev.txt", "pyproject.toml", "Cargo.toml", "Gemfile", ".npmrc"} {
+		if !requiresMatch(t, sc.RequiresFiles, f) {
+			t.Errorf("supply chain scan doesn't apply to %s", f)
+		}
+	}
+	for _, f := range []string{"main.go", "README.md", "docs/ci.md", ".github/CODEOWNERS", "scripts/build.sh"} {
+		if requiresMatch(t, sc.RequiresFiles, f) {
+			t.Errorf("supply chain scan applies to %s", f)
 		}
 	}
 	// The performance review covers N+1 queries, unbounded work, indexes and
@@ -312,6 +331,23 @@ func TestBuiltins(t *testing.T) {
 	for _, want := range []string{"Duplicate code", "every location", "Complexity", "early", "one implementation", "standard library", "search the whole repository", "duplication in tests", "migrations", "pays for itself", "risky", "Do not change any files"} {
 		if !strings.Contains(mp, want) {
 			t.Errorf("maintainability prompt lacks %q", want)
+		}
+	}
+	// The supply chain scan reads CI, container and package files weekly with
+	// read-only tools, leaves the dependency audit's ground to it, and gives
+	// each finding a fix.
+	if sc.Title != "CI/CD and supply chain" || sc.Schedule != "0 6 * * 4" || len(sc.Tools) != 0 {
+		t.Errorf("supply-chain: title %q schedule %q tools %q", sc.Title, sc.Schedule, sc.Tools)
+	}
+	scp := sc.Render("", "")
+	for _, want := range []string{
+		"commit SHA", "pull_request_target", "workflow_run", "github.event", "env:", "permissions:", "GITHUB_TOKEN", "forks", "Self-hosted",
+		"USER", ":latest", "@sha256:", "--mount=type=secret", "curl … | sh", "ADD https://", ".dockerignore",
+		"lock file", "npm ci", "git URLs", "postinstall", "typosquat", "plain HTTP",
+		"dependency audit (`dependencies`)", "licences", "When in doubt, leave it out", "git ls-remote", "Severity:", "Do not change any files",
+	} {
+		if !strings.Contains(scp, want) {
+			t.Errorf("supply-chain prompt lacks %q", want)
 		}
 	}
 }

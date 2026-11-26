@@ -1,6 +1,7 @@
 // Package scan runs preconfigured, read-only Claude Code scans of a project
 // (security, code review, dependency audit, tests, docs, performance, dead
-// code, flaky tests, accessibility, breaking changes, or the team's own) on demand or
+// code, flaky tests, accessibility, breaking changes, CI/CD and supply
+// chain, or the team's own) on demand or
 // on a schedule, and files what they find in the project's Issues.
 //
 // A scan template is a markdown file in the repository, .dash/scans/<name>.md:
@@ -54,6 +55,7 @@ const (
 	KindAccessibility   = model.ScanKindAccessibility
 	KindBreakingChanges = model.ScanKindBreakingChanges
 	KindMaintainability = model.ScanKindMaintainability
+	KindSupplyChain     = model.ScanKindSupplyChain
 	KindCustom          = model.ScanKindCustom
 )
 
@@ -296,13 +298,13 @@ func (t *Template) normalize() error {
 }
 
 // FindingType is the type of a finding that names none: a vulnerability
-// for security and dependency scans; a bug where what is found is wrong
+// for security, dependency and supply chain scans; a bug where what is found is wrong
 // behaviour (code review, a flaky test, a change that breaks callers, a UI
 // some users can't use); otherwise an issue (a missing test or doc, slow,
 // dead, duplicated or overly complex code, a custom scan's finding).
 func (t Template) FindingType() model.IssueType {
 	switch t.Kind {
-	case KindSecurity, KindDependencies:
+	case KindSecurity, KindDependencies, KindSupplyChain:
 		return model.IssueVuln
 	case KindCodeReview, KindFlakyTests, KindBreakingChanges, KindAccessibility:
 		return model.IssueBug

@@ -23,7 +23,7 @@ import { pickDrafts, worstSeverity } from "./tags.js";
 export const SCAN_KINDS = {
   security: "Security", code_review: "Code review", dependencies: "Dependencies", tests: "Tests", docs: "Docs",
   performance: "Performance", dead_code: "Dead code", flaky_tests: "Flaky tests", accessibility: "Accessibility",
-  breaking_changes: "Breaking changes", maintainability: "Duplication & complexity", custom: "Custom",
+  breaking_changes: "Breaking changes", maintainability: "Duplication & complexity", supply_chain: "CI/CD & supply chain", custom: "Custom",
 };
 const SCAN_SCOPES = { repo: "Whole repository", since_last_scan: "Changes since the last scan", since_main: "Branch vs. main", path: "One path" };
 export const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map(), open: new Set(), dismissed: [] };
