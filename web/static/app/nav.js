@@ -3,7 +3,7 @@ import * as store from "./store.js";
 import { chatBeside, desktop } from "./viewport.js";
 import { fail, reduceMotion } from "./dialogs.js";
 import { state } from "./state.js";
-import { setMenu } from "./projects.js";
+import { applyBrand, setMenu } from "./projects.js";
 import { pane, renderTryBack, toggleChatPane } from "./chatpane.js";
 import { ensureShell, fitTerm } from "./terminal.js";
 import { enterTry, leaveTry } from "./try.js";
@@ -88,6 +88,7 @@ function applyView(name) {
   state.view = name;
   store.set("dash.view", name);
   rememberView(name);
+  if ((prev === "planning") !== (name === "planning")) applyBrand(); // Planning is across projects: the default brand
   if (navView(name) === "code") store.set(CODE_TAB, tabOf(name));
   renderNavActive();
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${sectionOf(name)}`));

@@ -69,21 +69,21 @@ function indent(view, out) {
 
 const theme = EditorView.theme({
   "&": { color: "var(--text)", backgroundColor: "var(--bg)", border: "1px solid var(--line)", borderRadius: "var(--r-m)" },
-  "&.cm-focused": { outline: "none", borderColor: "var(--accent)" },
+  "&.cm-focused": { outline: "none", borderColor: "var(--brand)" },
   ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "1.55", minHeight: "178px" },
   ".cm-content": { padding: "11px 0", caretColor: "var(--text)" },
   ".cm-line": { padding: "0 12px" },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--text)" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
-    { backgroundColor: "color-mix(in srgb, var(--accent) 35%, transparent)" },
+    { backgroundColor: "color-mix(in srgb, var(--brand) 35%, transparent)" },
   ".cm-placeholder": { color: "var(--faint)" },
   ".cm-panels": { backgroundColor: "var(--surface)", color: "var(--muted)", borderRadius: "0 0 var(--r-m) var(--r-m)" },
   ".cm-panels.cm-panels-bottom": { borderTop: "1px solid var(--line)" },
   ".cm-vim-panel": { fontFamily: "var(--mono)", fontSize: "12px", minHeight: "0", padding: "3px 12px" },
   ".cm-vim-panel input": { color: "var(--text)", fontFamily: "inherit" },
   ".cm-vim-message": { color: "var(--running) !important" }, // vim sets red inline
-  "&.cm-focused .cm-fat-cursor": { background: "color-mix(in srgb, var(--accent) 70%, transparent)", color: "var(--bg)" },
-  "&.cm-editor:not(.cm-focused) .cm-fat-cursor": { outline: "solid 1px var(--accent)" },
+  "&.cm-focused .cm-fat-cursor": { background: "color-mix(in srgb, var(--brand) 70%, transparent)", color: "var(--bg)" },
+  "&.cm-editor:not(.cm-focused) .cm-fat-cursor": { outline: "solid 1px var(--brand)" },
   ".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--running) 30%, transparent)" },
   ".cm-highlightSpace": { backgroundImage: "radial-gradient(circle at 50% 55%, color-mix(in srgb, var(--faint) 60%, transparent) 12%, transparent 0)" },
   ".cm-highlightTab": { opacity: "0.5" },
@@ -269,7 +269,7 @@ const codeTheme = EditorView.theme({
   ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 12px" },
   ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "color-mix(in srgb, var(--text) 5%, transparent)" },
   ".cm-activeLineGutter": { color: "var(--muted)" },
-  "&.cm-focused .cm-matchingBracket": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)", outline: "1px solid color-mix(in srgb, var(--accent) 60%, transparent)" },
+  "&.cm-focused .cm-matchingBracket": { backgroundColor: "color-mix(in srgb, var(--brand) 30%, transparent)", outline: "1px solid color-mix(in srgb, var(--brand) 60%, transparent)" },
   "&.cm-focused .cm-nonmatchingBracket": { color: "var(--failed)" },
 }, { dark: true });
 

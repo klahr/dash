@@ -668,6 +668,7 @@ var ProjectSettings = []Param{
 	{"max_turns", "integer", "Turn limit for one Claude run (0 for the default).", false},
 	{"max_parallel", "integer", "Most of the project's tasks in progress at once (0 for no limit of its own).", false},
 	{"color", "string", "Color marking the project, like \"#3a7bd5\" (\"\" for none).", false},
+	{"color_buttons", "boolean", "Use the project's color for the web UI's buttons and highlights too, not only its top bar, dot and icon.", false},
 }
 
 // ProjectTools read and change a project's settings: get_project and update_project.

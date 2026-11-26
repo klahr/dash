@@ -170,6 +170,10 @@ type Project struct {
 	// Color is an optional "#rrggbb" the UI marks the project with, so it's
 	// clear at a glance which one is open.
 	Color string `json:"color,omitempty"`
+	// ColorButtons gives the web UI's buttons, links and highlights the
+	// project's Color too, not only its top bar, dot and icon (nil means
+	// on). See UsesColorForButtons.
+	ColorButtons *bool `json:"color_buttons,omitempty"`
 	// Icon is an optional image upload ("<upload id>/<name>") shown in place
 	// of the project's initial; served at /api/uploads/<Icon>.
 	Icon string `json:"icon,omitempty"`
@@ -277,6 +281,10 @@ func (p Project) OnRunners() bool { return len(p.RunsOn) > 0 }
 
 // InvestigatesCI reports whether failed builds get a todo automatically.
 func (p Project) InvestigatesCI() bool { return p.InvestigateCI == nil || *p.InvestigateCI }
+
+// UsesColorForButtons says whether the web UI's buttons and highlights take
+// the project's Color (ColorButtons, on unless turned off).
+func (p Project) UsesColorForButtons() bool { return p.ColorButtons == nil || *p.ColorButtons }
 
 const (
 	DefaultMaxAutoFixes  = 2

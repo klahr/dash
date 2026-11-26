@@ -446,8 +446,10 @@ type projectUpdate struct {
 	MaxTurns    *int    `json:"max_turns"`
 	MaxParallel *int    `json:"max_parallel"`
 	Color       *string `json:"color"`
-	Icon        *string `json:"icon"`
-	TagFormat   *string `json:"tag_format"`
+	// ColorButtons is model.Project.ColorButtons.
+	ColorButtons *bool   `json:"color_buttons"`
+	Icon         *string `json:"icon"`
+	TagFormat    *string `json:"tag_format"`
 	// CloneURL is the hub's project's model.Project.CloneURL ("" clears
 	// it). Runners that cloned the project already keep their origin.
 	CloneURL *string `json:"clone_url"`
@@ -727,6 +729,10 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	if req.InvestigateCI != nil {
 		v := *req.InvestigateCI
 		p.InvestigateCI = &v
+	}
+	if req.ColorButtons != nil {
+		v := *req.ColorButtons
+		p.ColorButtons = &v
 	}
 	if req.MergeMode != nil {
 		if err := applyMergeMode(p, *req.MergeMode); err != nil {

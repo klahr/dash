@@ -210,7 +210,7 @@ export const ico = (name) => {
   const t = document.createElement("template");
   const tech = TECH_ICONS[name];
   t.innerHTML = tech
-    ? `<svg class="ico tech${tech[0] ? " tech-color" : ""}" viewBox="-12 -12 152 152" aria-hidden="true" data-tech="${name}"${tech[0] ? ` style="--brand:${tech[0]}"` : ""}>${tech[1].map((d) => `<path d="${d}" fill="currentColor"${tech[2] ? ` fill-rule="${tech[2]}"` : ""}/>`).join("")}</svg>`
+    ? `<svg class="ico tech${tech[0] ? " tech-color" : ""}" viewBox="-12 -12 152 152" aria-hidden="true" data-tech="${name}"${tech[0] ? ` style="--tech:${tech[0]}"` : ""}>${tech[1].map((d) => `<path d="${d}" fill="currentColor"${tech[2] ? ` fill-rule="${tech[2]}"` : ""}/>`).join("")}</svg>`
     : `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   return t.content.firstChild;
 };

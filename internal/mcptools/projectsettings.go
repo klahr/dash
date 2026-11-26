@@ -62,7 +62,7 @@ func settingValues(p model.Project) map[string]any {
 		"review_prompt": p.ReviewPrompt, "task_instructions": p.TaskInstructions, "max_auto_fixes": p.MaxAutoFixes,
 		"auto_push": p.AutoPush, "auto_approve": p.AutoApprove, "merge_mode": p.MergeMode, "investigate_ci": p.InvestigatesCI(),
 		"tag_format": p.TagFormat, "max_run_minutes": p.MaxRunMinutes, "max_turns": p.MaxTurns, "max_parallel": p.MaxParallel,
-		"color": p.Color,
+		"color": p.Color, "color_buttons": p.UsesColorForButtons(),
 	}
 }
 

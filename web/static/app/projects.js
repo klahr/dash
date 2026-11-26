@@ -1,3 +1,4 @@
+import { BG, DEFAULT as DEFAULT_BRAND, SURFACE, brandColors, luminance } from "../brandcolor.js";
 import { projectGroups as groupProjects, isShared, LABEL_ANY, parseLabels, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, servesProject, starKey, starSections, uniqueProjects } from "../groups.js";
 import { $, $$, h, ib, ico, plural, resizeHandle, setLabel, sizeText } from "./dom.js";
 import * as store from "./store.js";
@@ -169,6 +170,7 @@ export function renderProjectHeader() {
   else app.style.removeProperty("--project");
   app.classList.toggle("has-project-color", !!p?.color);
   $('meta[name="theme-color"]').content = p?.color || "#101722";
+  applyBrand();
   renderProjectBranch();
   $("#pm-project").hidden = !p; // the ⋮ menu's project items; Chat and Voice stay
   renderTryButton(); // Run, and its ▾ menu's Run tests, Push and Builds…
@@ -181,6 +183,30 @@ export function renderProjectHeader() {
       h("p", { class: "hint" }, `Fix it in ${p.path}; Dash retries on the next merge.`)),
     action: { label: "Shell", run: () => $('.nav > button[data-view="run"]').click() },
   } : null);
+}
+
+// applyBrand gives buttons, links, focus rings and the selected item
+// (style.css: --brand, --brand-hover, --on-brand) the open project's color,
+// made readable on the page (brandcolor.js), unless its settings turn that
+// off (color_buttons). No project, a project without a color, and Planning,
+// which is across projects, keep the stylesheet's. Set on <html>, so sheets
+// and menus outside .app take them too. Status colours never change.
+// (A function declaration with nothing at the top level: nav.js calls it
+// while the modules' import cycle still loads.)
+export function applyBrand() {
+  const vars = { brand: "--brand", hover: "--brand-hover", on: "--on-brand" };
+  const p = state.project, root = document.documentElement;
+  let c = null;
+  if (p?.color && p.color_buttons !== false && state.view !== "planning") {
+    const css = getComputedStyle(root);
+    const bg = css.getPropertyValue("--bg").trim() || BG, surface = css.getPropertyValue("--surface").trim() || SURFACE;
+    c = brandColors(p.color, { bg, surface, dark: luminance(bg) < 0.5 });
+    if (c?.brand === DEFAULT_BRAND) c = null; // Blue: exactly the stylesheet's
+  }
+  for (const [k, name] of Object.entries(vars)) {
+    if (c) root.style.setProperty(name, c[k]);
+    else root.style.removeProperty(name);
+  }
 }
 
 // A paused project says so above the board, and its menu offers Resume.

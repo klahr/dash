@@ -51,6 +51,8 @@ export function openSettings() {
   f.max_turns.value = p.max_turns || "";
   f.max_parallel.value = p.max_parallel || "";
   showColor(f, p.color || "");
+  f.color_buttons.checked = p.color_buttons !== false;
+  f.color_buttons.disabled = !p.color;
   f.icon.value = p.icon || "";
   projectIcon(p, $("#settings-icon"));
   renderAgentPicker(p);
@@ -512,6 +514,10 @@ function showColor(f, color) {
   f.color.value = color && !preset ? color : "#8aa4ff";
 }
 $("#settings-form").color.addEventListener("input", (e) => { e.target.form.color_pick.value = "custom"; });
+// Buttons can only take the project's color when it has one.
+$("#settings-form").addEventListener("change", (e) => {
+  if (e.target.name === "color_pick" || e.target.name === "color") e.target.form.color_buttons.disabled = !FIELDS.color.read(e.target.form);
+});
 const settingsIcon = (icon) => {
   $("#settings-form").icon.value = icon;
   projectIcon({ ...state.project, icon }, $("#settings-icon"));
@@ -563,6 +569,7 @@ const FIELDS = {
   max_turns: { read: (f) => Number(f.max_turns.value) || 0 },
   max_parallel: { read: (f) => Number(f.max_parallel.value) || 0 },
   color: { read: (f) => (f.color_pick.value === "custom" ? f.color.value : f.color_pick.value), el: () => $("#settings-color") },
+  color_buttons: { read: (f) => f.color_buttons.checked },
   icon: { read: (f) => f.icon.value, el: () => $("#settings-icon-pick") },
   runs_on: { read: () => typedRunsOn(), skip: () => $("#settings-runners-field").hidden },
   agent: { read: (f) => f.agent.value, skip: () => !$("#settings-agent").options.length },
