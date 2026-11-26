@@ -1499,10 +1499,17 @@ function descBox(d) {
   };
   el.addEventListener("change", finish);
   // Not when the window, rather than the box, loses focus.
-  el.addEventListener("blur", () => { if (document.hasFocus()) finish(); });
+  // Nor when a redraw moves the box (descSection gives it its focus back).
+  el.addEventListener("blur", () => { if (document.hasFocus() && !pl.desc?.moving) finish(); });
   el.addEventListener("paste", pasteFiles);
   el.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); el.blur(); finish(); }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      finish(); // before the blur, so it doesn't hang on whether the blur calls it
+      el.blur();
+      const d = pl.desc;
+      if (d?.el === el && !d.saving) { d.el = null; redrawDesc(); } // unchanged: shown rendered now
+    }
     else if (e.key === "Escape" && !e.isComposing) {
       e.preventDefault();
       e.stopPropagation(); // not the pane's Esc (close)
@@ -1510,6 +1517,7 @@ function descBox(d) {
       if (d?.el !== el || d.saving) return;
       el.value = d.saved;
       d.editing = false;
+      d.el = null; // let go of the box, so the redraw shows the text rendered whatever the focus
       redrawDesc();
       $("#pd-desc-sec .pl-desc-edit-btn")?.focus();
     }
@@ -1524,7 +1532,19 @@ function descBox(d) {
 function descSection(c) {
   let d = pl.desc;
   if (d?.id !== c.id) d = pl.desc = { id: c.id, el: null, saved: c.description || "", version: c.version, editing: false, saving: null };
-  const keep = d.el && (document.activeElement === d.el || d.el.value !== d.saved || d.saving);
+  const focused = d.el && (document.activeElement === d.el || d.moving);
+  const keep = d.el && (focused || d.el.value !== d.saved || d.saving);
+  if (focused) {
+    // Moving the box into the new section takes its focus: give it back once
+    // the section is in place, and don't take the blur for leaving the box.
+    const el = d.el;
+    d.moving = true;
+    queueMicrotask(() => {
+      if (pl.desc !== d) return;
+      d.moving = false;
+      if (d.el === el && el.isConnected && document.activeElement !== el) el.focus({ preventScroll: true });
+    });
+  }
   if (!keep) {
     d.saved = c.description || "";
     d.version = c.version;
