@@ -21,6 +21,10 @@ import (
 
 func TestMain(m *testing.M) {
 	store.UseMigratedTemplateInTests() // in-process stores; the built dash migrates for real
+	if err := killChildrenOnExit(); err != nil {
+		// Not fatal: the tests still stop their servers when they finish.
+		fmt.Fprintln(os.Stderr, "dash e2e: servers may outlive a killed test run:", err)
+	}
 	code := testgit.Run(m)
 	if bins.dir != "" {
 		_ = os.RemoveAll(bins.dir)
