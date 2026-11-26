@@ -82,9 +82,14 @@ type Project struct {
 	AutoApprove bool `json:"auto_approve"`
 	// CloseNoChanges: finished todos that change no files skip review and
 	// are closed (Merged with NoChanges), Claude's answer in their chat.
-	CloseNoChanges bool   `json:"close_no_changes"`
-	RunCommand     string `json:"run_command,omitempty"`  // e.g. "npm run dev" — gets $PORT
-	TestCommand    string `json:"test_command,omitempty"` // e.g. "go test ./..."
+	CloseNoChanges bool `json:"close_no_changes"`
+	// ClearMergedZone, when set, clears the board each day: once a new
+	// day starts in this IANA time zone (e.g. "Europe/Stockholm"), merged
+	// tasks last updated before it are deleted (see api.StartClearMerged).
+	// Empty: merged tasks stay until deleted by hand.
+	ClearMergedZone string `json:"clear_merged_zone,omitempty"`
+	RunCommand      string `json:"run_command,omitempty"`  // e.g. "npm run dev" — gets $PORT
+	TestCommand     string `json:"test_command,omitempty"` // e.g. "go test ./..."
 	// Environments are where the project is deployed, and how (see
 	// deploy.go). Each deploy to one is a Deploy record.
 	Environments []Environment `json:"environments,omitempty"`

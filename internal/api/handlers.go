@@ -433,16 +433,19 @@ type projectUpdate struct {
 	AutoPush       *bool     `json:"auto_push"`
 	AutoApprove    *bool     `json:"auto_approve"`
 	CloseNoChanges *bool     `json:"close_no_changes"`
-	MergeMode      *string   `json:"merge_mode"`
-	MergeMethod    *string   `json:"merge_method"`
-	MergeBatch     *int      `json:"merge_batch"`
-	InvestigateCI  *bool     `json:"investigate_ci"`
-	MaxRunMinutes  *int      `json:"max_run_minutes"`
-	MaxTurns       *int      `json:"max_turns"`
-	MaxParallel    *int      `json:"max_parallel"`
-	Color          *string   `json:"color"`
-	Icon           *string   `json:"icon"`
-	TagFormat      *string   `json:"tag_format"`
+	// ClearMergedZone is model.Project.ClearMergedZone: an IANA time zone
+	// turns the daily clearing of merged tasks on, "" turns it off.
+	ClearMergedZone *string `json:"clear_merged_zone"`
+	MergeMode       *string `json:"merge_mode"`
+	MergeMethod     *string `json:"merge_method"`
+	MergeBatch      *int    `json:"merge_batch"`
+	InvestigateCI   *bool   `json:"investigate_ci"`
+	MaxRunMinutes   *int    `json:"max_run_minutes"`
+	MaxTurns        *int    `json:"max_turns"`
+	MaxParallel     *int    `json:"max_parallel"`
+	Color           *string `json:"color"`
+	Icon            *string `json:"icon"`
+	TagFormat       *string `json:"tag_format"`
 	// CloneURL is the hub's project's model.Project.CloneURL ("" clears
 	// it). Runners that cloned the project already keep their origin.
 	CloneURL *string `json:"clone_url"`
@@ -603,6 +606,13 @@ func (sv *service) normalizeProjectUpdate(ctx context.Context, req *projectUpdat
 		}
 		req.PreviewKind = &k
 	}
+	if req.ClearMergedZone != nil {
+		z := strings.TrimSpace(*req.ClearMergedZone)
+		if _, err := time.LoadLocation(z); z != "" && (err != nil || strings.EqualFold(z, "local")) {
+			return fmt.Errorf("%w: unknown time zone %q (use a name such as Europe/Stockholm)", errBadRequest, z)
+		}
+		req.ClearMergedZone = &z
+	}
 	if req.Instructions != nil && len(*req.Instructions) > maxTaskInstructions {
 		return fmt.Errorf("%w: task_instructions is longer than %d KiB", errBadRequest, maxTaskInstructions>>10)
 	}
@@ -677,6 +687,7 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	set(&p.AutoPush, req.AutoPush)
 	set(&p.AutoApprove, req.AutoApprove)
 	set(&p.CloseNoChanges, req.CloseNoChanges)
+	set(&p.ClearMergedZone, req.ClearMergedZone)
 	set(&p.Color, req.Color)
 	set(&p.Icon, req.Icon)
 	set(&p.ChatPermissionMode, req.ChatMode)

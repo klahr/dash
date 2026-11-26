@@ -48,6 +48,21 @@ A task's `no_changes` is true when its latest run changed no files. A closed tas
 `merged`, `no_changes` true and no `merged_commit`. `POST /api/todos/{id}/approve` on such a
 task in Review closes it too.
 
+## Clear merged tasks when a new day starts
+
+Merged tasks stay in *Merged* until you delete them with **Delete merged…**. To have Dash do it
+each day, turn on **Project settings → Board → Clear merged tasks when a new day starts**. It is
+off by default.
+
+- The day starts at midnight in your browser's time zone when you turned the setting on.
+- Within a few minutes after midnight, Dash deletes the merged tasks last changed before that day.
+  Tasks merged today stay until the next day.
+- The merged commits stay on the default branch. Failed tasks are not deleted.
+
+The API sets it with an IANA time zone, and turns it off with an empty string:
+
+    PATCH /api/projects/{id}                     {"clear_merged_zone": "Europe/Stockholm"}
+
 ## One board per project
 
 A project has one task board. Earlier versions of Dash let a project have several. Updating

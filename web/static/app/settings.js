@@ -38,6 +38,8 @@ export function openSettings() {
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
   f.close_no_changes.checked = !!p.close_no_changes;
+  f.clear_merged_zone.checked = !!p.clear_merged_zone;
+  clearMergedHint(p.clear_merged_zone);
   f.merge_mode.value = p.merge_mode || "local";
   f.merge_method.value = p.merge_method || "";
   setMergeBatch(f.merge_batch, p.merge_batch > 1 ? p.merge_batch : 1);
@@ -548,6 +550,8 @@ const FIELDS = {
   auto_push: { read: (f) => f.auto_push.checked },
   auto_approve: { read: (f) => f.auto_approve.checked },
   close_no_changes: { read: (f) => f.close_no_changes.checked },
+  // On: the zone it is on in already, else this browser's; off: "".
+  clear_merged_zone: { read: (f) => (f.clear_merged_zone.checked ? state.project.clear_merged_zone || browserZone() || "UTC" : "") },
   merge_mode: { read: (f) => f.merge_mode.value },
   merge_method: { read: (f) => f.merge_method.value },
   merge_batch: { read: (f) => Math.min(10, Math.max(1, Math.round(Number(f.merge_batch.value) || 1))) },
@@ -615,9 +619,14 @@ function saveSetting(key) {
       renderProjectHeader();
       renderApprove();
       if (key === "auto_approve") renderBoard(); // auto approve shows or hides Review
+      if (key === "clear_merged_zone") clearMergedHint(saved.clear_merged_zone);
       if (key === "agent") { renderRunsOnPreview(); syncMergeHint(); }
     });
   });
+}
+// clearMergedHint names the time zone whose midnight clears merged tasks.
+function clearMergedHint(zone) {
+  $("#settings-clear-merged-hint").textContent = `After midnight${zone ? ` (${zone})` : ""}, merged tasks from earlier days are deleted. Their commits stay.`;
 }
 const settingKey = (el) => { const key = FIELD_OF[el.name] || el.name; return FIELDS[key] ? key : null; };
 $("#settings-form").addEventListener("change", (e) => {

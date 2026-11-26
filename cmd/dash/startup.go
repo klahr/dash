@@ -1277,6 +1277,8 @@ func (a *app) startWorkers() {
 	// Goals' coordinators wake on their tasks' events.
 	a.storeEvents.chain(a.apiSrv.ObserveGoals)
 	a.apiSrv.StartGoals(ctx)
+	// Projects that clear merged tasks daily lose yesterday's on a new day.
+	a.apiSrv.StartClearMerged(ctx)
 	// Deploys a restart cut short, and the queued ones; then merges trigger
 	// the environments that deploy on merge.
 	a.apiSrv.StartDeploys(ctx)

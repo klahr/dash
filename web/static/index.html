@@ -1244,6 +1244,8 @@
           <section class="rail-section" data-section="board">
             <label class="toggle"><input type="checkbox" name="close_no_changes"><span>Skip Review for tasks that change no files</span></label>
             <p class="hint">They close at once, with Claude's answer in the chat.</p>
+            <label class="toggle"><input type="checkbox" name="clear_merged_zone"><span>Clear merged tasks when a new day starts</span></label>
+            <p class="hint" id="settings-clear-merged-hint">After midnight, merged tasks from earlier days are deleted. Their commits stay.</p>
             <!-- The project's board backend (app/backend.js). Saved as it changes, once the tracker's settings are complete; its inputs have no names. -->
             <fieldset class="field choice" id="settings-board-field" hidden>
               <legend>Task board <em>Dash's own, or a tracker kept in sync both ways</em></legend>
