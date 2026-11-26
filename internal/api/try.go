@@ -168,6 +168,9 @@ type tryState struct {
 	// Candidates are all the runners working on the project, those it can't
 	// run on too, for the Run button's list.
 	Candidates []tryCandidate `json:"candidates"`
+	// WebDisabled says why a commit preview (kind web) can't run for the
+	// project: a web project's Run and History's Preview are greyed with it.
+	WebDisabled string `json:"web_disabled,omitempty"`
 }
 
 // tryProject is the caller's project {pid} and the runners it may try it on.
@@ -305,6 +308,9 @@ func (s *Server) getTry(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(runs) == 1 {
 		st.Default = runs[0].ID
+	}
+	if _, err := s.tryKind(p, model.PreviewWeb); err != nil {
+		st.WebDisabled = strings.TrimPrefix(err.Error(), errBadRequest.Error()+": ")
 	}
 	if s.hub() {
 		if s.tries.get(p.ID) == "" {

@@ -248,6 +248,24 @@ export async function selectCommit(sha, { wait = 0 } = {}) {
   renderCommit();
 }
 
+// showCommitAt opens History on the commit a preview runs (commitpreview.js)
+// and returns its hash: ref "" is the newest commit of the default branch as
+// the graph has it, a hash its commit; any other ref, or a hash the graph
+// lacks, the newest one too, until the runner says which it checked out.
+export async function showCommitAt(ref) {
+  const p = state.project;
+  if (state.view !== "history") showView("history", { now: true });
+  await loadGraph();
+  if (projectKey(state.project) !== projectKey(p)) return "";
+  const want = /^[0-9a-f]{7,40}$/i.test(ref || "") ? ref.toLowerCase() : "";
+  const { origin, local } = graphTips(hist.commits, hist.branch);
+  const sha = (want && hist.commits.find((c) => c.hash.startsWith(want))?.hash) || (want.length === 40 ? want : "") ||
+    (origin || local || hist.commits[0])?.hash || "";
+  if (!sha) throw new Error(`${hist.branch || "main"} has no commits yet.`);
+  selectCommit(sha).catch(fail);
+  return sha;
+}
+
 export function closeCommit() {
   if (!cp.sha) return;
   closeCommitPreview();

@@ -18,6 +18,7 @@ export const statusLabel = (t) => t.status === "merged" && t.no_changes && !t.me
 // The project's Try session (see "try" below).
 export const tryState = {
   pid: null, loaded: false, runners: [], disabled: "", session: null,
+  webDisabled: "", // why a commit preview (a web project's Run, History's Preview) can't run
   candidates: [], // every runner working on the project, with why it can't run it (the Run button's list)
   default: "", // the runner picked when only one can
   stopAsked: false, // Terminate was pressed while it was starting

@@ -63,9 +63,21 @@ terminal.
 - Dash remembers the runner you picked, per project, in this browser.
 - With no runner at all, **Run** is greyed out and says why.
 
-A web project with a run command has the same button: **Run** runs the command in the project's
-checkout and shows its output on **Code → Shell** (`R` there does the same). The button is
-**Stop** while the server runs.
+A web project with a start server command has the same button, with a
+[commit preview](#preview-a-commit-from-history) instead of a terminal:
+
+- **Run** previews the tip of the default branch on a runner. It opens **History** on that commit
+  with the app beside it, as **Preview** there does (full screen on a phone, with a button that
+  leads back). `Esc` closes the pane; the preview keeps running.
+- **▾ → Pick a commit…** previews any commit you pick.
+- **▾ → Run in checkout** runs the command in the project's own checkout, uncommitted changes
+  included, and shows its output on **Code → Shell** (`R` there does the same). It says **Stop the
+  checkout server** while that runs.
+- With no runner that can take it, no preview domain, or commit previews turned off, **Run** is
+  greyed out. Hover it to see why. **Run in checkout** still works.
+
+A web project on another computer's Dash has no commit previews: its **Run** runs the command in
+its checkout, and is **Stop** while the server runs.
 
 **▾** also holds the project's other actions, with their keys:
 
@@ -84,8 +96,8 @@ Hover it to see why. Click it, or **▾** then **Configure…**, to open **Proje
 and set the command.
 
 While it starts or runs, the button is a red **Terminate** (■), with the commit and the runner beside
-it (`abc1234 on laptop`): click those to open the terminal. **Terminate** stops the run at once, with
-no question. When the run stops by itself (idle for 30 minutes, the command exits, the runner goes
+it (`abc1234 on laptop`): click those to open the terminal (a web project: the preview, beside its
+commit in **History**). **Terminate** stops the run at once, with no question. When the run stops by itself (idle for 30 minutes, the command exits, the runner goes
 away), the button turns back into **Run** within about 20 seconds.
 
 The project chat sits beside the terminal (on a phone: the **Chat** tab, and **Terminal** to come
@@ -99,7 +111,8 @@ start; `kind` is `terminal`, the default, or `web` for a [commit preview](#previ
 `GET /api/projects/<id>/try/commits?runner=&q=&fetch=1`, `GET /api/projects/<id>/try/log?lines=N`
 and the terminal at `/ws/projects/<id>/try`; each goes through to the runner over its tunnel.
 `GET` returns `runners` (those it can run on), `candidates` (every runner with the project, each
-with `online` and, when it can't run on it, `why`), `default` and `session`.
+with `online` and, when it can't run on it, `why`), `default`, `session` and `web_disabled` (why a
+commit preview can't run, when it can't).
 
 ## Preview a commit from History
 
@@ -109,12 +122,14 @@ Open a commit in **History → Commits** to run the project as it was at that co
   terminal on **Code → Shell** at that commit, as **commit…** there does.
 - A web project with a start server command has **Preview**. It runs the app at that commit and
   shows it beside the commit (full screen on a phone, with a button that leads back). `Esc` closes
-  the preview, and `Esc` again the commit.
+  the preview, and `Esc` again the commit. The header's **Run** does the same for the latest
+  commit (see [Run and Terminate](#run-and-terminate-the-latest-commit-in-one-click)).
 
 Both run on a runner, like Try: one that is connected, has the labels the project runs on and
 opens terminals for you. Without a runner for the project the buttons aren't shown. Only commits
 of the default branch that origin has can run: on other commits the buttons are greyed out, and
-hovering them says why. With several runners, Dash asks which one, the first time.
+hovering them says why. **Preview** is also greyed out without a preview domain, or with commit
+previews turned off. With several runners, Dash asks which one, the first time.
 
 A commit preview is the project's Try session, with `kind: "web"`:
 
@@ -133,15 +148,16 @@ The rules are Try's:
 
 - A project has one session: a commit preview or a Try terminal. Starting one at another commit
   replaces the running one, after asking.
-- It stops after 30 minutes without traffic, or with **Stop**. Its worktree is removed when it
-  stops. **Hide preview** only hides it.
+- It stops after 30 minutes without traffic, or with **Stop** (or the header's **Terminate**). Its
+  worktree is removed when it stops. **Hide preview** only hides it.
 - It needs a preview domain (below).
 
 The commit runs in a worktree, not in a sandbox. It shares the runner's dev database, its services
 and the copied files. Old code may run old migrations or write data in an old format there, so
-Dash warns about this before the first commit preview of a project in each browser. To turn
-commit previews off for a project, clear **Preview old commits from History** in
-**Project settings → Commands** (`commit_previews: false`).
+Dash warns about this before the first commit preview of a project in each browser (not for
+**Run**, which runs the latest commit). To turn commit previews off for a project, clear
+**Preview old commits from History** in **Project settings → Commands** (`commit_previews: false`).
+That greys out the web project's **Run** too.
 
 To start one through the API:
 
@@ -151,7 +167,8 @@ curl -X POST https://dash.example.com/api/projects/<id>/try \
   -d '{"ref": "<sha>", "kind": "web"}'
 ```
 
-The answer is the session, with `url` and `open_url` (`/preview/<project>--<runner>`, which signs
+Leave out `ref` for the tip of the default branch, as the header's **Run** does. The answer is the
+session, with `url` and `open_url` (`/preview/<project>--<runner>`, which signs
 the browser in). `GET /api/projects/<id>/try/log?lines=N` returns it with the end of the server's
 log, and `DELETE /api/projects/<id>/try` stops it.
 

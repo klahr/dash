@@ -101,7 +101,7 @@ A question from Claude has no key for an answer: answer it in its card. `X` decl
 | `i` `Enter`   | type into the terminal     |
 | `Ctrl-]`      | leave the terminal         |
 | `x`           | stop what runs in it       |
-| `R`           | run the server             |
+| `R`           | run the server in the checkout |
 | `T`           | run the tests              |
 | `D`           | open **History → Deploys** |
 | `!`           | a new shell                |

@@ -449,7 +449,7 @@ func TestCommitPreviewOnARunnerThroughTheHub(t *testing.T) {
 	eventually(t, "the runner's report", func() bool { r, _ := rh.Get(creds.ID); return r.Reported != nil && r.Reported.Terminals })
 
 	v1 := commitTool(t, remote, "v1")
-	commitTool(t, remote, "v2")
+	v2 := commitTool(t, remote, "v2")
 	off := false
 	p, err := raw(hub).CreateProject(model.Project{Name: "web", OrgID: owner.Org, RemoteURL: remote, DefaultBranch: "main",
 		RunsOn: []string{"any"}, SetupCommand: "echo setting-up-$(cat .env)",
@@ -462,10 +462,22 @@ func TestCommitPreviewOnARunnerThroughTheHub(t *testing.T) {
 		hub.mux().ServeHTTP(w, r.WithContext(auth.WithSession(r.Context(), sess)))
 	})
 	web := `{"kind":"web","ref":"` + v1 + `"}`
+	// GET says why a commit preview can't run, for the Run and Preview buttons.
+	webWhy := func() string {
+		t.Helper()
+		var st tryState
+		if w := do(t, h, "GET", "/api/projects/"+p.ID+"/try", ""); w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &st) != nil {
+			t.Fatalf("try state: %d %s", w.Code, w.Body)
+		}
+		return st.WebDisabled
+	}
 
 	// Turned off for the project; then no preview domain; then no run command.
 	if w := do(t, h, "POST", "/api/projects/"+p.ID+"/try", web); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "commit previews are off") {
 		t.Fatalf("commit previews off: %d %s", w.Code, w.Body)
+	}
+	if why := webWhy(); !strings.HasPrefix(why, "commit previews are off") {
+		t.Errorf("web_disabled with commit previews off: %q", why)
 	}
 	if w := do(t, h, "PATCH", "/api/projects/"+p.ID, `{"commit_previews":true}`); w.Code != http.StatusOK {
 		t.Fatalf("turn commit previews on: %d %s", w.Code, w.Body)
@@ -473,8 +485,14 @@ func TestCommitPreviewOnARunnerThroughTheHub(t *testing.T) {
 	if w := do(t, h, "POST", "/api/projects/"+p.ID+"/try", web); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "preview domain") {
 		t.Fatalf("without a preview domain: %d %s", w.Code, w.Body)
 	}
+	if why := webWhy(); !strings.Contains(why, "preview domain") || strings.Contains(why, "bad request") {
+		t.Errorf("web_disabled without a preview domain: %q", why)
+	}
 	hub.Previews = preview.New(nil, hub.Hub, raw(hub), "preview.dash.test")
 	hub.Previews.Remote = rh
+	if why := webWhy(); why != "" {
+		t.Errorf("web_disabled with a preview domain: %q", why)
+	}
 	if w := do(t, h, "POST", "/api/projects/"+p.ID+"/try", `{"kind":"other"}`); w.Code != http.StatusBadRequest {
 		t.Errorf("unknown kind: %d %s", w.Code, w.Body)
 	}
@@ -556,6 +574,22 @@ func TestCommitPreviewOnARunnerThroughTheHub(t *testing.T) {
 	if w := do(t, asOutsider, "GET", s.OpenURL, ""); w.Code != http.StatusNotFound {
 		t.Errorf("open for a user of another org: %d %q", w.Code, w.Header().Get("Location"))
 	}
+
+	// A web project's Run: the default branch's tip (no ref), fetched now,
+	// replacing the preview at v1.
+	w = do(t, h, "POST", "/api/projects/"+p.ID+"/try", `{"kind":"web"}`)
+	var latest model.TrySession
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &latest) != nil || !latest.Web() || latest.Commit != v2 || latest.Ref != "" || latest.URL != s.URL {
+		t.Fatalf("the latest commit's preview: %d %s", w.Code, w.Body)
+	}
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Errorf("the preview at v1's worktree is still there: %v", err)
+	}
+	es, _ = os.ReadDir(filepath.Join(rs.TryRoot, rp.ID))
+	if len(es) != 1 {
+		t.Fatalf("try worktrees after Run: %v", es)
+	}
+	wt = filepath.Join(rs.TryRoot, rp.ID, es[0].Name())
 
 	// A terminal at another commit replaces it, worktree and all.
 	w = do(t, h, "POST", "/api/projects/"+p.ID+"/try", `{}`)

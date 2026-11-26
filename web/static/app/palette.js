@@ -92,7 +92,7 @@ function paletteCommands() {
     ["Add project", "plus", () => openNewProject(), "", "new create local repository runner github clone url"],
     ["Write a project brief", "spark", () => openPlanner(), "", "idea brief interview plan new project goal"],
     p && ["Project settings", "settings", openSettings, ":settings", "configure commands"],
-    p?.run_command && [serve.label || "Run", serve.icon || "play", () => startProc({ kind: "web", preset: "run" }), "R", `run web ${serve.icon || ""}`],
+    p?.run_command && [serve.label || "Run in checkout", serve.icon || "play", () => startProc({ kind: "web", preset: "run" }), "R", `run web server checkout ${serve.icon || ""}`],
     p?.test_command && ["Run tests", "check", () => startProc({ kind: "task", preset: "test" }), "T", "test"],
     ["History: Deploys", "rocket", go("deploys"), "gd", "deploys deploy environments production staging live release ship promote rollback"],
     p?.environments?.length && [deploy.label || "Deploy", deploy.icon || "rocket", go("deploys"), "D", `release ship environment `],

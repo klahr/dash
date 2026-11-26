@@ -14,6 +14,7 @@ import { pane, renderTryBack, toggleChatPane } from "./chatpane.js";
 import { ensureShell, procTerminal, runTests, serverRunning, testStatus, toggleServer } from "./terminal.js";
 import { pushDone, pushStatus } from "./board.js";
 import { buildStatus, openCI } from "./actions.js";
+import { previewOnRunner, runPreviewWhy, showRunningPreview, stopCommitPreview } from "./commitpreview.js";
 
 // ------------------------------------------------------------------ try: the project's CLI on a runner
 // (tryState is declared with state, near the top: views render before this runs.)
@@ -24,6 +25,12 @@ import { buildStatus, openCI } from "./actions.js";
 // project chat sits beside it (a tab of its own on phones), reads the terminal
 // with read_try_terminal, and files what the user finds as issues or draft tasks.
 function tryProject(p = state.project) { return !!p && p.preview_kind === "terminal" && !p.prefix; }
+// webProject: a web project of this Dash with a start server command. Its Run
+// previews the latest commit on a runner, as History's Preview does
+// (commitpreview.js); ▾ → Run in checkout runs the command in its checkout.
+const webProject = (p = state.project) => !!p && !p.prefix && p.preview_kind !== "terminal" && !!p.run_command;
+// onRunner: the project's Run runs on a runner, as its Try session.
+const onRunner = (p = state.project) => tryProject(p) || webProject(p);
 function shortSHA(sha) { return (sha || "").slice(0, 7); }
 function trySend(msg) { tryT?.send(msg); }
 
@@ -36,12 +43,12 @@ export async function loadTry({ any = false } = {}) {
   const n = ++trySeq;
   if (tryState.pid !== (p?.id || null)) {
     disconnectTry();
-    Object.assign(tryState, { pid: p?.id || null, loaded: false, runners: [], candidates: [], default: "", disabled: "", session: null, runner: "", refused: null, pending: null, stopAsked: false });
+    Object.assign(tryState, { pid: p?.id || null, loaded: false, runners: [], candidates: [], default: "", disabled: "", webDisabled: "", session: null, runner: "", refused: null, pending: null, stopAsked: false });
   }
-  if (!tryProject(p) && !(any && p && !p.prefix)) { renderTryButton(); if (state.view === "try") renderTry(); return; }
+  if (!onRunner(p) && !(any && p && !p.prefix)) { renderTryButton(); if (state.view === "try") renderTry(); return; }
   const st = await api("GET", `/api/projects/${p.id}/try`);
   if (state.project?.id !== p.id || n !== trySeq) return;
-  Object.assign(tryState, { loaded: true, runners: st.runners || [], candidates: st.candidates || [], default: st.default || "", disabled: st.disabled || "", session: st.session || null });
+  Object.assign(tryState, { loaded: true, runners: st.runners || [], candidates: st.candidates || [], default: st.default || "", disabled: st.disabled || "", webDisabled: st.web_disabled || "", session: st.session || null });
   const ids = tryState.runners.map((r) => r.id);
   if (tryState.session) tryState.runner = tryState.session.runner_id;
   else if (!ids.includes(tryState.runner)) tryState.runner = st.default || "";
@@ -71,8 +78,11 @@ export function renderTryButton() {
 // commit (an empty ref: the default branch's tip) on the runner used last, or
 // the only one; ▾ lists the project's runners to pick from. While a run starts
 // or goes it is ■ Terminate, with the commit and runner beside it, linking to
-// its terminal. A web project with a run command runs it in its checkout, and
-// while it runs the button is ■ Stop (terminal.js: toggleServer). Any other project has nothing to run: ▶ Run is greyed
+// its terminal. A web project with a run command does the same with a commit
+// preview (commitpreview.js): ▶ Run previews the latest commit on a runner, in
+// History beside it, and ▾ also has Run in checkout (terminal.js: toggleServer,
+// the command in the project's checkout). One on another computer's Dash runs it in its
+// checkout, and while it runs the button is ■ Stop. Any other project has nothing to run: ▶ Run is greyed
 // (aria-disabled, so it still takes clicks) and opens Configure….
 // ▾ also holds the project's other actions: Run tests, Push and Builds…, and a
 // dot on it says one needs a look (a test run or build going, or failed).
@@ -82,14 +92,24 @@ export function rememberRunner(pid, id) { try { localStorage.setItem(runKey(pid)
 
 // running: a run is starting or going (an exited one shows its last screen,
 // but the button is Run again).
-const running = () => !!tryState.starting || !!tryState.pending || tryState.stopAsked || tryState.session?.state === "live";
+// (A commit preview is "starting" until its server answers.)
+const running = () => !!tryState.starting || !!tryState.pending || tryState.stopAsked || ["live", "starting"].includes(tryState.session?.state);
 
-// webRun: the project runs its run_command in its checkout.
-const webRun = (p = state.project) => !!p && !tryProject(p) && p.preview_kind !== "terminal" && !!p.run_command;
+// webRun: the project's Run runs its run_command in its checkout (a web
+// project on another computer's Dash).
+const webRun = (p = state.project) => !!p && !onRunner(p) && p.preview_kind !== "terminal" && !!p.run_command;
+
+// Run in checkout: a web project's run_command in its checkout, uncommitted
+// changes included, its output on Code → Shell (R there). Stop while it runs.
+function checkoutRow() {
+  const stop = serverRunning();
+  return [stop ? "stop" : "play", stop ? "Stop the checkout server" : "Run in checkout", toggleServer,
+    { title: stop ? "Stop the server running in the project's checkout" : `Run ${state.project?.run_command} in the project's checkout, uncommitted changes included (Code → Shell)` }];
+}
 
 // noRunWhy says why the project has nothing to run ("" when it has).
 function noRunWhy(p = state.project) {
-  if (!p || tryProject(p) || webRun(p)) return "";
+  if (!p || onRunner(p) || webRun(p)) return "";
   if (p.preview_kind === "terminal") return "Run isn't available for a project on another computer's Dash. Configure… opens Project settings → Commands";
   return "No run command set. Configure it in Project settings → Commands";
 }
@@ -120,8 +140,8 @@ function renderRun() {
   const why = noRunWhy(p);
   main.classList.toggle("off", !!why);
   if (why) main.setAttribute("aria-disabled", "true"); else main.removeAttribute("aria-disabled");
-  if (!tryProject(p)) {
-    // Nothing to run (greyed, opens Configure…), or the web project's run command.
+  if (!onRunner(p)) {
+    // Nothing to run (greyed, opens Configure…), or the run command in the checkout.
     const stop = !why && serverRunning();
     main.classList.toggle("stop", stop);
     setLabel(main, stop ? "stop" : "play", h("span", { class: "run-main-label" }, stop ? "Stop" : "Run"));
@@ -130,21 +150,23 @@ function renderRun() {
     at.hidden = true;
     return;
   }
-  const stop = running();
-  const none = tryState.loaded && !tryState.runners.length;
+  const stop = running(), web = webProject(p);
+  // A web project's preview can't run (no runner, no preview domain, turned off): greyed, saying why.
+  const off = !stop && (web ? runPreviewWhy(p) : tryState.loaded && !tryState.runners.length ? tryState.disabled || "No runner can run this project." : "");
   main.classList.toggle("stop", stop);
   setLabel(main, stop ? "stop" : "play", h("span", { class: "run-main-label" }, stop ? "Terminate" : "Run"));
-  main.disabled = !stop && none;
+  main.disabled = !!off;
   const on = tryState.runners.find((r) => r.id === runRunner())?.name;
-  const label = stop ? "Terminate the run" : on ? `Run the latest ${p.default_branch || "main"} on ${on}` : `Run the latest ${p.default_branch || "main"} on a runner`;
-  main.title = none && !stop ? tryState.disabled || "No runner can run this project." : label;
+  const latest = `${web ? "Preview" : "Run"} the latest ${p.default_branch || "main"}`;
+  const label = stop ? `Terminate the ${web ? "preview" : "run"}` : `${latest} on ${on || "a runner"}`;
+  main.title = off ? (web ? `${off} ▾ → Run in checkout runs it in the project's checkout.` : off) : label;
   // What runs, and where: a link to its terminal.
   const what = s && !tryState.starting ? shortSHA(s.commit) : "";
   const where = s && !tryState.starting ? s.runner : tryState.runners.find((r) => r.id === (tryState.pending?.runner || tryState.runner))?.name || "";
   at.hidden = !stop;
   if (stop) {
-    at.href = href({ view: "try" }, p);
-    at.title = "Open its terminal";
+    at.href = href(web ? { view: "history" } : { view: "try" }, p);
+    at.title = web ? "Open its preview" : "Open its terminal";
     at.replaceChildren(what ? h("code", {}, what) : "starting", where ? h("span", { class: "run-at-on" }, ` on ${where}`) : "");
   }
 }
@@ -206,12 +228,14 @@ export async function tryAtCommit(sha, anchor) {
   });
 }
 
-// runOn starts the latest commit on runner and opens its terminal.
+// runOn starts the latest commit on runner and opens its terminal (a web
+// project: its preview, in History).
 async function runOn(runner) {
   const p = state.project;
   if (!p) return;
   rememberRunner(p.id, runner);
   if (pane.open && !chatBeside.matches) toggleChatPane(false); // a phone shows the terminal, not the chat
+  if (webProject(p)) return previewOnRunner("", runner);
   if (state.view === "try") return startTry({ ref: "", runner });
   tryState.pending = { ref: "", runner }; // enterTry starts it
   renderRun();
@@ -220,28 +244,34 @@ async function runOn(runner) {
 
 // runMenu drops down the project's runners (those that can't run it greyed,
 // saying why), then "Pick a commit…"; while a run goes, Terminate instead. A web
-// project's has Run (or Stop). Then the project's actions (actionRows) and
+// project's has Run in checkout too, and one on another computer's Dash only Run
+// (or Stop). Then the project's actions (actionRows) and
 // "Configure…" (Project settings → Commands, where the preview kind and command are).
 function runMenu() {
   const conf = [["settings", "Configure…", configureRun]];
-  if (!tryProject()) {
+  if (!onRunner()) {
     const why = noRunWhy(), stop = !why && serverRunning();
     const run = [stop ? "stop" : "play", stop ? "Stop" : "Run", clickRun, { disabled: !!why, title: why || (stop ? "Stop the server" : `Run ${state.project?.run_command}`) }];
     return popMenu($("#run-pick"), [[run], actionRows(), conf], { heading: why ? "Nothing to run" : "Run" });
   }
-  if (running()) return popMenu($("#run-pick"), [[["stop", "Terminate", clickRun, { title: "Terminate the run" }]], actionRows(), conf], { heading: "Run" });
+  const web = webProject(), checkout = web ? [checkoutRow()] : [];
+  if (running()) {
+    return popMenu($("#run-pick"), [[["stop", "Terminate", clickRun, { title: `Terminate the ${web ? "preview" : "run"}` }]], checkout, actionRows(), conf], { heading: "Run" });
+  }
+  // A web project's preview can't run at all (no preview domain, turned off): its rows say why.
+  const off = web && tryState.runners.length ? runPreviewWhy() : "";
   const cands = tryState.candidates.length ? tryState.candidates : tryState.runners.map((r) => ({ ...r, online: true }));
   const ok = new Set(tryState.runners.map((r) => r.id));
   const last = state.project ? lastRunner(state.project.id) : "";
   const rows = cands.map((r) => {
-    const can = ok.has(r.id);
-    const why = can ? "" : r.why || tryState.disabled || "Can't run this project.";
+    const can = ok.has(r.id) && !off;
+    const why = ok.has(r.id) ? off : r.why || tryState.disabled || "Can't run this project.";
     return ["computer", r.id === last ? `${r.name} (last used)` : r.name, () => runOn(r.id),
-      { disabled: !can, note: !r.online ? "offline" : can ? "online" : "can't run it", title: why }];
+      { disabled: !can, note: !r.online ? "offline" : ok.has(r.id) ? "online" : "can't run it", title: why }];
   });
   if (!rows.length) rows.push(["computer", "No runner", () => {}, { disabled: true, title: tryState.disabled }]);
-  return popMenu($("#run-pick"), [rows, [["log", "Pick a commit…", () => { tryState.runner ||= runRunner(); return pickCommit(); }]],
-    actionRows(), conf], { heading: "Run on" });
+  const pick = ["log", "Pick a commit…", () => { tryState.runner ||= runRunner(); return pickCommit(); }, { disabled: !!off, title: off }];
+  return popMenu($("#run-pick"), [rows, [pick], checkout, actionRows(), conf], { heading: web ? "Preview on" : "Run on" });
 }
 
 async function clickRun() {
@@ -250,11 +280,12 @@ async function clickRun() {
   if (noRunWhy(p)) return configureRun(); // greyed: one click from setting it up
   if (webRun(p)) return toggleServer(); // runs it, or stops it while it runs
   if (running()) {
-    // Terminate: stop it, or ask startTry to once it has started.
+    // Terminate: stop it, or ask startTry (commitpreview.js's start) to once it has started.
     if (tryState.starting || tryState.pending) { tryState.stopAsked = true; tryState.pending = null; return renderRun(); }
-    return stopTry();
+    return webProject(p) ? stopCommitPreview() : stopTry();
   }
   if (!tryState.loaded) await loadTry();
+  if (webProject(p) && runPreviewWhy(p)) throw new Error(runPreviewWhy(p));
   if (!tryState.runners.length) throw new Error(tryState.disabled || "No runner can run this project.");
   const id = runRunner();
   if (!id) return runMenu();
@@ -271,8 +302,14 @@ export function openTry() {
 
 // "commit…" on the Shell page: the commit picker (a running session shows
 // first, and the picker opens on it). Picking a commit opens the page there.
+// A web project's (Run ▾ → Pick a commit…) previews the commit picked.
 async function pickCommit() {
   if (!state.project) throw new Error(projectFirst());
+  if (webProject()) {
+    if (!tryState.loaded) await loadTry();
+    if (runPreviewWhy()) throw new Error(runPreviewWhy());
+    return chooseRunner($("#run-pick"), (runner) => { tryState.runner = runner; return openTryCommits(); });
+  }
   if (!tryProject()) throw new Error(NOT_CLI);
   if (state.view !== "try" && tryState.session) return showView("try");
   if (!tryState.loaded) await loadTry();
@@ -433,13 +470,15 @@ async function openTryCommits() {
   const list = h("ul", { class: "try-commit-list", role: "listbox", "aria-label": "Commits" });
   const search = h("input", { type: "search", class: "try-commit-search", placeholder: "Search, or type a hash, tag or branch", "aria-label": "Search commits", autocomplete: "off", spellcheck: "false", autocapitalize: "off" });
   const note = h("p", { class: "hint try-commit-note" });
+  const web = webProject(p);
   const { dialog: d } = openSheet({
-    title: "Try a commit", cls: "try-commits-sheet", small: false,
+    title: web ? "Preview a commit" : "Try a commit", cls: "try-commits-sheet", small: false,
     body: [h("p", { class: "hint" }, `${branch} on ${tryState.runners.find((r) => r.id === runner)?.name || cur?.runner || "the runner"}`), search, list, note],
   });
   let shown = [];
   const pick = (ref) => {
     d.close();
+    if (web) return previewOnRunner(ref, runner).catch(fail);
     if (state.view === "try") return startTry({ ref, runner }).catch(fail);
     tryState.pending = { ref, runner };
     openTry();
@@ -484,13 +523,13 @@ async function openTryCommits() {
 $("#shell-at-main").addEventListener("click", () => showView("run"));
 $("#run-main").addEventListener("click", attempt(clickRun));
 $("#run-pick").addEventListener("click", attempt(async () => {
-  if (tryProject() && !tryState.loaded) await loadTry();
+  if (onRunner() && !tryState.loaded) await loadTry();
   await runMenu();
 }));
 $("#run-at").addEventListener("click", (e) => {
   if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // a new tab or window
   e.preventDefault();
-  attempt(openTry)();
+  attempt(webProject() ? showRunningPreview : openTry)();
 });
 $("#shell-at-commit").addEventListener("click", attempt(pickCommit));
 $("#try-commit").addEventListener("click", attempt(openTryCommits));
@@ -526,8 +565,8 @@ $$("#try-keys [data-key]").forEach((b) => {
 // Elsewhere, a running session is looked at too, so the header's Terminate turns back into Run
 // (process.updated, procsChanged below, says so at once; this is for when an event is missed).
 setInterval(() => {
-  if (document.hidden || tryState.starting || !tryProject()) return;
-  if (state.view === "try" || tryState.session?.state === "live") loadTry().catch(() => {});
+  if (document.hidden || tryState.starting || !onRunner()) return;
+  if (state.view === "try" || ["live", "starting"].includes(tryState.session?.state)) loadTry().catch(() => {});
 }, 20000);
 
 // Only the latest listing counts: an earlier one answered late (a server
@@ -548,7 +587,7 @@ export async function loadProcs() {
 // (its exit, an idle stop, a run started on another device).
 export function procsChanged() {
   loadProcs().catch(fail);
-  if (tryProject() && !tryState.starting) loadTry().catch(() => {});
+  if (onRunner() && !tryState.starting) loadTry().catch(() => {});
 }
 
 export function renderProcs() {

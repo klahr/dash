@@ -1,9 +1,10 @@
 import { $ } from "./dom.js";
 import { api } from "./api.js";
-import { ask, toast } from "./dialogs.js";
+import { ask, fail, toast } from "./dialogs.js";
 import { state, tryState } from "./state.js";
 import { hidePreview, paneIn, pv, renderLog, renderPreview, setCommitSource } from "./preview.js";
-import { chooseRunner, loadTry, rememberRunner } from "./try.js";
+import { chooseRunner, loadTry, rememberRunner, renderTryButton } from "./try.js";
+import { selectCommit, showCommitAt } from "./history.js";
 
 // ------------------------------------------------------------------ commit preview
 // History's Preview: a web project's app as it was at a commit of the default
@@ -17,9 +18,14 @@ import { chooseRunner, loadTry, rememberRunner } from "./try.js";
 // The pane is the task preview's (preview.js), moved into the commit pane while
 // it shows a commit. Try sessions send no events: while it starts it is looked
 // at every 1.5 seconds, with its log, so a slow first install shows progress.
+//
+// A web project's header Run is the same preview, of the latest commit of the
+// default branch (previewOnRunner, from try.js): it opens History on that
+// commit with the pane beside it, and its Terminate is this Stop.
 
-// changed tells the commit pane (history.js) to redraw its Preview button.
-const changed = () => document.dispatchEvent(new Event("dash:commitpreview"));
+// changed tells the commit pane (history.js) to redraw its Preview button,
+// and the header's Run (try.js) to follow the session.
+const changed = () => { document.dispatchEvent(new Event("dash:commitpreview")); renderTryButton(); };
 
 const cpv = { pid: null, sha: "", short: "", runner: "", checkingOut: false, timer: 0, seq: 0 };
 const shortSHA = (sha) => (sha || "").slice(0, 7);
@@ -38,7 +44,19 @@ export function commitPreviewWhy(p = state.project) {
   if (!p.run_command) return "Set a start server command in Project settings → Commands to preview commits.";
   if (p.commit_previews === false) return "Commit previews are off in Project settings → Commands.";
   if (tryState.pid === p.id && tryState.loaded && !tryState.runners.length) return tryState.disabled || "No runner can run this project.";
+  if (tryState.pid === p.id && tryState.loaded && tryState.webDisabled) return sentence(tryState.webDisabled);
   return "";
+}
+
+// The server's reasons start in lower case, for joining to its error.
+const sentence = (s) => `${s.charAt(0).toUpperCase()}${s.slice(1)}${/[.)]$/.test(s) ? "" : "."}`;
+
+// runPreviewWhy says why a web project's Run can't preview its latest commit
+// ("" when it can): History's reasons, and no runner working on it at all.
+export function runPreviewWhy(p = state.project) {
+  const why = commitPreviewWhy(p);
+  if (why !== null) return why;
+  return tryState.pid === p?.id && tryState.loaded ? tryState.disabled || "No runner works on this project." : "";
 }
 
 // The preview as the pane shows it (preview.js's shape), when the session is
@@ -74,7 +92,7 @@ export async function showCommitPreview({ sha, short }, anchor) {
 function open(p, sha, short) {
   // Registered here, not when this module loads: preview.js may not have run
   // yet then (the modules import each other).
-  setCommitSource({ preview, state: paneState, start: () => startCommitPreview(), stop, close: closeCommitPreview });
+  setCommitSource({ preview, state: paneState, start: () => startCommitPreview(), stop: stopCommitPreview, close: closeCommitPreview });
   if (pv.todo) hidePreview();
   Object.assign(cpv, { pid: p.id, sha, short: short || shortSHA(sha) });
   pv.commit = { pid: p.id, sha };
@@ -85,21 +103,44 @@ function open(p, sha, short) {
   changed();
 }
 
+// warned says whether the user knows an old commit shares the runner's state:
+// it asks the first time, per project and browser.
+async function warned(p) {
+  if (localStorage.getItem(warnKey(p.id))) return true;
+  const ok = await ask({
+    title: "Preview an old commit?",
+    body: "The commit runs in a throwaway worktree on a runner, but not in a sandbox: it shares that runner's dev database, services and the files copied into worktrees (such as .env). " +
+      "Old code may run old migrations or write data in an old format there. Turn commit previews off in Project settings → Commands if that would hurt.",
+    ok: "Preview it",
+  });
+  if (ok) try { localStorage.setItem(warnKey(p.id), "1"); } catch { /* private mode */ }
+  return ok;
+}
+
+// previewOnRunner is a web project's Run (ref "": the latest commit of the
+// default branch, as the runner fetches it) and its ▾ → Pick a commit… (any
+// ref): it opens History on that commit and starts its preview on runner, in
+// the pane beside it. Until the runner says which commit it checked out, the
+// pane is beside the graph's newest one (or the one ref names); then it moves.
+export async function previewOnRunner(ref, runner) {
+  const p = state.project;
+  if (!p) return;
+  const why = runPreviewWhy(p);
+  if (why) throw new Error(why);
+  if (ref && !await warned(p)) return; // the latest commit is today's code: no warning
+  const sha = await showCommitAt(ref);
+  if (!sha || state.project?.id !== p.id) return;
+  const exact = !!ref && sha.startsWith(ref.toLowerCase());
+  open(p, sha, !ref ? `the latest ${p.default_branch || "main"}` : exact ? shortSHA(sha) : ref);
+  await start(p, runner, ref);
+}
+
 // startCommitPreview starts the open commit's preview: after the first-time
 // warning about shared state, and asking before it replaces another session.
 export async function startCommitPreview(anchor = $("#pv-status")) {
   const p = state.project;
   if (!p || !pv.commit) return;
-  if (!localStorage.getItem(warnKey(p.id))) {
-    const ok = await ask({
-      title: "Preview an old commit?",
-      body: "The commit runs in a throwaway worktree on a runner, but not in a sandbox: it shares that runner's dev database, services and the files copied into worktrees (such as .env). " +
-        "Old code may run old migrations or write data in an old format there. Turn commit previews off in Project settings → Commands if that would hurt.",
-      ok: "Preview it",
-    });
-    if (!ok) return closeCommitPreview();
-    try { localStorage.setItem(warnKey(p.id), "1"); } catch { /* private mode */ }
-  }
+  if (!await warned(p)) return closeCommitPreview();
   const s = tryState.session;
   if (s && s.commit !== cpv.sha && s.state === "live" &&
     !await ask({ title: `Preview ${cpv.short} instead?`, body: `${s.kind === "web" ? "A preview" : "A Try terminal"} runs at ${shortSHA(s.commit)} on ${s.runner}. One runs per project: it stops, and its worktree is removed.`, ok: "Replace it" })) {
@@ -108,24 +149,40 @@ export async function startCommitPreview(anchor = $("#pv-status")) {
   await chooseRunner(anchor, (runner) => start(p, runner));
 }
 
-async function start(p, runner) {
+// start starts the preview at ref (the open commit's, by default) on runner.
+// While it checks out, the header's Run is Terminate (tryState.starting); one
+// pressed then stops it once it has started.
+async function start(p, runner, ref = cpv.sha) {
   const sha = cpv.sha;
   rememberRunner(p.id, runner);
   cpv.runner = tryState.runners.find((r) => r.id === runner)?.name || "";
   cpv.checkingOut = true;
+  tryState.starting = `${cpv.short} on ${cpv.runner || "a runner"}`;
   pv.log = "";
   renderLog();
   renderPreview();
+  changed();
+  let ok = false;
   try {
-    const s = await api("POST", `/api/projects/${p.id}/try`, { runner, ref: sha, kind: "web" });
+    const s = await api("POST", `/api/projects/${p.id}/try`, { runner, ref, kind: "web" });
     if (state.project?.id !== p.id) return;
     tryState.session = s;
     tryState.runner = s.runner_id;
+    ok = true;
+    // Run and a picked ref: the pane moves to the commit the runner checked out.
+    if (pv.commit && cpv.sha === sha && s.commit !== sha) {
+      Object.assign(cpv, { sha: s.commit, short: shortSHA(s.commit) });
+      pv.commit.sha = s.commit;
+      selectCommit(s.commit).catch(fail);
+    }
   } finally {
-    if (cpv.sha === sha) cpv.checkingOut = false;
+    tryState.starting = "";
+    if (!ok) tryState.stopAsked = false;
+    if (cpv.sha === sha || ok) cpv.checkingOut = false;
     if (pv.commit) renderPreview();
     changed();
   }
+  if (tryState.stopAsked && state.project?.id === p.id) return stopCommitPreview();
   poll();
 }
 
@@ -158,15 +215,28 @@ function poll() {
   });
 }
 
-async function stop() {
+// stopCommitPreview stops the preview: the pane's Stop, and the header's Terminate.
+export async function stopCommitPreview() {
   const p = state.project;
   if (!p) return;
+  tryState.stopAsked = false;
   await api("DELETE", `/api/projects/${p.id}/try`);
   tryState.session = null;
   clearTimeout(cpv.timer);
-  renderPreview();
+  if (pv.commit) renderPreview();
   changed();
   toast("Preview stopped", { icon: "stop" });
+}
+
+// showRunningPreview opens the running preview in History, beside its
+// commit (the header's "abc1234 on laptop" beside Terminate).
+export async function showRunningPreview() {
+  const p = state.project, s = webSession();
+  if (!p) return;
+  const sha = await showCommitAt(s?.commit || "");
+  if (!s || !sha || state.project?.id !== p.id || previewingCommit(s.commit)) return;
+  open(p, s.commit, shortSHA(s.commit));
+  poll();
 }
 
 // closeCommitPreview hides the pane; the preview keeps running until it idles.
