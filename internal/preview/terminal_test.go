@@ -16,8 +16,6 @@ func terminalProject(command string) model.Project {
 	return model.Project{ID: "p1", PreviewKind: model.PreviewTerminal, PreviewCommand: command}
 }
 
-// readUntil reads sess's output until it contains want. The deadline is
-// generous: under a full test run a shell can take seconds to start.
 // needTerminals skips the test where the runner can't open terminals
 // (runner.ErrNoTerminals: no pty on Windows yet).
 func needTerminals(t *testing.T) {
@@ -27,10 +25,18 @@ func needTerminals(t *testing.T) {
 	}
 }
 
+// terminalWait is how long readUntil waits. It is long on purpose: macOS
+// checks a program the first time it runs, one program at a time for the
+// whole machine (about 0.2s each). A full test run starts hundreds of fake
+// programs its tests just wrote, so the shell's "tool" can wait behind them
+// for over 30s even though the shell is ready.
+const terminalWait = 2 * time.Minute
+
+// readUntil reads sess's output until it contains want.
 func readUntil(t *testing.T, sess *runner.Session, want string) string {
 	t.Helper()
 	out := string(sess.Scrollback)
-	timeout := time.After(30 * time.Second)
+	timeout := time.After(terminalWait)
 	for !strings.Contains(out, want) {
 		select {
 		case b, ok := <-sess.Output:

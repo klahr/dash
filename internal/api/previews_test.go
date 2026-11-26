@@ -25,12 +25,18 @@ import (
 	"github.com/klahr/dash/internal/tunnel"
 )
 
-// readWS reads ws's terminal output until it contains want. The deadline is
-// generous: under a full test run a shell can take seconds to start.
+// terminalWait is how long readWS waits. It is long on purpose: macOS
+// checks a program the first time it runs, one program at a time for the
+// whole machine (about 0.2s each). A full test run starts hundreds of fake
+// programs its tests just wrote, so a terminal's "tool" can wait behind them
+// for over 30s even though the shell is ready.
+const terminalWait = 2 * time.Minute
+
+// readWS reads ws's terminal output until it contains want.
 func readWS(t *testing.T, ws *websocket.Conn, want string) string {
 	t.Helper()
 	var out strings.Builder
-	_ = ws.SetReadDeadline(time.Now().Add(30 * time.Second))
+	_ = ws.SetReadDeadline(time.Now().Add(terminalWait))
 	for !strings.Contains(out.String(), want) {
 		_, b, err := ws.ReadMessage()
 		if err != nil {

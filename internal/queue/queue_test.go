@@ -117,6 +117,9 @@ func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
 	log := &TodoLog{Pub: nopPub{}, Root: filepath.Join(dir, "logs")}
 	mq := NewMergeQueue(st, g, nopPub{}, log, 16)
 	mq.dirtyPoll = 50 * time.Millisecond
+	// No timed pull request polls: tests poll by hand (pollPRs), and a timed
+	// one would race theirs once a slow test passes the minute mark.
+	mq.PRPoll = 0
 	mq.WorktreeRoot = filepath.Join(dir, "worktrees")
 	e := NewTodoEngine(&TodoEngine{
 		Store: st, Git: g, Exec: exe, Pub: nopPub{}, Log: log, Merges: mq,
