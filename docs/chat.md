@@ -7,8 +7,12 @@ changes). Each conversation is saved, so it survives reloads and restarts. On a 
 runs on one of your own runners, with its Claude login (see
 [Several computers](several-computers.md#claude-runs-on-each-users-own-runner)).
 
-Open the chat pane with **⋯ → Chat** in the top bar, or press `gc`. On a phone, tap **Chat** in
-the bottom bar.
+Open the chat pane with **⋯ → Chat** in the top bar, or press `gc`. On a phone or tablet, tap
+**Chat** in the bottom bar. On a tablet the chat sits beside the page; on a phone it fills the
+screen.
+
+The pane's first tab is the selected project's chat, named after the project, with its icon
+ringed. **General** is next, then any chats you added with **+**.
 
 ## A planner's chat
 
@@ -141,7 +145,7 @@ it runs as a shell command where the chat runs, as in Claude Code.
   that ran the task.
 - **What you see**: the command streams its output (stdout and stderr together) into a block in
   the chat, with a Stop button (the composer's send button) while it runs and its exit code when
-  it ends. The composer shows **Shell mode** while its text starts with `!`.
+  it ends. While its text starts with `!`, the composer shows a `$` and an accent border.
 - **Claude sees it**: the command and its output are saved in the conversation as your message,
   so on your next message Claude reads them as a command you ran yourself (not one it ran).
   Long output keeps its first and last 16 KB, with a note of how much was left out between them;

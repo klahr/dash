@@ -1,6 +1,6 @@
 import { $, $$ } from "./dom.js";
 import * as store from "./store.js";
-import { desktop } from "./viewport.js";
+import { chatBeside, desktop } from "./viewport.js";
 import { fail, reduceMotion } from "./dialogs.js";
 import { state } from "./state.js";
 import { setMenu } from "./projects.js";
@@ -107,10 +107,11 @@ function applyView(name) {
   renderTryBack();
   changed("push");
 }
-// On mobile the chat is a page of its own (the nav's Chat tab): while it is
-// open, Chat is the active section rather than the view under it.
+// On a phone the chat is a page of its own (the nav's Chat tab): while it is
+// open, Chat is the active section rather than the view under it. On a
+// tablet it sits beside the view: both are lit.
 // (.chat-open, not pane: applyView runs at startup before pane exists.)
-export function chatPage() { return !desktop.matches && $(".app").classList.contains("chat-open"); }
+export function chatPage() { return !chatBeside.matches && $(".app").classList.contains("chat-open"); }
 export function renderNavActive() {
   const chatOn = chatPage();
   const mark = (b, on) => {
@@ -120,6 +121,9 @@ export function renderNavActive() {
   };
   $$(".nav [data-view]").forEach((b) => mark(b, !chatOn && b.dataset.view === navView(state.view)));
   mark($("#nav-chat"), chatOn);
+  const beside = !desktop.matches && chatBeside.matches && $(".app").classList.contains("chat-open");
+  if (!chatOn) $("#nav-chat").classList.toggle("active", beside);
+  $("#nav-chat").setAttribute("aria-expanded", String(chatOn || beside));
   // The page tabs (History's, Code's): the one shown.
   $$(".page-tabs [data-tab]").forEach((b) => {
     const on = b.dataset.tab === tabOf(state.view);
@@ -129,11 +133,12 @@ export function renderNavActive() {
   boardSeen();
 }
 desktop.addEventListener("change", () => renderNavActive());
+chatBeside.addEventListener("change", () => renderNavActive());
 // The nav's pages: the bottom nav's, and on mobile the menu drawer's (those that
 // don't fit the bottom nav: History, Code), which are in the side rail on desktop.
-// Picking one leaves the mobile chat page.
+// Picking one leaves the phone's chat page (a chat beside the view stays).
 $$(".nav [data-view]").forEach((b) => b.addEventListener("click", () => {
-  if (!desktop.matches && pane.open) toggleChatPane(false);
+  if (!chatBeside.matches && pane.open) toggleChatPane(false);
   if (b.closest(".menu")) setMenu(false);
   showView(b.dataset.view);
 }));

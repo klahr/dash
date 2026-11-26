@@ -1,5 +1,5 @@
 import { $, $$, h, ib, setLabel } from "./dom.js";
-import { desktop, wsURL } from "./viewport.js";
+import { chatBeside, desktop, wsURL } from "./viewport.js";
 import { api } from "./api.js";
 import { attempt, fail, openSheet, toast } from "./dialogs.js";
 import { popMenu } from "./drawmode.js";
@@ -179,7 +179,7 @@ async function runOn(runner) {
   const p = state.project;
   if (!p) return;
   rememberRunner(p.id, runner);
-  if (pane.open && !desktop.matches) toggleChatPane(false); // a phone shows the terminal, not the chat
+  if (pane.open && !chatBeside.matches) toggleChatPane(false); // a phone shows the terminal, not the chat
   if (state.view === "try") return startTry({ ref: "", runner });
   tryState.pending = { ref: "", runner }; // enterTry starts it
   renderRun();

@@ -226,27 +226,23 @@ function chatComposer(c, { form, mode, shell, clear }) {
   // "send" (voice.js) is Enter: it sends, or queues while a reply streams.
   dictation(input, { place: (b) => sendBtn.before(b), send: () => composing() && (form.requestSubmit(), true) });
 
-  // "!" commands: the composer shows shell mode while its text starts with
-  // "!". A read-only chat (or a hub whose runners don't allow them) runs none:
-  // the text goes to Claude as it is.
+  // "!" commands: while its text starts with "!", the composer is in shell
+  // mode: a $ in place of the attach button and a field of another colour.
+  // A read-only chat (or a hub whose runners don't allow them) runs none: the
+  // text goes to Claude as it is, and the composer stays as it is.
   const shellOn = c.shellOn = () => shell && chatRunner.info?.commands !== false;
   const isShell = c.isShell = (q) => /^!\s*\S/.test(q || "");
-  const shellTag = h("div", { class: "shell-tag", role: "status", hidden: true });
-  form.prepend(shellTag);
+  const shellPrompt = h("span", { class: "shell-prompt", role: "img", "aria-label": "Shell mode" }, "$");
   const shellMode = () => {
-    const bang = shell && !mode()?.send && isShell(input.value.trimStart());
-    const on = bang && shellOn();
+    const on = shell && !mode()?.send && isShell(input.value.trimStart()) && shellOn();
     form.classList.toggle("shell-mode", on);
-    shellTag.hidden = !bang;
-    shellTag.replaceChildren(...(on
-      ? [h("b", {}, "! Shell mode"), " Runs in the chat's folder, not sent to Claude. Claude sees the command and its output next turn. No terminal: interactive programs don't work."]
-      : [h("b", {}, "! commands are off"), " This chat is read-only, so it runs no commands: this goes to Claude as a message."]));
   };
   // Images and files dropped onto the chat or pasted into its text field.
   const attachRow = h("div", { class: "attach", hidden: true });
   form.prepend(attachRow);
   const att = c.att = attachBox(attachRow, input, () => { c.busyButton(); suggestion.show(); }, { zone: form.parentElement, compact: true, prefix: c.prefixOf });
   input.before(h("button", { type: "button", class: "icon-btn attach-icon", "aria-label": "Attach files", title: "Attach files", onclick: () => att.pick() }, clip()));
+  if (shell) input.before(shellPrompt);
   const suggestion = chatSuggestion(c, input, form, att, mode);
   const queue = c.queued = chatQueue(c);
   c.unqueue = queue.unqueue;
@@ -1223,9 +1219,6 @@ export const chatRunner = {
       sel.value = this.choice() || online[0].id;
     }
     chat.place();
-    $("#chat-empty-where").textContent = current
-      ? `A general chat, run on your runner ${current} in a scratch folder, with that computer's Claude login. For questions about one project, use This project.`
-      : "A general chat, run on one of your own runners with its Claude login. This hub doesn't run Claude itself.";
   },
 };
 $("#chat-runner-pick").addEventListener("change", (e) => { chatRunner.picked = e.target.value; chatRunner.render(); });

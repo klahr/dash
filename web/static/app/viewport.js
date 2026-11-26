@@ -3,6 +3,9 @@ import * as store from "./store.js";
 // ------------------------------------------------------------------ viewport & on-screen keyboard
 export const wsURL = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
 export const desktop = matchMedia("(min-width: 1024px)");
+// Wide enough for the chat to sit beside the content (below desktop: above the
+// bottom nav); narrower, the chat is a page of its own. style.css's 720px.
+export const chatBeside = matchMedia("(min-width: 720px)");
 
 // A tap on a composer's buttons (send, Rework, a file chip's ×) must not
 // take focus from its text field: the keyboard would close, the composer move

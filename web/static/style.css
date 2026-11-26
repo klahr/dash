@@ -748,8 +748,11 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .chat-pane-head > .icon-btn { align-self: center; }
 .chat-pane-tabs { flex: 0 1 auto; min-width: 0; display: flex; align-items: flex-end; gap: 2px; overflow-x: auto; scrollbar-width: none; }
 .chat-pane-tab { --project: var(--accent); flex: 0 1 auto; min-width: 72px; display: flex; align-items: center; max-width: 200px; height: 42px; border-radius: var(--r-s) var(--r-s) 0 0; color: var(--muted); }
-.chat-pane-tab:hover { background: var(--surface); }
-.chat-pane-tab:has([aria-selected="true"]) { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.chat-pane-tab:hover { --tab-bg: var(--surface); color: var(--text); background: var(--tab-bg); }
+/* The tab shown: raised, as the selected page tab is, and underlined in the accent. */
+.chat-pane-tab:has([aria-selected="true"]) { --tab-bg: var(--raised); color: var(--text); background: var(--tab-bg); box-shadow: inset 0 -2px 0 var(--accent); }
+/* The selected project's chat: its icon ringed, as the collapsed sidebar marks the current project. */
+.chat-pane-tab.chat-tab-current .side-project-icon { box-shadow: 0 0 0 2px var(--tab-bg, var(--bg)), 0 0 0 3px var(--accent); }
 .chat-pane-tab-btn { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 7px; padding: 0 10px; color: inherit; font-size: var(--fs-m); font-weight: 500; white-space: nowrap; }
 .chat-pane-tab-btn[aria-selected="true"] { font-weight: 600; }
 .chat-pane-tab-btn > .ico { width: 18px; height: 18px; flex: none; }
@@ -2379,7 +2382,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .foot-menu-list button { min-height: 44px; }
   .menu-scrim { position: fixed; inset: 0; z-index: 49; background: var(--scrim); animation: fade-in .2s var(--ease); }
   /* The task sheet and the chat page must not scroll the page behind them, or the browser toolbar shifts them. */
-  html:has(.app.chat-open), html:has(.detail:not([hidden])) { overflow: hidden; }
+  html:has(.detail:not([hidden])) { overflow: hidden; }
   /* Fit the task sheet to the visible area (app/viewport.js sets --vv-*), which shrinks when the
      keyboard opens: the head stays on top, only the body scrolls, the composer sits on the keyboard. */
   .detail { inset: var(--vv-top, 0px) 0 auto 0; height: var(--vv-h, 100dvh); }
@@ -2397,13 +2400,11 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .nav > .nav-chat { order: 1; }
   .nav > button[data-view="planning"] { order: 2; }
   .nav > button[data-view="goals"] { order: 3; }
-  /* Chat is a page like the others (the nav's Chat tab, shown active): the view under it
-     (and the board's New-task button) is hidden and the chat fills the room between the
+  /* On a phone chat is a page like the others (the nav's Chat tab, shown active): the view under it
+     (and the board's New-task button) is hidden (below) and the chat fills the room between the
      top bar and the nav. It's fixed and fitted to the visible area (app/viewport.js sets --vv-*),
      which shrinks when the keyboard opens: the tabs stay on top, only the log scrolls.
      --chat-top: below the top bar, or the visible top once iOS pans the top bar away. */
-  .app.chat-open main { display: none; }
-  #pc-close { display: none; }
   .chat-pane {
     --chat-top: max(var(--vv-top, 0px), var(--top-h));
     z-index: 15; inset: var(--chat-top) 0 auto 0; padding: 0;
@@ -2414,8 +2415,9 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
      page resizes) and runs down to the keyboard, the composer right on it. */
   .chat-pane:has(.composer textarea:focus) { z-index: 31; height: calc(var(--vv-top, 0px) + var(--vv-h, 100dvh) - var(--chat-top)); }
   .kb-env .chat-pane:has(.composer textarea:focus) { height: calc(var(--vv-top, 0px) + var(--vv-h, 100dvh) - var(--chat-top) - env(keyboard-inset-height, 0px)); }
-  /* Toasts go under the chat's tabs, clear of the composer. */
-  html:has(.app.chat-open) .toasts { top: calc(max(var(--vv-top, 0px), var(--top-h)) + 60px); bottom: auto; right: 12px; }
+  /* The phone's chat page: toasts go under the chat's tabs, clear of the composer. */
+  @media (max-width: 719px) { html:has(.app.chat-open) .toasts { top: calc(max(var(--vv-top, 0px), var(--top-h)) + 60px); bottom: auto; right: 12px; } }
+
   /* Over a sheet (moved into it, see raiseToasts): at the top, clear of the
      sheet's buttons; the FAB and chat are under the backdrop (this beats
      the chat-open rule above, which still matches by :has). A tall toast
@@ -2423,6 +2425,28 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
      (44px, inset by the sheet's padding), which a toast held open by a
      hover would otherwise cover. */
   html .sheet[open] > .toasts { top: calc(var(--vv-top, 0px) + env(safe-area-inset-top, 0px) + 12px); bottom: auto; right: calc(44px + var(--sp-4) + 12px); }
+}
+
+/* A phone: the chat is a page, the view under it hidden. */
+@media (max-width: 719px) {
+  html:has(.app.chat-open) { overflow: hidden; }
+  .app.chat-open main { display: none; }
+  #pc-close { display: none; }
+}
+/* A tablet: the chat sits beside the view, the same height as the phone's page
+   (above the bottom nav, down to the keyboard while typing), and the view keeps
+   to the room left of it. The Shell view's Terminal/Chat tabs give way to its
+   Chat button, as on desktop. */
+@media (min-width: 720px) and (max-width: 1023px) {
+  .app { --chat-pane-w: clamp(300px, 44vw, 420px); }
+  .chat-pane { left: auto; width: var(--chat-pane-w); border-left: 1px solid var(--line); box-shadow: var(--shadow-pane); }
+  /* Typing keeps the nav: the chat covers only part of it. */
+  .chat-pane:has(.composer textarea:focus), .kb-env .chat-pane:has(.composer textarea:focus) { z-index: 15; height: calc(var(--vv-top, 0px) + var(--vv-h, 100dvh) - var(--chat-top) - var(--nav-h) - var(--safe-b)); }
+  .app.chat-open main { margin-right: var(--chat-pane-w); }
+  .app.chat-open .fab { right: calc(var(--chat-pane-w) + 16px); }
+  .app.chat-open .toasts { right: calc(var(--chat-pane-w) + 16px + var(--fab-space, 68px)); }
+  .try-tabs { display: none; }
+  #try-chat { display: inline-flex; }
 }
 
 /* ---------- tablet ---------- */
@@ -3539,7 +3563,8 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .cl-progress.complete .cl-count { color: var(--merged); font-weight: 600; }
 
 /* "!" commands in a chat: a block with the command, where it ran, its output
-   and how it ended; the composer shows shell mode while its text starts with "!". */
+   and how it ended; the composer is in shell mode while its text starts with "!":
+   a $ in place of the attach button, the field in monospace with an accent border. */
 .msg.shell { align-self: stretch; max-width: none; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); font-size: var(--fs-s); overflow: hidden; }
 .msg.shell .msg-from { padding: 6px 10px 0; }
 .msg.shell.running { border-color: color-mix(in srgb, var(--running) 45%, var(--line)); }
@@ -3558,12 +3583,12 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .shell-note { padding: 6px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--fs-xs); }
 .shell-note p { margin: 0; }
 .shell-note p + p { margin-top: 4px; }
-.shell-tag { flex: 0 0 100%; font-size: var(--fs-xs); color: var(--muted); padding: 0 6px; }
-.shell-tag b { color: var(--text); margin-right: 4px; }
-.composer.shell-mode .shell-tag b { color: var(--accent); font-family: var(--mono); }
+.shell-prompt { display: none; flex: none; align-self: center; width: 36px; text-align: center; color: var(--accent); font: 700 var(--fs-l) var(--mono); }
+.composer.shell-mode .shell-prompt { display: block; }
+.composer.shell-mode .attach-icon { display: none; }
 .suggest-cue { flex: 0 0 100%; font-size: var(--fs-xs); color: var(--faint); padding: 0 6px; }
 @media (pointer: coarse) { .suggest-cue { display: none; } }
-.composer.shell-mode textarea { font-family: var(--mono); border-color: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+.composer.shell-mode textarea { font-family: var(--mono); border-color: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); }
 
 /* ---------- goals ----------
    The Goals page (a .page like Issues): a goal per row with its progress

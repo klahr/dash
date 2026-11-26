@@ -1,6 +1,6 @@
 import { $, $$, h, ib, ico, resizeHandle } from "./dom.js";
 import * as store from "./store.js";
-import { desktop } from "./viewport.js";
+import { chatBeside, desktop } from "./viewport.js";
 import { api, request } from "./api.js";
 import { attempt, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -21,7 +21,8 @@ import { agoText } from "../time.js";
 // has its own controller, so a reply keeps streaming while another tab is shown
 // or the pane is closed; the pane only switches which one is visible.
 // Overlay (default) floats over the content; pinned takes a grid column, but
-// only on wide screens. On mobile it is a full-screen sheet.
+// only on wide screens. On a tablet it sits beside the content, above the
+// bottom nav; on a phone it is a page of its own.
 const wide = matchMedia("(min-width: 1280px)");
 const CHAT_MIN_W = 280;
 export const pane = (() => {
@@ -123,7 +124,7 @@ export function projectChatFor(p) {
 // where the chat is a page of its own, the chat closes first.
 async function openChatTask(p, id) {
   if (projectKey(p) !== projectKey(state.project)) await selectProject(p);
-  if (!desktop.matches) toggleChatPane(false);
+  if (!chatBeside.matches) toggleChatPane(false);
   await openDetail(id);
 }
 const renderRemote = (pc) => { pc.remote.hidden = !pc.remoteBusy || pc.chat.busy; };
@@ -180,8 +181,6 @@ function goalChatFor(t) {
   if (goalChats.has(t.key)) return goalChats.get(t.key);
   const panel = $("#project-chat-tpl").content.firstElementChild.cloneNode(true);
   panel.dataset.chat = t.key;
-  panel.querySelector(".empty-title").textContent = "Talk to the coordinator";
-  panel.querySelector(".chat-empty p:last-child").textContent = "It sees the goal, its plan and its tasks, and remembers what it did. It can change the goal's tasks, never approve or merge them.";
   const q = panel.querySelector("textarea");
   q.placeholder = "Message the coordinator";
   q.setAttribute("aria-label", "Message the goal's coordinator");
@@ -329,11 +328,12 @@ export function renderChatPane() {
     "data-chat": tabChatKey(id) || "", "data-title": title,
     onclick: () => showChatTab(id),
   }, ...kids, h("span", { class: "chat-tab-name" }, label), h("span", { class: "chat-tab-unread", "aria-hidden": "true" }));
-  // "This project" leads: General is rarely used.
+  // The selected project's chat leads (General is rarely used), named after
+  // it, its icon ringed as the sidebar rings the current project's.
   $("#chat-tabs").replaceChildren(
-    h("div", { class: "chat-pane-tab" }, tabBtn("project", "This project", [state.project ? projectIcon(state.project) : ico("repo")],
-      state.project ? `${state.project.name} (follows the project picker)` : "Follows the project picker")),
-    h("div", { class: "chat-pane-tab" }, tabBtn("general", "General", [ico("spark")], "General chat, in your home directory")),
+    h("div", { class: "chat-pane-tab chat-tab-current" }, tabBtn("project", state.project?.name || "Project", [state.project ? projectIcon(state.project) : ico("repo")],
+      state.project && grouped() ? `${state.project.name} · ${projectWhere(state.project)}` : state.project?.name || "Project")),
+    h("div", { class: "chat-pane-tab" }, tabBtn("general", "General", [ico("spark")])),
     ...keptTabs().map((p) => h("div", { class: "chat-pane-tab" },
       tabBtn(projectKey(p), p.name, [projectIcon(p)], grouped() ? `${p.name} · ${projectWhere(p)}` : p.name),
       ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close this tab", onclick: () => closeChatTab(projectKey(p)) }, "x"))),
@@ -353,10 +353,12 @@ export function renderChatPane() {
   show($("#chat-general"), tab === "general");
   show($("#chat-noproject"), tab === "project" && !state.project);
   if (cur && pane.open) projectChatFor(cur);
-  for (const [key, pc] of projectChats) show(pc.panel, !!cur && key === projectKey(cur));
+  // An empty chat shows what it talks to: the project's name, the goal's title.
+  const emptyTitle = (panel, text) => { panel.querySelector(".chat-empty .empty-title").textContent = text; };
+  for (const [key, pc] of projectChats) { emptyTitle(pc.panel, pc.proj().name); show(pc.panel, !!cur && key === projectKey(cur)); }
   const gt = isGoalTab(tab) ? goalTab(tab) : null;
   if (gt && pane.open) goalChatFor(gt);
-  for (const [key, gc] of goalChats) show(gc.panel, key === tab);
+  for (const [key, gc] of goalChats) { emptyTitle(gc.panel, gc.tab.title); show(gc.panel, key === tab); }
   if (gt && pane.open) loadGoalChat(goalChats.get(tab)).catch((e) => toast(`Couldn't load the coordinator's conversation: ${e.message}`, true));
   renderChatHead();
   renderTryBack();
@@ -456,7 +458,7 @@ export function renderChatDots() {
 // On phones the chat is a page over the Try view: its Terminal button leads back.
 export function renderTryBack() {
   const b = $("#chat-try-back");
-  if (b) b.hidden = !(state.view === "try" && !desktop.matches);
+  if (b) b.hidden = !(state.view === "try" && !chatBeside.matches);
   // The Try view's Terminal/Chat tabs say which of the two is showing.
   const chatOn = chatPage(); // not pane: applyView calls this at startup before pane exists
   for (const [id, on] of [["#try-tab-term", !chatOn], ["#try-tab-chat", chatOn]]) {
@@ -482,12 +484,11 @@ export function toggleChatPane(open = !pane.open, tab = null) {
   renderChatPane();
   // On mobile the chat is a page: opening it doesn't pop the keyboard up over the nav.
   if (open) { if (desktop.matches) activeChat()?.input.focus(); }
-  else {
-    if ($("#chat-pane").contains(document.activeElement)) document.activeElement.blur();
-    // The mobile chat page hid the shell's view; fit its terminal again.
-    if (!desktop.matches && state.view === "run") requestAnimationFrame(fitTerm);
-    if (!desktop.matches && state.view === "try") requestAnimationFrame(fitTryTerm);
-  }
+  else if ($("#chat-pane").contains(document.activeElement)) document.activeElement.blur();
+  // The phone's chat page hid the shell's view, and the tablet's chat beside it
+  // narrows it: fit its terminal again.
+  if (!desktop.matches && state.view === "run") requestAnimationFrame(fitTerm);
+  if (!desktop.matches && state.view === "try") requestAnimationFrame(fitTryTerm);
 }
 export function togglePin() {
   pane.pinned = !pane.pinned;
@@ -498,8 +499,12 @@ export function togglePin() {
 wide.addEventListener("change", renderChatPane);
 $("#pc-open").addEventListener("click", () => toggleChatPane());
 // The mobile bottom nav's Chat tab: opens the chat page on the current project's chat.
-// Like any other tab, tapping it while it's shown keeps it.
-$("#nav-chat").addEventListener("click", () => { if (!pane.open) toggleChatPane(true, state.project ? "project" : "general"); });
+// Like any other tab, tapping it while it's shown keeps it; beside the content
+// (a tablet), it closes it again.
+$("#nav-chat").addEventListener("click", () => {
+  if (!pane.open) toggleChatPane(true, state.project ? "project" : "general");
+  else if (chatBeside.matches) toggleChatPane(false);
+});
 // The Chat buttons' badge (the bottom nav's, and the top bar's ⋮ menu and its Chat item): a pane chat waits
 // on a permission request ("!"), is streaming an answer (a breathing dot), or has
 // a reply you haven't read (a green dot), in that order.

@@ -353,7 +353,8 @@
 
     <!-- Chat: General, the selected project's and kept project chats, as tabs.
          Overlays the content, or takes a column when pinned (wide screens only);
-         on mobile a page between the top bar and the bottom nav (the nav's Chat tab). -->
+         on a tablet a pane beside the content, above the bottom nav; on a phone a
+         page between the top bar and the bottom nav (the nav's Chat tab). -->
     <aside class="chat-pane" id="chat-pane" hidden aria-label="Chat">
       <div class="resize-handle chat-pane-resize" id="pc-resize" role="separator" aria-orientation="vertical" aria-label="Resize the chat" aria-valuenow="400" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <header class="chat-pane-head">
@@ -382,8 +383,7 @@
         <div class="chat-log" id="chat-log">
           <div class="empty chat-empty" id="chat-empty">
             <img class="empty-art" src="/img/empty-chat.webp" alt="" width="480" height="360" loading="lazy" data-optional>
-            <p class="empty-title">Ask Claude anything</p>
-            <p id="chat-empty-where">A general chat, run in your home directory. For questions about one project, use This project. Answers use the Claude account Dash runs with.</p>
+            <p class="empty-title">General</p>
           </div>
         </div>
         <form class="composer" id="chat-form">
@@ -393,15 +393,15 @@
           </button>
         </form>
       </section>
-      <div class="empty chat-panel" id="chat-noproject" hidden><p class="empty-title">Pick a project</p><p>This tab follows the project picker. General works without one.</p></div>
+      <div class="empty chat-panel" id="chat-noproject" hidden><p class="empty-title">No project</p></div>
       <!-- One per project chat, cloned on first use -->
       <template id="project-chat-tpl">
         <section class="chat-panel" role="tabpanel" hidden>
           <p class="chat-cwd chat-cwd-bar" hidden></p>
           <div class="chat-log">
             <div class="empty chat-empty">
-              <p class="empty-title">Ask about this project</p>
-              <p>Claude runs in its main checkout and can read the code.</p>
+              <img class="empty-art" src="/img/empty-chat.webp" alt="" width="480" height="360" loading="lazy" data-optional>
+              <p class="empty-title"></p>
             </div>
           </div>
           <form class="composer">
