@@ -282,6 +282,10 @@ It does what `install.sh` does, with PowerShell parameters (`-Name`, `-Projects`
 It is a scheduled task, not a Windows service, so it needs no administrator rights: a service
 needs them to install, and your password to run as you.
 
+A project that is checked out on Windows should have its own `.gitattributes` with `* text=auto eol=lf`: with
+Git's default `core.autocrlf`, checked-out files get CRLF line endings, and tools such as `gofmt -l .` then
+report every file. Dash's own repository has one.
+
 Run the command again without `-Code` to update. Windows won't overwrite or delete a running
 program, so an update renames the running `dash.exe` to `dash.exe.old` and puts the new one in its
 place. The supervisor keeps running the binary it started from until the scheduled task restarts
