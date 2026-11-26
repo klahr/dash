@@ -238,8 +238,9 @@ func (e *TodoEngine) capacity() (local, forced bool) {
 // here now, or nil. On the way it notes why skipped tasks wait and, on the
 // hub, sends tasks to runners (marking them in sent).
 func (e *TodoEngine) nextQueued(ctx context.Context, sent map[string]bool, local, forced bool) *model.Todo {
-	var all []model.Todo     // loaded only when a queued todo has dependencies or builds on a task
-	busy := map[string]int{} // project id → its tasks in progress or being sent, counted when needed
+	var all []model.Todo               // loaded only when a queued todo has dependencies or builds on a task
+	busy := map[string]int{}           // project id → its tasks in progress or being sent, counted when needed
+	tasks := map[string][]model.Todo{} // project id → its tasks, loaded when a queued task may wait for an overlap
 	for _, q := range e.Store.ListTodos("", model.StatusQueued) {
 		if q.Paused || sent[q.ID] || e.isSending(q.ID) {
 			continue
@@ -254,6 +255,20 @@ func (e *TodoEngine) nextQueued(ctx context.Context, sent map[string]bool, local
 			if len(q.Blockers(all)) > 0 {
 				continue // waits until its dependencies are merged and the task it builds on is finished
 			}
+		}
+		if waitsForOverlap(q) {
+			ts, ok := tasks[q.ProjectID]
+			if !ok {
+				ts = e.Store.ListTodos(q.ProjectID)
+				tasks[q.ProjectID] = ts
+			}
+			if why := overlapWait(q, ts); why != "" {
+				e.wait(q, why)
+				continue // waits for a task naming the same files to go first
+			}
+		}
+		if strings.Contains(q.Waiting, GoFirstNote) {
+			e.wait(q, "") // that task has gone first
 		}
 		p, err := e.Store.GetProject(q.ProjectID)
 		if err != nil {
@@ -351,7 +366,8 @@ const StartedNowNote = "started now, despite the weekly pace: this run counts to
 var ErrNotQueued = errors.New("only a queued task can start now; queue it first")
 
 // MarkStartNow lets queued todo x start while the queue waits for the
-// weekly pace (see model.Todo.StartNow); a paused todo is resumed too.
+// weekly pace, or it waits for another task to go first (see
+// model.Todo.StartNow); a paused todo is resumed too.
 // It is an update for store.Store.UpdateTodo; kick the engine afterwards.
 func MarkStartNow(x *model.Todo) error {
 	if x.Status != model.StatusQueued {

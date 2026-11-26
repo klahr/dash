@@ -9,7 +9,7 @@ import { baseBranch, projectKey } from "./events.js";
 import { openNewProject, renderProjectHeader, renderProjectList } from "./projects.js";
 import { landsOnGitHub, loadUnpushed, pushBar } from "./board.js";
 import { activityNodes } from "./activity.js";
-import { canStartNow, closeDetail, openDetail, pacing, renderActions, renderDetail, startNow } from "./detail.js";
+import { canStartNow, closeDetail, goesAfter, openDetail, pacing, renderActions, renderDetail, startNow } from "./detail.js";
 import { canPreview, previewOf, previewTag, previewTodo } from "./preview.js";
 import { reviewTodo } from "./drawmode.js";
 import { renderRunnerStatus, runnerName, welcomeScreen } from "./runners.js";
@@ -840,6 +840,8 @@ export function todoRow(t, li = -1, ri = -1) {
   const paced = canStartNow(t) && !t.error && !wait && pacing(t) && (!t.waiting || /to stay on pace/.test(t.waiting))
     && !state.perms.some((p) => p.todo_id === t.id);
   if (paced) { sub = "Waiting for weekly pace"; subClass = "todo-sub waiting-runner"; }
+  // Waits for a task naming the same files to go first: Start now runs it anyway.
+  const after = canStartNow(t) && !t.error && !wait && goesAfter(t);
   const checkTag = t.checks && ["review", "merging", "failed"].includes(t.status)
     ? h("span", { class: `check-tag ${t.checks.passed ? "pass" : "fail"}` }, t.checks.passed ? "Tests pass" : "Tests fail")
     : null;
@@ -888,7 +890,7 @@ export function todoRow(t, li = -1, ri = -1) {
       t.status === "review" && t.finished_at ? h("span", { class: "card-ago", title: dateTimeText(t.finished_at) }, agoText(t.finished_at)) : null,
       creatorEl(t),
       wait?.drafts.length && !wait.failed.length ? h("span", { class: "card-actions" }, queueDepsChip(wait.drafts)) : null,
-      paced ? h("span", { class: "card-actions" }, startNowChip(t)) : null),
+      paced || after ? h("span", { class: "card-actions" }, startNowChip(t)) : null),
     t.status === "review" && !t.reviewing ? reviewActions(t) : null);
 }
 
@@ -1165,7 +1167,8 @@ function enqueueChip(t) {
   return cardChip("enqueue-chip", "Queue", "queue", "", () => todoKey(t, "s"));
 }
 
-// startNowChip starts a queued card that waits for the weekly pace.
+// startNowChip starts a queued card that waits for the weekly pace, or for
+// another task to go first.
 function startNowChip(t) {
   return cardChip("enqueue-chip start-now-chip", "", "play", "Start now", () => startNow(t));
 }

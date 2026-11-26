@@ -544,8 +544,9 @@ type Todo struct {
 	// session so resuming continues where it stopped.
 	Paused bool `json:"paused,omitempty"`
 	// StartNow lets a queued todo start while the queue waits for the
-	// weekly pace (only for the pace: a usage limit, a paused queue, its
-	// dependencies and the free lanes still hold it back). It is used up
+	// weekly pace, or while it waits for a task naming the same files to go
+	// first (see queue.overlapWait); a usage limit, a paused queue, its
+	// dependencies and the free lanes still hold it back. It is used up
 	// when the run starts, which sets StartedNow for that run.
 	StartNow   bool `json:"start_now,omitempty"`
 	StartedNow bool `json:"started_now,omitempty"`

@@ -141,6 +141,22 @@ A chat asks its questions the same way: the card shows in the chat, with **Submi
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
+### Tasks that name the same files
+
+Before a queued task starts, Dash looks for a task in the same project that should go first.
+That is a task whose title or prompt names a file this one's names too, and which is ahead of
+it in the queue, running, in review or merging. Run side by side, the two would likely conflict
+when they merge. So the task waits in *Queued* until that task is merged, and then starts on top
+of its code. Its card says which task it waits for, and which file both name.
+
+A file counts when it is written with its folder, such as `web/static/app/todos.js`. A name
+with no folder counts only in backticks, such as `README.md`. URLs and absolute paths don't
+count.
+
+To run the task anyway, click **Start now** on its card. The two tasks may then conflict, and
+Dash sends the conflict back to Claude to fix. Only a task's first run waits like this. A task
+sent back with feedback, or with a conflict to fix, already has its branch, so it doesn't wait.
+
 ## Review
 
 When Claude is done the task lands in *Review*. Its card shows Claude's summary of what it did
@@ -254,7 +270,10 @@ While the queue waits for the pace, each queued card says "Waiting for weekly pa
 **Start now** beside it. To run one task anyway, click **Start now** on its card (or in the task,
 or **⋯ → Start now**). It starts as soon as a lane is free; pacing goes on for the other tasks.
 
-Only the pace is skipped: a usage limit, a paused queue, the project's **Tasks at once** and
+**Start now** also runs a task that waits for another to go first (see
+[Tasks that name the same files](#tasks-that-name-the-same-files)).
+
+Only the pace and that wait are skipped: a usage limit, a paused queue, the project's **Tasks at once** and
 unmerged dependencies still hold it back. The task's detail says it starts now, and once it runs,
 that the run counts toward usage, so the queue may wait a little longer afterwards. Start now is
 used up by that run: later runs (a rework, a retry) follow the pace again.

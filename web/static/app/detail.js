@@ -249,7 +249,7 @@ export function renderActions(t) {
     case "queued":
       btns.push(edit(), b("inbox", "Move to drafts", post("cancel", null, "Moved to drafts"), "grow"));
       if (t.paused) btns.push(b("play", "Resume", post("resume", null, "Resumed"), "primary grow"));
-      else if (canStartNow(t) && pacing(t)) btns.push(startNowButton(t, post));
+      else if (canStartNow(t) && (pacing(t) || goesAfter(t))) btns.push(startNowButton(t, post));
       break;
     case "in_progress":
       if (!t.paused) {
@@ -340,16 +340,25 @@ function retryButton(t, b, post) {
 // queue's (or, on a hub, your account's), or its runners' as its waiting
 // reason says.
 export const pacing = (t) => !!state.usage?.pacing || /to stay on pace/.test(t.waiting || "");
+// goesAfter reports whether queued task t waits for another task that names
+// the same files to go first (the dispatcher's waiting reason says so).
+export const goesAfter = (t) => t.status === "queued" && !t.paused && /\bto go first\b/.test(t.waiting || "");
 export const startNowHelp = "Start this task as soon as a lane is free, despite the weekly pace; the other tasks keep following it. "
   + "Its run counts toward usage, so the queue may wait a little longer afterwards.";
 // canStartNow: Start now is offered for a queued task that isn't paused or already started now.
 export const canStartNow = (t) => t.status === "queued" && !t.paused && !t.start_now;
 // startNow starts queued task t as soon as a lane is free, despite the pace.
-export const startNow = (t) => api("POST", `/api/todos/${t.id}/start-now`).then(() => toast("Starting now, despite the pace"));
+export const startNow = (t) => api("POST", `/api/todos/${t.id}/start-now`)
+  .then(() => toast(goesAfter(t) ? "Starting now, beside the task it waited for" : "Starting now, despite the pace"));
 
 // startNowButton starts a queued task now, while the queue waits for the
-// weekly pace (it is shown only then; ⋯ always has it).
+// weekly pace or the task waits for another to go first (it is shown only
+// then; ⋯ always has it).
 function startNowButton(t, post) {
+  if (goesAfter(t)) {
+    const why = `${t.waiting}. Start now runs it beside that task anyway; they may then conflict when they merge, which Dash sends back to Claude to fix.`;
+    return ib({ class: "btn primary grow", title: why, onclick: attempt((e) => busy(e.currentTarget, () => startNow(t))) }, "play", "Start now");
+  }
   const why = `${state.usage?.pacing && state.usage.reason ? state.usage.reason : t.waiting || "The queue waits for the weekly pace"}. ${startNowHelp}`;
   return ib({ class: "btn primary grow", title: why, onclick: attempt((e) => busy(e.currentTarget, () => startNow(t))) }, "play", "Start now");
 }
