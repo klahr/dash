@@ -24,10 +24,16 @@ echo "== staticcheck"
 go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./... # the version CI pins
 
 echo "== go test"
+# On Windows the test cache costs more than it saves: the tests run git
+# thousands of times, each run logs a stat for every PATH entry and
+# extension, and go re-checks every logged path (slowly, on Windows) before
+# it trusts a cached result. That took over 20 minutes; running afresh takes 3.
+nocache=
+case "$(uname -s)" in MINGW* | MSYS* | CYGWIN*) nocache=-count=1 ;; esac
 if [ "${DASH_CHECK_SHORT:-}" = 1 ]; then
-	go test -short ./...
+	go test $nocache -short ./...
 else
-	go test ./...
+	go test $nocache ./...
 fi
 
 if command -v node >/dev/null 2>&1; then

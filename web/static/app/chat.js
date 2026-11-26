@@ -270,12 +270,18 @@ function chatComposer(c, { form, mode, shell, clear }) {
 
   // The box is border-box, so the height takes the border on top of scrollHeight;
   // without it the text overflows by the border's width and a scrollbar shows.
+  // While the composer is hidden (a task's page not open yet) the box measures
+  // 0, and that 0 would stick as its height: it keeps its one row instead and
+  // grows to its text once it shows.
+  let grown = true;
   const autoGrow = c.autoGrow = () => {
+    grown = input.getClientRects().length > 0;
     input.style.height = "auto";
-    input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
+    if (grown) input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
     shellMode();
     suggestion.show();
   };
+  new ResizeObserver(() => { if (!grown && input.getClientRects().length) autoGrow(); }).observe(input);
   const recall = c.recall = chatRecall(c, input, autoGrow);
   input.addEventListener("input", () => { recall.end(); autoGrow(); if (c.current) c.busyButton(); });
   c.modeChanged = () => {

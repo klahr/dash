@@ -1,3 +1,4 @@
+# LF on every checkout, Windows too: gofmt and tests that read files line by line expect it.
 * text=auto eol=lf
 
 *.png binary
