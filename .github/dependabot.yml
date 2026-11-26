@@ -21,10 +21,10 @@ updates:
         patterns: ["*"]
 
   # Dockerfile (the hub from source), deploy/Dockerfile.release (the release
-  # image) and deploy/caddy/Dockerfile. Base images on floating tags
-  # (distroless :nonroot, busybox:stable) are pinned by digest, and Dependabot
-  # bumps the digest; golang:${GO_VERSION} follows go.mod's go line (CI checks
-  # they match).
+  # image) and deploy/caddy/Dockerfile. All pin their base images by digest
+  # (CI checks), so Dependabot also bumps floating tags such as distroless
+  # :nonroot and busybox:stable, updating tag and digest together. The golang
+  # tag must match go.mod's go line (CI checks), so bump both in one change.
   - package-ecosystem: docker
     directories:
       - /

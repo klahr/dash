@@ -172,9 +172,16 @@ jobs:
       - name: Dockerfile's Go version matches go.mod
         run: |
           want=$(awk '$1 == "go" { print $2 }' go.mod)
-          got=$(sed -n 's/^ARG GO_VERSION=//p' Dockerfile)
+          got=$(sed -n 's/^FROM .*golang:\([0-9.]*\)-alpine@sha256:.*/\1/p' Dockerfile)
           if [ "$want" != "$got" ]; then
-            echo "Dockerfile has GO_VERSION=$got, go.mod has go $want"
+            echo "Dockerfile has golang:$got, go.mod has go $want"
+            exit 1
+          fi
+
+      - name: Base images are pinned by digest
+        run: |
+          if grep -n '^FROM ' Dockerfile deploy/Dockerfile.release deploy/caddy/Dockerfile | grep -v '@sha256:[0-9a-f]\{64\}'; then
+            echo "Pin these base images by digest (name:tag@sha256:...)"
             exit 1
           fi
 

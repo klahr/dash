@@ -10,10 +10,11 @@
 # toolchains, so it runs no tasks itself: work runs on runners
 # (`dash runner`, installed natively on each computer).
 
-# Keep in step with the go line in go.mod (CI checks).
-ARG GO_VERSION=1.27.4
-
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
+# Base images are pinned by digest; Dependabot updates the tag and digest
+# together. The Go version is written out (no ARG) so the two can't drift:
+# with a digest, Docker ignores the tag. Keep it in step with the go line in
+# go.mod (CI checks).
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
