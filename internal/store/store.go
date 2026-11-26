@@ -969,6 +969,38 @@ func (s *Store) AppendProjectChat(projectID string, user int64, msgs ...model.Ch
 	return err
 }
 
+// RewindProjectChat keeps the first keep messages of user's chat about a
+// project and takes out the rest (the last turn, to send it again edited or
+// retried), if the chat still has n messages. It reports false, changing
+// nothing, when it doesn't: another of the user's devices changed it.
+func (s *Store) RewindProjectChat(projectID string, user int64, n, keep int) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.data.Projects[projectID]
+	if !ok {
+		return false, ErrNotFound
+	}
+	owner := projectChatOwner(projectID, user)
+	prev := s.data.ProjectChats[owner]
+	if len(prev) != n || keep < 0 || keep > n {
+		return false, nil
+	}
+	if keep == n {
+		return true, nil
+	}
+	next := append([]model.ChatMessage(nil), prev[:keep]...)
+	if keep == 0 {
+		delete(s.data.ProjectChats, owner)
+	} else {
+		s.data.ProjectChats[owner] = next
+	}
+	err := s.writeLocked(func(tx *sql.Tx) error { return updateChat(tx, chatProject, owner, p.OrgID, prev, next) })
+	if err == nil {
+		s.projectChatChangedLocked(p, user)
+	}
+	return err == nil, err
+}
+
 // ClearProjectChat deletes user's chat about a project; other users' stay.
 func (s *Store) ClearProjectChat(projectID string, user int64) error {
 	s.mu.Lock()

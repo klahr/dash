@@ -762,6 +762,60 @@ func TestBrowserProjectChatOnTwoDevices(t *testing.T) {
 	phone.waitJS("back", `!document.querySelector("#pc-past").hidden`)
 }
 
+// In a project's chat, the last message sent can be edited and sent again,
+// and the last answer retried: each replaces the last turn, here and in the
+// saved chat. Esc keeps the turn as it was. The composer has its own attach
+// button, and ↓ shows while the conversation is scrolled up from its end.
+func TestBrowserChatEditRetry(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.topMenu("pc-open", `!document.querySelector("#chat-pane").hidden`)
+	const panel = `#chat-pane .chat-panel[data-chat]:not([hidden])`
+	q := func(sel string) string { return fmt.Sprintf(`document.querySelector(%q)`, panel+" "+sel) }
+	count := func(sel string) string { return fmt.Sprintf(`document.querySelectorAll(%q).length`, panel+" "+sel) }
+	saved := func() string {
+		var msgs []struct{ Content string }
+		h.api.must("GET", "/api/projects/"+h.project.ID+"/chat", nil, http.StatusOK, &msgs)
+		var out []string
+		for _, m := range msgs {
+			out = append(out, m.Content)
+		}
+		return strings.Join(out, " | ")
+	}
+	b.waitJS("the project's chat, empty", `!!`+q(".chat-empty:not([hidden])"))
+	b.waitJS("the attach button", `!!`+q("form .attach-icon")+`?.offsetParent`)
+
+	b.do("ask", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "Hi\r"))
+	b.waitJS("the answer, with Edit and Retry", count(".msg.assistant:not(.pending)")+` === 1 && `+count(".msg.user .msg-edit")+` === 1 && `+count(".msg-retry")+` === 1`)
+
+	// Retry: the answer is asked for again, in its place.
+	b.do("retry", chromedp.Click(chromedp.CSS(panel+` .msg-retry`)))
+	b.waitJS("answered again", count(".msg.assistant:not(.pending)")+` === 1 && `+count(".msg.user")+` === 1 && `+count(".msg-retry")+` === 1`)
+	waitFor(t, h.hub, "the retried turn saved", func() bool { return strings.HasPrefix(saved(), "Hi | ") && strings.Count(saved(), " | ") == 1 })
+
+	// Edit, then Esc: nothing changes.
+	b.do("write a draft", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "draft"))
+	b.do("edit", chromedp.Click(chromedp.CSS(panel+` .msg-edit`)))
+	b.waitJS("the message in the composer", q("textarea")+`.value === "Hi" && `+q("form")+`.classList.contains("editing") && !!`+q(".msg.user.editing"))
+	b.do("Esc", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "\x1b"))
+	b.waitJS("the draft back", q("textarea")+`.value === "draft" && !`+q("form")+`.classList.contains("editing") && !`+q(".msg.user.editing"))
+
+	// Edit and send: it replaces the turn.
+	b.do("edit again", chromedp.Click(chromedp.CSS(panel+` .msg-edit`)))
+	b.waitJS("in the composer", q("textarea")+`.value === "Hi"`)
+	b.do("change it and send", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), " there\r"))
+	b.waitJS("the edited turn", count(".msg.user")+` === 1 && `+q(".msg.user")+`.textContent.includes("Hi there") && `+count(".msg.assistant:not(.pending)")+` === 1 && `+count(".msg-edit")+` === 1`)
+	waitFor(t, h.hub, "the edited turn saved", func() bool { return strings.HasPrefix(saved(), "Hi there | ") && strings.Count(saved(), " | ") == 1 })
+
+	// ↓ while scrolled up; it goes to the end and hides.
+	// Scrolled up on each try: the glide to the last reply may still be under way.
+	b.waitJS("↓ shows", `(() => { const log = `+q(".chat-log")+`; if (!log.querySelector(".tall")) log.prepend(Object.assign(document.createElement("div"), { className: "tall", style: "height: 3000px" })); log.scrollTop = 0; return !`+q(".jump-end")+`.hidden; })()`)
+	b.do("jump", chromedp.Click(chromedp.CSS(panel+` .jump-end`)))
+	b.waitJS("at the end, ↓ hidden", q(".jump-end")+`.hidden`)
+}
+
 // needChrome is the Chrome to test with, or skips the test (see
 // TestBrowserMainFlows).
 func needChrome(t *testing.T) string {

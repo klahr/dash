@@ -32,8 +32,8 @@ export function attachThumb(a, onRemove, prefix = here()) {
 }
 
 // compact (the chat composers) drops the button and hides the row while it's
-// empty; files arrive by paste or drop onto zone. prefix names the computer
-// that stores the uploads.
+// empty; files arrive by paste, drop onto zone or pick() (the composer's own
+// attach button). prefix names the computer that stores the uploads.
 export function attachBox(el, textarea, onChange = () => {}, { zone = el.closest("dialog") || el, compact = false, prefix = here } = {}) {
   let items = [], pending = 0, busy = Promise.resolve();
   const input = h("input", { type: "file", accept: ACCEPT, multiple: true, hidden: true, onchange: () => { add(input.files); input.value = ""; } });
@@ -44,8 +44,8 @@ export function attachBox(el, textarea, onChange = () => {}, { zone = el.closest
       ...(pending ? [h("span", { class: "chip uploading" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Uploading ${pending}…`)] : []),
       ...(compact ? [] : [h("button", { type: "button", class: "btn small attach-btn", onclick: () => input.click() },
         clip(),
-        "Attach file"),
-      input]));
+        "Attach file")]),
+      input);
   };
   const off = () => !compact && el.hidden;
   const add = (files) => {
@@ -84,5 +84,6 @@ export function attachBox(el, textarea, onChange = () => {}, { zone = el.closest
     ids: () => items.map((a) => a.id),
     items: () => [...items],
     settled: () => busy,
+    pick: () => input.click(),
   };
 }

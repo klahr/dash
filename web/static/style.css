@@ -563,8 +563,19 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .chat-log > * { flex-shrink: 0; } /* overflow:hidden children (.msg.shell) would otherwise shrink to 0 in long chats */
 .chat-empty { margin: auto; padding: 24px; }
 .msg { max-width: 72ch; overflow-wrap: anywhere; }
-.msg.user { align-self: flex-end; background: var(--raised); padding: 10px 14px; border-radius: var(--r-l) var(--r-l) var(--r-xs) var(--r-l); white-space: pre-wrap; }
+.msg.user { position: relative; align-self: flex-end; background: var(--raised); padding: 10px 14px; border-radius: var(--r-l) var(--r-l) var(--r-xs) var(--r-l); white-space: pre-wrap; }
 .msg.assistant { align-self: stretch; }
+/* The pencil beside the last message sent, to edit and send it again (chatEdits in app/chat.js). */
+.msg-edit { position: absolute; right: 100%; bottom: 0; display: grid; place-items: center; width: 32px; height: 32px; margin-right: 4px; border-radius: var(--r-s); color: var(--muted); opacity: 0; transition: opacity .15s; }
+.msg-edit .ico { width: 16px; height: 16px; }
+.msg-edit:hover { color: var(--text); background: var(--raised); }
+.msg.user:hover .msg-edit, .msg-edit:focus-visible { opacity: 1; }
+@media (hover: none) { .msg-edit { opacity: 1; } }
+.msg.user.editing { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Room for the pencil beside the bubble on a narrow screen. */
+.msg.user:has(> .msg-edit) { margin-left: 36px; }
+.msg.user.editing .msg-edit { display: none; }
+.composer.editing textarea { border-color: var(--accent); }
 :is(.msg .reply, .md) { line-height: 1.55; }
 .md { white-space: normal; }
 :is(.msg .reply, .md) > :first-child { margin-top: 0; }
@@ -588,7 +599,10 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .code-copy .ico { width: 15px; height: 15px; }
 .code-block:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
 .code-copy:hover { color: var(--text); }
-@media (hover: none) { .code-copy { opacity: 1; } }
+/* On a touch screen the button always shows: the code starts below it. */
+@media (hover: none) { .code-copy { opacity: 1; } :is(.msg .reply, .md) .code-block > pre { padding-top: 40px; } }
+/* Code reads as typed (no != drawn as ≠), tabs as 4 columns. */
+.msg :is(pre, code), :is(.msg .reply, .md) :is(pre, code) { font-variant-ligatures: none; tab-size: 4; }
 /* An svg block drawn as a picture (see renderMarkdown), its code behind Code. */
 .md-svg { margin: 0 0 12px; }
 :is(.msg .reply, .md) > .md-svg:last-child { margin-bottom: 0; }
@@ -687,9 +701,14 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .msg .tool[open] > pre:not([hidden]) { animation: enter-card .16s ease-out; }
 .msg.error { color: var(--failed); }
 .composer {
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 10px 12px;
+  position: relative; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 10px 12px;
   border-top: 1px solid var(--line); background: var(--bg);
 }
+.composer .attach-icon, .composer .edit-cancel { width: 36px; }
+.composer .attach-icon .clip svg { width: 20px; height: 20px; }
+/* ↓ over the end of the conversation while it is scrolled up (chatJump in app/chat.js). */
+.jump-end { position: absolute; bottom: calc(100% + 10px); left: 50%; translate: -50% 0; z-index: 2; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 50%; background: var(--raised); color: var(--text); box-shadow: 0 2px 8px rgb(0 0 0 / .25); animation: enter-fade .15s ease-out; }
+.jump-end:hover { background: var(--surface); }
 .composer textarea { flex: 1 1 0; width: auto; min-width: 0; resize: none; max-height: 40vh; padding: 11px 16px; }
 #pc-open[aria-pressed="true"], #pc-pin[aria-pressed="true"] { color: var(--accent); }
 #pc-pin[aria-pressed="true"] .ico { fill: currentColor; }

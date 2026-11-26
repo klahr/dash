@@ -58,7 +58,8 @@ import (
 // saved meanwhile. A "base" that isn't the saved conversation's length (or
 // messages that differ from it) is refused with "stale", so the client
 // reloads (GET /api/projects/{id}/chat); a stale copy never removes
-// messages. Saving or clearing it tells the user's dashboards
+// messages. Only "rewind": true does, and only the saved conversation's last
+// turn, which the user edits or retries (see chatRequest.Rewind). Saving or clearing it tells the user's dashboards
 // (model.EvProjectChat), as do its turns beginning and ending; meanwhile GET
 // sets X-Chat-Busy.
 // Each completed turn is saved, and GET /api/chat returns it after a restart.
@@ -283,6 +284,11 @@ type chatRequest struct {
 	// copy is out of date (Base isn't what is saved) is told "stale" and
 	// reloads. Without it, the last message is the only new one.
 	Base *int `json:"base"`
+	// Rewind, in a project's chat, takes the saved conversation's last turn
+	// (at most its last two messages) out first: Base may be up to two
+	// short of what is saved, and the messages after it are dropped, so
+	// the turn is sent again, edited or retried.
+	Rewind bool `json:"rewind"`
 }
 
 // general reports whether m is for the general chat, not a project's, a task's or a goal's.
@@ -534,9 +540,19 @@ func (s *Server) resolveProjectChat(t *chatAsk, ct chatSetup) (chatSetup, error)
 	if err != nil {
 		return ct, err
 	}
-	added, err := projectChatAdded(stored, msg)
+	added, keep, err := projectChatAdded(stored, msg)
 	if err != nil {
 		return ct, err
+	}
+	if keep < len(stored) {
+		ok, err := sv.data.RewindProjectChat(p.ID, user, len(stored), keep)
+		if err != nil {
+			return ct, err
+		}
+		if !ok {
+			return ct, errStaleChat
+		}
+		stored = stored[:keep]
 	}
 	for i := range added {
 		added[i].CreatedBy = user
@@ -640,23 +656,28 @@ var errPlannerChat = errors.New("planners have the general chat only: project, t
 var errStaleChat = errors.New("this chat changed on another device: it has been reloaded, send your message again")
 
 // projectChatAdded is what msg adds to stored, the user's saved chat about
-// a project: the messages after the msg.Base it was written on. A copy that
-// isn't stored (shorter, longer or different) is stale: saving from it could
-// take out messages another device added.
-func projectChatAdded(stored []agent.ChatMessage, msg chatRequest) ([]agent.ChatMessage, error) {
+// a project: the messages after the msg.Base it was written on, and how
+// many of stored to keep (all of them, unless msg.Rewind takes its last
+// turn out). A copy that isn't stored (shorter, longer or different) is
+// stale: saving from it could take out messages another device added.
+func projectChatAdded(stored []agent.ChatMessage, msg chatRequest) ([]agent.ChatMessage, int, error) {
 	base := len(msg.Messages) - 1
 	if msg.Base != nil {
 		base = *msg.Base
 	}
-	if base != len(stored) || base < 0 || base >= len(msg.Messages) {
-		return nil, errStaleChat
+	ok := base == len(stored)
+	if msg.Rewind {
+		ok = base <= len(stored) && base >= len(stored)-2
 	}
-	for i, m := range stored {
+	if !ok || base < 0 || base >= len(msg.Messages) {
+		return nil, 0, errStaleChat
+	}
+	for i, m := range stored[:base] {
 		if c := msg.Messages[i]; c.Role != m.Role || c.Content != m.Content {
-			return nil, errStaleChat
+			return nil, 0, errStaleChat
 		}
 	}
-	return append([]agent.ChatMessage(nil), msg.Messages[base:]...), nil
+	return append([]agent.ChatMessage(nil), msg.Messages[base:]...), base, nil
 }
 
 // resolveGoalChat sets up a turn of the chat with msg.Goal's coordinator:

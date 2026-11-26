@@ -229,6 +229,15 @@ func (o *OrgStore) AppendProjectChat(projectID string, user int64, msgs ...model
 	return o.s.AppendProjectChat(projectID, user, msgs...)
 }
 
+// RewindProjectChat takes the last turn out of user's own chat about a
+// project in the org (see Store.RewindProjectChat).
+func (o *OrgStore) RewindProjectChat(projectID string, user int64, n, keep int) (bool, error) {
+	if !o.ownsProject(projectID) {
+		return false, ErrNotFound
+	}
+	return o.s.RewindProjectChat(projectID, user, n, keep)
+}
+
 // ClearProjectChat deletes user's own chat about a project in the org.
 func (o *OrgStore) ClearProjectChat(projectID string, user int64) error {
 	if !o.ownsProject(projectID) {

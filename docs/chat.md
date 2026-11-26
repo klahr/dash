@@ -52,6 +52,14 @@ starts a new chat (as **New chat** does) and `/help` lists these.
 shell's history does; <kbd>Down</kbd> on the last line goes forward again, back to what you were
 writing. Typing stops the stepping, so an edited message stays as you left it.
 
+To change the last message you sent, press the pencil beside it: it goes back in the box, and
+sending it replaces that message and Claude's answer. <kbd>Esc</kbd> or **×** keeps them as they
+were. **Retry** under Claude's last answer asks for it again. A goal's chat has neither: it is
+what its coordinator remembers.
+
+The paperclip beside the box attaches files; you can also paste or drop them. When you've scrolled
+up, **↓** over the end of the conversation takes you back to the latest message.
+
 ## New chat and past chats
 
 **New chat** (the pencil in the chat pane's header) starts an empty conversation in General or a

@@ -98,6 +98,8 @@ export function projectChatFor(p) {
       if (!pc.chat.busy && pc.dirty) loadProjectChat(proj(), true).catch(() => {});
     },
     shell: true,
+    // The server takes the last turn out with rewind (see chatEdits).
+    edit: true,
     // The drafts Claude makes here show with Queue, Open and Discard.
     tasks: {
       prefix: () => proj().prefix || "",

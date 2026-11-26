@@ -189,6 +189,50 @@ func TestProjectChatStaleCopyKeepsNewerMessages(t *testing.T) {
 	}
 }
 
+// With rewind, a turn takes the saved chat's last turn out first, to send it
+// again edited or retried (its question sent again as it was); further
+// back, or from a copy that differs, is stale and changes nothing.
+func TestProjectChatRewindLastTurn(t *testing.T) {
+	s, _, p := boardServer(t)
+	s.Chat = &echoChat{}
+	owner := testOwner(t, s)
+	saved := func() string { return chatContents(raw(s).ProjectChat(p.ID, owner.User)) }
+	q1, a1 := model.ChatMessage{Role: "user", Content: "q1"}, model.ChatMessage{Role: "assistant", Content: "a1"}
+	q2, a2 := model.ChatMessage{Role: "user", Content: "q2"}, model.ChatMessage{Role: "assistant", Content: "a2"}
+	if err := raw(s).AppendProjectChat(p.ID, owner.User, q1, a1, q2, a2); err != nil {
+		t.Fatal(err)
+	}
+	conn := chatSocket(t, s)
+	turn := func(base int, msgs ...model.ChatMessage) []string {
+		t.Helper()
+		if err := conn.WriteJSON(map[string]any{"type": "send", "project": p.ID, "rewind": true, "base": base, "messages": msgs}); err != nil {
+			t.Fatal(err)
+		}
+		return kindsOf(readTurn(t, conn, 0))
+	}
+	if k := turn(1, q1, cmdMsg("too far back")); len(k) != 1 || k[0] != "stale" {
+		t.Errorf("rewinding past the last turn: %v, want stale", k)
+	}
+	if k := turn(2, a1, q1, cmdMsg("different")); len(k) != 1 || k[0] != "stale" {
+		t.Errorf("rewinding a different copy: %v, want stale", k)
+	}
+	if got := saved(); got != "q1 | a1 | q2 | a2" {
+		t.Fatalf("a refused rewind changed the chat: %q", got)
+	}
+	if k := turn(2, q1, a1, cmdMsg("q2 edited")); k[len(k)-1] != "done" {
+		t.Fatalf("edit: %v", k)
+	}
+	if got := saved(); got != "q1 | a1 | q2 edited | hi" {
+		t.Fatalf("after edit: %q", got)
+	}
+	if k := turn(2, q1, a1, cmdMsg("q2 edited")); k[len(k)-1] != "done" {
+		t.Fatalf("retry: %v", k)
+	}
+	if got := saved(); got != "q1 | a1 | q2 edited | hi" {
+		t.Fatalf("after retry: %q", got)
+	}
+}
+
 // A turn of a user's project chat tells that user's dashboards (and only
 // theirs) that it is busy, and when it is done.
 func TestProjectChatBusyEventsGoToItsUser(t *testing.T) {

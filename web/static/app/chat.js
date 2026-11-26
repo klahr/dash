@@ -1,10 +1,10 @@
 import { renderMarkdown } from "../editor.js";
-import { $, chatSuggestOn, entering, h, ib } from "./dom.js";
+import { $, chatSuggestOn, entering, h, ib, ico } from "./dom.js";
 import * as store from "./store.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on, request } from "./api.js";
 import { ask, attempt, copy, fail, toast } from "./dialogs.js";
-import { attachBox, attachThumb } from "./attachments.js";
+import { attachBox, attachThumb, clip } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { showView } from "./nav.js";
 import { projectKey } from "./events.js";
@@ -73,8 +73,9 @@ function usageLine(u) {
 // composer: chatSendButton, chatSuggestion, chatRecall with its keys,
 // chatQueue), chatTurns (sending and settling turns), shellRunner, and
 // chatSocket with chatStreamHandler (the connection, where the chat runs and
-// on which runner).
-export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false, mode = () => null, tasks = null }) {
+// on which runner), chatEdits (with edit: taking back the last turn to edit
+// or retry it) and chatJump (the button to the end of the conversation).
+export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false, mode = () => null, tasks = null, edit = false }) {
   // waiting: ids of the permission requests the current turn waits on an answer to.
   // queue: messages written while a reply streams ({q, files}), sent together
   // as one message once it's done.
@@ -83,6 +84,8 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   const composer = chatComposer(c, { form, mode, shell, clear });
   const turns = chatTurns(c, { stale, onState });
   shellRunner(c);
+  chatEdits(c, edit);
+  chatJump(c);
   c.socket = chatSocket(c, { cwd, saved, resume, onRunner, onStream: chatStreamHandler(c) });
   return { ...turns, ...composer, toEnd: c.toEnd, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
 }
@@ -93,9 +96,10 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
 // (a message), c.cards(tasks) (the cards of the tasks an answer made, with
 // tasks), c.actionRow(content) (the row under an answer: actions(content)
 // and its speaker button), c.toEnd(smooth) (scrolls scroller() to the end),
-// c.prefixOf() (the Dash the chat runs on) and c.show(saved) (shows a saved
-// conversation, its messages placed by merge). c.log, c.empty, c.labels,
-// c.scroller and c.tasks are the options themselves.
+// c.prefixOf() (the Dash the chat runs on), c.show(saved) (shows a saved
+// conversation, its messages placed by merge) and c.nodes (each message's
+// element). c.log, c.empty, c.labels, c.scroller and c.tasks are the
+// options themselves.
 function chatView(c, { log, empty, labels, actions, scroller, merge, tasks }) {
   Object.assign(c, { log, empty, labels, scroller, tasks });
   // smooth glides there when a new message arrives and the end is within a screen.
@@ -116,20 +120,27 @@ function chatView(c, { log, empty, labels, actions, scroller, merge, tasks }) {
   };
   const prefixOf = c.prefixOf = () => c.target().prefix || "";
   // The images an answer showed (show_image) fit the reply's width; a click opens the lightbox.
+  const nodes = c.nodes = new WeakMap();
   const images = c.images = (list = []) => h("div", { class: "msg-images", hidden: !list.length }, ...list.map((a) => attachThumb(a, null, prefixOf())));
   const assistant = c.assistant = (m) => {
     const el = h("div", { class: "msg assistant" }, from("assistant"));
     savedReply(el, m);
     el.append(...[m.attachments?.length ? images(m.attachments) : null, ...cards(m.tasks), usageLine(m.usage), actionRow(m.content)].filter(Boolean));
+    nodes.set(m, el);
     return el;
   };
-  const user = c.user = (m) => m.action ? actionNote(m) : m.shell ? c.shell.block(m, labels && from("user")).el : h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
-    m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
+  const user = c.user = (m) => {
+    const el = m.action ? actionNote(m) : m.shell ? c.shell.block(m, labels && from("user")).el : h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
+      m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
+    nodes.set(m, el);
+    return el;
+  };
   c.show = (saved) => {
     const nodes = merge(saved.map((m) => m.role === "user" ? user(m) : assistant(m)), saved);
     empty.hidden = nodes.length > 0;
     log.replaceChildren(empty, ...nodes);
     toEnd();
+    c.markLast();
   };
 }
 
@@ -204,6 +215,7 @@ function chatComposer(c, { form, mode, shell, clear }) {
   const attachRow = h("div", { class: "attach", hidden: true });
   form.prepend(attachRow);
   const att = c.att = attachBox(attachRow, input, () => { c.busyButton(); suggestion.show(); }, { zone: form.parentElement, compact: true, prefix: c.prefixOf });
+  input.before(h("button", { type: "button", class: "icon-btn attach-icon", "aria-label": "Attach files", title: "Attach files", onclick: () => att.pick() }, clip()));
   const suggestion = chatSuggestion(c, input, form, att, mode);
   const queue = c.queued = chatQueue(c);
   c.unqueue = queue.unqueue;
@@ -231,7 +243,11 @@ function chatComposer(c, { form, mode, shell, clear }) {
   };
   const recall = c.recall = chatRecall(c, input, autoGrow);
   input.addEventListener("input", () => { recall.end(); autoGrow(); if (c.current) c.busyButton(); });
-  c.modeChanged = () => { c.busyButton(); suggestion.show(); shellMode(); };
+  c.modeChanged = () => {
+    // A message sent elsewhere (Rework) replaces nothing in the chat.
+    if (mode()?.send) c.endEdit();
+    c.busyButton(); suggestion.show(); shellMode();
+  };
   form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
     stopSpeaking(); // a new message stops what is read aloud
@@ -271,10 +287,10 @@ function chatComposer(c, { form, mode, shell, clear }) {
     autoGrow();
     att.reset();
     // While Claude answers, the message (or /clear, which starts a new chat) waits its turn.
-    if (command && (!c.current || command !== commands.clear)) return command();
+    if (command && (!c.current || command !== commands.clear)) { c.endEdit(); return command(); }
     if (c.current) return queue.push({ q, files });
-    if (!files.length && shellOn() && isShell(q)) return c.shell.run(q);
-    c.send(q, files);
+    if (!files.length && shellOn() && isShell(q)) { c.endEdit(); return c.shell.run(q); }
+    c.editing ? c.resend(q, files) : c.send(q, files);
   }));
   return { input, modeChanged: c.modeChanged, clear: commands.clear };
 }
@@ -286,14 +302,14 @@ function chatComposer(c, { form, mode, shell, clear }) {
 // whether one runs does). It returns makeChat's reset, resumeLast, stop and
 // addNote.
 function chatTurns(c, { stale, onState }) {
-  c.onState = onState;
+  c.onState = () => { c.markLast(); onState(); };
   // A turn that ends sends what's queued (done) or, when it was stopped or
   // failed, puts it back in the composer to send again or not.
   const finish = c.finish = (drain = false) => {
     c.current = null;
     c.waiting.clear();
     c.busyButton();
-    onState();
+    c.onState();
     drain ? c.queued.drain() : c.queued.restore();
   };
 
@@ -319,7 +335,9 @@ function chatTurns(c, { stale, onState }) {
       if (!stopped && !failed) speakReply(cur.content, row?.querySelector(".speak-btn"));
     }
     if (kept) {
-      c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage && !stopped ? { usage: cur.usage } : {}), ...(cur.tasks.length ? { tasks: cur.tasks } : {}), ...(cur.images.length ? { attachments: cur.images } : {}) });
+      const m = { role: "assistant", content: cur.content, at: cur.at, ...(cur.usage && !stopped ? { usage: cur.usage } : {}), ...(cur.tasks.length ? { tasks: cur.tasks } : {}), ...(cur.images.length ? { attachments: cur.images } : {}) };
+      c.history.push(m);
+      c.nodes.set(m, cur.el);
     } else {
       c.history.pop(); // keep history alternating
     }
@@ -330,6 +348,7 @@ function chatTurns(c, { stale, onState }) {
   // is left to finish on its own socket.
   function reset(saved = []) {
     if (c.current) { c.ws = null; finish(); }
+    c.endEdit();
     c.suggest();
     c.recall.end();
     c.history = [...saved];
@@ -338,12 +357,14 @@ function chatTurns(c, { stale, onState }) {
   }
   c.reset = reset;
 
-  c.send = (q, attachments = []) => {
+  // With rewind, the message replaces the last turn, which chatEdits took
+  // back: the server takes it out of the saved conversation too.
+  c.send = (q, attachments = [], rewind = false) => {
     c.empty.hidden = true;
     const m = { role: "user", content: q, at: new Date().toISOString(), ...(attachments.length ? { attachments } : {}) };
     c.history.push(m);
     c.log.append(c.lastUser = entering(c.user(m)));
-    turn(c.target());
+    turn({ ...c.target(), ...(rewind && { rewind: true }) });
   };
 
   // staleTurn takes back a turn the server refused because this copy of the
@@ -386,7 +407,7 @@ function chatTurns(c, { stale, onState }) {
     c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), tasks: [], images: [], target: { prefix, ...fields }, at: new Date().toISOString() };
     c.suggest();
     c.busyButton();
-    onState();
+    c.onState();
     const ws = c.socket(prefix);
     ws.fields = fields;
     const go = () => ws.send(JSON.stringify({ type: "send", ...fields, ...(chatSuggestOn() && { suggest: true }), base: c.history.length - 1, messages: c.history.map(wire) }));
@@ -409,6 +430,7 @@ function chatTurns(c, { stale, onState }) {
     c.history.push(m);
     c.log.append(entering(c.user(m)));
     c.toEnd(true);
+    c.markLast();
   }
 
   return { reset, resumeLast, stop, addNote };
@@ -747,6 +769,116 @@ function chatStreamHandler(c) {
   };
 }
 
+// chatEdits lets the user take back the conversation's last turn, with edit
+// (a chat whose saved conversation can lose it): the pencil on their last
+// message puts it in the composer, where sending replaces it and its answer
+// (Esc or × keeps them), and Retry under the last answer asks for it again.
+// It sets c.markLast() (puts the two on the last turn, while no turn runs),
+// c.editing (the edit under way: {m, draft, files}), c.endEdit(restore)
+// (ends it, with restore putting back what the composer had) and
+// c.resend(q, files) (sends the edited message).
+function chatEdits(c, edit) {
+  const { input, att, form, log } = c;
+  const plain = (m) => m?.role === "user" && !m.shell && !m.action;
+  // The last turn: its question q and answer a, if it has one. An answer that
+  // made tasks stays: taking it back would leave its drafts behind.
+  const lastTurn = () => {
+    const hist = c.history, last = hist.at(-1);
+    if (plain(last)) return { q: last };
+    if (last?.role === "assistant" && !last.tasks?.length && plain(hist.at(-2))) return { q: hist.at(-2), a: last };
+    return null;
+  };
+  const cancel = ib({ type: "button", class: "icon-btn edit-cancel", hidden: true, "aria-label": "Cancel edit", title: "Cancel edit", onclick: () => { endEdit(true); input.focus(); } }, "x");
+  input.before(cancel);
+  const unmark = () => { for (const el of log.querySelectorAll(".msg.editing")) el.classList.remove("editing"); };
+  c.editing = null;
+
+  c.markLast = () => {
+    for (const b of log.querySelectorAll(".msg-edit, .msg-retry")) b.remove();
+    const t = edit && !c.current && lastTurn();
+    if (!t) return;
+    c.nodes.get(t.q)?.append(h("button", { type: "button", class: "msg-edit", "aria-label": "Edit", title: "Edit", onclick: () => startEdit(t.q) }, ico("edit")));
+    if (t.a) c.nodes.get(t.a)?.querySelector(".msg-actions")?.prepend(ib({ type: "button", class: "link msg-retry", onclick: retry }, "redo", "Retry"));
+  };
+
+  function startEdit(m) {
+    if (c.current || lastTurn()?.q !== m) return;
+    c.editing ||= { draft: input.value, files: att.items() };
+    c.editing.m = m;
+    unmark();
+    c.nodes.get(m)?.classList.add("editing");
+    c.suggest();
+    c.recall.end();
+    input.value = m.content || "";
+    att.reset(m.attachments || []);
+    form.classList.add("editing");
+    cancel.hidden = false;
+    c.autoGrow();
+    c.busyButton();
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+  const endEdit = c.endEdit = (restore = false) => {
+    if (!c.editing) return;
+    const { draft, files } = c.editing;
+    c.editing = null;
+    unmark();
+    form.classList.remove("editing");
+    cancel.hidden = true;
+    if (!restore) return;
+    input.value = draft;
+    att.reset(files);
+    c.autoGrow();
+    c.busyButton();
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !c.editing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    endEdit(true);
+  });
+
+  // takeBack takes m and what follows it out of the conversation shown.
+  const takeBack = (m) => {
+    for (const x of c.history.splice(c.history.lastIndexOf(m))) c.nodes.get(x)?.remove();
+  };
+  // A turn that changed meanwhile (a note added, say) isn't replaced: the message goes as a new one.
+  c.resend = (q, files) => {
+    const m = c.editing?.m;
+    endEdit();
+    if (!m || lastTurn()?.q !== m) return c.send(q, files);
+    takeBack(m);
+    c.send(q, files, true);
+  };
+  function retry() {
+    const t = lastTurn();
+    if (c.current || !t?.a) return;
+    endEdit(true);
+    takeBack(t.a);
+    c.lastUser = c.nodes.get(t.q);
+    c.turn({ ...c.target(), rewind: true });
+  }
+}
+
+// chatJump shows a ↓ over the end of the conversation while it is
+// scrolled up from there; it goes to the end. c.jumpCheck() updates it.
+function chatJump(c) {
+  const btn = h("button", { type: "button", class: "jump-end", hidden: true, "aria-label": "Jump to latest", onclick: () => {
+    const sc = c.scroller();
+    sc.scrollTo({ top: sc.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+  } }, ico("down"));
+  c.form.prepend(btn);
+  c.jumpCheck = () => {
+    const sc = c.scroller();
+    btn.hidden = !c.log.offsetParent || sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80;
+  };
+  const sc = c.scroller();
+  sc.addEventListener("scroll", c.jumpCheck, { passive: true });
+  new ResizeObserver(c.jumpCheck).observe(sc);
+  // Whatever grows it: text streaming in, a tool call opened, a message added.
+  new MutationObserver(c.jumpCheck).observe(c.log, { childList: true, subtree: true, characterData: true });
+}
+
 // shellRunner runs "!" commands where the chat runs, each shown as a block in
 // the log. Its message, with the result, is saved in the conversation, which
 // Claude sees next turn.
@@ -1077,6 +1209,7 @@ export const chat = makeChat({
   actions: chatActions,
   cwd: $("#chat-cwd"),
   resume: true,
+  edit: true,
   onState: paneChatState("general", () => chat),
 });
 chat.past = 0; // how many past chats it has (see chatpane.js's pastPlace)
@@ -1158,6 +1291,7 @@ export const todoChat = makeChat({
   clear: () => api("DELETE", `/api/todos/${state.detail}/chat`),
   scroller: () => $("#detail .detail-body"),
   shell: true,
+  edit: true,
   cwd: $("#d-chat-cwd"),
   mode: () => TODO_MODES[todoMode],
   // A turn left streaming when its todo was closed is saved when it finishes.
