@@ -250,7 +250,7 @@ func TestBuiltins(t *testing.T) {
 		t.Errorf("flaky-tests tools: %q", flaky.Tools)
 	}
 	fp := flaky.Render("", "")
-	for _, want := range []string{"3 to 5 runs", "-shuffle=on", "25 minutes", "timeout", "timing", "ordering", "shared state", "network", "Do not change any files"} {
+	for _, want := range []string{"3 to 5 runs", "-shuffle=on", "25 minutes", "timeout", "gtimeout", "go test -timeout", "alarm shift", "never run one without", "timing", "ordering", "shared state", "network", "Do not change any files"} {
 		if !strings.Contains(fp, want) {
 			t.Errorf("flaky-tests prompt lacks %q", want)
 		}

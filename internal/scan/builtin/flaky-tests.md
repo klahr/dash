@@ -36,9 +36,17 @@ and sometimes fail on the same code.
 3. Cap the total time. Time the first run. Stop after 5 runs, or earlier when
    further runs would take the total past about 25 minutes; if one run alone
    takes more than 10 minutes, do just that run plus reruns of the packages
-   or files that failed. Wrap every command in `timeout` (for example
-   `timeout 600 go test …`) so a hanging test can't stall the scan, and treat
-   a test that hangs in one run but passes in another as flaky.
+   or files that failed. Give every command a time limit so a hanging test
+   can't stall the scan, and never run one without. Check once what this
+   computer has (`command -v timeout gtimeout perl`): macOS has no `timeout`
+   unless coreutils is installed (as `gtimeout`). Use, in this order:
+   - `timeout 600 …` (Linux), or `gtimeout 600 …` where that exists;
+   - otherwise the test runner's own limit: `go test -timeout 10m`, Jest or
+     Vitest `--testTimeout`, pytest `--timeout` (with pytest-timeout
+     installed), `cargo test` under one of the other two;
+   - otherwise `perl -e 'alarm shift; exec @ARGV' 600 go test …`, which
+     every Mac and most Linux systems have.
+   Treat a test that hangs in one run but passes in another as flaky.
 4. Rerun what failed. For each test that failed in some runs and passed in
    others, run it alone a few more times (`go test -run '^TestName$'
    -count=10`, `pytest path::test_name`, `npx jest -t "name"`, …) to confirm

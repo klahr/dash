@@ -53,8 +53,12 @@ Scans come from three places, marked on each card:
   toolchain supports it (`go test -shuffle=on`, Jest `--randomize`, pytest-randomly), and reruns
   what failed on its own. It reports tests that sometimes pass and sometimes fail, with how often,
   the failure output and the likely cause (timing, ordering, shared state, network). It stops
-  adding runs at about 25 minutes in total, wraps each run in `timeout`, and installs nothing.
-  Like the dependency audit it needs `Bash`.
+  adding runs at about 25 minutes in total and installs nothing. Each run has a time limit:
+  `timeout` (or `gtimeout`) where it exists, else the test runner's own (`go test -timeout`),
+  else a `perl` alarm, so it works on macOS too.
+  Like the dependency audit it needs `Bash`. A scan with `Bash` may run the commands its prompt
+  asks for (and the network they use) and write to a temp directory, but not change the
+  checkout's files; a scan without it is read-only.
 - **Repository:** markdown files in `.dash/scans/<name>.md`, versioned and shared with your team.
   Only a runner's own projects read them: on the hub, a project has the built-in scans and the
   Dash scans, since the hub has no checkout.

@@ -191,7 +191,7 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 		return out, nil
 	}
 
-	prompt := BuildPrompt(t, tg, knownIssues(job.Known, t, tg))
+	prompt := BuildPrompt(t, job.Tools, tg, knownIssues(job.Known, t, tg))
 	h.log("prompt:\n" + prompt)
 	timeout := job.Timeout
 	if timeout <= 0 {

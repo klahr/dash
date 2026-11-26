@@ -779,8 +779,9 @@ func DenyReads(dir string, secrets []string) []string {
 }
 
 // BuildPrompt is what the scan agent is asked: the template's prompt, what
-// to look at, the issues it reported before, and the answer format.
-func BuildPrompt(t Template, tg target, known []Known) string {
+// to look at, the issues it reported before, what it may do with the tools
+// it runs with (see Tools), and the answer format.
+func BuildPrompt(t Template, tools []string, tg target, known []Known) string {
 	var b strings.Builder
 	b.WriteString(t.Render(t.Path, tg.since))
 	b.WriteString("\n\n## Scope\n\n")
@@ -816,16 +817,65 @@ func BuildPrompt(t Template, tg target, known []Known) string {
 			fmt.Fprintf(&b, "- fingerprint `%s` · %s · %s · %s\n", is.Rule, is.Status, loc, is.Title)
 		}
 	}
+	b.WriteString("\n## Answer\n\n")
+	b.WriteString(toolRules(tools))
 	b.WriteString(answerFormat)
 	return b.String()
 }
 
+// gitToolsNote points a scan at the git MCP tools for history.
+const gitToolsNote = "For git history use the git_diff, git_log, git_show and git_blame tools, if you have them.\n"
+
+// toolRules says what a scan may do with its tools. Without Bash it is
+// read-only. With Bash (or Bash(...) rules) it may run the commands its
+// prompt asks for and write to a temp directory, but still must not change
+// the repository's files.
+func toolRules(tools []string) string {
+	all, rules := bashTools(tools)
+	if !all && len(rules) == 0 {
+		return "This is a read-only scan of a throwaway checkout: do not change, create or delete files, and do not commit.\n" +
+			"You can only use the tools you were given; anything else (other commands, builds, tests, network) is refused, " +
+			"and nobody is there to approve it. Verify findings by reading the code instead. " + gitToolsNote
+	}
+	var b strings.Builder
+	b.WriteString("This scan runs in a throwaway checkout. Do not change, create or delete the repository's files, and do not commit. " +
+		"You may write only to a temporary directory: make one with `mktemp -d` and put output files there.\n")
+	if all {
+		b.WriteString("You may run shell commands with Bash: the ones these instructions call for (builds, tests, audit tools, " +
+			"and the network access they need) and commands that read the code. ")
+	} else {
+		cmds := make([]string, len(rules))
+		for i, r := range rules {
+			if p, ok := strings.CutSuffix(r, ":*"); ok {
+				cmds[i] = "commands starting with `" + p + "`"
+			} else {
+				cmds[i] = "`" + r + "`"
+			}
+		}
+		b.WriteString("You may run only these shell commands with Bash: " + strings.Join(cmds, ", ") + ". ")
+	}
+	b.WriteString("Do not install anything. Any other tool or command is refused, and nobody is there to approve it. " + gitToolsNote)
+	return b.String()
+}
+
+// bashTools reports whether tools allow any Bash command (all), and else
+// the commands of their Bash(...) rules.
+func bashTools(tools []string) (all bool, rules []string) {
+	for _, tool := range tools {
+		tool = strings.TrimSpace(tool)
+		if tool == "Bash" {
+			return true, nil
+		}
+		if r, ok := strings.CutPrefix(tool, "Bash("); ok {
+			if r, ok = strings.CutSuffix(r, ")"); ok && strings.TrimSpace(r) != "" {
+				rules = append(rules, strings.TrimSpace(r))
+			}
+		}
+	}
+	return false, rules
+}
+
 const answerFormat = `
-## Answer
-
-This is a read-only scan of a throwaway checkout: do not change, create or delete files, and do not commit.
-You can only use the tools you were given; anything else (other commands, builds, tests, network) is refused, and nobody is there to approve it. Verify findings by reading the code instead. For git history use the git_diff, git_log, git_show and git_blame tools, if you have them.
-
 End your final message with your findings as one JSON code block, and nothing after it:
 
 ` + "```json" + `

@@ -592,9 +592,48 @@ func TestRulePath(t *testing.T) {
 func TestPromptSaysToolsAreFixed(t *testing.T) {
 	t.Parallel()
 
-	p := BuildPrompt(Template{Prompt: "Go."}, target{}, nil)
-	if !strings.Contains(p, "Verify findings by reading the code") {
-		t.Errorf("prompt does not say to verify by reading code:\n%s", p)
+	for _, tools := range [][]string{nil, DefaultTools} {
+		p := BuildPrompt(Template{Prompt: "Go."}, tools, target{}, nil)
+		for _, want := range []string{"Verify findings by reading the code", "do not change, create or delete files", "builds, tests, network) is refused"} {
+			if !strings.Contains(p, want) {
+				t.Errorf("tools %v: prompt does not say %q:\n%s", tools, want, p)
+			}
+		}
+		if strings.Contains(p, "mktemp") {
+			t.Errorf("tools %v: read-only prompt offers a temp directory:\n%s", tools, p)
+		}
+	}
+}
+
+// A scan with Bash is told it may run commands and write to a temp
+// directory, but not change the repository; never that commands are refused.
+func TestPromptWithBash(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		tools []string
+		want  []string
+	}{
+		{[]string{"Read", "Grep", "Glob", "Bash"}, []string{"You may run shell commands with Bash", "network access they need"}},
+		{[]string{"Read", " Bash(npm audit:*)", "Bash(govulncheck ./...)"},
+			[]string{"only these shell commands", "commands starting with `npm audit`", "`govulncheck ./...`"}},
+	}
+	for _, c := range cases {
+		p := BuildPrompt(Template{Prompt: "Go."}, c.tools, target{}, nil)
+		want := append(c.want, "Do not change, create or delete the repository's files", "write only to a temporary directory", "`mktemp -d`", `{"findings": [`)
+		for _, w := range want {
+			if !strings.Contains(p, w) {
+				t.Errorf("tools %v: prompt does not say %q:\n%s", c.tools, w, p)
+			}
+		}
+		for _, no := range []string{"Verify findings by reading the code", "builds, tests, network) is refused", "This is a read-only scan"} {
+			if strings.Contains(p, no) {
+				t.Errorf("tools %v: prompt says %q:\n%s", c.tools, no, p)
+			}
+		}
+	}
+	if p := BuildPrompt(Template{Prompt: "Go."}, []string{"Read", "Bash"}, target{}, nil); strings.Contains(p, "only these shell commands") {
+		t.Errorf("unrestricted Bash is listed as rules:\n%s", p)
 	}
 }
 
