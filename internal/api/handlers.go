@@ -440,7 +440,9 @@ type projectUpdate struct {
 	MergeMethod     *string `json:"merge_method"`
 	MergeBatch      *int    `json:"merge_batch"`
 	InvestigateCI   *bool   `json:"investigate_ci"`
-	MaxRunMinutes   *int    `json:"max_run_minutes"`
+	// CommitPreviews is model.Project.CommitPreviews.
+	CommitPreviews *bool `json:"commit_previews"`
+	MaxRunMinutes  *int  `json:"max_run_minutes"`
 	// TestTimeout is model.Project.TestTimeoutMinutes (0: the default).
 	TestTimeout *int    `json:"test_timeout_minutes"`
 	MaxTurns    *int    `json:"max_turns"`
@@ -733,6 +735,10 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	if req.ColorButtons != nil {
 		v := *req.ColorButtons
 		p.ColorButtons = &v
+	}
+	if req.CommitPreviews != nil {
+		v := *req.CommitPreviews
+		p.CommitPreviews = &v
 	}
 	if req.MergeMode != nil {
 		if err := applyMergeMode(p, *req.MergeMode); err != nil {

@@ -405,3 +405,190 @@ func TestReadTryTerminalIsAReadTool(t *testing.T) {
 		}
 	}
 }
+
+// A web project's try session is a commit preview: the runner checks the
+// commit out in a throwaway worktree, copies the project's copy_files in,
+// runs its setup command and then its run_command there (all in the log),
+// and the hub serves it at <project>--<runner>.<preview domain>, signing in
+// members of the project's org only. A project can turn it off, and it
+// needs a run command and a preview domain.
+func TestCommitPreviewOnARunnerThroughTheHub(t *testing.T) {
+	parallel(t)
+
+	hub, _, _ := boardServer(t)
+	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
+	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}
+	d := &dispatch.Dispatcher{Store: raw(hub), Fleet: rh, Grace: 50 * time.Millisecond}
+	rh.OnState, rh.OnRevoke, rh.OnReport = d.State, d.Revoked, d.Report
+	hub.Dispatch = d
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := httptest.NewServer(hub.Routes())
+	defer srv.Close()
+
+	owner := testOwner(t, hub)
+	code, _, err := rh.NewCode(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	creds, err := tunnel.Register(ctx, srv.URL, code, "laptop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs, runnerAPI, remote := runnerSide(t, creds.OrgID)
+	rs.Procs, rs.HubUser = runner.NewManager(rs.Hub), creds.UserID
+	t.Cleanup(rs.Procs.StopAll)
+	rs.Previews = preview.New(rs.Procs, rs.Hub, raw(rs), "")
+	rs.TryRoot = t.TempDir()
+	client := &tunnel.Client{Creds: creds, Handler: runnerAPI, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
+	go func() { _ = client.Run(ctx) }()
+	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
+	if err := tunnel.Report(ctx, creds, dispatch.Report{Terminals: true}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the runner's report", func() bool { r, _ := rh.Get(creds.ID); return r.Reported != nil && r.Reported.Terminals })
+
+	v1 := commitTool(t, remote, "v1")
+	commitTool(t, remote, "v2")
+	off := false
+	p, err := raw(hub).CreateProject(model.Project{Name: "web", OrgID: owner.Org, RemoteURL: remote, DefaultBranch: "main",
+		RunsOn: []string{"any"}, SetupCommand: "echo setting-up-$(cat .env)",
+		RunCommand: "echo serving-$(git rev-parse --short HEAD)-on-$PORT; sleep 30", CommitPreviews: &off})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := sessionOf(t, hub, owner.User, owner.Org)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub.mux().ServeHTTP(w, r.WithContext(auth.WithSession(r.Context(), sess)))
+	})
+	web := `{"kind":"web","ref":"` + v1 + `"}`
+
+	// Turned off for the project; then no preview domain; then no run command.
+	if w := do(t, h, "POST", "/api/projects/"+p.ID+"/try", web); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "commit previews are off") {
+		t.Fatalf("commit previews off: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, h, "PATCH", "/api/projects/"+p.ID, `{"commit_previews":true}`); w.Code != http.StatusOK {
+		t.Fatalf("turn commit previews on: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, h, "POST", "/api/projects/"+p.ID+"/try", web); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "preview domain") {
+		t.Fatalf("without a preview domain: %d %s", w.Code, w.Body)
+	}
+	hub.Previews = preview.New(nil, hub.Hub, raw(hub), "preview.dash.test")
+	hub.Previews.Remote = rh
+	if w := do(t, h, "POST", "/api/projects/"+p.ID+"/try", `{"kind":"other"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("unknown kind: %d %s", w.Code, w.Body)
+	}
+
+	// The runner's clone has the untracked .env the worktree gets a copy of
+	// (copy_files is the runner's own setting, as for its tasks' worktrees).
+	if w := do(t, h, "GET", "/api/projects/"+p.ID+"/try/commits", ""); w.Code != http.StatusOK {
+		t.Fatalf("commits: %d %s", w.Code, w.Body)
+	}
+	rp, ok := rs.as(Caller{Org: rs.HubOrg, Machine: true}).hubProject(p.ID)
+	if !ok {
+		t.Fatal("the project wasn't linked to the runner")
+	}
+	if err := os.WriteFile(filepath.Join(rp.Path, ".env"), []byte("dev-db"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw(rs).UpdateProject(rp.ID, func(x *model.Project) error { x.CopyFiles = []string{".env", "missing.txt"}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	w := do(t, h, "POST", "/api/projects/"+p.ID+"/try", web)
+	var s model.TrySession
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &s) != nil {
+		t.Fatalf("start a commit preview: %d %s", w.Code, w.Body)
+	}
+	label := p.ID + "--laptop"
+	if !s.Web() || s.Commit != v1 || s.Runner != "laptop" || s.TerminalURL != "" || s.State != model.PreviewStarting ||
+		!strings.Contains(s.URL, "://"+label+".preview.dash.test") || s.OpenURL != "/preview/"+label {
+		t.Fatalf("commit preview: %+v", s)
+	}
+	es, _ := os.ReadDir(filepath.Join(rs.TryRoot, rp.ID))
+	if len(es) != 1 {
+		t.Fatalf("try worktrees: %v", es)
+	}
+	wt := filepath.Join(rs.TryRoot, rp.ID, es[0].Name())
+	if b, err := os.ReadFile(filepath.Join(wt, ".env")); err != nil || string(b) != "dev-db" {
+		t.Errorf(".env in the worktree: %q %v", b, err)
+	}
+
+	// Its log shows the start-up: what was copied, the setup, then the server.
+	eventually(t, "the start-up in the log", func() bool {
+		w := do(t, h, "GET", "/api/projects/"+p.ID+"/try/log?lines=50", "")
+		var out tryOutput
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+			return false
+		}
+		return out.Session.Web() && strings.Contains(out.Text, "· copied .env") && strings.Contains(out.Text, "missing.txt not found") &&
+			strings.Contains(out.Text, "▶ setup") && strings.Contains(out.Text, "setting-up-dev-db") &&
+			strings.Contains(out.Text, "▶ run") && strings.Contains(out.Text, "serving-"+v1[:7])
+	})
+	// Getting it again keeps its addresses; it has no terminal.
+	var st tryState
+	if w := do(t, h, "GET", "/api/projects/"+p.ID+"/try", ""); json.Unmarshal(w.Body.Bytes(), &st) != nil || st.Session == nil ||
+		st.Session.OpenURL != s.OpenURL || st.Session.URL != s.URL || st.Session.TerminalURL != "" {
+		t.Fatalf("session: %d %s", w.Code, w.Body)
+	}
+	if note := hub.tryContext(ctx, ownerCaller(t, hub), p); !strings.Contains(note, "commit preview") || !strings.Contains(note, v1) {
+		t.Errorf("chat context: %q", note)
+	}
+
+	// Opening it signs the browser in to its host, for the project's org.
+	w = do(t, h, "GET", s.OpenURL, "")
+	if loc := w.Header().Get("Location"); w.Code != http.StatusFound || !strings.Contains(loc, label+".preview.dash.test/__dash/auth?") {
+		t.Fatalf("open: %d %q", w.Code, loc)
+	}
+	for _, other := range []string{"ffffff--laptop", p.ID + "--nobody"} {
+		if _, ok := hub.hubPreviewLabel(ownerCaller(t, hub), other); ok {
+			t.Errorf("label %q opened", other)
+		}
+	}
+	two, err := hub.Auth.Accounts().CreateOrg(owner.User, "Two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	osess := sessionOf(t, hub, member(t, hub, two.ID, "eve", store.RoleMember), two.ID)
+	asOutsider := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub.mux().ServeHTTP(w, r.WithContext(auth.WithSession(r.Context(), osess)))
+	})
+	if w := do(t, asOutsider, "GET", s.OpenURL, ""); w.Code != http.StatusNotFound {
+		t.Errorf("open for a user of another org: %d %q", w.Code, w.Header().Get("Location"))
+	}
+
+	// A terminal at another commit replaces it, worktree and all.
+	w = do(t, h, "POST", "/api/projects/"+p.ID+"/try", `{}`)
+	var term model.TrySession
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &term) != nil || term.Web() || term.TerminalURL == "" {
+		t.Fatalf("terminal after the commit preview: %d %s", w.Code, w.Body)
+	}
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Errorf("the commit preview's worktree is still there: %v", err)
+	}
+	if w := do(t, h, "DELETE", "/api/projects/"+p.ID+"/try", ""); w.Code != http.StatusNoContent {
+		t.Fatalf("stop: %d %s", w.Code, w.Body)
+	}
+}
+
+// The commit preview's script announces each step and stops when the
+// setup fails, saying so; it quotes what it prints.
+func TestTryWebScript(t *testing.T) {
+	parallel(t)
+
+	got := tryWebScript(model.Project{SetupCommand: "npm ci", RunCommand: "npm run dev"}, []string{"· copied it's.env"})
+	for _, want := range []string{`printf '%s\n' '· copied it'\''s.env'`, `printf '%s\n' '▶ setup: npm ci'`, "(\nnpm ci\n) || {", `printf '%s\n' '▶ run: npm run dev'`, "\nnpm run dev\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("script lacks %q:\n%s", want, got)
+		}
+	}
+	if s := tryWebScript(model.Project{RunCommand: "serve"}, nil); strings.Contains(s, "setup") {
+		t.Errorf("a setup step without a setup command:\n%s", s)
+	}
+	if err := webTryAllowed(model.Project{RunCommand: "serve", HeldCommands: map[string]string{model.CmdRun: "held: set by bob"}}); err == nil || !strings.Contains(err.Error(), "held") {
+		t.Errorf("a held run command: %v", err)
+	}
+	if err := webTryAllowed(model.Project{}); err != preview.ErrNoRunCommand {
+		t.Errorf("no run command: %v", err)
+	}
+}

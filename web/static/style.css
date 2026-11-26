@@ -3374,6 +3374,8 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .preview[data-kind="terminal"] :is(.pv-widths, #pv-draw-btn, #pv-reload, #pv-open, #pv-copy, #pv-qr) { display: none; }
 .preview[data-kind="terminal"]:not([data-state="crashed"]) .pv-log { display: none; }
 .pv-transcript-btn { margin-left: 6px; }
+/* A commit's preview has no task to draw for or send back. */
+.preview[data-of="commit"] :is(#pv-draw-btn, #pv-transcript) { display: none; }
 .pv-transcript-btn:disabled { opacity: .4; }
 .pv-keys { display: flex; gap: 4px; padding: 6px 8px calc(6px + var(--safe-b)); border-top: 1px solid var(--line); background: var(--surface); overflow-x: auto; }
 .pv-keys button { flex: none; min-width: 40px; min-height: 40px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--raised); color: var(--text); font: var(--fs-s) var(--mono); touch-action: manipulation; }
@@ -3411,6 +3413,14 @@ a.claude-incident-name:hover { text-decoration: underline; }
   .detail.previewing > .rework-box { grid-column: 1; grid-row: 3; }
   .detail.previewing > .actionbar { grid-column: 1; grid-row: 4; }
   .detail.previewing > .preview { grid-column: 2; grid-row: 1 / -1; border-left: 1px solid var(--line); }
+  /* A History commit with its preview (app/commitpreview.js): the commit on the left, its
+     message and files scrolling as one (the diff beside them has no room), the app on the right. */
+  .commit-detail.previewing { grid-template-rows: auto minmax(0, 1fr); }
+  .commit-detail.previewing .detail-head { flex-direction: row-reverse; }
+  .commit-detail.previewing .commit-actions { margin: 0; }
+  .commit-detail.previewing > .detail-body { display: block; overflow-y: auto; padding-bottom: 24px; }
+  .commit-detail.previewing .commit-diff { display: none; }
+  .commit-detail.previewing .commit-files { border-right: 0; }
   .pv-fab { display: none; }
   .pv-keys { display: none; }
 }

@@ -19,11 +19,20 @@ package api
 // tunnel, as the hub's peer proxy does. The runner checks again: the hub
 // only, the project linked to it, and terminals (hubTerminal) for all but
 // the commit list.
+//
+// A web project's try session is a commit preview (kind "web", History's
+// Preview): the runner runs the project's setup and run_command in the
+// worktree instead of a terminal, and the hub serves it through its preview
+// proxy at <project>--<runner>.<preview domain> (preview.TryLabel), as it
+// serves a task's preview on a runner. It is the same session: one per
+// project, stopped when idle (no traffic), its worktree removed after. A
+// project can turn commit previews off (model.Project.CommitPreviews).
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -35,6 +44,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
@@ -270,7 +280,13 @@ func (s *Server) findTry(ctx context.Context, c Caller, p model.Project, runs []
 // hubSession is a runner's try session as the hub's UI sees it.
 func (s *Server) hubSession(sess model.TrySession, run tunnel.Runner, p model.Project) *model.TrySession {
 	sess.ProjectID, sess.Runner, sess.RunnerID = p.ID, run.Name, run.ID
-	sess.TerminalURL = "/ws/projects/" + url.PathEscape(p.ID) + "/try"
+	sess.TerminalURL, sess.URL, sess.OpenURL = "", "", ""
+	if !sess.Web() {
+		sess.TerminalURL = "/ws/projects/" + url.PathEscape(p.ID) + "/try"
+	} else if s.Previews != nil && s.Previews.Domain != "" {
+		label := preview.TryLabel(p.ID, run.Name)
+		sess.URL, sess.OpenURL = s.Previews.URL(label), "/preview/"+url.PathEscape(label)
+	}
 	return &sess
 }
 
@@ -303,10 +319,35 @@ func (s *Server) getTry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
-// startTry handles POST /api/projects/{pid}/try {"runner": id, "ref": rev}:
-// the project's try session at ref ("" for the default branch's tip, as
-// fetched now) on that runner, replacing the one running (also on another
-// runner).
+// errCommitPreviewsOff refuses a commit preview of a project that turned
+// them off.
+var errCommitPreviewsOff = fmt.Errorf("%w: commit previews are off for this project (Project settings → Commands)", errBadRequest)
+
+// tryKind checks the kind of try session asked for ("" or "terminal": a
+// terminal; "web": a commit preview) and whether p may have one.
+func (s *Server) tryKind(p model.Project, kind string) (string, error) {
+	switch kind {
+	case "", model.PreviewTerminal:
+		return model.PreviewTerminal, nil
+	case model.PreviewWeb:
+	default:
+		return "", fmt.Errorf("%w: kind is terminal or web", errBadRequest)
+	}
+	switch {
+	case !p.CommitPreviewsOn():
+		return "", errCommitPreviewsOff
+	case strings.TrimSpace(p.RunCommand) == "":
+		return "", preview.ErrNoRunCommand
+	case s.Previews == nil || s.Previews.Domain == "":
+		return "", fmt.Errorf("%w: a commit preview runs on a runner, which this Dash serves through its preview domain, and it has none (-preview-domain, see docs/previews.md)", errBadRequest)
+	}
+	return model.PreviewWeb, nil
+}
+
+// startTry handles POST /api/projects/{pid}/try {"runner": id, "ref": rev,
+// "kind": "terminal"|"web"}: the project's try session at ref ("" for the
+// default branch's tip, as fetched now) on that runner, replacing the one
+// running (also on another runner); kind web is a commit preview.
 func (s *Server) startTry(w http.ResponseWriter, r *http.Request) {
 	sv, p, runs, why, ok := s.tryProject(w, r)
 	if !ok {
@@ -315,8 +356,14 @@ func (s *Server) startTry(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Runner string `json:"runner"`
 		Ref    string `json:"ref"`
+		Kind   string `json:"kind"`
 	}
 	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	kind, err := s.tryKind(p, req.Kind)
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -346,11 +393,18 @@ func (s *Server) startTry(w http.ResponseWriter, r *http.Request) {
 		s.tries.set(p.ID, "")
 	}
 	var sess model.TrySession
-	if err := s.tryCall(r.Context(), sv.c, run.ID, "POST", "/api/hub/projects/"+url.PathEscape(p.ID)+"/try", map[string]string{"ref": req.Ref}, &sess); err != nil {
+	if err := s.tryCall(r.Context(), sv.c, run.ID, "POST", "/api/hub/projects/"+url.PathEscape(p.ID)+"/try", map[string]string{"ref": req.Ref, "kind": kind}, &sess); err != nil {
 		writeErr(w, err)
 		return
 	}
 	s.tries.set(p.ID, run.ID)
+	if kind == model.PreviewWeb && !sess.Web() {
+		// An older runner ignored the kind and opened a terminal: stop it.
+		_ = s.tryCall(r.Context(), sv.c, run.ID, "DELETE", "/api/hub/projects/"+url.PathEscape(p.ID)+"/try", nil, nil)
+		s.tries.set(p.ID, "")
+		writeErr(w, fmt.Errorf("%w: %s can't preview a commit: update it", errBadRequest, run.Name))
+		return
+	}
 	slog.Info("try: started", "project", p.Name, "runner", run.Name, "commit", sess.Commit)
 	writeJSON(w, http.StatusOK, s.hubSession(sess, run, p))
 }
@@ -512,15 +566,21 @@ func TryInstructions(sess model.TrySession) string {
 	if sess.Ref != "" {
 		at = sess.Ref
 	}
+	where := "in its Try terminal next to this chat"
+	with := "with the project's preview command"
+	if sess.Web() {
+		where = "in a commit preview (the web app, opened from History)"
+		with = "running the project's start server command; read_try_terminal reads that server's log"
+	}
 	return fmt.Sprintf(`<try_session runner=%q commit=%q state=%q>
-I am trying the project in its Try terminal next to this chat: %s (commit %s, %q) in a throwaway worktree on runner %s, with the project's preview command.
+I am trying the project %s: %s (commit %s, %q) in a throwaway worktree on runner %s, %s.
 - When I refer to what just happened there ("that crashed", "the last command", "this output"), call read_try_terminal first and read what the terminal shows. Don't guess.
 - When I say "note …" or describe a bug or problem while trying, file it with report_issue (type bug unless it's something else). Put in details the command I ran and its output as a short excerpt from the terminal (in a code block) and the commit hash %s. Don't fix it here.
 - When I say "make a task of this" (or similar), create a draft task with create_todo instead, with the same excerpt and commit hash in its prompt, phrased as instructions for Claude Code.
 - Answer briefly: say what you filed, with its title.
 </try_session>
 
-`, sess.Runner, sess.Commit, sess.State, at, short, sess.Subject, sess.Runner, sess.Commit)
+`, sess.Runner, sess.Commit, sess.State, where, at, short, sess.Subject, sess.Runner, with, sess.Commit)
 }
 
 // ---- a runner's side ----
@@ -670,18 +730,30 @@ func (s *Server) hubTryGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sess)
 }
 
-// hubTryStart handles POST /api/hub/projects/{hpid}/try {"ref": rev}: the
-// project's try session in a new worktree at rev, replacing the one running.
+// hubTryStart handles POST /api/hub/projects/{hpid}/try {"ref": rev,
+// "kind": "terminal"|"web"}: the project's try session in a new worktree at
+// rev, replacing the one running; kind web is a commit preview (tryWebScript).
 func (s *Server) hubTryStart(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.tryHubProject(w, r)
 	if !ok {
 		return
 	}
 	var req struct {
-		Ref string `json:"ref"`
+		Ref  string `json:"ref"`
+		Kind string `json:"kind"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
+		return
+	}
+	web := req.Kind == model.PreviewWeb
+	if web {
+		if err := webTryAllowed(p); err != nil {
+			writeErr(w, err)
+			return
+		}
+	} else if req.Kind != "" && req.Kind != model.PreviewTerminal {
+		writeErr(w, fmt.Errorf("%w: kind is terminal or web", errBadRequest))
 		return
 	}
 	req.Ref = strings.TrimSpace(req.Ref)
@@ -703,8 +775,12 @@ func (s *Server) hubTryStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pid, path := p.ID, p.Path
-	sess, err := s.Previews.StartTry(preview.TryStart{Key: key, Project: p, Dir: dir, Ref: req.Ref, Commit: c,
-		Cleanup: func() { s.removeTryWorktree(pid, path, dir) }})
+	start := preview.TryStart{Key: key, Project: p, Dir: dir, Ref: req.Ref, Commit: c,
+		Cleanup: func() { s.removeTryWorktree(pid, path, dir) }}
+	if web {
+		start.Web, start.Command = true, tryWebScript(p, copyTryFiles(p, dir))
+	}
+	sess, err := s.Previews.StartTry(start)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -712,6 +788,64 @@ func (s *Server) hubTryStart(w http.ResponseWriter, r *http.Request) {
 	slog.Info("runner: try session", "project", p.Name, "commit", c.Short, "dir", dir)
 	writeJSON(w, http.StatusOK, sess)
 }
+
+// webTryAllowed checks that this runner may run p's commit preview: its
+// run_command is set and approved here, and so is its setup command.
+func webTryAllowed(p model.Project) error {
+	for _, kind := range []string{model.CmdRun, model.CmdSetup} {
+		if why := p.Held(kind); why != "" {
+			return fmt.Errorf("%w: %s", errBadRequest, why)
+		}
+	}
+	if strings.TrimSpace(p.RunCommand) == "" {
+		return preview.ErrNoRunCommand
+	}
+	return nil
+}
+
+// copyTryFiles copies p's copy_files from its checkout into a commit
+// preview's worktree dir, as a task's worktree gets them, and returns a
+// line for each, for the server's log.
+func copyTryFiles(p model.Project, dir string) []string {
+	var notes []string
+	for _, f := range p.CopyFiles {
+		f = filepath.Clean(strings.TrimSpace(f))
+		if f == "" || f == "." || !fsutil.RelInside(f) {
+			continue
+		}
+		switch err := fsutil.CopyPath(filepath.Join(p.Path, f), filepath.Join(dir, f)); {
+		case err == nil:
+			notes = append(notes, "· copied "+f)
+		case errors.Is(err, fs.ErrNotExist):
+			notes = append(notes, "· "+f+" not found in the checkout; skipped")
+		default:
+			notes = append(notes, "· couldn't copy "+f+": "+err.Error())
+		}
+	}
+	return notes
+}
+
+// tryWebScript is the shell script of p's commit preview: notes (what
+// copyTryFiles did), then p's setup command (a fresh worktree has no
+// dependencies installed or build made), then its run_command, each
+// announced in the log the UI shows while it starts. It gets $PORT.
+func tryWebScript(p model.Project, notes []string) string {
+	var b strings.Builder
+	say := func(line string) { b.WriteString(`printf '%s\n' ` + shellWord(line) + "\n") }
+	for _, n := range notes {
+		say(n)
+	}
+	if setup := strings.TrimSpace(p.SetupCommand); setup != "" {
+		say("▶ setup: " + setup)
+		b.WriteString("(\n" + setup + "\n) || { code=$?; printf 'setup command exited %s\\n' \"$code\"; exit $code; }\n")
+	}
+	say("▶ run: " + p.RunCommand)
+	b.WriteString(p.RunCommand + "\n")
+	return b.String()
+}
+
+// shellWord quotes s as one word for bash.
+func shellWord(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // hubTryStop handles DELETE /api/hub/projects/{hpid}/try.
 func (s *Server) hubTryStop(w http.ResponseWriter, r *http.Request) {

@@ -236,8 +236,9 @@ func (m *Manager) watch(e *entry) {
 				if live {
 					e.addr, e.info.State = addr, model.PreviewLive
 				}
+				try := e.try != nil
 				e.mu.Unlock()
-				if live {
+				if live && !try { // a try session has no event: the UI asks for it
 					m.publish(m.info(e))
 				}
 			}
@@ -402,7 +403,11 @@ func (m *Manager) sweep(now time.Time) {
 	}
 	for _, s := range m.Tries() {
 		if now.Sub(s.LastSeen) > idle {
-			_ = m.StopTry(s.ProjectID, fmt.Sprintf("no typing for %d minutes", int(idle.Minutes())))
+			what := "typing"
+			if s.Web() {
+				what = "traffic"
+			}
+			_ = m.StopTry(s.ProjectID, fmt.Sprintf("no %s for %d minutes", what, int(idle.Minutes())))
 		}
 	}
 	for _, p := range m.List() {

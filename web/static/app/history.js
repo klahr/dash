@@ -5,7 +5,7 @@ import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { copy, fail, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
-import { cp, hist, state } from "./state.js";
+import { cp, hist, state, tryState } from "./state.js";
 import { baseBranch, projectKey } from "./events.js";
 import { detailBackground } from "./detail.js";
 import { diffImages, diffLines, isDiffImage, parseDiff } from "./drawmode.js";
@@ -15,6 +15,9 @@ import { showView } from "./nav.js";
 import { changed } from "./routes.js";
 import { agoText } from "../time.js";
 import { loadRemote } from "./origin.js";
+import { closeCommitPreview, commitPreviewState, commitPreviewWhy, previewingCommit, showCommitPreview } from "./commitpreview.js";
+import { loadTry, tryAtCommit } from "./try.js";
+import { PV_LABEL } from "./preview.js";
 
 // ------------------------------------------------------------------ history
 // History → Commits: the default branch's commit graph, a dot per commit on
@@ -148,6 +151,7 @@ export function renderGraph(res) {
   hist.commits = commits.map((c) => ({ ...c, pushed: !tip || pushed.has(c.hash), incoming: onOriginOnly(c) }));
   hist.byHash = new Map(hist.commits.map((c) => [c.hash, c]));
   hist.remote = remote;
+  hist.branch = branch;
   // Another project's graph: its commit pane goes.
   if (cp.sha && cp.project !== state.project?.id) closeCommit();
   const graph = $("#graph");
@@ -217,6 +221,7 @@ export async function selectCommit(sha, { wait = 0 } = {}) {
   const p = state.project;
   const pane = $("#commit-detail");
   if (!p || (cp.sha === sha && !pane.hidden)) return;
+  if (previewingCommit() && !previewingCommit(sha)) closeCommitPreview(); // the pane is that commit's
   // A file list that had focus gets it back once the next commit's files are in.
   cp.listFocus = $("#cd-files").contains(document.activeElement);
   cp.sha = sha;
@@ -245,6 +250,7 @@ export async function selectCommit(sha, { wait = 0 } = {}) {
 
 export function closeCommit() {
   if (!cp.sha) return;
+  closeCommitPreview();
   commitLoad.cancel();
   cp.diffs?.abort();
   const sha = cp.sha;
@@ -311,9 +317,45 @@ function renderCommitHead() {
     why ? h("em", { class: "menu-note" }, why) : null,
     p.environments?.length ? ib({ type: "button", class: "btn small", title: "Deploy this commit to one of the project's environments",
       onclick: () => deployCommit(commitRef()).catch(fail) }, "rocket", "Deploy to…") : null,
+    ...tryButtons(p, c, pushed),
     ib({ type: "button", class: "btn small", onclick: () => copy(commitRef().sha, "SHA copied") }, "copy", "Copy SHA"),
     gh ? h("a", { class: "btn small", href: `${gh}/commit/${ref.sha}`, target: "_blank", rel: "noopener" }, ico("external"), "Open on GitHub") : null);
 }
+
+// tryButtons are the commit pane's Try at this commit (a CLI project: the
+// Shell page's Try terminal at the commit) or Preview (a web project: the app
+// at the commit, in the preview pane beside it). Both run on a runner, at a
+// commit of the default branch that origin has; elsewhere they're greyed,
+// saying why. Without a runner working on the project there are none.
+let tryLooked = null; // the project whose Try state History asked for
+function tryButtons(p, c, pushed) {
+  if (p.prefix) return [];
+  if (tryState.pid !== p.id || (!tryState.loaded && tryLooked !== p.id)) {
+    tryLooked = p.id;
+    loadTry({ any: true }).then(() => { if (cp.sha && state.project?.id === p.id) renderCommitHead(); }).catch(() => {});
+    return [];
+  }
+  if (!tryState.loaded || !tryState.candidates.length) return []; // no runner works on it (or no hub)
+  const branch = p.default_branch || "main";
+  const commitWhy = hist.branch && hist.branch !== branch ? `Only commits of ${branch} can run: this graph is ${hist.branch}.`
+    : !pushed && p.remote_url ? "Push first: the runner checks the commit out from origin." : "";
+  const ref = commitRef();
+  if (p.preview_kind === "terminal") {
+    const why = commitWhy || (!tryState.runners.length ? tryState.disabled || "No runner can run this project." : "");
+    return [ib({ type: "button", class: "btn small", disabled: !!why, title: why || `Open a terminal at ${ref.short} in a throwaway worktree on a runner (Shell)`,
+      onclick: (e) => tryAtCommit(ref.sha, e.currentTarget).catch(fail) }, "terminal", "Try at this commit")];
+  }
+  const off = commitPreviewWhy(p);
+  if (off === null) return [];
+  const why = commitWhy || off;
+  const st = commitPreviewState(ref.sha), open = previewingCommit(ref.sha);
+  return [h("button", { type: "button", class: `btn small pv-btn${open ? " active" : ""}`, disabled: !!why, "aria-pressed": String(open),
+    title: why || (st ? `Preview: ${PV_LABEL[st] || st}` : `Run the app at ${ref.short} in a throwaway worktree on a runner, and preview it here`),
+    onclick: (e) => (open ? closeCommitPreview() : showCommitPreview(ref, e.currentTarget).catch(fail)) },
+  st ? h("span", { class: `pv-dot ${st}`, "aria-hidden": "true" }) : ico("window"), open ? "Hide preview" : "Preview")];
+}
+// The commit preview started, stopped, or its pane opened or closed (commitpreview.js).
+document.addEventListener("dash:commitpreview", () => { if (cp.sha && !$("#commit-detail").hidden) renderCommitHead(); });
 
 function renderCommit() {
   if (!cp.sha) return;

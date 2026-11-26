@@ -34,6 +34,7 @@ import { isStarred, starsOn } from "./stars.js";
 import { pane, paneOverlays, projectChatFor, toggleChatPane, togglePin } from "./chatpane.js";
 import { attached, openShell, shellBlocked, startProc, techFor, term } from "./terminal.js";
 import { closeCommit, commitScroller, moveCommit, refreshHistory, stepCommitFile } from "./history.js";
+import { closeCommitPreview, previewingCommit } from "./commitpreview.js";
 import { closeGoal, goalsOn, gp, openGoalSheet, stepGoal } from "./goals.js";
 import { closeDeploy, dp, stepDeploy } from "./deploys.js";
 import { cardOpen, closeCard } from "./planning.js";
@@ -403,7 +404,7 @@ async function handleNormal(k, n, hadCount) {
       if (menuOpen()) return setMenu(false);
       if (k === "Escape" && pane.open && paneOverlays()) return toggleChatPane(false);
       if (state.detail) return escTask();
-      if (cp.sha) return closeCommit();
+      if (cp.sha) return previewingCommit() ? closeCommitPreview() : closeCommit(); // a commit's preview first
       if (gp.open) return closeGoal();
       if (dp.open) return closeDeploy();
       if (cardOpen()) return closeCard();

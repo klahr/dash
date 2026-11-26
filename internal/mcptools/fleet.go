@@ -663,6 +663,7 @@ var ProjectSettings = []Param{
 	{"auto_approve", "boolean", "Finished tasks whose tests pass skip review.", false},
 	{"merge_mode", "string", "How finished work lands: \"pr\" (a GitHub pull request opened when the task finishes, reviewed on GitHub and merged by a person, there or in the Dash web UI; the default on GitHub) or \"local\" (approved in Dash, then squashed onto the default branch).", false},
 	{"investigate_ci", "boolean", "Queue a task when a GitHub Actions build on the default branch fails.", false},
+	{"commit_previews", "boolean", "Let History preview the web app at a commit of the default branch (run_command in a throwaway worktree on a runner).", false},
 	{"tag_format", "string", "How release tags are named: X, Y, Z are major, minor, patch, e.g. \"vX.Y.Z\" (default \"X.Y.Z\").", false},
 	{"max_run_minutes", "integer", "Time limit for one Claude run (0 for the default).", false},
 	{"max_turns", "integer", "Turn limit for one Claude run (0 for the default).", false},

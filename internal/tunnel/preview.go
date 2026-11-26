@@ -13,7 +13,8 @@ package tunnel
 // carries raw bytes between the stream and the preview's server from then on
 // (HTTP, and WebSocket upgrades for hot reload). The runner looks the todo up
 // among the previews it started itself and dials only that server's loopback
-// address: the hub can't name a port or host.
+// address: the hub can't name a port or host. A project's commit preview
+// (a web try session) is named "try:<project id>" in place of the todo id.
 
 import (
 	"context"
@@ -50,7 +51,9 @@ var (
 	ErrPreviewCrashed    = errors.New("the preview server stopped")
 )
 
-var todoIDRe = regexp.MustCompile(`^[a-z0-9]{1,32}$`)
+// todoIDRe matches what a stream may name: a todo id, or try:<project id>
+// for a project's commit preview.
+var todoIDRe = regexp.MustCompile(`^(try:)?[a-z0-9]{1,32}$`)
 
 // PreviewDialer connects to a preview a runner started itself.
 type PreviewDialer interface {

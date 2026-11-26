@@ -1540,7 +1540,7 @@ func (e *TodoEngine) prepareWorktree(ctx context.Context, t model.Todo, p model.
 		if f == "" || f == "." || !fsutil.RelInside(f) {
 			continue
 		}
-		if err := copyPath(filepath.Join(p.Path, f), filepath.Join(wt.Path, f)); err != nil {
+		if err := fsutil.CopyPath(filepath.Join(p.Path, f), filepath.Join(wt.Path, f)); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				log("· " + f + " not found in the main checkout; skipped")
 				continue
@@ -1685,22 +1685,4 @@ func conflictNote(branch string, files []string) string {
 		"Resolve every conflict so both your change and the incoming changes keep working, remove all "+
 		"markers, and make sure the code still builds. Don't run git commands; Dash completes the merge.",
 		branch, strings.Join(files, "\n- "))
-}
-
-func copyPath(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	if info.IsDir() {
-		return os.CopyFS(dst, os.DirFS(src))
-	}
-	b, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, b, info.Mode().Perm())
 }

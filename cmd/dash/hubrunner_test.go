@@ -150,6 +150,13 @@ type runnerHub struct {
 // runnerFlags are added to the runner's command line.
 func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 	t.Helper()
+	return startRunnerHubWith(t, nil, runnerFlags...)
+}
+
+// startRunnerHubWith is startRunnerHub with hubEnv added to the hub's
+// environment (DASH_PREVIEW_DOMAIN, say).
+func startRunnerHubWith(t *testing.T, hubEnv []string, runnerFlags ...string) *runnerHub {
+	t.Helper()
 	gitBin, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("needs git")
@@ -182,7 +189,7 @@ func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 	h := &runnerHub{dash: dash, calls: calls, gitEnv: gitEnv, origin: bare, hubData: filepath.Join(dir, "hub"), username: "admin", password: "a-long-enough-password"}
 	hubPath := pathWithout(t, "claude")
 	// A scan waiting for a runner asks again often, not every 5s.
-	h.hub, h.addr, h.api = startHub(t, dash, append(gitEnv, "PATH="+hubPath, "DASH_USERNAME="+h.username, "DASH_PASSWORD="+h.password, "DASH_TEST_SCAN_WAIT_EVERY=200ms"),
+	h.hub, h.addr, h.api = startHub(t, dash, append(append(slices.Clone(gitEnv), "PATH="+hubPath, "DASH_USERNAME="+h.username, "DASH_PASSWORD="+h.password, "DASH_TEST_SCAN_WAIT_EVERY=200ms"), hubEnv...),
 		"-data", h.hubData, "-projects", filepath.Join(dir, "hub-projects"), "-env", filepath.Join(dir, "none.env"))
 	h.base = "http://" + h.addr
 	api := h.api

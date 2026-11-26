@@ -36,6 +36,7 @@ export function openSettings() {
   f.run_command.value = p.run_command || "";
   f.preview_kind.value = p.preview_kind || "web";
   f.preview_command.value = p.preview_command || "";
+  f.commit_previews.checked = p.commit_previews !== false;
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
   f.close_no_changes.checked = !!p.close_no_changes;
@@ -552,6 +553,7 @@ const FIELDS = {
   run_command: { read: (f) => f.run_command.value.trim() },
   preview_kind: { read: (f) => f.preview_kind.value },
   preview_command: { read: (f) => f.preview_command.value.trim() },
+  commit_previews: { read: (f) => f.commit_previews.checked },
   auto_push: { read: (f) => f.auto_push.checked },
   auto_approve: { read: (f) => f.auto_approve.checked },
   close_no_changes: { read: (f) => f.close_no_changes.checked },

@@ -1219,6 +1219,7 @@
             <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
             <label class="field inline"><span>Preview tasks in</span><select name="preview_kind"><option value="web">a browser (start server command)</option><option value="terminal">a terminal (CLI tools)</option></select></label>
             <label class="field"><span>Terminal preview command <em>empty: a plain shell; ./.dash-bin is on PATH as $DASH_BIN</em></span><input name="preview_command" placeholder="go build -o $DASH_BIN/tool . &amp;&amp; exec $SHELL" spellcheck="false"></label>
+            <label class="toggle"><input type="checkbox" name="commit_previews"><span>Preview old commits from History <em>runs the start server command at a commit, on a runner; it shares that runner's dev database and .env</em></span></label>
           </section>
           <section class="rail-section" data-section="deploy">
             <ul class="env-edit-list" id="settings-envs"></ul>

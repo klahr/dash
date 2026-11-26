@@ -15,6 +15,7 @@ import { procTerminal } from "./terminal.js";
 // too; the pane shows it beside the task (desktop) or full screen (phone).
 export const pv = {
   todo: null,   // task whose preview pane is open
+  commit: null, // or History's commit whose preview pane is open (commitpreview.js)
   proc: null,   // process whose log is streamed
   ws: null,
   log: "",
@@ -83,6 +84,8 @@ export function previewButton(t) {
 // previewTodo opens t's preview pane, starting its server if it isn't running.
 export async function previewTodo(t) {
   if (!t) return;
+  if (pv.commit) hidePreview();
+  paneIn($("#detail"));
   if (!termProject() && !state.project?.run_command) throw new Error("Set a start server command in the project's settings to preview tasks.");
   if (!canPreview(t)) throw new Error("Only tasks ready for review can be previewed.");
   if (state.detail !== t.id) await openDetail(t.id);
@@ -97,7 +100,20 @@ export async function previewTodo(t) {
   previewsChanged();
 }
 
+// The pane lives in the task's panel; History's commit pane borrows it.
+let commitSrc = null; // commitpreview.js: { preview(), render(status), stop(), close() }
+export function setCommitSource(src) { commitSrc = src; }
+// shownPreview is the preview the pane shows: the task's or the commit's.
+const shownPreview = () => (pv.commit ? commitSrc?.preview() : previewOf(pv.todo)) || null;
+
+// paneIn moves the preview pane into host (the task's panel or the commit's).
+export function paneIn(host) {
+  const el = $("#d-preview");
+  if (el.parentElement !== host) host.append(el);
+}
+
 export function hidePreview() {
+  if (pv.commit) return commitSrc?.close();
   if (!pv.todo) return;
   endDraw();
   pv.todo = null;
@@ -150,7 +166,7 @@ export function connectLog(p) {
   pv.ws = ws;
 }
 
-function renderLog() {
+export function renderLog() {
   const pre = $("#pv-log-text");
   const end = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
   pre.textContent = pv.log || "No output yet.";
@@ -225,6 +241,7 @@ async function sendBackWithTranscript(t) {
 }
 
 export function renderPreview() {
+  if (pv.commit) return renderCommitPreview();
   const t = state.todos.get(state.detail);
   const open = !!t && pv.todo === t.id;
   $("#d-preview").hidden = !open;
@@ -232,6 +249,8 @@ export function renderPreview() {
   if (!open) return;
   const p = previewOf(t.id);
   const termKind = isTermPreview(p);
+  delete $("#d-preview").dataset.of;
+  $("#pv-draw-btn").hidden = false;
   if (p && !termKind && p.process_id !== pv.proc) connectLog(p);
   const st = p?.state || "stopped";
   $("#d-preview").dataset.state = st;
@@ -240,31 +259,14 @@ export function renderPreview() {
     p ? `${PV_LABEL[st]}${st === "live" && !termKind ? ` · :${p.port}` : ""}` : "Not running");
   $("#pv-log summary").textContent = termKind ? "Terminal log" : "Server log";
   if (termKind) return renderTermPreview(t, p, st);
-  $("#pv-term").hidden = $("#pv-keys").hidden = $("#pv-transcript").hidden = true;
-  if (pv.term) disconnectTerm();
-  for (const b of $$(".pv-widths button")) b.setAttribute("aria-pressed", String(b.dataset.width === pv.width));
-  $("#pv-frame").style.setProperty("--pv-w", pv.width === "full" ? "100%" : `${pv.width}px`);
-  $("#pv-frame").classList.toggle("full", pv.width === "full");
-  const target = p ? previewTarget(p) : null;
-  $("#pv-open").disabled = $("#pv-copy").disabled = !(p?.url || p?.local_url);
-  $("#pv-qr").hidden = !p?.url;
-  $("#pv-reload").disabled = !(st === "live" && target?.src);
+  const target = renderWebBar(p, st);
   const drawable = st === "live" && !!target?.src && !!p.url;
   $("#pv-draw-btn").disabled = !drawable && !draw.on;
   $("#pv-draw-btn").title = drawable || !p || st !== "live" ? "Draw on a snapshot of the page, crop it and add it to the review (P)" : "Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy";
   $("#pv-stop").disabled = !p;
 
-  const frame = $("#pv-iframe");
   const status = $("#pv-status");
-  if (st === "live" && target.src) {
-    if (pv.shown !== p.process_id) { pv.shown = p.process_id; frame.src = target.src; }
-    frame.hidden = false;
-    status.hidden = true;
-    return;
-  }
-  if (pv.shown) { pv.shown = null; frame.src = "about:blank"; }
-  frame.hidden = true;
-  status.hidden = false;
+  if (showFrame(p, st, target)) return;
   const tail = () => h("pre", { class: "log pv-tail", id: "pv-tail" }, lastLines(8) || "No output yet.");
   const restart = () => ib({ class: "btn", type: "button", onclick: attempt(() => previewTodo(t)) }, "play", "Start again");
   switch (st) {
@@ -292,6 +294,88 @@ export function renderPreview() {
       fill(status, h("strong", {}, "The preview isn't running"),
         h("p", { class: "hint" }, "It stops after 30 minutes without traffic, and when the task is approved or sent back."),
         canPreview(t) ? restart() : null);
+  }
+}
+
+// renderWebBar sets up a web preview's bar (widths, links, Reload) and
+// returns where its page loads from.
+function renderWebBar(p, st) {
+  $("#pv-term").hidden = $("#pv-keys").hidden = $("#pv-transcript").hidden = true;
+  if (pv.term) disconnectTerm();
+  for (const b of $$(".pv-widths button")) b.setAttribute("aria-pressed", String(b.dataset.width === pv.width));
+  $("#pv-frame").style.setProperty("--pv-w", pv.width === "full" ? "100%" : `${pv.width}px`);
+  $("#pv-frame").classList.toggle("full", pv.width === "full");
+  const target = p ? previewTarget(p) : null;
+  $("#pv-open").disabled = $("#pv-copy").disabled = !(p?.url || p?.local_url);
+  $("#pv-qr").hidden = !p?.url;
+  $("#pv-reload").disabled = !(st === "live" && target?.src);
+  return target;
+}
+
+// showFrame shows a live page in the iframe (and says so), else empties it
+// and shows the status in its place.
+function showFrame(p, st, target) {
+  const frame = $("#pv-iframe"), status = $("#pv-status");
+  if (st === "live" && target?.src) {
+    if (pv.shown !== p.process_id) { pv.shown = p.process_id; frame.src = target.src; }
+    frame.hidden = false;
+    status.hidden = true;
+    return true;
+  }
+  if (pv.shown) { pv.shown = null; frame.src = "about:blank"; }
+  frame.hidden = true;
+  status.hidden = false;
+  return false;
+}
+
+// A commit's preview (History, commitpreview.js): the app at that commit, in
+// a throwaway worktree on a runner. Like a task's web preview, without Draw
+// or Rework: there is no task to send back. A fresh worktree installs and
+// builds from scratch, so while it starts the log shows how far it got.
+function renderCommitPreview() {
+  const c = commitSrc?.state();
+  if (!c) return;
+  const p = c.preview;
+  const st = c.checkingOut ? "starting" : p?.state || "stopped";
+  const el = $("#d-preview");
+  el.hidden = false;
+  el.dataset.state = st;
+  el.dataset.kind = "web";
+  el.dataset.of = "commit";
+  $("#pv-state").replaceChildren(h("span", { class: `pv-dot ${st}`, "aria-hidden": "true" }),
+    c.checkingOut ? "Checking out…" : p ? `${PV_LABEL[st]}${st === "live" ? ` · ${c.short}` : ""}` : "Not running");
+  $("#pv-log summary").textContent = "Server log";
+  $("#pv-draw-btn").hidden = true;
+  const target = renderWebBar(p, st);
+  $("#pv-stop").disabled = !p;
+  if (showFrame(p, st, target)) return;
+  const status = $("#pv-status");
+  const tail = () => h("pre", { class: "log pv-tail", id: "pv-tail" }, lastLines(12) || "No output yet.");
+  const restart = (label = "Start again") => ib({ class: "btn", type: "button", onclick: attempt(() => commitSrc.start()) }, "play", label);
+  if (c.checkingOut) {
+    return fill(status, h("div", { class: "spinner big", "aria-hidden": "true" }), h("strong", {}, `Checking out ${c.short}`),
+      h("p", { class: "hint" }, `On ${c.runner || "a runner"}, in a throwaway worktree. Fetching first can take a moment.`));
+  }
+  switch (st) {
+    case "starting":
+      return fill(status, h("div", { class: "spinner big", "aria-hidden": "true" }),
+        h("strong", {}, "Setting up and starting the server"),
+        h("p", { class: "hint" }, "A fresh worktree installs its dependencies and builds from scratch, so the first start is slow. ",
+          h("code", {}, state.project?.run_command || ""), p.port ? ` · waiting for port ${p.port}…` : ""),
+        tail());
+    case "crashed":
+      if (pv.crashed !== p.process_id) { pv.crashed = p.process_id; $("#pv-log").open = true; }
+      return fill(status, h("strong", { class: "pv-err" }, `The server exited${p.exit_code != null ? ` with code ${p.exit_code}` : ""}`),
+        h("p", { class: "hint" }, "At this commit the setup or start server command failed. The log says why."),
+        tail(), h("div", { class: "pv-status-actions" }, restart()));
+    case "live": // no preview domain: the hub would have refused it
+      return fill(status, h("strong", {}, "This device can't open the preview"),
+        h("p", { class: "hint" }, "Dash has no preview domain set up (-preview-domain, see docs/previews.md)."));
+    default:
+      return fill(status, h("strong", {}, c.other ? `The preview runs at ${c.other}` : "The preview isn't running"),
+        h("p", { class: "hint" }, c.other ? "One commit preview runs per project: starting this one stops that one."
+          : "It stops after 30 minutes without traffic, and its worktree is removed."),
+        c.why ? h("p", { class: "hint" }, c.why) : restart(c.other ? `Preview ${c.short} instead` : "Start"));
   }
 }
 
@@ -354,7 +438,7 @@ async function sendBackWithLog(t) {
 }
 
 function reloadPreview() {
-  const p = previewOf(pv.todo);
+  const p = shownPreview();
   if (!p || p.state !== "live") return;
   const target = previewTarget(p);
   if (!target.src) return;
@@ -380,10 +464,10 @@ $$(".pv-widths button").forEach((b) => b.addEventListener("click", () => {
   renderPreview();
 }));
 $("#pv-reload").addEventListener("click", reloadPreview);
-$("#pv-open").addEventListener("click", () => { const p = previewOf(pv.todo); if (p?.url || p?.local_url) window.open(p.url || p.local_url, "_blank", "noopener"); });
-$("#pv-copy").addEventListener("click", attempt(async () => { const p = previewOf(pv.todo); if (p?.url || p?.local_url) await copy(p.url || p.local_url, "Preview link copied"); }));
-$("#pv-qr").addEventListener("click", () => { const p = previewOf(pv.todo); if (p?.url) openQR(p.url, p.prefix); });
-$("#pv-stop").addEventListener("click", attempt(() => stopPreview()));
+$("#pv-open").addEventListener("click", () => { const p = shownPreview(); if (p?.url || p?.local_url) window.open(p.url || p.local_url, "_blank", "noopener"); });
+$("#pv-copy").addEventListener("click", attempt(async () => { const p = shownPreview(); if (p?.url || p?.local_url) await copy(p.url || p.local_url, "Preview link copied"); }));
+$("#pv-qr").addEventListener("click", () => { const p = shownPreview(); if (p?.url) openQR(p.url, p.prefix); });
+$("#pv-stop").addEventListener("click", attempt(() => (pv.commit ? commitSrc?.stop() : stopPreview())));
 $("#pv-close").addEventListener("click", hidePreview);
 $("#pv-transcript").addEventListener("click", attempt(() => { const t = state.todos.get(pv.todo); if (t) return sendBackWithTranscript(t); }));
 // Phone: keys a touch keyboard lacks. Arrows follow the app's cursor key mode.
@@ -398,6 +482,13 @@ $$("#pv-keys [data-key]").forEach((b) => {
 });
 // Phone: the preview is full screen; this sheet leads back out.
 $("#pv-fab").addEventListener("click", attempt(async (e) => {
+  if (pv.commit) {
+    const p = shownPreview(), page = [["minimize", "Back to the commit", hidePreview]], link = [], stop = [];
+    if (p?.state === "live") page.push(["reload", "Reload", reloadPreview]);
+    if (p?.url) link.push(["external", "Open in a new tab", () => window.open(p.url, "_blank", "noopener")], ["link", "Copy link", () => copy(p.url, "Preview link copied")]);
+    if (p) stop.push(["stop", "Stop the preview", () => commitSrc?.stop()]);
+    return popMenu(e.currentTarget, [page, link, stop]);
+  }
   const t = state.todos.get(pv.todo);
   if (!t) return hidePreview();
   const p = previewOf(t.id);

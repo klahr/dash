@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/runnerctl"
 )
 
@@ -21,19 +22,26 @@ func (s *Server) hubURL(r *http.Request) (string, error) {
 // previewOrigin is where a browser signs in to the preview with host
 // label: its task's org's subdomain (only that org's members may open it).
 // A runner's preview (<task>-<runner>) is the hub's task's it reported, if
-// any. "" without org subdomains, or for a task that isn't known here.
+// any; a commit preview (<project>--<runner>) is its project's org's. ""
+// without org subdomains, or for a task that isn't known here.
 func (s *Server) previewOrigin(label string) string {
 	d := s.Auth.Domains
 	if d == nil || s.Store == nil {
 		return ""
 	}
-	todoID := label
-	if htid, ok := s.hubPreviewTask(label); ok {
-		todoID = htid
-	} else if id, _, ok := strings.Cut(label, "-"); ok {
-		todoID = id
+	var org int64
+	var ok bool
+	if pid, _, isTry := preview.ParseTryLabel(label); isTry {
+		org, ok = s.Store.ProjectOrg(pid) // a commit preview: its project's org
+	} else {
+		todoID := label
+		if htid, found := s.hubPreviewTask(label); found {
+			todoID = htid
+		} else if id, _, found := strings.Cut(label, "-"); found {
+			todoID = id
+		}
+		org, ok = s.Store.TodoOrg(todoID)
 	}
-	org, ok := s.Store.TodoOrg(todoID)
 	if !ok {
 		return ""
 	}

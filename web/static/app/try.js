@@ -1,7 +1,7 @@
 import { $, $$, debounce, h, ib, setLabel } from "./dom.js";
 import { chatBeside, desktop, wsURL } from "./viewport.js";
 import { api } from "./api.js";
-import { attempt, fail, openSheet, toast } from "./dialogs.js";
+import { ask, attempt, fail, openSheet, toast } from "./dialogs.js";
 import { popMenu } from "./drawmode.js";
 import { href } from "./routes.js";
 import { projectFirst, state, tryState } from "./state.js";
@@ -30,14 +30,15 @@ function trySend(msg) { tryT?.send(msg); }
 // Only the latest look at the session counts: one asked before Run or Terminate
 // changed it, answered after, would undo the change on the button.
 let trySeq = 0;
-export async function loadTry() {
+// any: load it for a web project too (History's commit preview is its web try session).
+export async function loadTry({ any = false } = {}) {
   const p = state.project;
   const n = ++trySeq;
   if (tryState.pid !== (p?.id || null)) {
     disconnectTry();
     Object.assign(tryState, { pid: p?.id || null, loaded: false, runners: [], candidates: [], default: "", disabled: "", session: null, runner: "", refused: null, pending: null, stopAsked: false });
   }
-  if (!tryProject(p)) { renderTryButton(); if (state.view === "try") renderTry(); return; }
+  if (!tryProject(p) && !(any && p && !p.prefix)) { renderTryButton(); if (state.view === "try") renderTry(); return; }
   const st = await api("GET", `/api/projects/${p.id}/try`);
   if (state.project?.id !== p.id || n !== trySeq) return;
   Object.assign(tryState, { loaded: true, runners: st.runners || [], candidates: st.candidates || [], default: st.default || "", disabled: st.disabled || "", session: st.session || null });
@@ -77,7 +78,7 @@ export function renderTryButton() {
 // dot on it says one needs a look (a test run or build going, or failed).
 const runKey = (pid) => `dash.run.runner.${pid}`;
 function lastRunner(pid) { try { return localStorage.getItem(runKey(pid)) || ""; } catch { return ""; } }
-function rememberRunner(pid, id) { try { localStorage.setItem(runKey(pid), id); } catch { /* private mode */ } }
+export function rememberRunner(pid, id) { try { localStorage.setItem(runKey(pid), id); } catch { /* private mode */ } }
 
 // running: a run is starting or going (an exited one shows its last screen,
 // but the button is Run again).
@@ -172,6 +173,37 @@ function actionRows() {
     push && ["push", push.label, pushDone, { disabled: !push.n, keys: ":push", title: push.title }],
     b && ["checks", "Builds…", openCI, { note: b.note, tone: b.state, keys: ":ci", title: "GitHub Actions on the default branch" }],
   ].filter(Boolean);
+}
+
+// chooseRunner calls then with the runner a commit runs on: the session's,
+// the one ▶ Run uses, or one picked from a menu at anchor when several can.
+export async function chooseRunner(anchor, then) {
+  if (!tryState.runners.length) throw new Error(tryState.disabled || "No runner can run this project.");
+  const ok = tryState.runners.map((r) => r.id);
+  const id = ok.includes(tryState.session?.runner_id) ? tryState.session.runner_id : runRunner();
+  if (id) return then(id);
+  const last = state.project ? lastRunner(state.project.id) : "";
+  await popMenu(anchor, [tryState.runners.map((r) => ["computer", r.id === last ? `${r.name} (last used)` : r.name, () => then(r.id)])], { heading: "Run on" });
+}
+
+// tryAtCommit opens the Shell page's Try terminal at commit sha (History's
+// "Try at this commit"), asking first when it would replace a session at
+// another commit.
+export async function tryAtCommit(sha, anchor) {
+  const p = state.project;
+  if (!p) throw new Error(projectFirst());
+  if (!tryProject()) throw new Error(NOT_CLI);
+  if (!tryState.loaded) await loadTry();
+  const s = tryState.session;
+  if (s && s.state === "live" && s.commit !== sha &&
+    !await ask({ title: `Try ${shortSHA(sha)} instead?`, body: `${s.kind === "web" ? "A commit preview" : "A Try terminal"} runs at ${shortSHA(s.commit)} on ${s.runner}. One runs per project: it stops, and its worktree is removed.`, ok: "Replace it" })) return;
+  await chooseRunner(anchor, (runner) => {
+    rememberRunner(p.id, runner);
+    if (s?.state === "live" && s.commit === sha && s.kind !== "web") return openTry(); // already there
+    tryState.pending = { ref: sha, runner };
+    renderRun();
+    openTry();
+  });
 }
 
 // runOn starts the latest commit on runner and opens its terminal.

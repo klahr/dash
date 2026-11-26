@@ -113,6 +113,11 @@ type Project struct {
 	// ./.dash-bin on PATH and $DASH_BIN set to it, e.g.
 	// "go build -o ./.dash-bin/tool . && exec $SHELL".
 	PreviewCommand string `json:"preview_command,omitempty"`
+	// CommitPreviews lets History preview the app at a commit: run_command
+	// in a throwaway worktree on a runner (a web Try session). nil means
+	// on. An old commit shares the runner's dev database and copied files
+	// (.env), so a project can turn it off. See CommitPreviewsOn.
+	CommitPreviews *bool `json:"commit_previews,omitempty"`
 	// SetupCommand runs once in every new worktree before Claude starts,
 	// e.g. "npm ci". CopyFiles are copied from the main checkout first
 	// (untracked files such as ".env" that worktrees don't get from git).
@@ -285,6 +290,10 @@ func (p Project) InvestigatesCI() bool { return p.InvestigateCI == nil || *p.Inv
 // UsesColorForButtons says whether the web UI's buttons and highlights take
 // the project's Color (ColorButtons, on unless turned off).
 func (p Project) UsesColorForButtons() bool { return p.ColorButtons == nil || *p.ColorButtons }
+
+// CommitPreviewsOn reports whether History may preview the app at a commit
+// (CommitPreviews, on unless turned off).
+func (p Project) CommitPreviewsOn() bool { return p.CommitPreviews == nil || *p.CommitPreviews }
 
 const (
 	DefaultMaxAutoFixes  = 2

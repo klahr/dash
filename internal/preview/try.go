@@ -9,12 +9,21 @@ package preview
 // api/try.go), whose Cleanup runs once the session is stopped or replaced.
 // A project has one try session at a time, kept under its key (the hub's
 // id of the project).
+//
+// A commit preview (TryStart.Web) is a try session of a web project: its
+// run_command (after its setup) in the worktree, watched like a task's web
+// preview (starting, then live once its port answers). The hub serves it
+// at TryLabel(project, runner).<domain>, which can't be a task's label, and
+// asks the runner's preview connection for TryDialID(project).
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/klahr/dash/internal/model"
@@ -30,6 +39,33 @@ func TryPath(key string) string { return "/ws/hub/projects/" + url.PathEscape(ke
 
 func tryKey(key string) string { return "try:" + key }
 
+// TryDialID is what the hub asks a runner's preview connection for to
+// reach the commit preview of the project key (tunnel.Hub.DialPreview):
+// task ids never have a colon.
+func TryDialID(key string) string { return tryKey(key) }
+
+// tryLabelSep separates the project and the runner in a commit preview's
+// host label. A task's label on a hub is <todo>-<runner>: todo ids have
+// no dash and runner names start with a letter or digit, so it never has
+// "--" right after the first part, and a todo's own label has no dash.
+const tryLabelSep = "--"
+
+var idRE = regexp.MustCompile(`^[a-z0-9]{1,32}$`)
+
+// TryLabel is the preview host label the hub serves project's commit
+// preview on runner at: <project>--<runner>.
+func TryLabel(project, runner string) string { return project + tryLabelSep + runner }
+
+// ParseTryLabel splits a commit preview's host label into its project and
+// runner; ok is false for any other label (a task's).
+func ParseTryLabel(label string) (project, runner string, ok bool) {
+	project, runner, ok = strings.Cut(label, tryLabelSep)
+	if !ok || !idRE.MatchString(project) || runner == "" || strings.HasPrefix(runner, "-") {
+		return "", "", false
+	}
+	return project, runner, true
+}
+
 // TryStart is a try session to start.
 type TryStart struct {
 	Key     string        // the project's key: the hub's id of it
@@ -37,6 +73,10 @@ type TryStart struct {
 	Dir     string        // where it runs: a worktree at Commit, prepared by the caller
 	Ref     string        // what was asked for ("" for the default branch's tip)
 	Commit  model.CommitInfo
+	// Web starts Command (the project's setup and run_command, with $PORT)
+	// as a web server to preview, instead of a terminal.
+	Web     bool
+	Command string
 	// Cleanup removes Dir; it runs once, after the terminal has stopped.
 	Cleanup func()
 }
@@ -46,16 +86,29 @@ type TryStart struct {
 // StopTry).
 func (m *Manager) StartTry(s TryStart) (model.TrySession, error) {
 	_ = m.StopTry(s.Key, "replaced")
-	proc, err := m.startTerminal(s.Project, "", s.Dir)
-	if err != nil {
-		if s.Cleanup != nil {
-			s.Cleanup()
+	var info model.Preview
+	if s.Web {
+		proc, err := m.Procs.StartWebFor(s.Project.ID, "", s.Dir, s.Command)
+		if err != nil {
+			if s.Cleanup != nil {
+				s.Cleanup()
+			}
+			return model.TrySession{}, err
 		}
-		return model.TrySession{}, err
+		info = model.Preview{ProjectID: s.Project.ID, ProcessID: proc.ID, Kind: model.PreviewWeb, Port: proc.Port,
+			State: model.PreviewStarting, LocalURL: fmt.Sprintf("http://localhost:%d/", proc.Port), StartedAt: proc.StartedAt}
+	} else {
+		proc, err := m.startTerminal(s.Project, "", s.Dir)
+		if err != nil {
+			if s.Cleanup != nil {
+				s.Cleanup()
+			}
+			return model.TrySession{}, err
+		}
+		info = model.Preview{ProjectID: s.Project.ID, ProcessID: proc.ID, Kind: model.PreviewTerminal, State: model.PreviewLive,
+			TerminalURL: TryPath(s.Key), StartedAt: proc.StartedAt}
 	}
-	e := &entry{done: make(chan struct{}), cleanup: s.Cleanup,
-		info: model.Preview{ProjectID: s.Project.ID, ProcessID: proc.ID, Kind: model.PreviewTerminal, State: model.PreviewLive,
-			TerminalURL: TryPath(s.Key), StartedAt: proc.StartedAt},
+	e := &entry{done: make(chan struct{}), cleanup: s.Cleanup, info: info,
 		try: &model.TrySession{ProjectID: s.Key, Ref: s.Ref, Branch: s.Project.DefaultBranch,
 			Commit: s.Commit.SHA, Subject: s.Commit.Subject, Author: s.Commit.Author},
 	}
@@ -81,6 +134,7 @@ func trySnapshot(e *entry) model.TrySession {
 	s := *e.try
 	e.mu.Unlock()
 	s.ProcessID, s.State, s.TerminalURL, s.ExitCode = p.ProcessID, p.State, p.TerminalURL, p.ExitCode
+	s.Kind, s.Port = p.Kind, p.Port
 	s.StartedAt, s.LastSeen = p.StartedAt, p.LastSeen
 	return s
 }
@@ -123,6 +177,9 @@ func (m *Manager) TryTerminal(key string) (sess *runner.Session, touch func(), e
 	e := m.tryEntry(key)
 	if e == nil {
 		return nil, nil, ErrNoTry
+	}
+	if e.snapshot().Kind != model.PreviewTerminal {
+		return nil, nil, ErrNotTerminal // a commit preview's server: its log is TryLog
 	}
 	sess, err = m.Procs.Attach(e.snapshot().ProcessID)
 	if err != nil {

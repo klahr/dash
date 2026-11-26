@@ -77,11 +77,20 @@ func (m *Manager) URLTemplate(r *http.Request) string {
 	return scheme + "://" + h + "/"
 }
 
-// remoteLabel splits a preview host's label into the todo and the runner it
-// runs on, if it names a registered runner. Todo ids have no dashes.
+// remoteLabel splits a preview host's label into the runner it runs on
+// and what to ask that runner's preview connection for, if it names a
+// registered runner: a commit preview's <project>--<runner> (TryLabel; it
+// asks for TryDialID), else a task's <todo>-<runner>. Todo ids have no
+// dashes.
 func (m *Manager) remoteLabel(label string) (runner, todoID string, ok bool) {
 	if m.Remote == nil {
 		return "", "", false
+	}
+	if pid, run, ok := ParseTryLabel(label); ok {
+		if !m.Remote.Has(run) {
+			return "", "", false
+		}
+		return run, TryDialID(pid), true
 	}
 	todoID, runner, ok = strings.Cut(label, "-")
 	if !ok || todoID == "" || runner == "" || !m.Remote.Has(runner) {
@@ -149,9 +158,9 @@ func (m *Manager) remoteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, tunnel.ErrPreviewStarting):
 		page(w, http.StatusServiceUnavailable, "Starting…", "The preview server is starting, waiting for its port to answer. This page reloads by itself.", "", true)
 	case errors.Is(err, tunnel.ErrPreviewCrashed):
-		page(w, http.StatusBadGateway, "Preview crashed", "The preview server stopped. Its log is in Dash, on the task.", m.dashOrigin(), false)
+		page(w, http.StatusBadGateway, "Preview crashed", "The preview server stopped. Its log is in Dash, on the task or on the commit in History.", m.dashOrigin(), false)
 	case errors.Is(err, tunnel.ErrPreviewNotRunning):
-		page(w, http.StatusNotFound, "Preview not running", "No preview is running for this task. Start one with Preview on the task in Dash.", m.dashOrigin(), false)
+		page(w, http.StatusNotFound, "Preview not running", "No preview is running here. Start one with Preview on the task, or on the commit in History, in Dash.", m.dashOrigin(), false)
 	default:
 		page(w, http.StatusBadGateway, "Preview not answering", "The preview server didn't answer: "+err.Error(), "", true)
 	}
@@ -161,8 +170,15 @@ func (m *Manager) remoteError(w http.ResponseWriter, err error) {
 // (it implements tunnel.PreviewDialer). Only previews this Dash started can be
 // reached, at the loopback address their server answered on. Traffic on the
 // connection keeps the preview from being stopped as idle.
-func (m *Manager) DialPreview(todoID string) (net.Conn, int, error) {
-	e := m.entry(todoID)
+//
+// id is a todo's, or TryDialID(project) for that project's commit preview.
+func (m *Manager) DialPreview(id string) (net.Conn, int, error) {
+	var e *entry
+	if key, ok := strings.CutPrefix(id, "try:"); ok {
+		e = m.tryEntry(key)
+	} else {
+		e = m.entry(id)
+	}
 	if e == nil {
 		return nil, 0, tunnel.ErrPreviewNotRunning
 	}

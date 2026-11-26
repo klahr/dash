@@ -94,11 +94,66 @@ the `read_try_terminal` tool. Say "note …" or describe a bug and it reports it
 with the command, its output and the commit hash: that adds a draft task on the Board, tagged
 `reported`. Say "make a task of this" and it creates a draft task in its own words instead.
 
-The hub's routes are `GET|POST|DELETE /api/projects/<id>/try` (`{"runner", "ref"}` to start),
+The hub's routes are `GET|POST|DELETE /api/projects/<id>/try` (`{"runner", "ref", "kind"}` to
+start; `kind` is `terminal`, the default, or `web` for a [commit preview](#preview-a-commit-from-history)),
 `GET /api/projects/<id>/try/commits?runner=&q=&fetch=1`, `GET /api/projects/<id>/try/log?lines=N`
 and the terminal at `/ws/projects/<id>/try`; each goes through to the runner over its tunnel.
 `GET` returns `runners` (those it can run on), `candidates` (every runner with the project, each
 with `online` and, when it can't run on it, `why`), `default` and `session`.
+
+## Preview a commit from History
+
+Open a commit in **History → Commits** to run the project as it was at that commit.
+
+- A CLI project (**Preview tasks in** *a terminal*) has **Try at this commit**. It opens the Try
+  terminal on **Code → Shell** at that commit, as **commit…** there does.
+- A web project with a start server command has **Preview**. It runs the app at that commit and
+  shows it beside the commit (full screen on a phone, with a button that leads back). `Esc` closes
+  the preview, and `Esc` again the commit.
+
+Both run on a runner, like Try: one that is connected, has the labels the project runs on and
+opens terminals for you. Without a runner for the project the buttons aren't shown. Only commits
+of the default branch that origin has can run: on other commits the buttons are greyed out, and
+hovering them says why. With several runners, Dash asks which one, the first time.
+
+A commit preview is the project's Try session, with `kind: "web"`:
+
+1. The runner fetches origin and checks the commit out in a throwaway worktree, as Try does.
+2. It copies the runner's **Files to copy into worktrees** there (`.env`, say).
+3. It runs the **Setup command** (`npm ci`, say), then the **Start server command** with `$PORT`.
+4. The hub serves the app at `https://<project>--<runner>.<preview domain>/`, signed in like a
+   task's preview, for members of the project's organization.
+
+A fresh worktree installs its dependencies and builds from scratch, so the first start can take a
+while. Until the server answers on its port, the pane shows **Setting up and starting the server**
+with the end of the log; **Server log** below it has all of it. If the setup or the server fails,
+the pane says so and keeps the log open.
+
+The rules are Try's:
+
+- A project has one session: a commit preview or a Try terminal. Starting one at another commit
+  replaces the running one, after asking.
+- It stops after 30 minutes without traffic, or with **Stop**. Its worktree is removed when it
+  stops. **Hide preview** only hides it.
+- It needs a preview domain (below).
+
+The commit runs in a worktree, not in a sandbox. It shares the runner's dev database, its services
+and the copied files. Old code may run old migrations or write data in an old format there, so
+Dash warns about this before the first commit preview of a project in each browser. To turn
+commit previews off for a project, clear **Preview old commits from History** in
+**Project settings → Commands** (`commit_previews: false`).
+
+To start one through the API:
+
+```sh
+curl -X POST https://dash.example.com/api/projects/<id>/try \
+  -H 'Content-Type: application/json' \
+  -d '{"ref": "<sha>", "kind": "web"}'
+```
+
+The answer is the session, with `url` and `open_url` (`/preview/<project>--<runner>`, which signs
+the browser in). `GET /api/projects/<id>/try/log?lines=N` returns it with the end of the server's
+log, and `DELETE /api/projects/<id>/try` stops it.
 
 ## Setting up a preview domain
 

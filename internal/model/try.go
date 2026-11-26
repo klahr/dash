@@ -2,7 +2,8 @@ package model
 
 import "time"
 
-// TrySession is a project's "Try" terminal: the project's preview_command
+// TrySession is a project's "Try" session: a terminal, or (Kind
+// PreviewWeb) a commit preview. A terminal session runs the project's preview_command
 // (or a shell) in a PTY, like a task's terminal preview, but in a detached
 // worktree of the project itself at a commit of its default branch (its tip
 // as fetched, or one picked from history). It always runs on a runner, in a
@@ -20,10 +21,20 @@ type TrySession struct {
 	Ref    string `json:"ref,omitempty"`
 	Branch string `json:"branch"` // the project's default branch on the runner
 	// Commit is the checked-out commit, with its subject and author.
-	Commit  string       `json:"commit"`
-	Subject string       `json:"subject"`
-	Author  string       `json:"author,omitempty"`
-	State   PreviewState `json:"state"`
+	Commit  string `json:"commit"`
+	Subject string `json:"subject"`
+	Author  string `json:"author,omitempty"`
+	// Kind is PreviewTerminal ("" too: older runners) for a terminal, or
+	// PreviewWeb for a commit preview: the project's run_command served
+	// through the preview proxy at URL, like a task's web preview.
+	Kind  string       `json:"kind,omitempty"`
+	Port  int          `json:"port,omitempty"` // a web session's server port, on its runner
+	State PreviewState `json:"state"`
+	// URL and OpenURL are where a web session is served and the Dash path
+	// that signs the browser in to it (set by the hub, with a preview
+	// domain), as model.Preview's.
+	URL     string `json:"url,omitempty"`
+	OpenURL string `json:"open_url,omitempty"`
 	// TerminalURL is the WebSocket path that attaches to it (on the hub:
 	// the hub's, which goes through to the runner).
 	TerminalURL string    `json:"terminal_url,omitempty"`
@@ -41,3 +52,7 @@ type CommitInfo struct {
 	Author  string    `json:"author"`
 	Date    time.Time `json:"date"`
 }
+
+// Web reports whether s is a commit preview (the run_command served
+// through the preview proxy) rather than a terminal.
+func (s TrySession) Web() bool { return s.Kind == PreviewWeb }

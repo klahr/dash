@@ -50,3 +50,23 @@ func RelInside(rel string) bool {
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
+
+// CopyPath copies the file or folder src to dst, making dst's parent
+// folders: a file keeps its permission bits, a folder is copied whole.
+func CopyPath(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return os.CopyFS(dst, os.DirFS(src))
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, b, info.Mode().Perm())
+}

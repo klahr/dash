@@ -168,9 +168,23 @@ func (s *Server) hubPreviewTask(label string) (string, bool) {
 // hubPreviewLabel is the preview host label a member c opens for tid on
 // the hub: tid is the hub's task (its open_url), or the label itself (the
 // preview proxy sends a browser that isn't signed in to /preview/<label>).
-// It is false when tid is neither, or not a task of c's org.
+// A commit preview's label (<project>--<runner>, preview.TryLabel) is one
+// too, for a project of c's org on a runner working on it. It is false
+// when tid is none of these, or not a task or project of c's org.
 func (s *Server) hubPreviewLabel(c Caller, tid string) (string, bool) {
 	sv := s.as(c)
+	if pid, name, ok := preview.ParseTryLabel(tid); ok {
+		p, err := sv.data.GetProject(pid)
+		if err != nil {
+			return "", false
+		}
+		for _, r := range s.fleet().List() {
+			if r.Name == name && r.Serves(p) {
+				return tid, true
+			}
+		}
+		return "", false
+	}
 	if t, err := sv.data.GetTodo(tid); err == nil {
 		if !t.OnRunner() || t.RemoteID == "" {
 			return "", false
