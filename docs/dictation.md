@@ -209,7 +209,8 @@ Dash reads plain prose. It doesn't read code: a code block, a diff or a table is
 A long reply is read up to its first part, then Dash says there's more. To hear all of every
 reply, set **Long replies** to **Read all of it**.
 
-Each reply has a **Read aloud** button under it. Click it to hear the whole reply.
+Each reply has a speaker button in the row under it, which shows when you point at the reply (tap
+it on a phone). Click it to hear the whole reply.
 
 ### Summaries
 
@@ -231,14 +232,14 @@ summaries.
 To hear all of it, say "read it all" with [voice commands](#voice-commands) on, or in
 [voice mode](#voice-mode). Dash reads the
 last thing it said in short, in full, with code blocks named as above. Voice commands stop first,
-so Dash doesn't hear itself. The **Read aloud** button under a reply reads it all too.
+so Dash doesn't hear itself. The speaker button under a reply reads it all too.
 
 Summaries are on by default. Turn off **Summarise spoken replies** to hear the text itself.
 
 ### Stop it
 
 - Press `Esc`.
-- Click **Read aloud** again.
+- Click the speaker button again.
 - Send a message.
 
 Dash doesn't speak while dictation or voice commands listen, so it doesn't hear itself. Voice

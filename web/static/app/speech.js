@@ -341,7 +341,7 @@ export const speechSample = () => say("This is how Dash reads Claude's replies."
 // speakButton is the speaker button under a chat reply (content: its
 // Markdown): it reads all of it, or stops.
 export function speakButton(content) {
-  const btn = ib({ type: "button", class: "link speak-btn", "aria-pressed": "false", title: "Read this reply aloud" }, "speaker", "Read aloud");
+  const btn = ib({ type: "button", class: "msg-icon speak-btn", "aria-pressed": "false", "aria-label": "Read aloud", title: "Read aloud" }, "speaker");
   btn.addEventListener("click", () => {
     if (current?.btn === btn) return stopSpeaking();
     say(speakable(content), { btn, now: true });

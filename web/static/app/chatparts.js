@@ -37,10 +37,83 @@ export function describePerm(p) {
   }
 }
 
-// Tool calls in the chat: a one-line summary, and the full input when expanded.
-function toolSummary(tool, i = {}) {
-  const s = i.command ?? i.file_path ?? i.pattern ?? i.path ?? "";
-  return String(s).split("\n")[0];
+// Tool calls in the chat: a short readable line ("Read chatpane.js"), and
+// the raw name and full input when expanded.
+const firstLine = (s) => String(s ?? "").split("\n")[0];
+const baseName = (p) => firstLine(p).replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+const hostOf = (u) => { try { return new URL(u).host; } catch { return firstLine(u); } };
+const quoted = (s) => (s ? `“${firstLine(s)}”` : "");
+// Each tool's label and what it acted on, from its input i.
+const TOOL_LABELS = {
+  Read: (i) => ["Read", baseName(i.file_path)],
+  Edit: (i) => ["Edited", baseName(i.file_path)],
+  MultiEdit: (i) => ["Edited", baseName(i.file_path)],
+  Write: (i) => ["Wrote", baseName(i.file_path)],
+  NotebookEdit: (i) => ["Edited", baseName(i.notebook_path)],
+  NotebookRead: (i) => ["Read", baseName(i.notebook_path)],
+  Grep: (i) => ["Searched for", quoted(i.pattern)],
+  Glob: (i) => ["Looked for", firstLine(i.pattern)],
+  LS: (i) => ["Listed", baseName(i.path)],
+  WebFetch: (i) => ["Fetched", hostOf(i.url)],
+  WebSearch: (i) => ["Searched the web for", quoted(i.query)],
+  Task: (i) => ["Ran an agent", firstLine(i.description)],
+  Agent: (i) => ["Ran an agent", firstLine(i.description)],
+  TodoWrite: () => ["Updated the to-do list", ""],
+  AskUserQuestion: () => ["Asked you", ""],
+  ToolSearch: () => ["Loaded tools", ""],
+  Skill: (i) => ["Used a skill", firstLine(i.skill)],
+  BashOutput: () => ["Read a command's output", ""],
+  KillShell: () => ["Stopped a command", ""],
+};
+// Dash's own tools (mcp__dash_board__…), by their short name.
+const task = (i) => firstLine(i.title || i.id || i.todo_id || "");
+const DASH_LABELS = {
+  create_todo: (i) => ["Created a draft task", task(i)],
+  update_todo: (i) => ["Changed a task", task(i)],
+  queue_todo: (i) => ["Queued a task", task(i)],
+  stop_todo: (i) => ["Stopped a task", task(i)],
+  restart_todo: (i) => ["Restarted a task", task(i)],
+  delete_todo: (i) => ["Deleted a task", task(i)],
+  approve_todo: (i) => ["Approved a task", task(i)],
+  send_back: (i) => ["Sent a task back", task(i)],
+  get_todo: (i) => ["Read a task", task(i)],
+  list_todos: () => ["Listed tasks", ""],
+  get_diff: (i) => ["Read a task's changes", task(i)],
+  get_log: (i) => ["Read a task's log", task(i)],
+  add_log: () => ["Added to the log", ""],
+  list_projects: () => ["Listed projects", ""],
+  get_project: () => ["Read the project", ""],
+  update_project: () => ["Changed the project", ""],
+  report_issue: (i) => ["Reported an issue", firstLine(i.title)],
+  show_image: (i) => ["Showed an image", baseName(i.path)],
+  read_try_terminal: () => ["Read the Try terminal", ""],
+  run_tests: () => ["Ran the tests", ""],
+  run_command: (i) => ["Ran", firstLine(i.command)],
+  active_work: () => ["Checked other tasks' work", ""],
+  create_goal: (i) => ["Created a goal", task(i)],
+  get_goal: () => ["Read a goal", ""],
+  list_goals: () => ["Listed goals", ""],
+  update_goal: (i) => ["Changed a goal", task(i)],
+  stop_goal: () => ["Stopped a goal", ""],
+  delete_goal: () => ["Deleted a goal", ""],
+  create_release: () => ["Created a release", ""],
+  list_deploys: () => ["Listed deploys", ""],
+  create_card: (i) => ["Created a card", task(i)],
+  get_card: () => ["Read a card", ""],
+  list_cards: () => ["Listed cards", ""],
+  update_card: (i) => ["Changed a card", task(i)],
+  ask_user: () => ["Asked you", ""],
+};
+// toolLabel is tool call (tool, i)'s line: [label, what it acted on]. A tool
+// it doesn't know reads as its name without the mcp__server__ prefix.
+export function toolLabel(tool, i = {}) {
+  i = i && typeof i === "object" ? i : {};
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(tool || "");
+  const [table, key] = mcp ? [mcp[1] === "dash_board" ? DASH_LABELS : {}, mcp[2]] : [TOOL_LABELS, tool];
+  const known = Object.hasOwn(table, key) ? table[key] : null;
+  if (known) return known(i);
+  const name = (mcp ? mcp[2] : String(tool || "?")).replace(/_/g, " ");
+  return [name.charAt(0).toUpperCase() + name.slice(1), firstLine(i.command ?? i.file_path ?? i.pattern ?? i.path ?? i.title ?? i.query ?? i.url ?? "")];
 }
 function toolDetail(tool, i = {}) {
   const lines = (s, p) => String(s ?? "").split("\n").map((l) => p + l).join("\n");
@@ -57,12 +130,13 @@ function toolDetail(tool, i = {}) {
 // text doesn't move), and how long it has run once that's a while.
 export function toolCall(tool, input, since = Date.now()) {
   const out = h("pre", { class: "tool-out", hidden: true });
+  const [label, what] = toolLabel(tool, input);
   const head = tool === "Bash" && input?.command
-    ? [h("b", {}, "$"), ` ${toolSummary(tool, input)}`]
-    : [h("b", {}, tool), ` ${toolSummary(tool, input)}`];
+    ? [h("span", { class: "tool-cmd" }, h("b", {}, "$"), ` ${firstLine(input.command)}`)]
+    : [h("b", {}, label), what ? ` ${what}` : null];
   const time = h("span", { class: "tool-time", "data-since": String(since), "data-quiet": "" });
   const el = h("details", { class: "tool running" }, h("summary", {}, h("span", { class: "act-spin", "aria-hidden": "true" }), h("span", { class: "tool-head" }, ...head), time),
-    h("pre", { class: "tool-in" }, toolDetail(tool, input)), out);
+    h("div", { class: "tool-raw" }, tool), h("pre", { class: "tool-in" }, toolDetail(tool, input)), out);
   return { el, out, time, since };
 }
 export function toolResult(t, d) {

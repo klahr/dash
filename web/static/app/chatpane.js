@@ -83,6 +83,7 @@ export function projectChatFor(p) {
       renderChatHead();
     },
     cwd: panel.querySelector(".chat-cwd"),
+    where: () => ({ name: proj().name, machine: projectWhere(proj()), path: proj().path, mode: proj().chat_permission_mode || "" }),
     // A turn left streaming when the chat was cleared is saved when it finishes.
     saved: () => { if (!pc.chat.busy) loadProjectChat(proj(), true).catch(fail); },
     // Sent from an out-of-date copy: the server's is the one to show.
@@ -192,6 +193,7 @@ function goalChatFor(t) {
     target: () => ({ prefix: proj()?.prefix || "", project: proj()?.id || "", goal: gc.tab.id }),
     clear: async () => { throw new Error("A goal's conversation can't be cleared: it is what its coordinator remembers."); },
     cwd: panel.querySelector(".chat-cwd"),
+    where: () => (proj() ? { name: proj().name, machine: projectWhere(proj()) } : null),
     saved: () => { if (!gc.chat.busy) { gc.loaded = false; loadGoalChat(gc).catch(fail); } },
     actions: chatActions,
     onState: paneChatState(t.key, () => gc.chat),
@@ -317,6 +319,8 @@ export function renderChatPane() {
   pin.setAttribute("aria-pressed", String(pane.pinned));
   pin.title = pane.pinned ? "Unpin the chat (overlay)" : "Pin the chat beside the content";
   pin.setAttribute("aria-label", pin.title);
+  // Where the chat shown runs, as its project's settings say now.
+  if (pane.open) activeChat()?.place();
 
   const tab = paneTab();
   const cur = tabProject(tab);

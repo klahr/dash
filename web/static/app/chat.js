@@ -15,29 +15,41 @@ import { loadTodoChat, renderChatBadge, renderChatDots, renderChatHead, renderCh
 import { timeline } from "./timeline.js";
 import { fmtTokens } from "./runstats.js";
 import { confirmRunAs } from "./people.js";
+import { projectWhere } from "./projects.js";
 import { dictation } from "./dictation.js";
 import { speakApproval, speakButton, speakReply, stopSpeaking } from "./speech.js";
 
 // ------------------------------------------------------------------ chat
-// usageLine shows what an answer took: tokens in and out, time spent
-// thinking and in all. Null for answers saved before Dash recorded it.
-function usageLine(u) {
-  if (!u) return null;
-  const cacheRead = u.cache_read_tokens || 0, cacheNew = u.cache_creation_tokens || 0;
-  const input = (u.input_tokens || 0) + cacheRead + cacheNew;
-  const parts = [`${fmtTokens(input)} in`, `${fmtTokens(u.output_tokens || 0)} out`];
-  if (u.thinking_ms >= 500) parts.push(`thought ${duration(u.thinking_ms)}`);
-  if (u.duration_ms) parts.push(duration(u.duration_ms));
-  const title = [
-    `Input: ${(u.input_tokens || 0).toLocaleString()} tokens`,
-    cacheRead ? `Read from cache: ${cacheRead.toLocaleString()}` : null,
-    cacheNew ? `Written to cache: ${cacheNew.toLocaleString()}` : null,
-    `Output: ${(u.output_tokens || 0).toLocaleString()} tokens (thinking included)`,
-    u.thinking_ms ? `Thinking: ${duration(u.thinking_ms)}` : null,
-    u.duration_ms ? `Total: ${duration(u.duration_ms)}` : null,
-  ].filter(Boolean).join("\n");
-  return h("div", { class: "msg-usage", title }, parts.join(" · "));
+// msgStats is the small line in an answer's row: what it took (u: tokens
+// in and out, time spent thinking and in all; none for answers saved before
+// Dash recorded it) and when it ended (end: a time, or null).
+function msgStats(u, end) {
+  const parts = [];
+  let title = "";
+  if (u) {
+    const cacheRead = u.cache_read_tokens || 0, cacheNew = u.cache_creation_tokens || 0;
+    const input = (u.input_tokens || 0) + cacheRead + cacheNew;
+    parts.push(`${fmtTokens(input)} in`, `${fmtTokens(u.output_tokens || 0)} out`);
+    if (u.thinking_ms >= 500) parts.push(`thought ${duration(u.thinking_ms)}`);
+    if (u.duration_ms) parts.push(duration(u.duration_ms));
+    title = [
+      `Input: ${(u.input_tokens || 0).toLocaleString()} tokens`,
+      cacheRead ? `Read from cache: ${cacheRead.toLocaleString()}` : null,
+      cacheNew ? `Written to cache: ${cacheNew.toLocaleString()}` : null,
+      `Output: ${(u.output_tokens || 0).toLocaleString()} tokens (thinking included)`,
+      u.thinking_ms ? `Thinking: ${duration(u.thinking_ms)}` : null,
+      u.duration_ms ? `Total: ${duration(u.duration_ms)}` : null,
+    ].filter(Boolean).join("\n");
+  }
+  const d = end ? new Date(end) : null, when = d && !isNaN(d) ? d : null;
+  if (!parts.length && !when) return null;
+  const today = when && when.toDateString() === new Date().toDateString();
+  const clock = when && h("time", { dateTime: when.toISOString(), title: when.toLocaleString() },
+    today ? when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : when.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }));
+  return h("span", { class: "msg-stats" }, parts.length ? h("span", { title }, parts.join(" · ")) : null, parts.length && clock ? " · " : null, clock);
 }
+// savedEnd is when saved answer m ended: its start plus how long it took.
+const savedEnd = (m) => (m.at && m.usage?.duration_ms ? Date.parse(m.at) + m.usage.duration_ms : m.at || null);
 
 // makeChat drives one conversation UI: a log, its empty state and a composer.
 // target() names where it runs ({prefix, ...fields sent with each turn});
@@ -51,7 +63,9 @@ function usageLine(u) {
 // head each message with who it's from; merge(nodes, saved) places a saved
 // conversation's messages among other nodes. With shell (project and task
 // chats), a message starting with "!" runs as a shell command where the
-// chat runs instead of going to Claude (see shellRunner).
+// chat runs instead of going to Claude (see shellRunner). cwd is the bar
+// that shows where the chat runs, from the start: where() says what's known
+// before a turn (see chatPlace).
 //
 // After a reply, the server may suggest the user's next message (with the
 // Account → General preference on): it shows as the empty composer's
@@ -75,7 +89,7 @@ function usageLine(u) {
 // chatSocket with chatStreamHandler (the connection, where the chat runs and
 // on which runner), chatEdits (with edit: taking back the last turn to edit
 // or retry it) and chatJump (the button to the end of the conversation).
-export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false, mode = () => null, tasks = null, edit = false }) {
+export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false, mode = () => null, tasks = null, edit = false, where = () => null }) {
   // waiting: ids of the permission requests the current turn waits on an answer to.
   // queue: messages written while a reply streams ({q, files}), sent together
   // as one message once it's done.
@@ -86,8 +100,9 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   shellRunner(c);
   chatEdits(c, edit);
   chatJump(c);
-  c.socket = chatSocket(c, { cwd, saved, resume, onRunner, onStream: chatStreamHandler(c) });
-  return { ...turns, ...composer, toEnd: c.toEnd, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
+  chatPlace(c, cwd, where);
+  c.socket = chatSocket(c, { saved, resume, onRunner, onStream: chatStreamHandler(c) });
+  return { ...turns, ...composer, toEnd: c.toEnd, place: c.place.render, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
 }
 
 // chatView renders the conversation in log (empty: what shows while it has
@@ -112,12 +127,27 @@ function chatView(c, { log, empty, labels, actions, scroller, merge, tasks }) {
   const from = c.from = (who) => labels ? h("div", { class: "msg-from" }, labels[who]) : null;
   // The tasks the answer made show as cards under it (see taskCard).
   const cards = c.cards = (list) => (tasks ? (list || []).map((t) => taskCard(t, tasks)) : []);
-  // The row under an answer ends with its speaker button (speech.js: shown while Spoken replies is on).
-  const actionRow = c.actionRow = (content) => {
-    const row = actions(content);
-    row?.append(speakButton(content));
-    return row;
+  // The row under an answer, shown on hover (a tap on a touch screen):
+  // actions(content), its speaker button (speech.js: shown while Spoken
+  // replies is on), and what it took (usage) and when it ended (end).
+  const actionRow = c.actionRow = (content, usage, end) => {
+    const row = content ? actions(content) : null;
+    const stats = msgStats(usage, end);
+    if (!row && !stats) return null;
+    const el = row || h("div", { class: "msg-actions" });
+    if (content) el.append(speakButton(content));
+    if (stats) el.append(stats);
+    return el;
   };
+  // On a touch screen, a tap on an answer shows its row (and hides it again).
+  log.addEventListener("click", (e) => {
+    if (!matchMedia("(hover: none)").matches || e.target.closest("a, button, summary, input, select, textarea, label, .tool, .perm, .chat-task")) return;
+    if (getSelection()?.toString()) return;
+    const msg = e.target.closest(".msg.assistant");
+    if (!msg?.querySelector(":scope > .msg-actions")) return;
+    for (const el of log.querySelectorAll(".msg.show-actions")) if (el !== msg) el.classList.remove("show-actions");
+    msg.classList.toggle("show-actions");
+  });
   const prefixOf = c.prefixOf = () => c.target().prefix || "";
   // The images an answer showed (show_image) fit the reply's width; a click opens the lightbox.
   const nodes = c.nodes = new WeakMap();
@@ -125,7 +155,7 @@ function chatView(c, { log, empty, labels, actions, scroller, merge, tasks }) {
   const assistant = c.assistant = (m) => {
     const el = h("div", { class: "msg assistant" }, from("assistant"));
     savedReply(el, m);
-    el.append(...[m.attachments?.length ? images(m.attachments) : null, ...cards(m.tasks), usageLine(m.usage), actionRow(m.content)].filter(Boolean));
+    el.append(...[m.attachments?.length ? images(m.attachments) : null, ...cards(m.tasks), actionRow(m.content, m.usage, savedEnd(m))].filter(Boolean));
     nodes.set(m, el);
     return el;
   };
@@ -136,6 +166,7 @@ function chatView(c, { log, empty, labels, actions, scroller, merge, tasks }) {
     return el;
   };
   c.show = (saved) => {
+    c.place.reset();
     const nodes = merge(saved.map((m) => m.role === "user" ? user(m) : assistant(m)), saved);
     empty.hidden = nodes.length > 0;
     log.replaceChildren(empty, ...nodes);
@@ -325,15 +356,12 @@ function chatTurns(c, { stale, onState }) {
     if (stopped) for (const st of cur.el.querySelectorAll(".perm-actions")) st.replaceChildren(h("span", { class: "perm-status" }, "Stopped: denied"));
     for (const t of cur.tools.values()) toolSettled(t);
     for (const card of c.cards(cur.tasks)) cur.el.append(entering(card));
-    const u = stopped ? h("div", { class: "msg-usage" }, "Stopped") : entering(usageLine(cur.usage));
-    if (u) cur.el.append(u);
+    if (stopped) cur.el.append(h("div", { class: "msg-stopped" }, "Stopped"));
     const kept = !!cur.content || cur.tasks.length > 0 || cur.images.length > 0;
-    if (cur.content) {
-      const row = c.actionRow(cur.content);
-      cur.el.append(entering(row));
-      // A finished answer is read aloud, with Spoken replies on.
-      if (!stopped && !failed) speakReply(cur.content, row?.querySelector(".speak-btn"));
-    }
+    const row = kept ? c.actionRow(cur.content, stopped ? null : cur.usage, new Date().toISOString()) : null;
+    if (row) cur.el.append(entering(row));
+    // A finished answer is read aloud, with Spoken replies on.
+    if (cur.content && !stopped && !failed) speakReply(cur.content, row?.querySelector(".speak-btn"));
     if (kept) {
       const m = { role: "assistant", content: cur.content, at: cur.at, ...(cur.usage && !stopped ? { usage: cur.usage } : {}), ...(cur.tasks.length ? { tasks: cur.tasks } : {}), ...(cur.images.length ? { attachments: cur.images } : {}) };
       c.history.push(m);
@@ -405,6 +433,7 @@ function chatTurns(c, { stale, onState }) {
     c.current ? c.current.el.replaceWith(el) : c.log.append(el);
     c.toEnd(true);
     c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), tasks: [], images: [], target: { prefix, ...fields }, at: new Date().toISOString() };
+    c.place.render();
     c.suggest();
     c.busyButton();
     c.onState();
@@ -491,13 +520,49 @@ function chatSuggestion(c, input, form, att, mode) {
   return { show, shown };
 }
 
+// Permission modes as the place bar shows them (Project settings' chat_permission_mode).
+const MODE_LABEL = { "": "Ask", auto: "Auto", acceptEdits: "Accept edits" };
+const baseName = (p) => String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+
+// chatPlace shows in el where the chat runs, compactly: the folder's name
+// and the computer ("app · laptop", with the full path as its title), and
+// the chat's permission mode. where() is what's known before a turn: {name,
+// machine, path, mode} (mode undefined: none shown), or null for no bar. A
+// turn's cwd and runner messages fill in the rest. It sets c.place:
+// render(), dir(path) and runner(name) (from a turn), and reset() (another
+// conversation: what a turn said is forgotten).
+function chatPlace(c, el, where) {
+  let dir = "", runner = "";
+  const place = h("span", { class: "chat-place" }), mode = h("span", { class: "chat-mode" });
+  el?.replaceChildren(place, mode);
+  const render = () => {
+    if (!el) return;
+    const w = where();
+    el.hidden = !w;
+    if (!w) return;
+    const path = dir || w.path || "";
+    place.textContent = [w.name || baseName(path), runner || w.machine].filter(Boolean).join(" · ");
+    place.title = path;
+    mode.hidden = w.mode === undefined || w.mode === null;
+    mode.textContent = MODE_LABEL[w.mode] ?? w.mode ?? "";
+    mode.dataset.mode = w.mode || "ask";
+  };
+  c.place = {
+    render,
+    dir: (p) => { dir = p; render(); },
+    runner: (name) => { runner = name; render(); },
+    reset: () => { dir = runner = ""; render(); },
+  };
+  render();
+}
+
 // chatSocket returns c.socket(prefix): the chat's websocket to the Dash at
 // prefix, opened anew when there's none (or it's to another Dash). Messages
-// from it go to onStream; cwd (an element) shows where the chat runs and
-// onRunner(name) which runner it runs on. An abandoned socket (one reset left
+// from it go to onStream; where the chat runs to c.place, and which runner
+// it runs on to onRunner(name) as well. An abandoned socket (one reset left
 // streaming) finishes its reply on its own, and saved(fields) is told when it
 // has. With resume, a turn cut off by a lost connection is sent again.
-function chatSocket(c, { cwd, saved, resume, onRunner, onStream }) {
+function chatSocket(c, { saved, resume, onRunner, onStream }) {
   return (prefix) => {
     if (c.ws && c.ws.readyState <= 1 && c.prefix === prefix) return c.ws;
     c.ws?.close();
@@ -520,8 +585,8 @@ function chatSocket(c, { cwd, saved, resume, onRunner, onStream }) {
         if (!c.current && !c.composing() && chatSuggestOn() && d.text) c.suggest(d.text);
         return;
       }
-      if (d.kind === "cwd" && cwd) { cwd.hidden = false; cwd.textContent = cwd.title = `Runs in ${d.text}`; }
-      if (d.kind === "runner") onRunner(d.text);
+      if (d.kind === "cwd") c.place.dir(d.text);
+      if (d.kind === "runner") { c.place.runner(d.text); onRunner(d.text); }
       onStream(ws, d);
     };
     ws.onclose = (e) => {
@@ -798,7 +863,7 @@ function chatEdits(c, edit) {
     const t = edit && !c.current && lastTurn();
     if (!t) return;
     c.nodes.get(t.q)?.append(h("button", { type: "button", class: "msg-edit", "aria-label": "Edit", title: "Edit", onclick: () => startEdit(t.q) }, ico("edit")));
-    if (t.a) c.nodes.get(t.a)?.querySelector(".msg-actions")?.prepend(ib({ type: "button", class: "link msg-retry", onclick: retry }, "redo", "Retry"));
+    if (t.a) c.nodes.get(t.a)?.querySelector(".msg-actions")?.prepend(msgIcon({ class: "msg-retry", onclick: retry }, "redo", "Retry"));
   };
 
   function startEdit(m) {
@@ -1114,9 +1179,12 @@ export function chatTaskEvent(ev) {
 // An action note in the chat: "You queued *Fix login*."
 const actionNote = (m) => h("div", { class: "chat-note", role: "note" }, h("span", { class: "md", innerHTML: renderMarkdown(m.content || "") }));
 
+// A small icon button in the row under an answer, named label.
+const msgIcon = (props, icon, label) => ib({ type: "button", ...props, class: `msg-icon ${props.class || ""}`.trim(), "aria-label": label, title: label }, icon);
+const copyIcon = (answer) => msgIcon({ onclick: () => copy(answer, "Copied") }, "copy", "Copy");
+
 // The row under a chat answer (general, project and goal chats).
-export const chatActions = (answer) => h("div", { class: "msg-actions" },
-  ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
+export const chatActions = (answer) => h("div", { class: "msg-actions" }, copyIcon(answer));
 
 // Where the general chat runs. The hub never runs Claude: the chat runs on
 // one of your own runners (your Claude login, your subscription). The bar
@@ -1154,6 +1222,7 @@ export const chatRunner = {
       sel.replaceChildren(...online.map((r) => h("option", { value: r.id }, r.name)));
       sel.value = this.choice() || online[0].id;
     }
+    chat.place();
     $("#chat-empty-where").textContent = current
       ? `A general chat, run on your runner ${current} in a scratch folder, with that computer's Claude login. For questions about one project, use This project.`
       : "A general chat, run on one of your own runners with its Claude login. This hub doesn't run Claude itself.";
@@ -1208,6 +1277,8 @@ export const chat = makeChat({
   },
   actions: chatActions,
   cwd: $("#chat-cwd"),
+  // In the home directory of this computer; on a hub, the runner bar says where.
+  where: () => (chatRunner.info && !chatRunner.info.local ? null : { name: "Home", machine: state.machines?.[0]?.name }),
   resume: true,
   edit: true,
   onState: paneChatState("general", () => chat),
@@ -1293,19 +1364,23 @@ export const todoChat = makeChat({
   shell: true,
   edit: true,
   cwd: $("#d-chat-cwd"),
+  where: () => {
+    const t = state.todos.get(state.detail), p = state.project;
+    return t && p ? { name: p.name, machine: projectWhere(p), path: p.path, mode: p.chat_permission_mode || "" } : null;
+  },
   mode: () => TODO_MODES[todoMode],
   // A turn left streaming when its todo was closed is saved when it finishes.
   saved: ({ todo }) => { if (todo === state.detail && !todoChat.busy) loadTodoChat().catch(fail); },
   actions: (answer) => {
     const t = state.todos.get(state.detail);
     return h("div", { class: "msg-actions" },
-      t && EDITABLE.includes(t.status) ? ib({ class: "link", onclick: attempt(async () => {
+      copyIcon(answer),
+      t && EDITABLE.includes(t.status) ? ib({ type: "button", class: "msg-act", onclick: attempt(async () => {
         if (!await ask({ title: "Replace the instructions?", body: "This answer becomes the task's instructions for Claude.", ok: "Replace" })) return;
         if (!await confirmRunAs(t, { prompt: answer })) return;
         await api("PATCH", `/api/todos/${t.id}`, { prompt: answer });
         toast("Instructions updated");
       }) }, "draft", "Use as instructions…") : null,
-      canRework(t) ? ib({ class: "link", onclick: attempt(() => reworkTodo(t, answer)) }, "redo", reworkLabel(t)) : null,
-      ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
+      canRework(t) ? ib({ type: "button", class: "msg-act", onclick: attempt(() => reworkTodo(t, answer)) }, "redo", reworkLabel(t)) : null);
   },
 });
