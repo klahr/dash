@@ -48,7 +48,6 @@
         <button type="button" class="run-pick" id="run-pick" aria-label="Run, tests, push and builds" title="Run, tests, push and builds" aria-haspopup="menu" aria-expanded="false" data-icon="down"></button>
         <a class="run-at" id="run-at" hidden></a>
       </div>
-      <div class="lane-chips" id="lane-chips" role="group" aria-label="Minimized columns"></div>
       <!-- Status (app/status.js): quiet while all is well, a dot coloured by the worst thing that
            needs you, and a popover (#status-pop) with every status and where to fix it. -->
       <button class="icon-btn status-btn" id="status-btn" type="button" data-tone="ok" data-live="off" aria-haspopup="dialog" aria-expanded="false" aria-controls="status-pop" aria-label="Status" title="Status">
@@ -171,15 +170,26 @@
       <h1 class="sr-only">{{DASH_NAME}}</h1>
       <!-- Board -->
       <section class="view active" id="view-board" aria-label="Board">
-        <div class="board-tools">
+        <!-- The board's header, one row: the lane tabs (a phone), the filters (only while
+             there is something to filter: app/branches.js), search, and New task, a floating
+             button on a phone. While searching on a phone, the field takes a row of its own. -->
+        <div class="board-head" id="board-head">
           <div class="lanes" role="tablist" id="lane-tabs"></div>
-        </div>
-        <div class="board-filters" id="board-filters" role="group" aria-label="Filters" hidden>
-          <button class="mine-filter" type="button" id="mine-filter" aria-pressed="false" title="Show only the tasks you created" hidden></button>
-          <div class="goal-filter" id="goal-filter" hidden></div>
-          <!-- From scans (N): only the tasks scans added, with Scans… beside it (the Scans sheet);
-               drafts from scans below high show only there. Then the tag filter (app/tags.js) -->
-          <div class="tag-filter" id="tag-filter" hidden></div>
+          <div class="board-filters" id="board-filters" role="group" aria-label="Filters" hidden>
+            <button class="mine-filter" type="button" id="mine-filter" aria-pressed="false" hidden></button>
+            <div class="goal-filter" id="goal-filter" hidden></div>
+            <!-- From scans (N), while scans added drafts; the tag filter (app/tags.js) -->
+            <div class="tag-filter" id="tag-filter" hidden></div>
+          </div>
+          <!-- Search: a magnifier that opens the field; it filters the cards as you type, Esc clears it (app/branches.js). -->
+          <div class="board-search" id="board-search" role="search">
+            <button class="icon-btn" type="button" id="board-search-open" aria-label="Search tasks" title="Search tasks" aria-controls="board-search-input" aria-expanded="false" data-icon="search"></button>
+            <input type="search" id="board-search-input" aria-label="Search tasks" autocomplete="off" spellcheck="false" enterkeyhint="search" hidden>
+          </div>
+          <button class="fab" id="new-todo" type="button" aria-label="New task" title="New task (n)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            <span>New task</span>
+          </button>
         </div>
         <div class="combine-bar" id="combine-bar" role="toolbar" aria-label="Selected drafts" hidden></div>
         <!-- Banners only for what blocks work; everything else is in the status popover. -->
@@ -188,10 +198,6 @@
         <div class="perm-list" id="perm-banner" hidden></div>
         <div class="board" id="board"></div>
         <div class="empty" id="board-empty" hidden></div>
-        <button class="fab" id="new-todo" aria-label="New task (n) — Shift+N for all options" title="New task (n) — Shift+N for all options">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
-          <span>New task</span>
-        </button>
       </section>
 
       <!-- Code → Shell: a terminal on the project. The picker says where: "main" is a shell in the
@@ -961,7 +967,7 @@
 
   <!-- Scan editor: a custom scan kept in Dash -->
   <!-- Scans: preconfigured read-only reviews that add what they find to the Board as draft
-       tasks. Opened from the Board's Scans… (beside From scans), the project menu or gn;
+       tasks. Opened from Scans… in the project's ⋮ menu, or gn;
        its old page's address (/p/{project}/scans) opens it too (app/scans.js). -->
   <dialog class="sheet scans-sheet" id="scans-sheet" aria-labelledby="scans-title">
     <form method="dialog">

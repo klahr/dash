@@ -7,14 +7,14 @@ import { laneItems, renderBoard, title } from "./branches.js";
 import { openDetail } from "./detail.js";
 import { goalHue } from "./goals.js";
 import { MAX_TAG_LEN, addTag, cleanTag } from "../tagtext.js";
-import { openScans, scansRunning } from "./scans.js";
+import { popMenu } from "./drawmode.js";
 
 // ------------------------------------------------------------------ tags
 // Tasks carry short tags. A draft made from a reported issue (a scan's
 // finding, Claude's report_issue) has its type, severity and source as tags,
 // and its issues in t.finding. Here: the tags on cards and in a task's pane,
-// the Board's filters (From scans (N): only what scans added, with Scans…
-// beside it; a tag filter), and picking drafts to Combine.
+// the Board's filters (From scans (N): only what scans added; a tag filter),
+// and picking drafts to Combine.
 
 export const SEVERITIES = ["critical", "high", "medium", "low", "info"];
 const sevRank = (s) => { const i = SEVERITIES.indexOf(s); return i < 0 ? SEVERITIES.length : i; };
@@ -46,7 +46,8 @@ export const quietDraft = (t) => t.status === "draft" && !!t.finding && fromScan
 // boardFilter is the Board's tag filter and whether it shows only the tasks
 // scans added (From scans, quiet drafts included), for the project open
 // (both reset when another project opens).
-export const boardFilter = { project: null, tag: "", showScans: false };
+// q is what the board's search holds (also reset with the project).
+export const boardFilter = { project: null, tag: "", showScans: false, q: "" };
 
 function sameProject() {
   const id = state.project?.id ?? null;
@@ -54,13 +55,31 @@ function sameProject() {
   boardFilter.project = id;
   boardFilter.tag = "";
   boardFilter.showScans = false;
+  boardFilter.q = "";
   picked.clear();
+}
+
+// matchesSearch: whether every word of the board's search is in t's title or instructions.
+function matchesSearch(t) {
+  const words = boardFilter.q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const text = `${t.title || ""}\n${t.prompt || ""}`.toLowerCase();
+  return words.every((w) => text.includes(w));
+}
+
+// setSearch filters the board to the tasks matching q.
+export function setSearch(q) {
+  sameProject();
+  if (boardFilter.q === q) return;
+  boardFilter.q = q;
+  renderBoard();
 }
 
 // onBoard reports whether the Board shows t under its filters.
 export function onBoard(t) {
   sameProject();
   if (boardFilter.tag && !hasTag(t, boardFilter.tag)) return false;
+  if (!matchesSearch(t)) return false;
   return boardFilter.showScans ? fromScan(t) : !quietDraft(t);
 }
 
@@ -79,46 +98,50 @@ export function setTagFilter(tag) {
   renderBoard();
 }
 
-// renderTagFilter fills the filter bar's tag part: From scans (N), the
-// drafts scans added, with Scans… (the Scans sheet: run them, schedules,
-// settings) beside it; the tag filtered to (removable) and a tag picker.
-// It reports whether there is anything to show.
+// renderTagFilter fills the filter bar's tag part: From scans (N), while
+// scans added drafts (or it is on); then the tag filtered to, which a press
+// clears, or else Tag, a menu of the project's tags. It reports whether
+// there is anything to show.
 export function renderTagFilter() {
   sameProject();
   const el = $("#tag-filter");
   const all = [...state.todos.values()];
   const tagged = (t) => !boardFilter.tag || hasTag(t, boardFilter.tag);
   const drafts = all.filter((t) => t.status === "draft" && fromScan(t) && tagged(t)).length;
-  const quiet = all.filter((t) => quietDraft(t) && tagged(t)).length;
-  const counts = new Map();
-  for (const t of all) for (const x of t.tags || []) counts.set(x.toLowerCase(), { name: counts.get(x.toLowerCase())?.name || x, n: (counts.get(x.toLowerCase())?.n || 0) + 1 });
   const kids = [];
-  if (state.project) {
-    const running = scansRunning();
-    kids.push(h("span", { class: "scan-filter-group", role: "group", "aria-label": "Scans" },
-      h("button", {
-        type: "button", class: "filter-chip scan-filter", "aria-pressed": String(boardFilter.showScans),
-        title: boardFilter.showScans ? "Show every task again"
-          : `Show only the tasks scans added: ${plural(drafts, "draft")}${quiet ? `, ${quiet} of them for medium, low and info issues, which show only here` : ""}`,
-        onclick: () => setScanFilter(),
-      }, ico("bug"), `From scans (${drafts})`),
-      h("button", { type: "button", class: "filter-chip scans-open", "aria-haspopup": "dialog", title: "Scans: run them, their schedules and settings (gn)", onclick: attempt(() => openScans()) },
-        ico("scan"), h("span", {}, "Scans…"),
-        h("span", { class: "badge quiet", hidden: !running, title: running ? `${plural(running, "scan")} running` : null }, running ? String(running) : ""))));
+  if (state.project && (drafts || boardFilter.showScans)) {
+    kids.push(h("button", {
+      type: "button", class: "filter-chip scan-filter", "aria-pressed": String(boardFilter.showScans),
+      onclick: () => setScanFilter(),
+    }, ico("bug"), `From scans (${drafts})`));
   }
   if (boardFilter.tag) {
     const look = tagLook(boardFilter.tag);
-    kids.push(h("button", { type: "button", class: `filter-chip tag-active${look.style ? " hued" : ""}`, style: look.style, "aria-pressed": "true", title: `Show every task again, not only those tagged ${boardFilter.tag}`, onclick: () => setTagFilter("") },
-      `Tag: ${boardFilter.tag}`, h("span", { class: "x", "aria-hidden": "true" }, "×")));
-  } else if (counts.size) {
-    const list = [...counts.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
-    kids.push(h("select", { class: "tag-filter-pick", "aria-label": "Filter by tag", onchange: (e) => setTagFilter(e.target.value) },
-      h("option", { value: "" }, "Filter by tag"),
-      ...list.map((x) => h("option", { value: x.name }, `${x.name} (${x.n})`))));
+    kids.push(h("button", { type: "button", class: `filter-chip tag-active${look.style ? " hued" : ""}`, style: look.style, "aria-pressed": "true", "aria-label": `Tag ${boardFilter.tag}: show every task`, onclick: () => setTagFilter("") },
+      ico("tag"), boardFilter.tag, h("span", { class: "x", "aria-hidden": "true" }, "×")));
+  } else {
+    const list = projectTags();
+    if (list.length) {
+      kids.push(h("button", {
+        type: "button", class: "filter-chip tag-filter-pick", "aria-haspopup": "menu", "aria-expanded": "false",
+        onclick: (e) => popMenu(e.currentTarget, [list.map((x) => ["tag", x.name, () => setTagFilter(x.name), { note: String(x.n) }])], { heading: "Tag" }),
+      }, ico("tag"), "Tag", ico("down")));
+    }
   }
   el.replaceChildren(...kids);
   el.hidden = !kids.length;
   return !el.hidden;
+}
+
+// projectTags are the project's tags, each once whatever its case, with how
+// many tasks have it: the most used first.
+function projectTags() {
+  const counts = new Map();
+  for (const t of state.todos.values()) for (const x of t.tags || []) {
+    const k = x.toLowerCase();
+    counts.set(k, { name: counts.get(k)?.name || x, n: (counts.get(k)?.n || 0) + 1 });
+  }
+  return [...counts.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
 }
 
 // sevText is a severity chip's words: the severity, and how many times
@@ -295,13 +318,7 @@ export function tagInput(el, { tags, save }) {
 
 // tagOptions fills the suggestions with the project's tags, the most used first.
 function tagOptions() {
-  const counts = new Map();
-  for (const t of state.todos.values()) for (const x of t.tags || []) {
-    const k = x.toLowerCase();
-    counts.set(k, { name: counts.get(k)?.name || x, n: (counts.get(k)?.n || 0) + 1 });
-  }
-  const list = [...counts.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
-  $("#task-tag-options").replaceChildren(...list.map((x) => h("option", { value: x.name })));
+  $("#task-tag-options").replaceChildren(...projectTags().map((x) => h("option", { value: x.name })));
 }
 
 // tagChips is a read-only chip per tag, as the tag input shows them.

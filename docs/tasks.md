@@ -56,6 +56,22 @@ model, tags, dependencies, the task it builds on and attachments.
   own. Edit, remove or add to them, then save them all, each one waiting for the tasks it builds
   on.
 
+## The board
+
+The board's columns follow a task: *Drafts*, *Queued*, *Running*, *Review*, *Merging* and
+*Merged*. On a phone it shows one column at a time; tap a tab or swipe sideways for the next.
+
+- **New task** is at the top right of the board. On a phone it is the **+** button.
+- The magnifier at the top searches the cards' titles and instructions as you type.
+  <kbd>Esc</kbd> clears it.
+- The filters show beside it once there is something to filter: **Mine**, **From scans (N)** and
+  **Tag**, a list of the project's tags.
+- The **–** button in a column's head minimizes the column to a thin strip. Click the strip to
+  open it again.
+- Click a card to open the task in a pane beside the board. The card stays marked; click another
+  card to switch. <kbd>Esc</kbd> closes the pane. On a phone the task opens full screen, with
+  **Back**.
+
 ## Tags
 
 A task can have tags: short labels such as `backend` or `docs`. They show as chips on the card
@@ -64,8 +80,8 @@ severity tags (`critical`, `high`, …) have their severity's colour. Set them u
 the task form, or with `#tag` in **New task**; edit them under **Tags** in the task. Type a tag
 and press <kbd>Enter</kbd> or a comma to add it; <kbd>Backspace</kbd> in the empty box takes the
 last one off. The project's other tags are offered as you type. A task has at most 20 tags, each
-at most 40 characters. Click a tag on a card to show only tasks with that tag; remove the filter with
-its chip above the board.
+at most 40 characters. Click a tag on a card, or pick one under **Tag** above the board, to show
+only tasks with that tag; click its chip above the board to show every task again.
 
 ## Drafts from reported problems
 
@@ -80,7 +96,7 @@ its severity and its source (`scan:<scan name>` or `reported`).
   **Scans → Dismissed** to undo it.
 - A problem that comes back after its task was merged gets a new draft that names that task.
 - Drafts from scans below `high` severity show only under the **From scans (N)** chip, which
-  shows only the tasks scans added. **Scans…** beside it opens the scans.
+  shows only the tasks scans added. **⋮ → Scans…** opens the scans.
 - To combine drafts into one, pick two or more and click **Combine**. See [Queue it](#queue-it)
   for how to pick drafts.
 

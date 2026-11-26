@@ -58,10 +58,15 @@ func TestBrowserFindingDrafts(t *testing.T) {
 	scanFilter(false, fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardSel(plain.ID), cardSel(low1)))
 
 	// A tag on a card filters the Board by it.
-	b.until("filter by backend", fmt.Sprintf(`!document.querySelector(%q) && !!document.querySelector(%q) && /Tag: backend/.test(document.querySelector("#tag-filter .tag-active.hued")?.textContent)`, cardSel(high), cardSel(plain.ID)),
+	b.until("filter by backend", fmt.Sprintf(`!document.querySelector(%q) && !!document.querySelector(%q) && /backend/.test(document.querySelector("#tag-filter .tag-active.hued")?.textContent)`, cardSel(high), cardSel(plain.ID)),
 		chromedp.Click(chromedp.CSS(cardSel(plain.ID)+` .todo-tags .tag-chip`)))
 	b.until("clear the tag filter", fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector("#tag-filter .tag-active")`, cardSel(high)),
 		chromedp.Click(chromedp.CSS(`#tag-filter .tag-active`)))
+	// Tag, in the filters, is a menu of the project's tags.
+	b.until("open Tag", `[...document.querySelectorAll(".pop-menu [role=menuitem]")].some((e) => e.textContent.startsWith("backend"))`,
+		chromedp.Click(chromedp.CSS(`#tag-filter .tag-filter-pick`)))
+	b.clickTextUntil(".pop-menu [role=menuitem] .menu-label", "backend", fmt.Sprintf(`!document.querySelector(%q) && !!document.querySelector("#tag-filter .tag-active")`, cardSel(high)))
+	b.until("clear it again", `!document.querySelector("#tag-filter .tag-active")`, chromedp.Click(chromedp.CSS(`#tag-filter .tag-active`)))
 
 	// Pick two drafts and merge them. Cards glide to new places as the
 	// Board redraws: clicks wait for them to settle.

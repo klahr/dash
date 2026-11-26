@@ -75,9 +75,10 @@ export function openTodoForm(t = null, { pick = false } = {}) {
   (t ? f.prompt : f.title).focus();
 }
 $("#new-todo").addEventListener("click", () => openQuickAdd());
-// Toasts sit to the left of the FAB; track its width (0 while hidden) so they never overlap it.
+// New task floats on a phone (on a desktop it is in the board's header): toasts sit to
+// the left of it there; track its width (0 while hidden or not floating) so they never overlap it.
 new ResizeObserver(([e]) => {
-  const w = e.target.offsetWidth;
+  const w = getComputedStyle(e.target).position === "fixed" ? e.target.offsetWidth : 0;
   document.documentElement.style.setProperty("--fab-space", w ? `${w + 12}px` : "0px");
 }).observe($("#new-todo"));
 

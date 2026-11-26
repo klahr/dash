@@ -120,8 +120,8 @@ export async function selectProject(p, { follow = true, restore = follow } = {})
   loadTry().catch(() => {});
   // After the resets: a view shown here loads its own data for p (nav.js),
   // so History and Files aren't loaded twice below. (Goals are: a caller
-  // may open a goal once this returns. Scans are, for the Board's Scans…
-  // and its count of scans running.)
+  // may open a goal once this returns. Scans are, for the Board's
+  // From scans.)
   let view = restore && state.view !== "planning" ? projectView(p) : null;
   if (view === state.view) view = null;
   if (view) showView(view, { now: true });

@@ -27,13 +27,34 @@ import { changed, linkTo } from "./routes.js";
 import { dismissNote, renderDetailTags, renderFinding } from "./tags.js";
 
 // ------------------------------------------------------------------ detail
-// The panel is modal (a scrim on desktop, full screen on phones): the rest of the
-// app is inert while it is open, and closing it returns focus to what opened it.
+// On a desktop's Board the panel lies beside the board, as a list's detail
+// pane does (.detail-beside): the board narrows to keep the card opened in
+// sight, marked as selected, and another card swaps the pane. Elsewhere (over
+// another page) it is modal, with a scrim, and on a phone full screen: the
+// rest of the app is inert while it is open. Closing it returns focus to what
+// opened it.
 let detailOpener = null;
 // A toast's action that opens a task.
 export const openTodo = (id) => ({ label: "Open", run: () => openDetail(id) });
 export const detailBackground = () => [".topbar", ".sidebar", ".nav", "main", "#chat-pane"].map((s) => $(s)).filter(Boolean);
 const setDetailModal = (on) => detailBackground().forEach((el) => { el.inert = on; });
+
+// syncDetailMode lays the open panel out for where it is: beside the board or
+// modal. nav.js calls it on every view change, and it runs on crossing the
+// desktop breakpoint.
+export function syncDetailMode() {
+  const open = !!state.detail;
+  const beside = open && desktop.matches && state.view === "board";
+  $(".app").classList.toggle("detail-beside", beside);
+  setDetailModal(open && !beside);
+  $("#scrim").hidden = !open || !desktop.matches || beside;
+  if (beside) requestAnimationFrame(showSelectedCard);
+}
+
+// showSelectedCard scrolls the board to the opened card, once it has narrowed.
+function showSelectedCard() {
+  $(".todo.selected")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
 
 // pane: "diff" opens it on the changes (the card's Review chip) instead of the timeline.
 export async function openDetail(id, { pane = "timeline" } = {}) {
@@ -41,7 +62,6 @@ export async function openDetail(id, { pane = "timeline" } = {}) {
   // Opening another task from inside the panel keeps the original opener.
   const a = document.activeElement;
   if (a && a !== document.body && !$("#detail").contains(a)) detailOpener = a;
-  setDetailModal(true);
   if (state.detail !== id) hidePreview();
   state.detail = id;
   // On a desktop the task's running preview opens beside it.
@@ -50,7 +70,7 @@ export async function openDetail(id, { pane = "timeline" } = {}) {
   state.diff = "";
   state.diffOpen = new Set();
   $("#detail").hidden = false;
-  $("#scrim").hidden = !desktop.matches;
+  syncDetailMode();
   renderDetail();
   // On a phone, focus in the composer would raise the keyboard and hide the
   // action bar (Approve, Close…): focus Back there instead.
@@ -58,6 +78,8 @@ export async function openDetail(id, { pane = "timeline" } = {}) {
   else $("#d-diff")?.focus({ preventScroll: true });
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
   $(`.todo[data-id="${id}"]`)?.classList.add("selected");
+  $$(".todo[aria-current]").forEach((e) => e.removeAttribute("aria-current"));
+  $(`.todo[data-id="${id}"]`)?.setAttribute("aria-current", "true");
   changed("push");
   await Promise.all([loadDiff(), loadTodoChat()]).catch(fail);
 }
@@ -72,7 +94,8 @@ export function closeDetail() {
   const hide = () => { if (!state.detail) { $("#detail").hidden = true; $("#scrim").hidden = true; } };
   if (wasOpen) leave($("#detail"), "closing", hide); else hide();
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
-  setDetailModal(false);
+  $$(".todo[aria-current]").forEach((e) => e.removeAttribute("aria-current"));
+  syncDetailMode();
   const opener = detailOpener;
   detailOpener = null;
   // Only take focus back if it was in the panel (or lost); a close caused by
@@ -89,7 +112,7 @@ export const taskLink = (id) => linkTo({ view: "board", task: id }, state.projec
 $("#d-link").addEventListener("click", () => { if (state.detail) copy(taskLink(state.detail), "Link copied"); });
 $("#scrim").addEventListener("click", closeDetail);
 // Inline editing (desktop) and the phone's task form differ: redraw on crossing the breakpoint.
-desktop.addEventListener("change", () => { if (state.detail) renderDetail(); });
+desktop.addEventListener("change", () => { if (state.detail) { syncDetailMode(); renderDetail(); } });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !state.detail || document.querySelector("dialog[open]")) return;
   if (pv.todo && !desktop.matches) hidePreview(); // a phone's full-screen preview first

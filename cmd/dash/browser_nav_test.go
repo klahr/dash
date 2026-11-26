@@ -52,8 +52,10 @@ func TestBrowserNavigation(t *testing.T) {
 	b.waitJS("the Scans sheet over the board", `document.querySelector("#scans-sheet").open && document.querySelector("#view-board.active")
 		&& location.pathname === "/p/`+pid+`/board" && new URLSearchParams(location.search).get("sheet") === "scans"`)
 	b.until("close it", `!document.querySelector("#scans-sheet").open && !new URLSearchParams(location.search).has("sheet")`, chromedp.KeyEvent(kb.Escape))
-	b.waitJS("From scans and Scans… on the board", `document.querySelector("#board-filters:not([hidden]) .scan-filter") && document.querySelector(".scans-open")`)
-	b.until("Scans… opens the sheet", `document.querySelector("#scans-sheet").open`, chromedp.Click(chromedp.CSS(`.scans-open`)))
+	// Scans… is in the project's ⋮ menu, not among the board's filters, which
+	// show From scans only once scans added drafts.
+	b.waitJS("no Scans… or From scans on the board", `!document.querySelector("#board .scans-open, #board-head .scans-open, #tag-filter .scan-filter")`)
+	b.topMenu("pm-scans", `document.querySelector("#scans-sheet").open`)
 	// Closing the sheet goes Back (router.js) a moment later; navigating before
 	// that lands has Chrome abort the load (net::ERR_ABORTED).
 	b.until("close it", `!document.querySelector("#scans-sheet").open && !new URLSearchParams(location.search).has("sheet")`, chromedp.KeyEvent(kb.Escape))

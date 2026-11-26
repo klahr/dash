@@ -313,9 +313,10 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .lane-tab::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); opacity: .9; }
 .lane-tab[aria-selected="true"] { background: var(--surface); border-color: var(--line); color: var(--text); }
 .lane-tab[aria-selected="true"] .n { color: var(--muted); }
-.lane-chips { display: none; }
 
-.board { padding: 8px 0 96px; }
+/* Room below the last card for the floating New task button (56px, 16px above the nav), so
+   nothing is ever left under it. */
+.board { padding: 8px 0 calc(56px + 16px + 24px); }
 /* One lane at a time: the board fills the screen down to the nav, so a
    swipe to the next lane works below a short lane's last card too.
    The next lane slides in from the right (app/branches.js); clipped, so it
@@ -332,7 +333,7 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 }
 .col { display: none; }
 .col.active { display: block; }
-.col-head { display: none; }
+.col-head, .col-strip { display: none; }
 .col-empty { padding: 36px 24px; text-align: center; color: var(--muted); }
 
 /* A lane's cards: a plain list, one card per task. */
@@ -373,11 +374,32 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .goal-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--goal); }
 @media (pointer: coarse) { .goal-chip { min-height: 32px; padding: 0 12px; } }
 #d-meta .goal-chip { margin-top: 0; }
-/* The board's filters (app/branches.js): Mine, in an org of several, and the goal its tasks
-   are filtered to, which a press clears. */
-.board-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 6px var(--pad-x); border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--fs-s); }
+/* The board's header (index.html: #board-head): one row. On a phone the lane tabs, then
+   search; the filters below them only while there is something to filter. On a desktop the
+   filters, then search and New task at the right. */
+.board-head {
+  position: sticky; top: var(--top-h); z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px;
+  background: var(--bg); border-bottom: 1px solid var(--line); padding-right: 8px;
+}
+.board-head .lanes { position: static; flex: 1; border: 0; min-width: 0; }
+/* The filters (app/branches.js): Mine, in an org of several, the goal its tasks are
+   filtered to (a press clears it), From scans and the tag filter (app/tags.js). One row,
+   scrolling sideways when it doesn't fit. */
+.board-filters {
+  order: 3; flex: 1 0 100%; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 var(--pad-x) 8px;
+  overflow-x: auto; scrollbar-width: none; color: var(--muted); font-size: var(--fs-s); white-space: nowrap;
+}
+.board-filters::-webkit-scrollbar { display: none; }
 .board-filters[hidden], .goal-filter[hidden], .mine-filter[hidden] { display: none; }
-.goal-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
+/* Search: the magnifier; open (or holding text), the field beside it. On a phone the open
+   field takes the row above the tabs. */
+.board-search { display: flex; align-items: center; gap: 4px; min-width: 0; flex: none; }
+.board-search input { width: 100%; min-width: 0; height: 34px; padding: 0 10px; font-size: var(--fs-in); }
+.board-search input[hidden] { display: none; }
+.board-head.searching .board-search { order: -1; flex: 1 0 100%; padding: 8px 0 0 var(--pad-x); }
+.board-head.searching .board-search input { flex: 1; }
+.board-search:has(input:not(:placeholder-shown)) .icon-btn { color: var(--accent); }
+.goal-filter { display: flex; align-items: center; gap: 6px 10px; min-width: 0; }
 .goal-filter .goal-chip { margin-top: 0; min-width: 0; }
 .mine-filter {
   display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px 0 4px;
@@ -1977,8 +1999,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .cl-title.page-title { font-family: var(--ui); font-size: var(--fs-xl); letter-spacing: -.01em; }
 
 /* ---------- small helpers ---------- */
-.board-tools { position: sticky; top: var(--top-h); z-index: 10; display: flex; align-items: center; background: var(--bg); border-bottom: 1px solid var(--line); padding-right: 8px; }
-.board-tools .lanes { position: static; flex: 1; border: 0; min-width: 0; }
 .diffsize, .token-tag { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .push-done { display: block; width: calc(100% - 32px); margin: 8px 16px; }
 .older { display: flex; margin: 4px 16px 16px; min-height: 36px; font-size: var(--fs-m); }
@@ -2003,7 +2023,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .comment-actions .btn { min-height: 38px; }
 @media (min-width: 1024px) {
   #view-board.active { position: relative; }
-  .board-tools { display: none; }
 }
 
 /* ---------- motion ---------- */
@@ -2488,11 +2507,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .topbar { grid-area: top; position: static; padding: 0 12px 0 22px; gap: 12px; background: var(--surface); backdrop-filter: none; }
   .brand { width: calc(var(--side-w) - 80px); flex: none; }
   .project-picker { flex: 0 1 auto; }
-  .lane-chips { display: flex; gap: 6px; min-width: 0; margin-right: auto; overflow-x: auto; scrollbar-width: none; }
-  .lane-chips::-webkit-scrollbar { display: none; }
-  .app:has(#view-board:not(.active)) .lane-chips { visibility: hidden; }
-  .lane-chip { min-height: 32px; background: var(--bg); border-color: var(--line); }
-  .lane-chip:hover { color: var(--text); background: var(--raised); }
+  .topbar .status-btn { margin-left: auto; }
   .project-switch { min-height: 36px; }
   /* The brand already names the active project; the switch only shows its computer, if any. */
   .topbar:has(.brand.is-project) .project-switch .project-name { display: none; }
@@ -2589,6 +2604,12 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 
   .lanes { display: none; }
   #view-board.active { display: flex; flex-direction: column; overflow: hidden; }
+  /* The header: the filters, then search and New task at the right. */
+  .board-head { position: static; flex-wrap: nowrap; gap: 8px; min-height: 52px; padding: 8px 16px; }
+  .board-filters { order: 0; flex: 0 1 auto; padding: 0; }
+  .board-head.searching .board-search { order: 0; flex: 0 1 260px; padding: 0; margin-left: auto; }
+  .board-search { margin-left: auto; }
+  .board-search .icon-btn { width: 36px; height: 36px; }
   .board {
     flex: 1; display: flex; gap: 0; overflow-x: auto; padding: 0;
   }
@@ -2607,12 +2628,23 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .col-head { display: flex; align-items: center; gap: 8px; padding: 18px 16px 10px; font-weight: 600; position: sticky; top: 0; background: var(--bg); z-index: 2; }
   .col-head::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
   .col-head .n { color: var(--faint); font-weight: 500; font-variant-numeric: tabular-nums; }
-  .col-toggle { width: 28px; height: 28px; margin: -6px -8px -6px auto; opacity: 0; }
-  .col-head:hover .col-toggle, .col-toggle:focus-visible { opacity: 1; }
+  /* Minimize: quiet until the head is pointed at, never invisible (touch has no hover). */
+  .col-toggle { width: 28px; height: 28px; margin: -6px -8px -6px auto; color: var(--faint); opacity: .55; }
+  .col-head:hover .col-toggle, .col-toggle:focus-visible { opacity: 1; color: var(--muted); }
   .col-toggle .ico { width: 16px; height: 16px; }
-  .col.collapsed { display: none; }
+  /* A minimized column: a thin strip in its place, its name down it, that expands on a click. */
+  .col.collapsed { flex: none; min-width: 0; width: 40px; }
+  .col.collapsed > :not(.col-strip) { display: none; }
+  .col.collapsed > .col-strip {
+    display: flex; flex-direction: column; align-items: center; gap: 10px; flex: 1; width: 100%; padding: 18px 0;
+    color: var(--muted); font-weight: 600; cursor: pointer;
+  }
+  .col-strip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+  .col-strip:hover, .col-strip:focus-visible { background: var(--surface); color: var(--text); }
+  .col-strip .col-label { writing-mode: vertical-rl; white-space: nowrap; }
+  .col-strip .n { color: var(--faint); font-weight: 500; font-variant-numeric: tabular-nums; }
   .col.cursor .col-head { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
-  .col-body { flex: 1; overflow-y: auto; padding-bottom: 96px; }
+  .col-body { flex: 1; overflow-y: auto; padding-bottom: 32px; }
   .col-empty { padding: 20px 16px; text-align: left; font-size: var(--fs-m); color: var(--faint); }
   /* minmax(0, …) and wrapping keep a card inside its column: tags and actions wrap
      instead of running out under the next column. */
@@ -2620,8 +2652,18 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .todo-side { grid-column: 1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0; min-width: 0; }
   .todo-side .card-actions { flex-wrap: wrap; margin-top: 0; }
   .todo-side:empty { display: none; }
-  .fab { right: 28px; bottom: 28px; width: auto; padding: 0 20px 0 16px; }
+  /* New task: a button in the board's header, not floating over the cards. */
+  .fab { position: static; flex: none; width: auto; height: 36px; padding: 0 14px 0 10px; border-radius: var(--r-m); box-shadow: none; font-weight: 600; }
+  .fab svg { width: 18px; height: 18px; }
   .fab > span { display: inline; }
+  .fab:hover { transform: none; box-shadow: none; }
+  /* A task's pane on the board lies beside it (app/detail.js: .detail-beside), not over it:
+     the board keeps to the room left of it, the card opened marked and in sight. */
+  .app { --detail-beside-w: clamp(420px, 42vw, 680px); }
+  .app.detail-beside #detail:not(.previewing) { width: var(--detail-beside-w); box-shadow: none; }
+  .app.detail-beside #view-board { margin-right: var(--detail-beside-w); }
+  /* With its preview, the pane is wide: it lies over the board instead. */
+  .app.detail-beside:has(#detail.previewing) #view-board { margin-right: 0; }
   /* Chat pane: overlays the right edge, or (pinned, wide screens) a column of .app. */
   .app { --chat-pane-w: min(var(--chat-w, min(440px, 36vw)), 100vw - var(--side-w) - 240px); }
   .chat-pane {
@@ -2729,7 +2771,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
      heads (board tools, column heads, z ≤ 10) but under the FAB, hover card,
      scrim, detail sheet, status line, menus and toasts. */
   .chat-pinned .chat-pane { grid-area: chat; position: relative; inset: auto; z-index: 15; width: auto; min-height: 0; animation: none; }
-  .chat-pinned.chat-open .fab { right: calc(var(--chat-pane-w) + 28px); }
   .chat-pinned.chat-open .toasts { right: calc(var(--chat-pane-w) + 28px + var(--fab-space, 0px)); }
   .chat-pinned.chat-open :is(.detail, .statusline) { right: var(--chat-pane-w); }
 }
@@ -3426,7 +3467,7 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .combine-bar[hidden] { display: none; }
 .combine-count { font-weight: 600; white-space: nowrap; }
 .combine-bar .link { white-space: nowrap; }
-.picking .fab { display: none; }
+@media (max-width: 1023px) { .picking .fab { display: none; } }
 /* Scans → Dismissed: issues whose drafts were deleted, each with Undo. */
 .scan-dismissed { margin-top: 24px; }
 .scan-dismissed[hidden] { display: none; }

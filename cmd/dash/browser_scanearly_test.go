@@ -57,8 +57,7 @@ func TestBrowserScanEarly(t *testing.T) {
 	}
 
 	b.do("a wide screen", chromedp.EmulateViewport(1280, 900))
-	b.until("open the scans", `document.querySelector("#scans-sheet").open`,
-		chromedp.Click(chromedp.CSS(`.scans-open`)))
+	b.topMenu("pm-scans", `document.querySelector("#scans-sheet").open`)
 	b.until("open the security scan's details", `!!document.querySelector('`+card("security")+` .scan-early')`,
 		chromedp.Click(chromedp.CSS(card("security")+` .scan-more`)))
 	b.until("open breaking changes' details", `!!document.querySelector('`+card("breaking-changes")+` .scan-early')`,

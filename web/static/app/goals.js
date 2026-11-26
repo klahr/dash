@@ -594,16 +594,13 @@ export function goalChip(t, cls = "") {
   }, h("span", { class: "goal-dot", "aria-hidden": "true" }), h("span", { class: "goal-name" }, name));
 }
 
-// The chip at the top of the board while it shows one goal's tasks: the
-// goal, how many of its tasks the board has, and a press clears it.
+// The chip in the board's filters while it shows one goal's tasks: the
+// goal, and a press clears it.
 export function renderGoalFilter() {
   const el = $("#goal-filter"), id = state.goalFilter;
   el.hidden = !id;
   if (!id) { el.replaceChildren(); return; }
-  const n = [...state.todos.values()].filter((t) => t.goal_id === id).length;
   el.replaceChildren(
-    h("span", { class: "goal-filter-label" }, "Showing goal"),
-    h("button", { type: "button", class: "goal-chip on", style: hue(id), title: "Show every task", "aria-label": `Goal ${goalName(id)}: show every task`, onclick: () => filterGoal(null) },
-      h("span", { class: "goal-dot", "aria-hidden": "true" }), h("span", { class: "goal-name" }, goalName(id)), ico("x")),
-    h("span", { class: "goal-filter-n" }, plural(n, "task")));
+    h("button", { type: "button", class: "goal-chip on", style: hue(id), "aria-label": `Goal ${goalName(id)}: show every task`, onclick: () => filterGoal(null) },
+      h("span", { class: "goal-dot", "aria-hidden": "true" }), h("span", { class: "goal-name" }, goalName(id)), ico("x")));
 }

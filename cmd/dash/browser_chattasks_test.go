@@ -93,13 +93,13 @@ func TestBrowserChatDraftCards(t *testing.T) {
 	phone.waitJS("the task opened", `document.querySelector("#detail")?.textContent.includes("Fix login redirect")`)
 
 	// Open on a laptop, the chat overlaid (1600px unpinned, 1100px pinned): the
-	// task panel is modal, so it shows over the chat (inert, behind the scrim)
+	// task panel shows over the chat (beside the board, the chat drawn under it)
 	// and takes the clicks there. Esc closes it and brings the chat back on top.
 	overChat := func(sel string) string {
 		return `(() => { const r = document.querySelector("#chat-pane").getBoundingClientRect();
 			return !!document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest(` + fmt.Sprintf("%q", sel) + `); })()`
 	}
-	// elementFromPoint skips the inert chat, so also check that it is drawn under the scrim.
+	// Also check that the chat is drawn under the panel's layer (the scrim's, when it is modal).
 	const chatUnderScrim = `+getComputedStyle(document.querySelector("#chat-pane")).zIndex < +getComputedStyle(document.querySelector("#scrim")).zIndex`
 	for _, size := range []struct {
 		w      int64

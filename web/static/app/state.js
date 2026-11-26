@@ -3,12 +3,12 @@ import * as store from "./store.js";
 
 // ------------------------------------------------------------------ state
 export const LANES = [
-  { key: "draft", label: "Drafts", statuses: ["draft"], empty: "Drafts wait here until you queue them." },
-  { key: "queued", label: "Queued", statuses: ["queued"], empty: "Nothing waiting. New tasks start here." },
-  { key: "in_progress", label: "Running", statuses: ["in_progress"], empty: "No agents working right now." },
-  { key: "review", label: "Review", statuses: ["review", "failed"], empty: "Nothing to review. Finished and failed work lands here." },
-  { key: "merging", label: "Merging", statuses: ["merging"], empty: "The merge queue is clear." },
-  { key: "done", label: "Merged", statuses: ["merged"], empty: "Merged tasks show up here." },
+  { key: "draft", label: "Drafts", statuses: ["draft"] },
+  { key: "queued", label: "Queued", statuses: ["queued"] },
+  { key: "in_progress", label: "Running", statuses: ["in_progress"] },
+  { key: "review", label: "Review", statuses: ["review", "failed"] },
+  { key: "merging", label: "Merging", statuses: ["merging"] },
+  { key: "done", label: "Merged", statuses: ["merged"] },
 ];
 export const STATUS_LABEL = { draft: "Draft", queued: "Queued", in_progress: "Running", review: "Ready for review", merging: "Merging", merged: "Merged", failed: "Failed" };
 // statusLabel is task t's status in words: one closed without changes is

@@ -15,6 +15,7 @@ import { closeDeploy, loadDeploys } from "./deploys.js";
 import { closeCard, planningShown } from "./planning.js";
 import { changed, initial } from "./routes.js";
 import { boardSeen } from "./branches.js";
+import { closeDetail, syncDetailMode } from "./detail.js";
 import { projectKey } from "./events.js";
 
 // ------------------------------------------------------------------ navigation
@@ -83,6 +84,7 @@ function rememberView(name) {
 }
 
 function applyView(name) {
+  const prev = state.view;
   state.view = name;
   store.set("dash.view", name);
   rememberView(name);
@@ -104,6 +106,9 @@ function applyView(name) {
   if (name === "files" && state.project) loadFiles().catch(fail); // at startup the project (and the files code below) isn't ready yet
   if (name === "try") requestAnimationFrame(() => enterTry().catch(fail));
   else leaveTry();
+  // A task's pane goes with the page it was opened on; on the Board it lies beside the board.
+  if (state.detail && prev !== name && name !== "board") closeDetail();
+  else if (state.detail) syncDetailMode();
   renderTryBack();
   changed("push");
 }

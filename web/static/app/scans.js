@@ -1,4 +1,4 @@
-import { $, $$, dateTimeText, h, ib, ico, plural, setModelField } from "./dom.js";
+import { $, dateTimeText, h, ib, ico, plural, setModelField } from "./dom.js";
 import { api, here, on } from "./api.js";
 import { ask, attempt, copy, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -16,10 +16,10 @@ import { pickDrafts, worstSeverity } from "./tags.js";
 // Preconfigured, read-only reviews of the project (security, code review,
 // dependency audit, dead code, duplication and complexity, or the team's own templates in .dash/scans/) that run on
 // demand or on a schedule and add what they find to the Board as draft
-// tasks (a finding a task already has bumps that task instead). Scans live
-// on the Board: its From scans filter shows what they added, and Scans…
-// beside it (also the project menu, gn, and Scans' old page's address)
-// opens the Scans sheet, where they are run and set up.
+// tasks (a finding a task already has bumps that task instead). The Board's
+// From scans filter shows what they added; Scans… in the project's ⋮ menu
+// (also gn, and Scans' old page's address) opens the Scans sheet, where they
+// are run and set up.
 export const SCAN_KINDS = {
   security: "Security", code_review: "Code review", dependencies: "Dependencies", tests: "Tests", docs: "Docs",
   performance: "Performance", dead_code: "Dead code", flaky_tests: "Flaky tests", accessibility: "Accessibility",
@@ -203,20 +203,6 @@ function describeCron(expr) {
   return expr;
 }
 
-// scansRunning is how many of the project's scans run now.
-export const scansRunning = () => scans.list.filter((s) => s.running).length;
-
-// renderScanBadge shows how many scans run on the Board's Scans… (tags.js
-// draws it with the filters; this keeps it current between Board renders).
-function renderScanBadge() {
-  const n = scansRunning();
-  for (const b of $$(".scans-open .badge")) {
-    b.hidden = !n;
-    b.textContent = n;
-    b.title = `${plural(n, "scan")} running`;
-  }
-}
-
 // openScans opens the Scans sheet over the page, and reads the scans again.
 export async function openScans() {
   const d = $("#scans-sheet");
@@ -231,7 +217,6 @@ export async function openScans() {
 $("#pm-scans").addEventListener("click", attempt(() => openScans()));
 
 export function renderScans() {
-  renderScanBadge();
   const p = state.project;
   const intro = $("#scan-intro");
   intro.hidden = !p || !scans.loaded;

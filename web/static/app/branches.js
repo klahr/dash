@@ -26,7 +26,7 @@ import { chatPage } from "./nav.js";
 import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
 import { creator, mineOn, multiMember, myID, people, setMine } from "./people.js";
 import { isQuestion } from "./chatparts.js";
-import { onBoard, pickBox, picked, renderCombineBar, renderTagFilter, startPicking, tagRow } from "./tags.js";
+import { boardFilter, onBoard, pickBox, picked, renderCombineBar, renderTagFilter, setSearch, startPicking, tagRow } from "./tags.js";
 import { plainText } from "../markdown.js";
 import { servesProject } from "../groups.js";
 
@@ -241,8 +241,7 @@ function renderBoardNow() {
   if (!state.project || welcome || state.runners === undefined) {
     $("#board").replaceChildren();
     $("#lane-tabs").replaceChildren();
-    $("#lane-chips").replaceChildren();
-    $("#new-todo").hidden = true;
+    $("#board-head").hidden = true;
     $("#board-filters").hidden = true;
     $("#combine-bar").hidden = true;
     // Until the projects and runners are in, don't flash a welcome, a board
@@ -263,12 +262,14 @@ function renderBoardNow() {
     return;
   }
   empty.hidden = true;
-  $("#new-todo").hidden = false;
+  $("#board-head").hidden = false;
   renderRunnerStatus();
   renderGoalFilter();
   renderMineFilter();
   const tagged = renderTagFilter();
+  // The filters show only while there is something to filter.
   $("#board-filters").hidden = $("#goal-filter").hidden && $("#mine-filter").hidden && !tagged;
+  renderBoardSearch();
   renderCombineBar();
 
   // A task just added may already have moved on (a queued task picked up at
@@ -292,24 +293,22 @@ function renderBoardNow() {
     onclick: () => { state.lane = l.key; renderBoard(); },
   }, l.label, h("span", { class: "n" }, items[l.key].length))));
 
-  // Desktop: minimized columns leave the board and show as chips in the top bar.
-  $("#lane-chips").replaceChildren(...LANES.filter((l) => state.collapsed.has(l.key) && !laneHidden(l.key)).map((l) => h("button", {
-    type: "button", class: `lane-tab lane-chip s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key,
-    "data-count": items[l.key].length, title: `Expand ${l.label}`, onclick: () => toggleCollapsed(l.key),
-  }, l.label, h("span", { class: "n" }, items[l.key].length))));
-
+  // Desktop: a minimized column stays in its place as a thin strip with its
+  // name and count (.col-strip), which expands it again.
   $("#board").replaceChildren(...LANES.map((l, li) => h("section", {
     "data-lane": l.key, hidden: laneHidden(l.key),
     class: `col s-${l.key === "done" ? "merged" : l.key}${state.lane === l.key ? " active" : ""}${keys.active && keys.cur.lane === li ? " cursor" : ""}${state.collapsed.has(l.key) ? " collapsed" : ""}`, "aria-label": l.label,
   },
+    state.collapsed.has(l.key) ? h("button", {
+      type: "button", class: "col-strip", "aria-expanded": "false", "aria-label": `${l.label}, ${items[l.key].length}: expand`,
+      title: `Expand ${l.label}`, onclick: () => toggleCollapsed(l.key),
+    }, h("span", { class: "n" }, items[l.key].length), h("span", { class: "col-label" }, l.label)) : null,
     h("header", { class: "col-head" },
       h("span", { class: "col-label" }, l.label), h("span", { class: "n" }, items[l.key].length),
-      ib({ class: "icon-btn col-toggle", title: `Minimize ${l.label}`, onclick: () => toggleCollapsed(l.key) }, "minimize")),
+      ib({ class: "icon-btn col-toggle", title: `Minimize ${l.label}`, "aria-label": `Minimize ${l.label}`, onclick: () => toggleCollapsed(l.key) }, "minimize")),
     h("div", { class: "col-body" },
       l.key === "done" ? pushBar() : null,
-      items[l.key].length
-        ? h("ol", { class: "cards" }, items[l.key].map((t, ri) => h("li", {}, todoRow(t, li, ri))))
-        : h("p", { class: "col-empty" }, l.empty),
+      items[l.key].length ? h("ol", { class: "cards" }, items[l.key].map((t, ri) => h("li", {}, todoRow(t, li, ri)))) : null,
       l.key === "draft" ? selectBtn(items.draft) : null,
       l.key === "done" ? oldToggle() : null,
       l.key === "done" ? clearDoneBtn() : null))));
@@ -469,17 +468,65 @@ export function toggleMine(on = !mineOn()) {
   renderBoard();
 }
 
+// Shown while it can filter something: someone else made a task here (or it is on).
 function renderMineFilter() {
   const btn = $("#mine-filter");
-  btn.hidden = !multiMember() || !myID();
-  if (btn.hidden) return;
   const on = mineOn();
+  const others = [...state.todos.values()].some((t) => t.created_by && t.created_by !== myID());
+  btn.hidden = !multiMember() || !myID() || (!on && !others);
+  if (btn.hidden) return;
   btn.setAttribute("aria-pressed", String(on));
-  btn.title = on ? "Show everyone's tasks (:mine)" : "Show only the tasks you created (:mine)";
   const me = people.byId.get(myID()) || { id: myID(), username: state.me?.username, avatar: state.me?.user?.avatar };
   btn.replaceChildren(avatar(me), "Mine");
 }
 $("#mine-filter").addEventListener("click", () => toggleMine());
+
+// ------------------------------------------------------------------ search
+// The magnifier in the board's header opens a field that filters the cards by
+// their title and instructions as you type (onBoard in tags.js); Esc clears it.
+// It stays open while it holds text.
+const search = { open: false };
+
+function renderBoardSearch() {
+  const input = $("#board-search-input");
+  const q = boardFilter.q;
+  if (document.activeElement !== input && input.value !== q) input.value = q; // another project's was cleared
+  const open = search.open || !!q;
+  input.hidden = !open;
+  $("#board-head").classList.toggle("searching", open);
+  $("#board-search-open").setAttribute("aria-expanded", String(open));
+}
+
+function openBoardSearch() {
+  search.open = true;
+  renderBoardSearch();
+  $("#board-search-input").focus();
+}
+
+function closeBoardSearch() {
+  search.open = false;
+  $("#board-search-input").value = "";
+  setSearch("");
+}
+
+$("#board-search-open").addEventListener("click", () => {
+  if (search.open || boardFilter.q) closeBoardSearch();
+  else openBoardSearch();
+});
+$("#board-search-input").addEventListener("input", (e) => setSearch(e.target.value));
+$("#board-search-input").addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.isComposing) return;
+  e.preventDefault();
+  e.stopPropagation();
+  closeBoardSearch();
+  $("#board-search-open").focus();
+});
+// Left empty, it folds back to the magnifier.
+$("#board-search-input").addEventListener("blur", () => {
+  if (boardFilter.q || !search.open) return;
+  search.open = false;
+  renderBoardSearch();
+});
 // The people arrive after the board's first drawing: draw it again with them.
 people.onChange = () => { renderBoard(); if (state.detail) renderDetail(); };
 
@@ -791,7 +838,7 @@ export function todoRow(t, li = -1, ri = -1) {
   // else on the card opens the task too.
   return h("div", {
     class: `todo s-${t.status}${isPushed(t) ? " pushed" : ""}${t.reviewing ? " reviewing" : ""}${state.detail === t.id ? " selected" : ""}${atCursor ? " cursor" : ""}${picked.has(t.id) ? " picked" : ""}`,
-    "data-id": t.id,
+    "data-id": t.id, "aria-current": state.detail === t.id ? "true" : null,
     onclick: (e) => { if (!e.target.closest("a, button:not(.todo-open), label")) openDetail(t.id); },
   },
     h("span", { class: "todo-main" },

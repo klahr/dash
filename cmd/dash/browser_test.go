@@ -1526,8 +1526,7 @@ func TestBrowserCustomScan(t *testing.T) {
 		}
 	}
 
-	b.until("open the scans", `document.querySelector("#scans-sheet").open`,
-		chromedp.Click(chromedp.CSS(`.scans-open`)))
+	b.topMenu("pm-scans", `document.querySelector("#scans-sheet").open`)
 	b.waitJS("the create card after the list", `(() => {
 		const c = document.querySelector("#scan-create");
 		return !c.hidden && document.querySelector("#scan-list").children.length > 0 &&

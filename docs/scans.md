@@ -5,13 +5,12 @@ becomes a draft task on the project's Board. Run one with "Run now", or let it r
 checkout of the default branch. It never makes a branch, so nothing goes to review or the merge
 queue.
 
-Scans live on the **Board**:
+Scans add their findings to the **Board**:
 
 - **From scans (N)** above the board shows only the tasks scans added. Click it again to show
-  every task.
-- **Scans…** beside it opens the **Scans** sheet: each scan, **Run now**, its schedule and
-  settings, **Create custom scan…** and **Dismissed**. It is also in the project menu (**⋮ →
-  Scans…**), and `gn` opens it.
+  every task. It shows once scans have added drafts.
+- **⋮ → Scans…** in the top bar opens the **Scans** sheet: each scan, **Run now**, its schedule
+  and settings, **Create custom scan…** and **Dismissed**. `gn` opens it too.
 
 Scans come from three places, marked on each card:
 
