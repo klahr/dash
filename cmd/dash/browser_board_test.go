@@ -165,9 +165,20 @@ func TestBrowserBoardRiskyActions(t *testing.T) {
 	b.until("pick the other", `document.querySelector("#combine-bar .combine")?.textContent === "Combine"`,
 		chromedp.Click(chromedp.CSS(cardSel(d2.ID)+" .todo-pick input")))
 	shot(b, "board-combine")
+	// With a draft's pane open beside the board, the bar keeps clear of it:
+	// the pane lies over the viewport's right side, Combine's place if the
+	// bar were centred on the viewport.
+	b.openTask(d1.ID)
+	b.waitJS("Combine clear of the pane", `(() => {
+		const r = document.querySelector("#combine-bar .combine")?.getBoundingClientRect();
+		return !!r && document.querySelector("#combine-bar .combine").contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)) &&
+			r.right <= document.querySelector("#detail").getBoundingClientRect().left;
+	})()`)
 	b.do("combine them", chromedp.Click(chromedp.CSS(`#combine-bar .combine`)))
 	b.waitJS("one draft left", fmt.Sprintf(`!document.querySelector(%q) && !!document.querySelector(%q) && document.querySelector("#combine-bar").hidden`, cardSel(d2.ID), cardSel(d1.ID)))
 	b.waitJS("the toast", `[...document.querySelectorAll(".toast")].some((e) => e.textContent.includes("Combined 2 drafts"))`)
+	b.until("close the pane", `document.querySelector("#detail").hidden`, chromedp.Click(chromedp.CSS(`#d-close`)))
+	b.run("leave the card that had the pane", `document.activeElement?.blur(); true`)
 
 	// A draft's Queue shows only on hover; the bar queues what is picked.
 	b.waitJS("Queue hidden at rest", fmt.Sprintf(`getComputedStyle(document.querySelector(%q)).opacity === "0"`, cardSel(d1.ID)+" .draft-actions"))

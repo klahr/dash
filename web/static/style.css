@@ -2690,6 +2690,12 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .app { --detail-beside-w: clamp(420px, 42vw, 680px); }
   .app.detail-beside #detail:not(.previewing) { width: var(--detail-beside-w); box-shadow: none; }
   .app.detail-beside #view-board { margin-right: var(--detail-beside-w); }
+  /* The bar of picked drafts keeps to the board too: centred on the viewport, the
+     pane (over it, z-index 40) would hide its end, Combine with it. */
+  .app.detail-beside:not(:has(#detail.previewing)) .combine-bar {
+    left: calc((var(--side-w) + 100vw - var(--detail-beside-w)) / 2);
+    max-width: calc(100vw - var(--side-w) - var(--detail-beside-w) - 24px); flex-wrap: wrap;
+  }
   /* With its preview, the pane is wide: it lies over the board instead. */
   .app.detail-beside:has(#detail.previewing) #view-board { margin-right: 0; }
   /* Chat pane: overlays the right edge, or (pinned, wide screens) a column of .app. */
