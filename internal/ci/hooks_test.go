@@ -31,6 +31,9 @@ type fakeGH struct {
 	pings   int
 	deleted []int64
 	hookErr error // every hook call fails with it
+	// onPing, if set, is GitHub answering a ping of webhook id (called
+	// without mu held).
+	onPing func(id int64, secret string)
 	// sent are the secrets each project's runner was given (Create, Update).
 	sent map[string][]string
 }
@@ -112,11 +115,15 @@ func (f *fakeGH) DeleteHook(_ context.Context, _, _ string, id int64) error {
 	}
 	return f.hookErr
 }
-func (f *fakeGH) PingHook(context.Context, string, string, int64) error {
+func (f *fakeGH) PingHook(_ context.Context, _, _ string, id int64) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.pings++
-	return f.hookErr
+	err, onPing, secret := f.hookErr, f.onPing, f.secrets[id]
+	f.mu.Unlock()
+	if err == nil && onPing != nil {
+		onPing(id, secret)
+	}
+	return err
 }
 
 // newHookWatcher is a watcher of one GitHub project (o/r) with Hooks on,
@@ -360,15 +367,15 @@ func TestHookRegistration(t *testing.T) {
 	if !h.Active(p) {
 		t.Fatalf("after the ping: %+v", h.Status(p))
 	}
-	// Checking again adds nothing.
+	// Checking again adds nothing (the one ping is registration's).
 	h.Check(ctx)
-	if len(gh.hooks) != 1 || gh.pings != 0 {
+	if len(gh.hooks) != 1 || gh.pings != 1 {
 		t.Fatalf("again: %+v, %d pings", gh.hooks, gh.pings)
 	}
 	// Quiet for a while: pinged. Unanswered: not reachable.
 	*now = now.Add(hookPingAfter + time.Minute)
 	h.Check(ctx)
-	if gh.pings != 1 {
+	if gh.pings != 2 {
 		t.Fatalf("pings %d", gh.pings)
 	}
 	*now = now.Add(hookWaitFor + time.Minute)
@@ -392,6 +399,32 @@ func TestHookRegistration(t *testing.T) {
 	}
 	if _, err := h.Store.GitHubHook(0, "o/r"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("still saved: %v", err)
+	}
+}
+
+// TestHookRegistrationPingCounts: the ping after registering (a new webhook
+// or an updated one) is signed with the new secret, and Deliver knows it by
+// then, so the webhook works at once.
+func TestHookRegistrationPingCounts(t *testing.T) {
+	ctx := context.Background()
+	_, h, gh, p, _ := newHookWatcher(t)
+	var refused int
+	gh.onPing = func(_ int64, secret string) {
+		ping := []byte(`{"repository":{"full_name":"o/r"}}`)
+		if err := h.Deliver(0, "ping", sign(secret, ping), ping); err != nil {
+			refused++
+		}
+	}
+	h.Check(ctx)
+	if gh.pings != 1 || refused != 0 || !h.Active(p) {
+		t.Fatalf("new: %d pings, %d refused, %+v", gh.pings, refused, h.Status(p))
+	}
+	// Registered again (its saved state lost): updated, with a new secret,
+	// and pinged.
+	_ = h.Store.DeleteGitHubHook(0, "o/r")
+	h.Check(ctx)
+	if len(gh.hooks) != 1 || gh.pings != 2 || refused != 0 || !h.Active(p) {
+		t.Fatalf("updated: %+v, %d pings, %d refused, %+v", gh.hooks, gh.pings, refused, h.Status(p))
 	}
 }
 

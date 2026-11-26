@@ -17,6 +17,7 @@ func TestPutGitHubHookKeepsLaterDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { s.Close() })
 	t0 := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	rec := model.GitHubHook{OrgID: 1, Repo: "O/R", HookID: 7, Secret: "s", URL: "https://dash.example.com/hook",
 		State: "pending", Registered: t0, LastDelivery: t0.Add(time.Minute)}

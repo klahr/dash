@@ -345,6 +345,8 @@ func newHookSecret() string {
 // register registers (or updates) rec's webhook with the gh of the first
 // of ps, rec's org's projects, that can, and saves the outcome. Each
 // registration has a new secret: the one before it never goes to a runner.
+// Deliveries GitHub signs with the new secret before it is saved are
+// refused, so register pings the webhook once it is.
 func (h *Hooks) register(ctx context.Context, rec model.GitHubHook, ps []model.Project) {
 	rec.Secret = newHookSecret()
 	prevID := rec.HookID
@@ -361,6 +363,13 @@ func (h *Hooks) register(ctx context.Context, rec model.GitHubHook, ps []model.P
 			h.put(rec)
 			slog.Info("github webhook registered", "repo", rec.Repo, "hook", id, "url", rec.URL)
 			h.notify(rec.OrgID, rec.Repo)
+			// Ping it now that Deliver knows the new secret: GitHub's own ping
+			// of a new webhook (and an updated one's deliveries) may have come
+			// before it was saved, and been refused. Its answer counts from
+			// rec.Registered, so LastPing stays as it is.
+			if err := h.API.PingHook(ctx, p.ID, p.Path, id); err != nil {
+				slog.Debug("github webhook: ping", "repo", rec.Repo, "err", err)
+			}
 			return
 		}
 	}
@@ -385,7 +394,8 @@ func (h *Hooks) register(ctx context.Context, rec model.GitHubHook, ps []model.P
 // registerWith registers cfg with project p's gh: it updates the
 // repository's webhook that already delivers to cfg.URL (or is prevID, or
 // delivers to the URL of before webhooks were per org) instead of adding a
-// second one.
+// second one. It doesn't ping it: register does, once the new secret is
+// saved.
 func (h *Hooks) registerWith(ctx context.Context, p model.Project, prevID int64, cfg gitops.HookConfig) (int64, error) {
 	hooks, err := h.API.Hooks(ctx, p.ID, p.Path)
 	if err != nil {
@@ -395,10 +405,6 @@ func (h *Hooks) registerWith(ctx context.Context, p model.Project, prevID int64,
 		if x.URL == cfg.URL || x.URL == h.legacyURL() || (prevID != 0 && x.ID == prevID) {
 			if err := h.API.UpdateHook(ctx, p.ID, p.Path, x.ID, cfg); err != nil {
 				return 0, err
-			}
-			// GitHub pings only a new webhook: prove this one works too.
-			if err := h.API.PingHook(ctx, p.ID, p.Path, x.ID); err != nil {
-				slog.Debug("github webhook: ping", "repo", hookRepo(p), "err", err)
 			}
 			return x.ID, nil
 		}
