@@ -79,7 +79,9 @@ export async function loadProjects() {
     if (first && !next) { renderBoard(); resetGoals(); renderProcs(); renderFileTree(); renderFile(); loadTry().catch(() => {}); }
   }
   renderProjectList();
-  if (first) startRouter().catch(fail);
+  // Another project picked while selectProject loaded next: the router
+  // mustn't switch back to the one the URL names.
+  if (first) startRouter({ moved: projectKey(state.project) !== projectKey(next) }).catch(fail);
 }
 
 

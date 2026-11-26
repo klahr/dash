@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
 
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 )
@@ -141,4 +144,60 @@ true`, composer))
 	b.do("open a missing task's link", chromedp.Navigate(h.base+"/p/"+pid+"/tasks/nosuch"))
 	b.waitJS("the board, the task closed and a message", `document.querySelector("#view-board.active") && document.querySelector("#detail").hidden && document.querySelector("#toasts")?.textContent.includes("That task isn't here")`)
 	b.waitJS("the URL without it", path(board))
+}
+
+// holdFetch, run in the page before its scripts, holds each fetch whose URL
+// has sessionStorage's "e2e.hold" in it until e2eRelease(), counting them in
+// e2eHeld.
+const holdFetch = `(() => {
+	const real = window.fetch, held = [];
+	window.e2eHeld = 0;
+	window.e2eRelease = () => { sessionStorage.removeItem("e2e.hold"); held.splice(0).forEach((go) => go()); };
+	window.fetch = (input, init) => {
+		const hold = sessionStorage.getItem("e2e.hold");
+		if (hold && String(input?.url ?? input).includes(hold)) {
+			window.e2eHeld++;
+			return new Promise((go) => held.push(go)).then(() => real(input, init));
+		}
+		return real(input, init);
+	};
+})()`
+
+// A project picked while the page still loads the one its URL names stays
+// picked: the router, which starts once that load is done, doesn't switch
+// back to the URL's project, and a reload opens the one picked.
+func TestBrowserSwitchProjectWhileLoading(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	var web struct{ ID string }
+	h.api.must("POST", "/peer/laptop/api/projects", map[string]any{"name": "web"}, http.StatusCreated, &web)
+	b := newBrowser(t, chrome)
+	b.do("hold fetches on request", chromedp.Func(func(ctx context.Context, tg *chromedp.Target) error {
+		_, err := cdp.Call(ctx, tg, page.AddScriptToEvaluateOnNewDocument, page.AddScriptToEvaluateOnNewDocumentParams{Source: holdFetch})
+		return err
+	}))
+	b.signIn(h)
+	name := func(n string) string {
+		return fmt.Sprintf(`document.querySelector("#project-name")?.textContent === %q`, n)
+	}
+	b.waitJS("both projects", `document.querySelectorAll("#side-project-list .side-project").length === 2`)
+	b.clickTextUntil(`#side-project-list .side-project`, "web", name("web"))
+	b.waitJS("web's URL", `location.pathname.startsWith("/p/`+web.ID+`@laptop/")`)
+
+	// Reload with web's tasks held: the page's first load of web waits.
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`sessionStorage.setItem("e2e.hold", "/api/projects/`+web.ID+`/todos"); true`)); err != nil {
+		t.Fatal(err)
+	}
+	b.reload()
+	b.waitJS("web loading, its tasks held", name("web")+` && window.e2eHeld > 0`)
+	b.clickTextUntil(`#side-project-list .side-project`, "app", name("app"))
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`e2eRelease(); true`)); err != nil {
+		t.Fatal(err)
+	}
+	// The router writes the URL once it has started.
+	b.waitJS("app's URL", `location.pathname.startsWith("/p/`+h.project.ID+`/")`)
+	b.waitJS("still app", name("app"))
+	b.reload()
+	b.waitJS("app after a reload", name("app"))
 }

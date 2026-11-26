@@ -97,17 +97,20 @@ function flush() {
 // start applies the URL the page was opened at, once the first project list
 // is in (projects.js), and from then on keeps the URL current. A plain /
 // keeps the last view and project (localStorage) and shows their URL.
-export async function start() {
+// moved says the user picked another project while the page loaded: the
+// URL is out of date then, and applying it would switch back to its project.
+export async function start({ moved = false } = {}) {
   const s = R();
   if (s.ready || s.starting) return;
   s.starting = true;
+  const named = initial.named && !moved;
   const shut = { task: null, goal: null, sha: null, card: null, sheet: null, section: null };
   // A link to something open (a task, goal, commit, card, sheet): its page
   // without it goes under it, so Back (a phone's too) closes it in Dash.
   // Before it opens: a Back while it loads must not leave Dash.
   const p = initial.project ? findProject(state.projects, initial.project) : state.project;
   let pushed = false;
-  if (initial.named && (p || !initial.project)) {
+  if (named && (p || !initial.project)) {
     const under = href({ ...initial, ...shut }, p), url = href(initial, p);
     if (under !== url) {
       history.replaceState({ dash: 1 }, "", under);
@@ -116,7 +119,7 @@ export async function start() {
     }
   }
   try {
-    if (initial.named) await apply(initial, { startup: true });
+    if (named) await apply(initial, { startup: true });
   } catch (e) {
     fail(e);
   } finally {
