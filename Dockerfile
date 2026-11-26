@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
  && mkdir -p /out/data
 
 # CA certificates and time zones included; runs as nonroot (65532).
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 COPY --from=build /out/dash /usr/local/bin/dash
 # A new volume on /data takes this directory's owner, so Dash can write it.
 COPY --from=build --chown=65532:65532 /out/data /data
