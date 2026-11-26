@@ -152,6 +152,7 @@ async function loadProjectChat(p, force = false) {
   if (pc.chat.busy) pc.dirty = true; // a turn began meanwhile: load when it ends
   else if (!sameChat(pc.chat.history, saved || [])) pc.chat.reset(saved || []);
   renderRemote(pc);
+  renderChatHead(); // the clock, for past chats put aside on another device
 }
 // projectChatEvent: the user's own chat about ev's project (on computer m)
 // was saved or cleared, or a turn of it began or ended (ev.data.busy), on
