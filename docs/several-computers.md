@@ -222,8 +222,9 @@ whenever the runner connects running another version than the hub's, e.g. after 
 upgraded. It doesn't retry a release whose update failed or was cancelled.
 
 A hub built from source has no release to update to: there is no button, and nothing updates
-itself. `dash runner update [--version X]` on the runner's computer does the same download, checks
-and swap by hand (default: the hub's version), then restarts the service.
+itself. `dash runner update --version X` on the runner's computer does the same download, checks
+and swap by hand, then restarts the service. (With a hub running a release, `--version` can be
+left out; it defaults to the hub's version.)
 
 The install command works too. Run it again **without** `--code`:
 
