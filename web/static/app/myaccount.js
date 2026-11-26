@@ -93,7 +93,11 @@ export async function askPassword(title, body = "") {
   d.showModal();
   f.password.focus();
   return new Promise((resolve) => {
-    d.addEventListener("close", () => resolve(d.returnValue === "ok" ? f.password.value : null), { once: true });
+    d.addEventListener("close", () => {
+      const pw = f.password.value;
+      f.reset(); // don't leave it in the page
+      resolve(d.returnValue === "ok" ? pw : null);
+    }, { once: true });
   });
 }
 

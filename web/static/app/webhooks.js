@@ -64,6 +64,10 @@ async function loadMyWebhooks() {
   $(sc.secret).hidden = true;
   await loadWebhooks(sc);
 }
+// A signing secret is shown once: it goes when its sheet closes.
+const dropSecret = (sc) => () => { $(sc.secret).hidden = true; $(sc.secret).replaceChildren(); };
+$("#settings-sheet").addEventListener("close", dropSecret(hookScopes.project));
+$("#account-sheet").addEventListener("close", dropSecret(hookScopes.personal));
 // changedHooks tells Notifications (the summary's Send it to) that the personal webhooks changed.
 const changedHooks = (sc) => { if (sc.personal) document.dispatchEvent(new Event("dash:mywebhooks")); };
 
@@ -205,8 +209,8 @@ $("#webhook-form").addEventListener("change", (e) => { if (e.target.name === "fo
 $("#webhook-add").addEventListener("click", () => editWebhook(null, hookScopes.project));
 $("#me-webhook-add").addEventListener("click", () => editWebhook(null, hookScopes.personal));
 $("#webhook-sheet").addEventListener("close", attempt(async () => {
-  if ($("#webhook-sheet").returnValue !== "save") return;
   const f = $("#webhook-form");
+  if ($("#webhook-sheet").returnValue !== "save") { f.token.value = ""; return; }
   const w = hooks.editing;
   const sc = hooks.scope;
   const body = {
@@ -235,6 +239,7 @@ $("#webhook-sheet").addEventListener("close", attempt(async () => {
     $("#webhook-sheet").showModal();
     throw e;
   }
+  f.token.value = "";
   renderWebhooks(sc);
   changedHooks(sc);
 }));

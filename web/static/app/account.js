@@ -138,10 +138,11 @@ async function renderOrg() {
       h("span", { class: "runner-name" }, i.email),
       h("span", { class: "item-sub hint" }, `${ROLE_LABEL[i.role]} · expires ${dateText(i.expires)}${i.invited_by ? ` · by ${i.invited_by}` : ""}`),
       h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
+        if (!await ask({ title: `Revoke the invitation for ${i.email}?`, body: "Its link stops working at once.", ok: "Revoke", danger: true })) return;
         await api("DELETE", `/api/orgs/${org.org.id}/invitations/${i.id}`);
         toast(`Invitation for ${i.email} revoked`);
         await renderOrg();
-      }) }, "Revoke")));
+      }) }, "Revoke…")));
     $("#org-pending-head").hidden = !pending.length;
     $("#org-pending").replaceChildren(...pending);
   }
@@ -387,6 +388,9 @@ async function deleteUserAccount(m) {
   toast(`${m.username}'s account deleted`);
   return true;
 }
+
+// The invitation link is shown once: it goes when the sheet closes.
+$("#org-sheet").addEventListener("close", () => { $("#org-invite-link").hidden = true; $("#org-invite-link").replaceChildren(); });
 
 export async function sendInvite() {
   const email = $("#org-invite-email").value.trim();

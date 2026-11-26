@@ -1,7 +1,7 @@
 import { $, dateText, h, ico } from "./dom.js";
 import * as store from "./store.js";
 import { api } from "./api.js";
-import { ask, attempt, toast } from "./dialogs.js";
+import { ask, attempt, busy, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { accountSection, openAccount, orgSection } from "./accountsheet.js";
 import { connectorSteps, copyBlock } from "./prefs.js";
@@ -92,8 +92,8 @@ async function createWallToken() {
   await renderWallTokens();
 }
 
-$("#wall-token-create").addEventListener("click", attempt(createWallToken));
-$("#wall-token-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); attempt(createWallToken)(); } });
+$("#wall-token-create").addEventListener("click", attempt((e) => busy(e.currentTarget, createWallToken)));
+$("#wall-token-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#wall-token-create").click(); } });
 $("#wall-form").addEventListener("change", () => {
   store.setJSON("dash.wall", wallOpts());
   renderWallLink();

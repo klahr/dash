@@ -170,6 +170,28 @@ export function ask({ title, body = "", input = false, value = "", placeholder =
   });
 }
 
+// A sheet's form is method="dialog" with its header Close button first, so a
+// plain Enter in a field would press Close and drop what was typed. Instead it
+// presses the sheet's main button (or, with none, commits the field). Fields
+// with their own Enter (which preventDefault) are left alone.
+const SUBMITS = "button:not([type]), button[type=submit], input[type=submit], input[type=image]";
+const NO_ENTER = new Set(["checkbox", "radio", "range", "color", "file", "button", "submit", "reset", "image", "hidden"]);
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.isComposing || e.defaultPrevented) return;
+  const el = e.target;
+  if (el.localName !== "input" || NO_ENTER.has(el.type)) return;
+  const form = el.form;
+  if (form?.method !== "dialog") return;
+  const buttons = [...form.elements].filter((b) => b.matches(SUBMITS));
+  const closer = (b) => b.value === "cancel" || !!b.closest(".sheet-head");
+  if (!buttons[0] || !closer(buttons[0])) return;
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey || e.altKey) return; // a sheet's own shortcut, if any, ran already
+  const usable = buttons.filter((b) => !closer(b) && !b.disabled && b.checkVisibility());
+  const main = usable.find((b) => b.matches(".primary, .danger")) || usable[0];
+  if (main) form.requestSubmit(main); else el.blur();
+});
+
 // openSheet builds a sheet on the fly (a header with the title and a close
 // button, then body, then footer in .sheet-actions), shows it, and removes it
 // when it closes, after onClose(returnValue). cls adds classes; small: false

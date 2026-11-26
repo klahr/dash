@@ -64,6 +64,9 @@ async function renderTokens(kinds = ["api", "oauth"]) {
   }
 }
 
+// The new token's secret is shown once: it goes when the sheet closes.
+$("#account-sheet").addEventListener("close", () => { $("#token-secret").hidden = true; $("#token-secret").replaceChildren(); });
+
 // loadRunnerTokens fills Runners' "Runners you registered".
 export const loadRunnerTokens = () => renderTokens(["runner"]);
 

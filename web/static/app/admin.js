@@ -176,6 +176,7 @@ async function showUser(id) {
   admin.users.sel = id;
   for (const b of $("#admin-users-list").querySelectorAll(".admin-row")) markCurrent(b, Number(b.dataset.id) === id);
   const [r, orgs] = await Promise.all([api("GET", `/api/admin/users/${id}`, null, ""), allOrgs()]);
+  if (admin.users.sel !== id) return; // another row was picked meanwhile
   renderUser(r, orgs);
   openDetail("users");
 }
@@ -191,7 +192,7 @@ async function refreshUser(id) {
   await loadUsers();
   if (admin.users.sel === id) {
     const [r, orgs] = await Promise.all([api("GET", `/api/admin/users/${id}`, null, ""), allOrgs()]);
-    renderUser(r, orgs);
+    if (admin.users.sel === id) renderUser(r, orgs);
   }
 }
 
@@ -332,13 +333,17 @@ $("#admin-orgs-q")?.addEventListener("input", debounce((e) => { admin.orgs.q = e
 async function showOrg(id) {
   admin.orgs.sel = id;
   for (const b of $("#admin-orgs-list").querySelectorAll(".admin-row")) markCurrent(b, Number(b.dataset.id) === id);
-  renderOrg(await api("GET", `/api/admin/orgs/${id}`, null, ""));
+  const r = await api("GET", `/api/admin/orgs/${id}`, null, "");
+  if (admin.orgs.sel !== id) return; // another row was picked meanwhile
+  renderOrg(r);
   openDetail("orgs");
 }
 
 async function refreshOrg(id) {
   await loadOrgs();
-  if (admin.orgs.sel === id) renderOrg(await api("GET", `/api/admin/orgs/${id}`, null, ""));
+  if (admin.orgs.sel !== id) return;
+  const r = await api("GET", `/api/admin/orgs/${id}`, null, "");
+  if (admin.orgs.sel === id) renderOrg(r);
 }
 
 function renderOrg({ org: o, members }) {

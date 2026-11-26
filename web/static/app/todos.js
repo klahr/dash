@@ -248,6 +248,13 @@ $("#todo-brief").addEventListener("click", () => {
   featureBrief(text);
 });
 
+// Enter in Title goes on to the instructions (Ctrl/⌘-Enter queues, palette.js).
+$("#todo-form").title.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.isComposing || e.ctrlKey || e.metaKey) return;
+  e.preventDefault();
+  $("#todo-form").prompt.focus();
+});
+
 $("#todo-sheet").addEventListener("close", attempt(async () => {
   // A close event comes as a task of its own: when the form was opened again
   // meanwhile, that one is still being edited.

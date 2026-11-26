@@ -41,7 +41,7 @@ async function square(file) {
 }
 
 async function upload(blob) {
-  const { data } = await request("PUT", "/api/account/avatar", { body: blob, raw: true });
+  const { data } = await request("PUT", "/api/account/avatar", { body: blob, raw: true, prefix: "" });
   return data.avatar;
 }
 

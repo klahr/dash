@@ -965,6 +965,7 @@ function syncDeleteProject() {
   setLabel($("#delete-project-ok"), "trash", what.length ? `Delete project and ${what.join(" and ")}` : "Delete project");
 }
 $("#delete-project").addEventListener("change", syncDeleteProject);
+$("#delete-project-sheet").addEventListener("close", () => { $("#delete-project").password.value = ""; });
 $("#delete-project").addEventListener("submit", attempt(async (e) => {
   if (e.submitter?.value !== "ok") return;
   e.preventDefault();
@@ -1129,8 +1130,8 @@ $("#account-open").addEventListener("click", attempt(() => openAccount()));
 $("#org-open").addEventListener("click", attempt(openOrgFromMenu)); // its billing badge opens Billing & usage
 $("#runners-open").addEventListener("click", attempt(openRunners));
 $("#settings-runners-manage").addEventListener("click", attempt(openRunners));
-$("#token-create").addEventListener("click", attempt(createToken));
-$("#org-invite-send").addEventListener("click", attempt(sendInvite));
+$("#token-create").addEventListener("click", attempt((e) => busy(e.currentTarget, createToken)));
+$("#org-invite-send").addEventListener("click", attempt((e) => busy(e.currentTarget, sendInvite)));
 $("#org-new").addEventListener("click", attempt(newOrg));
 $("#org-require-2fa").addEventListener("change", attempt(setRequire2FA));
 $("#org-name-save").addEventListener("click", attempt(setOrgName));
