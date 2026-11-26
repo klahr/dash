@@ -349,6 +349,14 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .todo-open { display: block; width: 100%; text-align: left; }
 .todo-open:focus-visible { outline: none; }
 .todo:has(> .todo-main > .todo-open:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-s); }
+/* A task's dot (app/branches.js: todoRow), in a column of its own before the title, in its
+   status colour: hollow until its work is pushed, breathing while it runs. Planning's cards have none. */
+.todo:has(> .node) { grid-template-columns: 24px minmax(8em, 1fr) minmax(0, auto); }
+.todo .node {
+  justify-self: center; margin-top: 4px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--bg); border: 3px solid var(--c); position: relative; z-index: 1;
+}
+.todo.pushed .node { background: var(--c); }
 .todo-main { min-width: 0; }
 .todo-title { display: block; font-weight: 600; line-height: 1.35; overflow-wrap: break-word; hyphens: auto; }
 .todo-sub {
@@ -445,6 +453,8 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .todo:has(> .review-actions) > .todo-side > .runner-tag { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; }
 .todo-float > .todo:has(> .review-actions) > .todo-side { flex-wrap: wrap; mask-image: none; }
 .todo > .review-actions { grid-column: 1 / -1; flex-wrap: nowrap; margin-top: 4px; position: relative; z-index: 1; }
+/* Beside the dot's column. */
+.todo:has(> .node):has(> .review-actions) > :is(.todo-main, .todo-side), .todo:has(> .node) > .review-actions { grid-column: 2 / -1; }
 /* In a narrow column Approve is its icon, named by its title. */
 @container (max-width: 229px) {
   .review-actions .approve-chip { width: 28px; padding: 0; justify-content: center; }
@@ -494,8 +504,9 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .s-merging, .s-merged { --c: var(--merged); }
 .s-failed { --c: var(--failed); }
 
-/* the one ambient motion: the Running tab's dot breathes */
+/* the one ambient motion: running tasks' dots and the Running tab's dot breathe */
 @keyframes breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--running) 55%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
+.s-in_progress .node, .todo.reviewing .node { animation: breathe 1.8s ease-in-out infinite; }
 .reviewing-tag { color: var(--running); }
 .lane-tab.s-in_progress[data-count]:not([data-count="0"])::before { animation: breathe 1.8s ease-in-out infinite; }
 
@@ -2107,6 +2118,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   position: sticky; bottom: 0; z-index: 1; background: var(--raised);
   margin: -4px -14px -12px -11px; padding: 4px 14px 12px 11px; /* 3px: the keyboard cursor's stripe */
 }
+.todo-float > .todo:has(> .node) > .todo-side { margin-left: -47px; padding-left: 47px; } /* and the dot's column */
 .todo-float > .todo.cursor > .todo-side { background: inherit; }
 
 .drop-bar {
@@ -2664,6 +2676,10 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .todo-side { grid-column: 1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0; min-width: 0; }
   .todo-side .card-actions { flex-wrap: wrap; margin-top: 0; }
   .todo-side:empty { display: none; }
+  .todo:has(> .node) { grid-template-columns: 22px minmax(0, 1fr); }
+  .todo:has(> .node) > .todo-side { grid-column: 2; }
+  /* A review card's actions use the card's whole width, the dot's column too. */
+  .todo:has(> .node) > .review-actions { grid-column: 1 / -1; }
   /* New task: a button in the board's header, not floating over the cards. */
   .fab { position: static; flex: none; width: auto; height: 36px; padding: 0 14px 0 10px; border-radius: var(--r-m); box-shadow: none; font-weight: 600; }
   .fab svg { width: 18px; height: 18px; }

@@ -852,6 +852,7 @@ export function todoRow(t, li = -1, ri = -1) {
     "data-id": t.id, "aria-current": state.detail === t.id ? "true" : null,
     onclick: (e) => { if (!e.target.closest("a, button:not(.todo-open), label")) openDetail(t.id); },
   },
+    h("span", { class: "node", "aria-hidden": "true" }),
     h("span", { class: "todo-main" },
       h("button", { type: "button", class: "todo-open" }, h("span", { class: "todo-title" }, title(t))),
       h("span", { class: subClass }, sub),
