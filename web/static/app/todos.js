@@ -148,6 +148,8 @@ const quickDraft = drafts({
 // (what a failed save gives back) after it.
 export function openQuickAdd(texts = []) {
   if (!state.project) return toast(projectFirst(), true);
+  if (!quick.sheet.open) quickClosed(true); // a close whose event hasn't come yet
+  quickPending = true;
   quick.rows.replaceChildren();
   showRunnerNeeded($("#quick-runner-note"), state.project);
   sheetTitle($("#quick-title"), "New task", state.project);
@@ -165,15 +167,22 @@ export function openQuickAdd(texts = []) {
 // A close other than a save keeps the text as a draft (the full form, the
 // goal and the brief take it with them; goal and brief keep it, in case
 // they are not made, as the full form does).
-quick.sheet.addEventListener("close", () => {
-  if (quick.sheet.open) return; // opened again meanwhile
+// The browser fires close later, as a task of its own, and input goes first:
+// New task clicked right after Esc opens the sheet before it comes, so
+// openQuickAdd handles the close first (it would otherwise clear the fields
+// and bring back an older autosave). quickPending: a close not handled yet.
+let quickPending = false;
+quick.sheet.addEventListener("close", () => { if (!quick.sheet.open) quickClosed(); });
+function quickClosed(reopening = false) {
+  if (!quickPending) return;
+  quickPending = false;
   const action = quick.sheet.returnValue;
   if (action === "add") return; // submitQuick has it
   if (action === "more") return quickDraft.done();
   const key = quickDraftKey(), kept = quickDraft.has(key);
   quickDraft.close();
-  if (quickDraft.has(key) && !kept && action !== "goal" && action !== "brief") toast("Your text is kept; open New task again to continue");
-});
+  if (!reopening && quickDraft.has(key) && !kept && action !== "goal" && action !== "brief") toast("Your text is kept; open New task again to continue");
+}
 
 async function submitQuick(enqueue) {
   const texts = quickTexts();
