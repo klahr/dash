@@ -1522,6 +1522,30 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	swipe("swipe left on the last lane", 300, 500, 120, 500, 0)
 	still("swipe left on the last lane", "done")
 
+	// The tabs are a tablist: each controls its lane, only the chosen one is in
+	// the Tab order, and the arrows, Home and End move between the shown ones.
+	b.waitJS("tabs and their panels", `[...document.querySelectorAll("#lane-tabs .lane-tab")].every((t) => {
+		const p = document.getElementById(t.getAttribute("aria-controls"));
+		return p?.getAttribute("role") === "tabpanel" && p.getAttribute("aria-labelledby") === t.id &&
+			t.tabIndex === (t.getAttribute("aria-selected") === "true" ? 0 : -1);
+	})`)
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`document.querySelector(".lane-tab[data-lane=done]").focus(), true`)); err != nil {
+		b.fail("focus the Merged tab", err)
+	}
+	focused := func(want string) {
+		t.Helper()
+		lane(want)
+		b.waitJS("focus on the "+want+" tab", fmt.Sprintf(`document.activeElement?.dataset.lane === %q && document.activeElement.tabIndex === 0`, want))
+	}
+	b.do("Home", chromedp.KeyEvent(kb.Home))
+	focused("draft")
+	b.do("ArrowLeft on the first tab", chromedp.KeyEvent(kb.ArrowLeft))
+	focused("done")
+	b.do("ArrowLeft past Merging and Review", chromedp.KeyEvent(kb.ArrowLeft))
+	focused("in_progress")
+	b.do("End", chromedp.KeyEvent(kb.End))
+	focused("done")
+
 	// No slide-in when the user asks for less motion.
 	b.do("reduce motion", chromedp.Func(func(ctx context.Context, tg *chromedp.Target) error {
 		_, err := cdp.Call(ctx, tg, emulation.SetEmulatedMedia, emulation.SetEmulatedMediaParams{

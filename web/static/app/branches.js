@@ -287,17 +287,24 @@ function renderBoardNow() {
     state.lane = ["review", "in_progress", "queued", "draft"].find((k) => items[k].length) || "queued";
   }
 
+  // The lane tabs (a phone's, one column at a time) are a tablist: each tab
+  // controls its column, and only the chosen one is in the Tab order (the
+  // arrows move between them, laneTabsKey). A tab focused before this render
+  // keeps the focus in its new button.
+  const tabFocus = document.activeElement?.closest?.("#lane-tabs .lane-tab")?.dataset.lane;
   $("#lane-tabs").replaceChildren(...LANES.map((l) => h("button", {
-    role: "tab", class: `lane-tab s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key, hidden: laneHidden(l.key),
-    "aria-selected": String(state.lane === l.key), "data-count": items[l.key].length,
+    type: "button", role: "tab", id: `lane-tab-${l.key}`, "aria-controls": `lane-${l.key}`,
+    class: `lane-tab s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key, hidden: laneHidden(l.key),
+    "aria-selected": String(state.lane === l.key), tabindex: state.lane === l.key ? "0" : "-1", "data-count": items[l.key].length,
     onclick: () => { state.lane = l.key; renderBoard(); },
   }, l.label, h("span", { class: "n" }, items[l.key].length))));
+  if (tabFocus) $(`#lane-tab-${tabFocus}`)?.focus();
 
   // Desktop: a minimized column stays in its place as a thin strip with its
   // name and count (.col-strip), which expands it again.
   $("#board").replaceChildren(...LANES.map((l, li) => h("section", {
-    "data-lane": l.key, hidden: laneHidden(l.key),
-    class: `col s-${l.key === "done" ? "merged" : l.key}${state.lane === l.key ? " active" : ""}${keys.active && keys.cur.lane === li ? " cursor" : ""}${state.collapsed.has(l.key) ? " collapsed" : ""}`, "aria-label": l.label,
+    "data-lane": l.key, hidden: laneHidden(l.key), id: `lane-${l.key}`, role: "tabpanel", "aria-labelledby": `lane-tab-${l.key}`,
+    class: `col s-${l.key === "done" ? "merged" : l.key}${state.lane === l.key ? " active" : ""}${keys.active && keys.cur.lane === li ? " cursor" : ""}${state.collapsed.has(l.key) ? " collapsed" : ""}`,
   },
     state.collapsed.has(l.key) ? h("button", {
       type: "button", class: "col-strip", "aria-expanded": "false", "aria-label": `${l.label}, ${items[l.key].length}: expand`,
@@ -340,6 +347,23 @@ function renderBoardNow() {
     goals && `${goals} goal${goals > 1 ? "s" : ""} waiting for you`].filter(Boolean).join(" · ");
   renderBoardDot(review);
 }
+
+// Lane tabs: Left/Right move to the next shown lane and pick it, Home/End to
+// the first and last. Stopped here, so the board's own h/l keys don't move too.
+function laneTabsKey(e) {
+  const tabs = $$("#lane-tabs .lane-tab").filter((t) => !t.hidden);
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const t = tabs[(to + tabs.length) % tabs.length];
+  state.lane = t.dataset.lane;
+  t.focus();
+  renderBoard();
+}
+$("#lane-tabs").addEventListener("keydown", laneTabsKey);
 
 // The badge's "2 goals" opens Goals with every project's goals, not the Board.
 $("#review-badge").addEventListener("click", (e) => {

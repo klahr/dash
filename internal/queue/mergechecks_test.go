@@ -56,7 +56,7 @@ func TestApprovedRedBuildGoesBackToClaude(t *testing.T) {
 	}
 
 	h.approveFresh(td.ID)
-	td = h.waitFor(td.ID, model.StatusMerged)
+	td = h.waitForWithin(td.ID, model.StatusMerged, 3*waitTimeout) // merge, fix and merge again: three test runs
 	if td.Runs != 3 {
 		t.Errorf("want Claude to run a third time to fix the red build, ran %d times", td.Runs)
 	}
@@ -113,7 +113,7 @@ func TestCommitAfterGreenChecksIsTestedBeforeMerging(t *testing.T) {
 	gitIn(t, td.Worktree.Path, "commit", "-qam", "break it")
 
 	h.approveFresh(td.ID)
-	td = h.waitFor(td.ID, model.StatusMerged)
+	td = h.waitForWithin(td.ID, model.StatusMerged, 3*waitTimeout) // merge, fix and merge again: three test runs
 	if td.Runs != 2 || !strings.Contains(td.SentBack, "tests fail") {
 		t.Errorf("want the broken commit sent back to Claude once, runs=%d sent back=%q", td.Runs, td.SentBack)
 	}
@@ -174,7 +174,7 @@ func TestTestsFailingAfterMainMovedGoBackToClaude(t *testing.T) {
 
 	h.commitOnMain("b.txt", "from main\n")
 	h.approveFresh(td.ID)
-	td = h.waitFor(td.ID, model.StatusMerged)
+	td = h.waitForWithin(td.ID, model.StatusMerged, 3*waitTimeout) // merge, fix and merge again: three test runs
 	if td.Runs != 2 {
 		t.Errorf("want Claude to run a second time to fix the merge, ran %d times", td.Runs)
 	}
