@@ -91,6 +91,7 @@ export function attachBox(el, textarea, onChange = () => {}, { zone = el.closest
     // replaces the files and lets those uploads join them.
     reset(list = []) { gen++; items = [...list]; pending = 0; render(); },
     set(list = []) { items = [...list]; render(); },
+    add, // uploads files and adds them, as a paste does
     ids: () => items.map((a) => a.id),
     items: () => [...items],
     // settled waits for every upload, those started while waiting too.

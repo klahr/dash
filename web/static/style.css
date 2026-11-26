@@ -3377,8 +3377,8 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .preview[data-kind="terminal"] :is(.pv-widths, #pv-draw-btn, #pv-reload, #pv-open, #pv-copy, #pv-qr) { display: none; }
 .preview[data-kind="terminal"]:not([data-state="crashed"]) .pv-log { display: none; }
 .pv-transcript-btn { margin-left: 6px; }
-/* A commit's preview has no task to draw for or send back. */
-.preview[data-of="commit"] :is(#pv-draw-btn, #pv-transcript) { display: none; }
+/* A commit's preview has no task to send back (its Draw attaches to a chat). */
+.preview[data-of="commit"] #pv-transcript { display: none; }
 .pv-transcript-btn:disabled { opacity: .4; }
 .pv-keys { display: flex; gap: 4px; padding: 6px 8px calc(6px + var(--safe-b)); border-top: 1px solid var(--line); background: var(--surface); overflow-x: auto; }
 .pv-keys button { flex: none; min-width: 40px; min-height: 40px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--raised); color: var(--text); font: var(--fs-s) var(--mono); touch-action: manipulation; }
@@ -3465,6 +3465,11 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .draw-colors button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--text); }
 .draw-colors button[aria-pressed="true"]::before { transform: scale(1.12); }
 .draw-size { color: var(--muted); font: var(--fs-xs) var(--mono); padding: 0 4px; }
+/* Attach to chat ▾: one button in two parts, the ▾ picks another chat. */
+.draw-attach { display: inline-flex; gap: 1px; }
+.draw-attach[hidden] { display: none; }
+.draw-attach > #draw-chat { border-radius: var(--r-m) 0 0 var(--r-m); }
+.draw-attach > .draw-chat-pick { border-radius: 0 var(--r-m) var(--r-m) 0; padding: 0 8px; }
 .draw-exact[aria-pressed="true"] { background: var(--brand); color: var(--on-brand); border-color: transparent; }
 .copy-img { display: block; max-width: 100%; max-height: 60vh; margin: 8px auto; border-radius: var(--r-s); box-shadow: 0 0 0 1px var(--line); }
 

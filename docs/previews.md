@@ -124,6 +124,8 @@ Open a commit in **History → Commits** to run the project as it was at that co
   shows it beside the commit (full screen on a phone, with a button that leads back). `Esc` closes
   the preview, and `Esc` again the commit. The header's **Run** does the same for the latest
   commit (see [Run and Terminate](#run-and-terminate-the-latest-commit-in-one-click)).
+- **Draw** (<kbd>P</kbd>) works on a live commit preview too. With no task to send the picture
+  back to, **Attach to chat** puts it in a chat's composer instead (see [Draw](draw.md#on-a-commit-preview)).
 
 Both run on a runner, like Try: one that is connected, has the labels the project runs on and
 opens terminals for you. Without a runner for the project the buttons aren't shown. Only commits

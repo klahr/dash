@@ -19,6 +19,23 @@ Drawing needs a [preview domain](previews.md#setting-up-a-preview-domain), since
 taken through the proxy (see [what the proxy does](previews.md#what-the-proxy-does)). On a hub,
 Draw works the same, and the picture goes to the task's runner with the rework notes.
 
+## On a commit preview
+
+A [commit preview](previews.md#preview-a-commit-from-history) (**History**, or the header's **Run**)
+has **Draw** too, with the same tools. It has no task, so **Attach to chat** (<kbd>Enter</kbd>)
+takes the place of **Add to rework notes**:
+
+1. Press **Draw** (<kbd>P</kbd>) on the live page.
+2. Circle what you mean with the pen, or use the other tools.
+3. Press **Attach to chat**. The picture goes into the composer of the chat shown in the chat pane,
+   or this project's chat when the pane is closed, with where it's from and the elements under the marks.
+4. Write what you want, and send.
+
+To attach it to another chat (General, another project's tab, a goal's coordinator), press **▾**
+beside **Attach to chat** and pick one. **Copy** works as on a task's preview.
+
+## Exact capture
+
 The picture is the page's own rendering of itself, which can be wrong for WebGL, video or unusual
 CSS. On desktop Chrome and Edge, **Exact** (<kbd>X</kbd>) in draw mode takes it from the screen
 instead (the browser asks to share the tab; the marks are kept), and stays on for next time.

@@ -104,7 +104,9 @@ export async function previewTodo(t) {
 let commitSrc = null; // commitpreview.js: { preview(), render(status), stop(), close() }
 export function setCommitSource(src) { commitSrc = src; }
 // shownPreview is the preview the pane shows: the task's or the commit's.
-const shownPreview = () => (pv.commit ? commitSrc?.preview() : previewOf(pv.todo)) || null;
+export const shownPreview = () => (pv.commit ? commitSrc?.preview() : previewOf(pv.todo)) || null;
+// commitShown is the commit pane's state (commitpreview.js's paneState), while it shows one.
+export const commitShown = () => (pv.commit ? commitSrc?.state() || null : null);
 
 // paneIn moves the preview pane into host (the task's panel or the commit's).
 export function paneIn(host) {
@@ -113,7 +115,7 @@ export function paneIn(host) {
 }
 
 export function hidePreview() {
-  if (pv.commit) return commitSrc?.close();
+  if (pv.commit) { endDraw(); return commitSrc?.close(); }
   if (!pv.todo) return;
   endDraw();
   pv.todo = null;
@@ -250,7 +252,6 @@ export function renderPreview() {
   const p = previewOf(t.id);
   const termKind = isTermPreview(p);
   delete $("#d-preview").dataset.of;
-  $("#pv-draw-btn").hidden = false;
   if (p && !termKind && p.process_id !== pv.proc) connectLog(p);
   const st = p?.state || "stopped";
   $("#d-preview").dataset.state = st;
@@ -260,9 +261,7 @@ export function renderPreview() {
   $("#pv-log summary").textContent = termKind ? "Terminal log" : "Server log";
   if (termKind) return renderTermPreview(t, p, st);
   const target = renderWebBar(p, st);
-  const drawable = st === "live" && !!target?.src && !!p.url;
-  $("#pv-draw-btn").disabled = !drawable && !draw.on;
-  $("#pv-draw-btn").title = drawable || !p || st !== "live" ? "Draw on a snapshot of the page, crop it and add it to the review (P)" : "Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy";
+  drawButton(st === "live" && !!target?.src && !!p?.url, p, st, "add it to the review");
   $("#pv-stop").disabled = !p;
 
   const status = $("#pv-status");
@@ -297,6 +296,13 @@ export function renderPreview() {
   }
 }
 
+// drawButton sets up the bar's Draw: it needs the live page, through the proxy.
+function drawButton(drawable, p, st, then) {
+  const b = $("#pv-draw-btn");
+  b.disabled = !drawable && !draw.on;
+  b.title = drawable || !p || st !== "live" ? `Draw on a snapshot of the page, crop it and ${then} (P)` : "Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy";
+}
+
 // renderWebBar sets up a web preview's bar (widths, links, Reload) and
 // returns where its page loads from.
 function renderWebBar(p, st) {
@@ -329,9 +335,10 @@ function showFrame(p, st, target) {
 }
 
 // A commit's preview (History, commitpreview.js): the app at that commit, in
-// a throwaway worktree on a runner. Like a task's web preview, without Draw
-// or Rework: there is no task to send back. A fresh worktree installs and
-// builds from scratch, so while it starts the log shows how far it got.
+// a throwaway worktree on a runner. Like a task's web preview, without
+// Rework: there is no task to send back, so Draw's picture goes to a chat
+// instead (drawmode.js). A fresh worktree installs and builds from scratch,
+// so while it starts the log shows how far it got.
 function renderCommitPreview() {
   const c = commitSrc?.state();
   if (!c) return;
@@ -345,8 +352,8 @@ function renderCommitPreview() {
   $("#pv-state").replaceChildren(h("span", { class: `pv-dot ${st}`, "aria-hidden": "true" }),
     c.checkingOut ? "Checking out…" : p ? `${PV_LABEL[st]}${st === "live" ? ` · ${c.short}` : ""}` : "Not running");
   $("#pv-log summary").textContent = "Server log";
-  $("#pv-draw-btn").hidden = true;
   const target = renderWebBar(p, st);
+  drawButton(st === "live" && !!target?.src && !!p?.url, p, st, "attach it to a chat");
   $("#pv-stop").disabled = !p;
   if (showFrame(p, st, target)) return;
   const status = $("#pv-status");
@@ -484,6 +491,7 @@ $$("#pv-keys [data-key]").forEach((b) => {
 $("#pv-fab").addEventListener("click", attempt(async (e) => {
   if (pv.commit) {
     const p = shownPreview(), page = [["minimize", "Back to the commit", hidePreview]], link = [], stop = [];
+    if (p?.state === "live" && p.url) page.push(["edit", "Draw", startDraw]);
     if (p?.state === "live") page.push(["reload", "Reload", reloadPreview]);
     if (p?.url) link.push(["external", "Open in a new tab", () => window.open(p.url, "_blank", "noopener")], ["link", "Copy link", () => copy(p.url, "Preview link copied")]);
     if (p) stop.push(["stop", "Stop the preview", () => commitSrc?.stop()]);

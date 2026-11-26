@@ -499,6 +499,7 @@ async function handleNormal(k, n, hadCount) {
         case "gg": return moveCommit(hadCount ? hashes[Math.min(n, hashes.length) - 1] : hashes[0]);
         case "G": return moveCommit(hadCount ? hashes[Math.min(n, hashes.length) - 1] : hashes.at(-1));
         case "r": return refreshHistory();
+        case "P": if (pv.commit) return startDraw(); break; // P: pen on the commit's preview
       }
       // With a commit open, the keys that scroll read it.
       if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(cp.sha ? commitScroller() : scroller(), k, n);

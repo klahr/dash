@@ -341,6 +341,31 @@ export function activeChat() {
   return p ? projectChatFor(p).chat : null;
 }
 
+// chatTargets lists the chats a picture can be attached to (the preview's
+// Draw → Attach to chat): [{ tab, label, icon, current }]. The first is where
+// Attach goes: the chat shown in the open pane, else this project's chat.
+export function chatTargets() {
+  const list = [];
+  if (state.project) list.push({ tab: "project", label: state.project.name, icon: "repo" });
+  list.push({ tab: "general", label: "General", icon: "spark" });
+  for (const p of addedTabs().map(projectByKey).filter(Boolean)) list.push({ tab: projectKey(p), label: p.name, icon: "repo" });
+  if (pane.goal) list.push({ tab: pane.goal.key, label: `Coordinator of ${pane.goal.title}`, icon: "target" });
+  const cur = pane.open ? paneTab() : state.project ? "project" : "general";
+  const at = Math.max(0, list.findIndex((x) => x.tab === cur));
+  list[at].current = true;
+  return [list[at], ...list.filter((_, i) => i !== at)];
+}
+
+// attachToChat shows tab's chat in the pane and adds files (uploaded to that
+// chat's computer) and text to its composer, to say something about them and send.
+export function attachToChat(tab, files, text = "") {
+  toggleChatPane(true, tab);
+  const c = activeChat();
+  if (!c) throw new Error("That chat isn't there any more.");
+  c.attach(files, text);
+  if (desktop.matches) c.input.focus();
+}
+
 export function renderChatPane() {
   const app = $(".app");
   app.classList.toggle("chat-open", pane.open);

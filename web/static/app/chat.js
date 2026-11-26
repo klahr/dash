@@ -350,7 +350,18 @@ function chatComposer(c, { form, mode, shell, clear }) {
     if (!files.length && shellOn() && isShell(q)) { c.endEdit(); return c.shell.run(q); }
     c.editing ? c.resend(q, files) : c.send(q, files);
   }));
-  return { input, modeChanged: c.modeChanged, clear: commands.clear, takeDraft, putDraft };
+  // attach adds files to the composer (uploaded to the chat's computer) and
+  // text after what is written there: the preview's Draw → Attach to chat.
+  const attach = (files, text = "") => {
+    att.add(files);
+    if (text) {
+      recall.end();
+      input.value = `${input.value.trimEnd()}${input.value.trim() ? "\n\n" : ""}${text}`;
+      autoGrow();
+    }
+    c.busyButton();
+  };
+  return { input, modeChanged: c.modeChanged, clear: commands.clear, takeDraft, putDraft, attach };
 }
 
 // chatTurns sends turns and settles them: c.send(q, attachments) adds a

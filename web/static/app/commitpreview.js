@@ -5,6 +5,7 @@ import { hist, state, tryState } from "./state.js";
 import { hidePreview, paneIn, pv, renderLog, renderPreview, setCommitSource } from "./preview.js";
 import { chooseRunner, loadTry, rememberRunner, renderTryButton } from "./try.js";
 import { latestCommit, selectCommit, showCommitAt } from "./history.js";
+import { endDraw } from "./drawmode.js";
 
 // ------------------------------------------------------------------ commit preview
 // History's Preview: a web project's app as it was at a commit of the default
@@ -94,6 +95,7 @@ function open(p, sha, short) {
   // yet then (the modules import each other).
   setCommitSource({ preview, state: paneState, start: () => startCommitPreview(), stop: stopCommitPreview, close: closeCommitPreview });
   if (pv.todo) hidePreview();
+  endDraw(); // a picture of another commit
   Object.assign(cpv, { pid: p.id, sha, short: short || shortSHA(sha) });
   pv.commit = { pid: p.id, sha };
   pv.log = "";
@@ -251,6 +253,7 @@ export async function showRunningPreview() {
 // closeCommitPreview hides the pane; the preview keeps running until it idles.
 export function closeCommitPreview() {
   if (!pv.commit) return;
+  endDraw();
   pv.commit = null;
   cpv.seq++;
   clearTimeout(cpv.timer);

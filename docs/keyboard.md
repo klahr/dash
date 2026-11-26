@@ -73,7 +73,7 @@ On the board the keys act on the task under the cursor; in an open task, on that
 
 ## Drawing
 
-On a live preview, `P` starts drawing (see [Draw](draw.md)).
+On a live preview, a task's or a commit's in **History**, `P` starts drawing (see [Draw](draw.md)).
 
 | Key                     | Does                             |
 |-------------------------|----------------------------------|
@@ -81,7 +81,7 @@ On a live preview, `P` starts drawing (see [Draw](draw.md)).
 | `1` `2` `3`             | colour                           |
 | `x`                     | exact capture (desktop Chrome)   |
 | `Ctrl-z`                | undo                             |
-| `Enter`                 | add to the rework notes          |
+| `Enter`                 | add to the rework notes (a task) or attach to the chat (a commit) |
 | `Esc`                   | done                             |
 
 ## Approvals
@@ -110,7 +110,7 @@ A question from Claude has no key for an answer: answer it in its card. `X` decl
 
 - **History → Commits**: `j`/`k` next / previous commit, `gg`/`G` first / last, `n`/`p` next / previous
   changed file of the open commit, `Ctrl-d`/`Ctrl-u` scroll it, `q`/`Esc` close it (its preview
-  first, if it shows one), `r` refresh (fetch origin and show its new commits).
+  first, if it shows one), `P` draw on its live preview, `r` refresh (fetch origin and show its new commits).
 - **Goals**: `j`/`k` open the next / previous goal, `q`/`Esc` close it.
 - **History → Deploys**: `j`/`k` open the next / previous deploy, `q`/`Esc` close it.
 

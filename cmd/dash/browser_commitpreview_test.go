@@ -12,7 +12,8 @@ import (
 
 // History's Preview on a web project's commit: a warning the first time,
 // then the app at that commit starting on the runner, its start-up log in
-// the preview pane beside the commit (full screen on a phone). Esc hides
+// the preview pane beside the commit (full screen on a phone), its Draw
+// waiting for the live page. Esc hides
 // the pane, then the commit; Preview again reattaches to the running one;
 // Stop stops it.
 func TestBrowserCommitPreview(t *testing.T) {
@@ -50,7 +51,7 @@ func TestBrowserCommitPreview(t *testing.T) {
 	b.waitJS("starting, with the setup and the server in its log",
 		`/Setting up and starting the server/.test(document.querySelector("#pv-status").textContent) && /installing-deps/.test(document.querySelector("#pv-status").textContent) && /starting-the-app/.test(document.querySelector("#pv-log-text").textContent)`)
 	b.waitJS("beside the commit, wide", `(() => { const p = document.querySelector("#d-preview").getBoundingClientRect(), c = document.querySelector("#cd-title").getBoundingClientRect(); return p.left >= c.right - 1 && p.width > 400; })()`)
-	b.waitJS("no Draw for a commit", `getComputedStyle(document.querySelector("#pv-draw-btn")).display === "none"`)
+	b.waitJS("Draw, greyed out until the page is live", `(() => { const d = document.querySelector("#pv-draw-btn"); return getComputedStyle(d).display !== "none" && d.disabled && /attach it to a chat/.test(d.title); })()`)
 	b.waitJS("the button says Hide preview", previewBtn+`?.textContent.includes("Hide preview")`)
 	var st struct {
 		Session *struct{ Kind, State, URL, OpenURL string } `json:"session"`

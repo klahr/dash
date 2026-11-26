@@ -563,6 +563,11 @@
           <button class="icon-btn" type="button" id="draw-copy" data-icon="copy" title="Copy the picture" aria-label="Copy"></button>
           <button class="btn small" type="button" id="draw-done" data-icon="x" title="Back to the live page (Esc)">Done</button>
           <button class="btn small primary" type="button" id="draw-add" data-icon="plus" title="Add the picture to the rework notes (Enter)">Add to rework notes</button>
+          <!-- A commit's preview (History, Run) has no task: its picture goes to a chat -->
+          <span class="draw-attach" id="draw-attach" role="group" aria-label="Attach to chat" hidden>
+            <button class="btn small primary" type="button" id="draw-chat" data-icon="comment" title="Attach the picture to the chat (Enter)">Attach to chat</button>
+            <button class="btn small primary draw-chat-pick" type="button" id="draw-chat-pick" data-icon="down" aria-haspopup="menu" aria-label="Attach to another chat" title="Attach to another chat"></button>
+          </span>
         </div>
         <!-- Phone: keys a touch keyboard lacks, for the terminal preview -->
         <div class="pv-keys" id="pv-keys" role="toolbar" aria-label="Terminal keys" hidden>

@@ -13,7 +13,7 @@ import { selectProject } from "./projects.js";
 import { closable, title } from "./branches.js";
 import { agoText } from "../time.js";
 import { renderActions } from "./detail.js";
-import { PV_LABEL, hidePreview, isTermPreview, previewOf, previewTodo, pv, renderPreview } from "./preview.js";
+import { PV_LABEL, commitShown, hidePreview, isTermPreview, previewOf, previewTodo, pv, renderPreview, shownPreview } from "./preview.js";
 import { canEditDiff, openDiffEdit } from "./diffedit.js";
 import { commentsFor, keepCommentBoxes } from "./review.js";
 import { setTodoChatMode, todoChat } from "./chat.js";
@@ -21,15 +21,21 @@ import { isTyping, openDialog } from "./vim.js";
 import { popMenu } from "./popmenu.js";
 import { askChat } from "./palette.js";
 
+// The chat pane (Attach to chat), loaded when first used: it draws itself as
+// it loads, so importing it here would change the order the modules start in.
+const chatPane = () => import("./chatpane.js");
+
 export { popMenu }; // from popmenu.js, where planning.js finds it too
 
 // ------------------------------------------------------------------ preview draw mode
 // Draw (P) freezes the preview: the page in the iframe renders itself to a
 // PNG (the proxy adds a small capture script to every page it serves, see
 // internal/preview/capture.go), which replaces the live page. Marks and the
-// crop are drawn on a canvas in Dash's page, so they can't drift. Add to
-// review uploads the result as a picture for the rework notes.
-export const draw = { on: false, busy: false, todo: null, meta: null, surface: null };
+// crop are drawn on a canvas in Dash's page, so they can't drift. On a task's
+// preview, Add to rework notes uploads the result as a picture for the rework
+// notes; on a commit's (History, Run), Attach to chat puts it in a chat's composer.
+// draw.src is what the picture is of (drawSource's).
+export const draw = { on: false, busy: false, src: null, meta: null, surface: null };
 // Pictures and notes waiting to be sent back, per task: { items: [upload], text, prefix }.
 const shots = new Map();
 
@@ -149,24 +155,41 @@ async function snapshot(frame, origin, exact) {
   return shot && { ...where, ...shot, exact: true };
 }
 
+// drawSource is what the preview pane shows, to draw on: a task's preview
+// ({ key: its id, todo }) or a commit's ({ key: "commit:<sha>", todo: null }),
+// with the preview p and where it is from (about: a branch, a commit).
+function drawSource() {
+  if (pv.commit) {
+    const c = commitShown();
+    return { key: `commit:${pv.commit.sha}`, todo: null, p: shownPreview(), about: c?.short || pv.commit.sha.slice(0, 7) };
+  }
+  const t = state.todos.get(pv.todo);
+  return t ? { key: t.id, todo: t, p: previewOf(t.id), about: t.worktree?.branch } : null;
+}
+// The source the picture was taken of, while the pane still shows it.
+const drawnSource = () => { const s = drawSource(); return s && s.key === draw.src?.key ? s : null; };
+
 export async function startDraw() {
   if (draw.on || draw.busy) return;
-  const t = state.todos.get(pv.todo);
-  const p = t && previewOf(t.id);
-  if (isTermPreview(p)) return; // nothing to draw on: Rework with transcript instead
+  const src = drawSource();
+  const p = src?.p;
+  if (src?.todo && isTermPreview(p)) return; // nothing to draw on: Rework with transcript instead
   if (!p || p.state !== "live" || !pv.shown) throw new Error("Start the preview first: draw mode works on the live page.");
   if (!p.url) throw new Error("Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy.");
   draw.busy = true;
   try {
     const shot = await snapshot($("#pv-iframe"), new URL(p.url).origin, exactCapture.supported() && exactCapture.on);
     if (!shot) return;
-    if (pv.todo !== t.id) return shot.bitmap.close(); // closed meanwhile
+    if (drawSource()?.key !== src.key) return shot.bitmap.close(); // closed meanwhile
     draw.on = true;
-    draw.todo = t.id;
+    draw.src = src;
     draw.meta = shot;
     $("#d-preview").classList.add("drawing");
     $("#draw-stage").hidden = false;
     $("#draw-bar").hidden = false;
+    // A task's picture goes to its rework notes, a commit's to a chat.
+    $("#draw-add").hidden = !src.todo;
+    $("#draw-attach").hidden = !!src.todo;
     drawSurfaceOnce().open(shot.bitmap, shot.width, shot.height);
     renderPreview();
   } finally {
@@ -177,8 +200,7 @@ export async function startDraw() {
 // retakeDraw swaps the picture for one taken the other way (exact or not),
 // keeping the marks; the choice is remembered for the next time.
 async function retakeDraw(exact) {
-  const t = state.todos.get(draw.todo);
-  const p = t && previewOf(t.id);
+  const p = drawnSource()?.p;
   if (!draw.on || draw.busy || !p?.url) return;
   draw.busy = true;
   const preview = $("#d-preview");
@@ -202,12 +224,12 @@ async function retakeDraw(exact) {
 export function endDraw() {
   if (!draw.on) return;
   draw.on = false;
-  draw.todo = null;
+  draw.src = null;
   draw.surface?.close();
   $("#d-preview").classList.remove("drawing");
   $("#draw-stage").hidden = true;
   $("#draw-bar").hidden = true;
-  if (pv.todo) renderPreview();
+  if (pv.todo || pv.commit) renderPreview();
 }
 
 function renderDrawBar() {
@@ -242,31 +264,41 @@ async function markHints(origin) {
   }).filter(Boolean);
 }
 
-// "/settings · 390×844 · dash/todo-3f9a" for the notes: where the picture is from.
-function shotContext(t) {
+// "/settings · 390×844 · dash/todo-3f9a" for the notes: where the picture is
+// from (a task's branch, or the commit).
+function shotContext(src) {
   const m = draw.meta;
-  return [m.path || "/", `${m.width}×${m.height}`, t.worktree?.branch].filter(Boolean).join(" · ");
+  return [m.path || "/", `${m.width}×${m.height}`, src.about].filter(Boolean).join(" · ");
+}
+
+// shotPicture flattens the picture (marks and crop) to a PNG, and asks the
+// page which elements are under its marks.
+async function shotPicture(src) {
+  const p = src.p;
+  const [blob, hints] = await Promise.all([
+    draw.surface.flatten(),
+    p?.url ? markHints(new URL(p.url).origin).catch(() => []) : [],
+  ]);
+  return { blob, hints };
 }
 
 const shotName = (path) => `preview${(path || "/").split(/[?#]/)[0].replace(/[^a-z0-9]+/gi, "-").replace(/-+$/, "") || ""}.png`;
 
 async function addShot() {
-  const t = state.todos.get(draw.todo);
-  const p = t && previewOf(t.id);
-  if (!t || draw.busy) return;
+  const src = drawnSource();
+  if (!src?.todo) return attachShot();
+  const t = src.todo, p = src.p;
+  if (draw.busy) return;
   draw.busy = true;
   $("#draw-add").disabled = true;
   try {
-    const [blob, hints] = await Promise.all([
-      draw.surface.flatten(),
-      p?.url ? markHints(new URL(p.url).origin).catch(() => []) : [],
-    ]);
+    const { blob, hints } = await shotPicture(src);
     const prefix = p?.prefix ?? here();
     const a = await uploadFile(new File([blob], shotName(draw.meta.path), { type: "image/png" }), prefix);
     const entry = shots.get(t.id) || { items: [], text: "", prefix };
     entry.items.push(a);
     // The marks' elements go with the picture, one per line, and the note after them.
-    const about = hints.length ? `${shotContext(t)}\n${hints.map((x) => `- ${x}`).join("\n")}\n` : `${shotContext(t)}: `;
+    const about = hints.length ? `${shotContext(src)}\n${hints.map((x) => `- ${x}`).join("\n")}\n` : `${shotContext(src)}: `;
     entry.text = `${entry.text.trimEnd()}${entry.text.trim() ? "\n\n" : ""}${about}`;
     shots.set(t.id, entry);
     endDraw();
@@ -282,6 +314,36 @@ async function addShot() {
     draw.busy = false;
     $("#draw-add").disabled = false;
   }
+}
+
+// attachShot is a commit preview's Draw → Attach to chat: the picture goes
+// into the composer of the chat tab names (chatTargets'; the first by
+// default), with where it is from and the elements under its marks.
+async function attachShot(tab) {
+  const src = drawnSource();
+  if (!src || src.todo || draw.busy) return;
+  draw.busy = true;
+  for (const b of $$("#draw-attach button")) b.disabled = true;
+  try {
+    const { attachToChat, chatTargets } = await chatPane();
+    tab ||= chatTargets()[0].tab;
+    const { blob, hints } = await shotPicture(src);
+    const text = `${shotContext(src)}${hints.length ? `\n${hints.map((x) => `- ${x}`).join("\n")}` : ""}\n`;
+    const file = new File([blob], shotName(draw.meta.path), { type: "image/png" });
+    endDraw();
+    attachToChat(tab, [file], text);
+    toast("Picture added to the chat: say what to change, and send");
+  } finally {
+    draw.busy = false;
+    for (const b of $$("#draw-attach button")) b.disabled = false;
+  }
+}
+
+// The ▾ beside Attach to chat: which chat the picture goes to.
+async function pickChat(anchor) {
+  if (!drawnSource() || draw.busy) return;
+  const list = (await chatPane()).chatTargets();
+  return popMenu(anchor, [list.map((c) => [c.icon, c.label, () => attachShot(c.tab), { checked: c.current ? true : undefined }])], { heading: "Attach to chat" });
 }
 
 async function copyShot() {
@@ -376,6 +438,8 @@ $("#pv-draw-btn").addEventListener("click", attempt(() => (draw.on ? endDraw() :
 $("#draw-done").addEventListener("click", endDraw);
 $("#draw-exact").addEventListener("click", attempt(() => retakeDraw(!draw.meta?.exact)));
 $("#draw-add").addEventListener("click", attempt(addShot));
+$("#draw-chat").addEventListener("click", attempt(() => attachShot()));
+$("#draw-chat-pick").addEventListener("click", attempt((e) => pickChat(e.currentTarget)));
 $("#draw-copy").addEventListener("click", attempt(copyShot));
 $("#draw-undo").addEventListener("click", () => draw.surface?.undo());
 $("#draw-clear").addEventListener("click", () => draw.surface?.clear());
@@ -387,7 +451,7 @@ $$("#draw-bar [data-color]").forEach((b) => {
 // Draw mode's keys come before the app's (Esc would close the task).
 const DRAW_KEYS = { p: "pen", a: "arrow", o: "circle", b: "box", c: "crop" };
 addEventListener("keydown", (e) => {
-  if (!draw.on || e.altKey || e.isComposing || openDialog() || isTyping(e.target)) return;
+  if (!draw.on || e.altKey || e.isComposing || openDialog() || isTyping(e.target) || $(".pop-menu")) return; // an open menu has its own keys
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   const s = draw.surface;
   if (k === "Shift" || k === "Control" || k === "Meta") return;
