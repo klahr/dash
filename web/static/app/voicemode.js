@@ -293,8 +293,9 @@ function render() {
   if ($("#vm-state").textContent !== label) $("#vm-state").textContent = label;
   const paused = st === "paused";
   const pause = $("#vm-pause");
+  // The label names the action (as the spoken commands do), so this is a
+  // plain button, not a toggle: aria-pressed would read "Resume, pressed".
   pause.textContent = paused ? "Resume" : "Pause";
-  pause.setAttribute("aria-pressed", String(paused));
   pause.disabled = !!s.fatal;
   renderWhere();
   renderDraft();
