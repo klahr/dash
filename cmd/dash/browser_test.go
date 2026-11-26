@@ -873,6 +873,12 @@ func newBrowser(t *testing.T, chrome string) *browser {
 		// Wide enough for the desktop board, every lane side by side.
 		chromedp.WindowSize(1600, 1000),
 		chromedp.Flag("no-sandbox", true), // CI containers
+		// A desktop with a mouse: (hover: hover) and (pointer: fine). Chrome
+		// asks the system, and a CI machine has no mouse, so it would say
+		// (hover: none) and the Board would act as on a phone (hidden pick
+		// boxes, delete icons always showing). Hover 2 is "hover", pointer 4
+		// is "fine". The phone tests' touch emulation still overrides this.
+		chromedp.Flag("blink-settings", "primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4"),
 	))
 	t.Cleanup(cancel)
 	b := &browser{t: t, ctx: ctx, dir: dir}
