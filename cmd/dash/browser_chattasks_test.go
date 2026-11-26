@@ -83,6 +83,12 @@ func TestBrowserChatDraftCards(t *testing.T) {
 	phone.waitJS("the card fits the phone", `(() => { const c = `+card("Fix login redirect")+`; return c && c.scrollWidth <= c.clientWidth + 1 && c.getBoundingClientRect().right <= innerWidth; })()`)
 
 	// Open on the phone: the task, full screen, without the chat page over it.
+	// Its "Ready for review" toast sits under the chat's head, over this card's
+	// Open, and a toast under the pointer stays: wait for it to be done, then
+	// dismiss the toast, as a user would, so the click reaches Open.
+	phone.waitJS("the task done", state("Fix login redirect")+` === "Ready for review"`)
+	phone.run("dismiss the toast", `document.querySelectorAll("#toasts .toast-close").forEach((x) => x.click()); true`)
+	phone.waitJS("no toast", `!document.querySelector("#toasts .toast")`)
 	click(phone, "open it", "Fix login redirect", "Open", `!document.querySelector("#detail").hidden && document.querySelector("#chat-pane").hidden`)
 	phone.waitJS("the task opened", `document.querySelector("#detail")?.textContent.includes("Fix login redirect")`)
 
