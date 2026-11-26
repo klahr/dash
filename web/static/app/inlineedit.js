@@ -46,12 +46,21 @@ function endTitle(refocus = false) {
   titleEl.hidden = false;
   if (refocus && had) titleEl.querySelector(".title-edit")?.focus();
 }
+// One save at a time: the "run as yours" question takes focus, and the blur
+// that causes must not ask again.
+let titleSaving = false;
 async function saveTitle(refocus) {
+  if (titleSaving) return;
   const t = state.todos.get(titleFor);
   if (!t) return endTitle(refocus);
   const v = titleIn.value.trim();
-  if (v !== t.title) await updateTodo(t, { title: v });
+  titleSaving = true;
+  let saved = true;
+  try {
+    if (v !== t.title) saved = await updateTodo(t, { title: v });
+  } finally { titleSaving = false; }
   if (titleFor !== t.id) return; // cancelled or another task meanwhile
+  if (!saved) { titleIn.focus(); return; } // not run as yours: keep editing
   endTitle(refocus);
   refresh();
 }
@@ -261,11 +270,35 @@ function renderMeta(t) {
       btn.setAttribute("aria-expanded", "true");
       pop.querySelector("input")?.focus();
     });
-    pop.addEventListener("change", save(async (t) => {
-      const ids = $$("input[name=dep]:checked", pop).map((i) => i.value);
-      await updateTodo(t, { depends_on: ids });
-      btn.textContent = ids.length ? `Depends on ${plural(ids.length, "task")}` : "No dependencies";
-    }, (t) => { const sel = new Set(t.depends_on || []); $$("input[name=dep]", pop).forEach((i) => { i.checked = sel.has(i.value); }); }));
+    // The saves go one after another, each with the list as it is then, so
+    // the last one sent is what the checkboxes show.
+    const label = (ids) => { btn.textContent = ids.length ? `Depends on ${plural(ids.length, "task")}` : "No dependencies"; };
+    const putBack = (t) => {
+      const sel = new Set(t?.depends_on || []);
+      $$("input[name=dep]", pop).forEach((i) => { i.checked = sel.has(i.value); });
+      label([...sel]);
+    };
+    let saving = false;
+    pop.addEventListener("change", attempt(async () => {
+      if (saving) return; // the running save sends the newest list next
+      const id = t.id;
+      saving = true;
+      let sent = null;
+      try {
+        for (;;) {
+          const ids = $$("input[name=dep]:checked", pop).map((i) => i.value);
+          const now = state.todos.get(id);
+          if (!now || sameIds(ids, sent ?? now.depends_on ?? [])) break;
+          sent = ids;
+          label(ids);
+          if (!await updateTodo(now, { depends_on: ids })) { putBack(state.todos.get(id)); break; }
+        }
+      } catch (e) {
+        putBack(state.todos.get(id));
+        throw e;
+      } finally { saving = false; }
+      refresh();
+    }));
     kids.push(wrap);
   }
 

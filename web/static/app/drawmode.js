@@ -15,7 +15,7 @@ import { agoText } from "../time.js";
 import { renderActions } from "./detail.js";
 import { PV_LABEL, hidePreview, isTermPreview, previewOf, previewTodo, pv, renderPreview } from "./preview.js";
 import { canEditDiff, openDiffEdit } from "./diffedit.js";
-import { commentsFor } from "./review.js";
+import { commentsFor, keepCommentBoxes } from "./review.js";
 import { setTodoChatMode, todoChat } from "./chat.js";
 import { isTyping, openDialog } from "./vim.js";
 import { popMenu } from "./popmenu.js";
@@ -326,9 +326,14 @@ export function renderReworkBox() {
   const n = entry.items.length;
   const ta = h("textarea", { rows: 3, placeholder: "What should change?", "aria-label": "Rework notes", value: entry.text,
     oninput: () => { entry.text = ta.value; },
-    onkeydown: (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendShots(t); } } });
+    onkeydown: (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); attempt(() => sendShots(t))(); } } });
   ta.value = entry.text;
-  const discard = () => { shots.delete(t.id); renderReworkBox(); };
+  const discard = async () => {
+    if (!await ask({ title: `Discard ${plural(entry.items.length, "picture")} and the notes?`, ok: "Discard", danger: true })) return;
+    if (shots.get(t.id) !== entry) return;
+    shots.delete(t.id);
+    renderReworkBox();
+  };
   box.replaceChildren(
     h("div", { class: "rework-head" },
       h("strong", {}, "Rework notes"),
@@ -342,14 +347,25 @@ export function renderReworkBox() {
     ta,
     h("div", { class: "rework-actions" },
       h("span", { class: "hint" }, pv.todo === t.id ? "Draw (P) to add more" : ""),
-      ib({ class: "btn small primary", type: "button", title: "Rework with these notes (Ctrl+Enter)", onclick: attempt(() => sendShots(t)) }, "redo", "Rework")));
+      ib({ class: "btn small primary rework-send", type: "button", disabled: sending.has(t.id), title: "Rework with these notes (Ctrl+Enter)", onclick: attempt(() => sendShots(t)) }, "redo", "Rework")));
   box.hidden = false;
 }
 
+// The tasks whose rework notes are being sent: a second Rework waits for none.
+const sending = new Set();
+
 async function sendShots(t) {
   const entry = shots.get(t.id);
-  if (!entry) return;
-  await api("POST", `/api/todos/${t.id}/rework`, { feedback: entry.text.trim(), attachments: entry.items.map((a) => a.id) }, entry.prefix);
+  if (!entry || sending.has(t.id)) return;
+  sending.add(t.id);
+  const sendBtn = (on) => { const b = $("#d-rework").dataset.todo === t.id && $("#d-rework .rework-send"); if (b) b.disabled = on; };
+  sendBtn(true);
+  try {
+    await api("POST", `/api/todos/${t.id}/rework`, { feedback: entry.text.trim(), attachments: entry.items.map((a) => a.id) }, entry.prefix);
+  } finally {
+    sending.delete(t.id);
+    sendBtn(false);
+  }
   shots.delete(t.id);
   renderReworkBox();
   toast("Sent for rework");
@@ -563,7 +579,7 @@ function renderDiff(text) {
   }
   const commented = new Set(commentsFor(state.detail).map((c) => c.file));
   const t = state.todos.get(state.detail), editable = canEditDiff(t);
-  $("#d-diff").replaceChildren(...[goalNote(t)].filter(Boolean), ...files.map((f) => h("details", {
+  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[goalNote(t)].filter(Boolean), ...files.map((f) => h("details", {
     class: "diff-file", open: state.diffOpen.has(f.path) || commented.has(f.path),
     ontoggle: (e) => state.diffOpen[e.target.open ? "add" : "delete"](f.path),
   },
@@ -578,7 +594,7 @@ function renderDiff(text) {
       : h("div", { class: "diff-lines" }, diffLines(f, {
         comments: commentsFor(state.detail).filter((c) => c.file === f.path),
         commentable: ["review", "failed"].includes(state.todos.get(state.detail)?.status),
-      })))));
+      }))))));
 }
 
 // Images a diff shows instead of "Binary files … differ" (the server's

@@ -11,38 +11,73 @@ import { renderPane } from "./drawmode.js";
 // ------------------------------------------------------------------ diff comments
 export function commentsFor(id) { return state.comments[id] || []; }
 
-$("#d-diff").addEventListener("click", (e) => {
-  const line = e.target.closest(".diff-lines > div[data-ln]");
-  const t = state.todos.get(state.detail);
-  if (!line || !t || !["review", "failed"].includes(t.status)) return;
-  if (line.nextElementSibling?.classList.contains("comment-box")) return line.nextElementSibling.querySelector("textarea").focus();
-  const trigger = line.querySelector(".ln-comment");
+// Comments being typed, kept across re-renders of the diff (the task updates
+// often while in review): JSON [todo, file, side, line] → text.
+const drafts = new Map();
+const draftKey = (id, { file, side, ln }) => JSON.stringify([id, file, side, ln]);
+const diffLine = (file, side, ln) => [...$("#d-diff").querySelectorAll(".diff-lines > div[data-ln]")]
+  .find((d) => d.dataset.file === file && d.dataset.ln === ln && d.dataset.side === side);
+
+function commentBox(line, t, text = "") {
+  const key = draftKey(t.id, line.dataset);
+  drafts.set(key, text);
   // Closing the box puts focus back on the line's comment button.
-  const close = () => { box.remove(); trigger?.focus(); };
-  const box = h("form", { class: "comment-box" },
-    h("textarea", { rows: 3, placeholder: "What should Claude change here?", "aria-label": `Comment on ${line.dataset.file} line ${line.dataset.ln}` }),
+  const close = () => { drafts.delete(key); const l = box.previousElementSibling; box.remove(); l?.querySelector(".ln-comment")?.focus(); };
+  const ta = h("textarea", { rows: 3, placeholder: "What should Claude change here?", "aria-label": `Comment on ${line.dataset.file} line ${line.dataset.ln}` });
+  ta.value = text;
+  ta.addEventListener("input", () => drafts.set(key, ta.value));
+  const box = h("form", { class: "comment-box", "data-key": key }, ta,
     h("div", { class: "comment-actions" },
       ib({ type: "button", class: "btn", onclick: close }, "x", "Cancel"),
       ib({ class: "btn primary" }, "comment", "Add comment")));
   box.addEventListener("submit", (ev) => {
     ev.preventDefault();
-    const text = box.querySelector("textarea").value.trim();
+    const text = ta.value.trim();
     if (!text) return close();
     const { file, ln, side } = line.dataset;
+    drafts.delete(key);
     state.comments[t.id] = [...commentsFor(t.id), { file, line: Number(ln), side, code: line.querySelector(".code").textContent, text }];
     saveComments();
     renderPane();
     renderActions(t);
-    [...$("#d-diff").querySelectorAll(".diff-lines > div[data-ln]")]
-      .find((d) => d.dataset.file === file && d.dataset.ln === ln && d.dataset.side === side)
-      ?.querySelector(".ln-comment")?.focus();
+    diffLine(file, side, ln)?.querySelector(".ln-comment")?.focus();
   });
-  box.querySelector("textarea").addEventListener("keydown", (ev) => {
-    if (ev.ctrlKey && ev.key === "Enter") box.requestSubmit();
+  ta.addEventListener("keydown", (ev) => {
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") { ev.preventDefault(); box.requestSubmit(); }
     if (ev.key === "Escape") { ev.stopPropagation(); close(); }
   });
   line.after(box);
-  box.querySelector("textarea").focus();
+  return ta;
+}
+
+// keepCommentBoxes runs rebuild (which replaces the diff's rows) and puts the
+// open comment boxes back under their lines, with their text, focus and caret.
+export function keepCommentBoxes(rebuild) {
+  const active = document.activeElement;
+  const focused = active?.closest?.(".comment-box")?.dataset.key;
+  const sel = focused && active.tagName === "TEXTAREA" ? [active.selectionStart, active.selectionEnd] : null;
+  rebuild();
+  const t = state.todos.get(state.detail);
+  if (!t || !["review", "failed"].includes(t.status)) return;
+  for (const [key, text] of drafts) {
+    const [id, file, side, ln] = JSON.parse(key);
+    if (id !== t.id) continue;
+    const line = diffLine(file, side, ln);
+    if (!line) continue; // kept, in case the line comes back
+    const ta = commentBox(line, t, text);
+    if (key === focused) {
+      ta.focus();
+      if (sel) ta.setSelectionRange(...sel);
+    }
+  }
+}
+
+$("#d-diff").addEventListener("click", (e) => {
+  const line = e.target.closest(".diff-lines > div[data-ln]");
+  const t = state.todos.get(state.detail);
+  if (!line || !t || !["review", "failed"].includes(t.status)) return;
+  if (line.nextElementSibling?.classList.contains("comment-box")) return line.nextElementSibling.querySelector("textarea").focus();
+  commentBox(line, t).focus();
 });
 
 function commentFeedback(list, extra) {
