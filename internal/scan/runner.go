@@ -158,25 +158,32 @@ func (r *Runner) LogPath(runID string) string {
 // A scheduled run is for whoever last turned its schedule on or changed it
 // (model.ScanSetting.ScheduledBy).
 func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
-	return r.start(projectID, name, trigger, nil, 0, "")
+	return r.start(projectID, name, trigger, nil, 0, "", false)
 }
 
 // StartFor is Start for the hub's user by, who started it: on a hub, it
 // runs on one of their runners, or a shared one (model.ScanRun.StartedBy).
 func (r *Runner) StartFor(projectID, name, trigger string, by int64) (model.ScanRun, error) {
-	return r.start(projectID, name, trigger, nil, by, "")
+	return r.start(projectID, name, trigger, nil, by, "", false)
+}
+
+// StartFullFor is StartFor for a full pass: a since_last_scan scan looks
+// at everything, not only what changed since its last run.
+func (r *Runner) StartFullFor(projectID, name, trigger string, by int64) (model.ScanRun, error) {
+	return r.start(projectID, name, trigger, nil, by, "", true)
 }
 
 // StartOn is Start on a hub, on a runner logged in to the Claude account
 // account ("": any of them), as an early run picks one with spare usage.
 func (r *Runner) StartOn(projectID, name, trigger, account string) (model.ScanRun, error) {
-	return r.start(projectID, name, trigger, nil, 0, account)
+	return r.start(projectID, name, trigger, nil, 0, account, false)
 }
 
 // start begins a run for by; from, if set, is the interrupted run it starts
 // over, whose scope, path, base commit and user it keeps. account, on a
-// hub, is the Claude account whose runners may take it ("": any).
-func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun, by int64, account string) (model.ScanRun, error) {
+// hub, is the Claude account whose runners may take it ("": any). full
+// asks a since_last_scan scan for a full pass.
+func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun, by int64, account string, full bool) (model.ScanRun, error) {
 	p, err := r.Store.GetProject(projectID)
 	if err != nil {
 		return model.ScanRun{}, err
@@ -232,7 +239,7 @@ func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun, by 
 		defer r.wg.Done()
 		defer r.release(key)
 		defer cancel(nil)
-		r.execute(ctx, p, t, run, from, account)
+		r.execute(ctx, p, t, run, from, account, full)
 		r.PruneLogs() // of runs the store just let go
 	}()
 	return run, nil
@@ -326,6 +333,8 @@ func (r *Runner) resolve(ctx context.Context, p model.Project, job Job) (target,
 	}
 	if t.Scope == model.ScopeSinceLastScan {
 		switch {
+		case job.Full != "":
+			tg.note = job.Full
 		case job.LastCommit == "":
 			tg.note = "First run: scanned everything"
 		case job.LastCommit == tg.commit:
@@ -379,7 +388,7 @@ func underPath(files []string, dir string) []string {
 // remote reports whether runs go to a runner (see Runner.Remote).
 func (r *Runner) remote() bool { return r.Remote != nil }
 
-func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run model.ScanRun, from *model.ScanRun, account string) {
+func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run model.ScanRun, from *model.ScanRun, account string, full bool) {
 	logf, _ := r.openLog(run.ID)
 	defer func() {
 		if logf != nil {
@@ -452,6 +461,11 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 		}); ok {
 			job.LastCommit = last.Commit
 		}
+		job.Full = r.fullPass(p.ID, t, run, full, job.LastCommit != "")
+		if job.Full != "" {
+			// A runner that doesn't know Full still scans everything.
+			job.LastCommit = ""
+		}
 	}
 	var mu sync.Mutex
 	var lastActivity time.Time
@@ -519,6 +533,30 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 	})
 	logLine(fmt.Sprintf("✔ %d findings: %d new, %d updated, %d known, %d dismissed, %d reopened",
 		run.Findings, run.Counts.New, run.Counts.Updated, run.Counts.Known, run.Counts.Dismissed, run.Counts.Reopened))
+}
+
+// fullPass is why a since_last_scan run scans everything ("": it looks
+// only at what changed): asked is a full pass asked for by hand; otherwise
+// the template's FullScanDays have passed since its last full pass (a
+// succeeded run that wasn't incremental), or no kept run was one. hasLast
+// says an earlier run covered a commit (else the run is a first run anyway).
+func (r *Runner) fullPass(projectID string, t Template, run model.ScanRun, asked, hasLast bool) string {
+	if asked {
+		return "Full scan, asked for: scanned everything"
+	}
+	if t.FullScanDays <= 0 || !hasLast {
+		return ""
+	}
+	last, ok := r.Store.LastScanRun(projectID, t.Name, func(x model.ScanRun) bool {
+		return x.ID != run.ID && x.Status == model.ScanSucceeded && x.Commit != "" && !x.Incremental
+	})
+	if !ok {
+		return fmt.Sprintf("Periodic full scan (every %d days), none in the kept runs: scanned everything", t.FullScanDays)
+	}
+	if r.now().Sub(last.StartedAt) < time.Duration(t.FullScanDays)*24*time.Hour {
+		return ""
+	}
+	return fmt.Sprintf("Periodic full scan (every %d days): scanned everything", t.FullScanDays)
 }
 
 // Record files a run's findings as draft tasks on the project's Board, by
@@ -1013,6 +1051,18 @@ End your final message with your findings as one JSON code block, and nothing af
 - "file" and "line" may be left out when a finding has no single place.
 - "fingerprint" names the problem so that it stays the same when the code moves or you word the title differently, e.g. "sql-injection:UserStore.Find" or "missing-auth:/api/admin". Two findings of the same problem in one file share it.
 - Report each problem once. If you find nothing, answer {"findings": []}.
+
+### Severity
+
+One scale for every scan. Only critical and high findings show on the team's Board; the rest wait in a list, so use those two only when they hold.
+
+- "critical": fix today. An exploitable vulnerability with severe impact that anyone who can reach the app can use (remote code execution, authentication bypass, reading or changing other users' data, a leaked live secret), or data loss or corruption in normal use.
+- "high": fix soon. A vulnerability with a confirmed attack path but limited impact or needing an account or a victim's action; a bug that breaks a main feature or gives wrong results in ordinary use; a crash or hang an ordinary input triggers; a broken build or tests failing on every run on the default branch.
+- "medium": a real problem with limited reach: an edge case or a secondary feature, a weakness that needs an unusual setup or another flaw first, a cost that grows with use, a finding you could not confirm.
+- "low": worth doing, but nothing breaks: hardening, cleanup, small savings, missing tests or docs for ordinary code.
+- "info": a note with nothing to fix.
+
+When torn between two, pick the lower and say why in the details. A scan's own rules above say how this scale applies to what it looks for.
 `
 
 func scanKey(projectID, scan string) string { return projectID + "/" + scan }

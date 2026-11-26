@@ -302,6 +302,45 @@ func TestRunSinceLastScan(t *testing.T) {
 	}
 }
 
+// A since_last_scan scan with full_scan_days looks at everything again
+// once its last full pass is that old, and a full pass can be asked for.
+func TestRunPeriodicAndRequestedFullScan(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t, "daily", "---\nscope: since_last_scan\nfull_scan_days: 30\n---\nCheck.")
+	now := time.Now()
+	fx.runner.Now = func() time.Time { return now }
+	first := fx.run(t, "daily")
+	if first.Status != model.ScanSucceeded || first.Incremental || !strings.Contains(first.Note, "First run") {
+		t.Fatalf("first run should scan everything: %+v", first)
+	}
+	commitFile(t, fx.repo, "pkg/a.go", "package pkg\n")
+	if r := fx.run(t, "daily"); r.Status != model.ScanSucceeded || !r.Incremental {
+		t.Fatalf("a run within 30 days is incremental: %+v", r)
+	}
+	// 31 days on, a full pass is due, even with nothing new.
+	now = now.Add(31 * 24 * time.Hour)
+	full := fx.run(t, "daily")
+	if full.Status != model.ScanSucceeded || full.Incremental || !strings.Contains(full.Note, "Periodic full scan") {
+		t.Fatalf("periodic full scan: %+v", full)
+	}
+	if p := fx.exec.lastPrompt(); !strings.Contains(p, "Look at the whole repository") {
+		t.Fatalf("full scan prompt:\n%s", p)
+	}
+	if r := fx.run(t, "daily"); r.Status != model.ScanSkipped {
+		t.Fatalf("after a full pass, nothing new is skipped again: %+v", r)
+	}
+	// Asked for by hand: everything, though nothing changed.
+	r, err := fx.runner.StartFullFor(fx.p.ID, "daily", "manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx.runner.Wait()
+	if r, _ = fx.st.GetScanRun(r.ID); r.Status != model.ScanSucceeded || r.Incremental || !strings.Contains(r.Note, "asked for") {
+		t.Fatalf("requested full scan: %+v", r)
+	}
+}
+
 func TestRunSinceMainAndPath(t *testing.T) {
 	t.Parallel()
 

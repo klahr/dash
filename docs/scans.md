@@ -16,8 +16,9 @@ Scans come from three places, marked on each card:
 
 - **Built-in:** Dash's security scan (`security`), code review (`code-review`), dependency
   audit (`dependencies`), test gaps (`test-gaps`: changed code with no test covering it, and
-  tests that can't fail), docs drift (`docs-drift`: README, `docs/` and CLAUDE.md content the
-  code no longer matches), performance review (`performance`), dead code scan (`dead-code`),
+  tests that can't fail), docs drift (`docs-drift`: README, `docs/`, CLAUDE.md, AGENTS.md,
+  CONTRIBUTING, the CHANGELOG, OpenAPI and Swagger specs, `--help` text and `.env.example`
+  content the code no longer matches), performance review (`performance`), dead code scan (`dead-code`),
   duplication and complexity (`maintainability`), flaky tests (`flaky-tests`), accessibility (`accessibility`: missing labels and alt text,
   poor colour contrast, keyboard traps, missing focus styles, wrong ARIA and non-semantic
   interactive elements) and breaking changes (`breaking-changes`: what the checkout's branch
@@ -25,12 +26,23 @@ Scans come from three places, marked on each card:
   endpoint changes, schema changes with no migration or a destructive one, removed or renamed
   flags, config keys and environment variables, and changed file formats), in every project.
   Breaking changes has scope `since_main` and no suggested schedule: run it with "Run now" while
-  the project's folder has the branch to check out. The accessibility scan (suggested weekly, Wednesdays
+  the project's folder has the branch to check out. The security scan (suggested daily at
+  06:00) traces untrusted input from where it enters to where it is used. It covers injection,
+  authentication and authorization (including IDOR), CSRF, open redirects, CORS and security
+  headers, XSS, file uploads, SSRF, unsafe deserialization, secrets, weak crypto and randomness,
+  and denial of service an attacker can trigger cheaply: ReDoS, request bodies with no size
+  limit, zip bombs and no rate limit on login. It looks at the changes since its last run, and
+  at the whole repository again every 30 days (see **Full scans** below). The code review
+  (suggested weekdays at 07:00) reports bugs with an input that triggers them: wrong logic,
+  unhandled errors, nil and bounds, leaks, races and broken contracts. Both say what not to
+  report and give a fingerprint format. The accessibility scan (suggested weekly, Wednesdays
   at 07:00) only runs in repositories with web front-end files (HTML, JSX, TSX, Vue, Svelte, Go
   and other HTML templates; see `requires_files` below) and is skipped in others. The
   performance review (suggested weekly, Mondays at 07:00) looks at what changed since its last
   run for N+1 queries, unbounded loops, reads and allocations, missing database indexes for
-  added or changed queries, and slow or blocking work in request handlers. It only reports
+  added or changed queries, and slow or blocking work in request handlers. In a web front end it
+  also looks at bundle size, needless re-renders, large unoptimised images and render-blocking
+  scripts. It only reports
   problems with a plausible real cost, and each finding explains the cost and the fix. The
   duplication and complexity scan (suggested monthly, on the 15th at 06:00) looks at the whole
   repository for duplicated logic (naming every copy and where one shared version should live),
@@ -39,7 +51,10 @@ Scans come from three places, marked on each card:
   helpers. It skips style nitpicks, small repeats, generated and vendored code and migrations,
   and each finding says what gets simpler and how risky the change is. The
   dependency audit reports vulnerable, abandoned
-  and far outdated dependencies, and checks licences against the project's own (its LICENSE file
+  and far outdated dependencies. Each vulnerability names its advisory id (CVE, GHSA or OSV). One
+  that no audit tool's output confirmed (`govulncheck`, `npm audit`, `pip-audit`, `cargo audit`)
+  is titled "Unverified:" and is at most `medium`. A missing audit tool is reported once, as
+  `low`. It also checks licences against the project's own (its LICENSE file
   or manifest, else proprietary): dependencies whose licence clashes with it (GPL or AGPL in an
   MIT or proprietary project, say), with no or an unknown licence, or whose licence changed in an
   upgrade in the lock files' recent history. It reads the licences from the package managers'
@@ -54,10 +69,13 @@ Scans come from three places, marked on each card:
   package.json, the CI configuration, go.mod, …), runs the suite 3 to 5 times, shuffled where the
   toolchain supports it (`go test -shuffle=on`, Jest `--randomize`, pytest-randomly), and reruns
   what failed on its own. It reports tests that sometimes pass and sometimes fail, with how often,
-  the failure output and the likely cause (timing, ordering, shared state, network). It stops
-  adding runs at about 25 minutes in total and installs nothing. Each run has a time limit:
-  `timeout` (or `gtimeout`) where it exists, else the test runner's own (`go test -timeout`),
-  else a `perl` alarm, so it works on macOS too.
+  the failure output and the likely cause (timing, ordering, shared state, network). Tests that
+  fail on every run are reported too, as `high` "Failing test:" findings with their own
+  fingerprint (`failing:<file>:<test>`), and so is a suite that doesn't build: the default branch
+  is broken. Failures caused by this computer (a service not running, a missing tool) are left
+  out. It stops adding runs at about 25 minutes in total and installs nothing. Each run has a
+  time limit: `timeout` (or `gtimeout`) where it exists, else the test runner's own
+  (`go test -timeout`), else a `perl` alarm, so it works on macOS too.
   It needs `Bash` and runs the repository's own test code, so it needs approval: see
   [Shell commands](#shell-commands). A scan with `Bash` may run the commands its prompt
   asks for (and the network they use) and write to a temp directory, but not change the
@@ -97,6 +115,8 @@ schedule: 0 6 * * *
 tools: Read, Grep, Glob
 # requires_files: optional, only run if the repository has such a file
 requires_files: *.html, src/**/*.{ts,tsx}
+# full_scan_days: optional, for since_last_scan: scan everything again after this many days
+full_scan_days: 30
 ---
 Look for vulnerabilities in {{path}} …
 ```
@@ -139,6 +159,16 @@ Look for vulnerabilities in {{path}} …
   makes it the cheap daily option. If nothing changed, the run is skipped. `since_main` looks at
   the checkout's current branch compared with the default branch. `{{path}}` and `{{since}}` in
   the prompt are filled in.
+- **Full scans.** A `since_last_scan` scan only looks at old code on its first run. To look at
+  everything again:
+  - Set `full_scan_days` in the template. When the scan's last full pass is older than that many
+    days, the next run scans the whole repository, even if nothing changed. The built-in
+    security scan has `full_scan_days: 30`. The setting is for template files; scans written in
+    Dash don't have it.
+  - Click **Full scan** in a scan's details in the **Scans** sheet to run one full pass now.
+
+  The run's note says why it scanned everything ("Periodic full scan (every 30 days)", "Full
+  scan, asked for"). A failed full pass is tried again on the next run.
 - **Findings.** The scan answers with JSON findings (title, type, severity, file and line,
   details, fix and a fingerprint). Invalid findings are dropped and noted in the run's log. Each
   valid one becomes a draft task, as described in [Findings on the Board](#findings-on-the-board).
@@ -246,6 +276,20 @@ problem keeps its fingerprint when code above it moves.
 
 Two reports of one problem at the same moment, or twice in one scan, add one draft.
 
+Every scan rates its findings on one scale, given in the shared closing text of each scan's
+prompt:
+
+- `critical`: fix today. An exploitable vulnerability with severe impact that anyone who can
+  reach the app can use, or data loss in normal use.
+- `high`: fix soon. A vulnerability that needs an account or a victim's action, a bug that
+  breaks a main feature, a crash on ordinary input, a broken build or tests failing on every run.
+- `medium`: a real problem with limited reach, or a finding the scan could not confirm.
+- `low`: worth doing, but nothing breaks.
+- `info`: a note with nothing to fix.
+
+Each built-in scan says how the scale applies to what it looks for. When in doubt it picks the
+lower one.
+
 To keep the Board usable when scans find a lot:
 
 - Drafts from scans with severity `critical` or `high` show on the Board. Lower ones show only
@@ -276,7 +320,8 @@ To keep the Board usable when scans find a lot:
   `DELETE /api/projects/{pid}/dismissed/{fingerprint}` undoes one.
 - `POST /api/projects/{pid}/todos/merge` merges drafts: `{"ids": []}`. The first one is kept.
 - `PATCH /api/projects/{pid}/scans/{name}` changes any scan's schedule and approvals, and
-  `POST …/scans/{name}/run` runs it. `{"early": {"on": true, "when": "any" | "night",
+  `POST …/scans/{name}/run` runs it; send `{"full": true}` to make a `since_last_scan` scan look
+  at everything once. `{"early": {"on": true, "when": "any" | "night",
   "lead_minutes": 0, "max_percent": 0}}` sets **Run early if there's spare usage**; fields left
   out keep their value, and `0` means the default. The scan's `schedule.early` shows it, and each
   run's `trigger` is `manual`, `schedule`, `early` or `resume`.

@@ -42,6 +42,11 @@ type Job struct {
 	// LastCommit is, for ScopeSinceLastScan, the commit the scan last
 	// covered ("": none yet, scan everything).
 	LastCommit string `json:"last_commit,omitempty"`
+	// Full, for ScopeSinceLastScan, is why this run scans everything
+	// although an earlier run covered a commit ("": it looks only at what
+	// changed since LastCommit): a full pass asked for, or a periodic one
+	// (Template.FullScanDays). It is the run's note.
+	Full string `json:"full,omitempty"`
 	// From is the interrupted run this one starts over, if any.
 	From *Resume `json:"from,omitempty"`
 	// Known are the issues this scan reported before; the prompt lists

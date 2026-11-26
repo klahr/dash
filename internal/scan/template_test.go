@@ -416,6 +416,26 @@ func requiresMatch(t *testing.T, globs []string, file string) bool {
 	return false
 }
 
+func TestFullScanDays(t *testing.T) {
+	t.Parallel()
+
+	tm, err := ParseTemplate("w", []byte("---\nscope: since_last_scan\nfull_scan_days: 30\n---\nGo."))
+	if err != nil || tm.FullScanDays != 30 {
+		t.Fatalf("full_scan_days: %d, %v", tm.FullScanDays, err)
+	}
+	if !strings.Contains(tm.Markdown(), "full_scan_days: 30\n") {
+		t.Errorf("markdown:\n%s", tm.Markdown())
+	}
+	for _, bad := range []string{"scope: since_last_scan\nfull_scan_days: -1", "scope: since_last_scan\nfull_scan_days: 1w", "scope: repo\nfull_scan_days: 7"} {
+		if _, err := ParseTemplate("w", []byte("---\n"+bad+"\n---\nGo.")); err == nil {
+			t.Errorf("%q: no error", bad)
+		}
+	}
+	if sec, _ := Pick(Builtins(), "security"); sec.FullScanDays <= 0 {
+		t.Errorf("the built-in security scan has no periodic full pass")
+	}
+}
+
 func TestRequiresFiles(t *testing.T) {
 	t.Parallel()
 

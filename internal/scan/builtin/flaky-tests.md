@@ -11,7 +11,8 @@ tools: Read, Grep, Glob, Bash
 schedule: 0 3 * * 0
 ---
 Find the flaky tests of the project in {{path}}: tests that sometimes pass
-and sometimes fail on the same code.
+and sometimes fail on the same code. Also report tests that fail on every
+run: the default branch is broken.
 
 1. Find how the project runs its tests. Look in CLAUDE.md, CONTRIBUTING.md
    and the README, the Makefile or justfile, package.json's scripts, the CI
@@ -80,11 +81,35 @@ or more of the runs or flakes in a way that hides a real bug in the code
 fails under the shuffled order or -race and never in the project's own
 command.
 
-Tests that fail in every run are not flaky: do not report them one by one.
-If the suite does not run at all (it doesn't build, or needs something
-missing), report that once as type "issue", severity "low", fingerprint
-"flaky-tests:suite", with the command and the error, and stop. If no test
-flaked, report nothing.
+## Tests that always fail
+
+A test that fails in every run, and again when run alone, is not flaky:
+it is broken, and so is the default branch. Report it separately from the
+flaky ones, as type "bug", severity "high": the test's name and file in the
+title (starting "Failing test:"), the line where it fails, and in the
+details "failed N of N runs", the command that reproduces it, the failure
+output trimmed to the lines that matter, and the likely cause from reading
+the test and the code (a change that broke it: use git_log or git_blame to
+find the commit if you can). Fingerprint "failing:<file>:<test name>".
+
+When many tests fail for one cause (a package that doesn't compile, a
+broken shared helper or fixture), report the cause once instead, listing
+the tests in the details, with fingerprint "failing:<package or file>".
+
+Leave out tests that fail only because of this machine: a service that
+isn't running, a missing tool or credentials, no network. Those are
+skipped like the suites that need them.
+
+If the suite does not run at all:
+
+- because the code doesn't build or the test setup in the repository is
+  broken, report that as type "bug", severity "high", fingerprint
+  "failing:suite", with the command and the error, and stop;
+- because it needs something missing on this machine, report that once as
+  type "issue", severity "low", fingerprint "flaky-tests:suite", with the
+  command and the error, and stop.
+
+If no test flaked or failed, report nothing.
 
 Do not change any files in the repository: don't fix or skip tests, and
 don't commit anything; run the tests and read the code only.

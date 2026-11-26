@@ -292,7 +292,7 @@ function scanCard(s) {
     if (v === null) return;
     await patch({ schedule: v.trim(), ...(v.trim() && !sch.enabled ? { enabled: true } : {}) });
   });
-  const meta = [SCAN_SCOPES[s.scope] || s.scope, s.path && s.scope !== "path" ? `in ${s.path}` : s.path, s.model, s.effort && `${s.effort} effort`].filter(Boolean).join(" · ");
+  const meta = [SCAN_SCOPES[s.scope] || s.scope, s.full_scan_days && `full scan every ${plural(s.full_scan_days, "day")}`, s.path && s.scope !== "path" ? `in ${s.path}` : s.path, s.model, s.effort && `${s.effort} effort`].filter(Boolean).join(" · ");
   const hist = scans.history.get(s.name);
   const earlier = hist?.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id);
   const live = sch.enabled && sch.cron;
@@ -396,7 +396,17 @@ function scanActions(s) {
     });
     if (v !== null) await copy(s.markdown, `Copied ${file}`);
   });
+  // A scan of the changes since its last run can be asked to look at everything once.
+  const full = attempt(async () => {
+    const run = await api("POST", `${url}/run`, { full: true });
+    s.running = run.id;
+    s.last_run = run;
+    renderScans();
+  });
+  const busy = s.last_run?.status === "running" && s.running;
   return h("div", { class: "scan-actions" },
+    s.scope === "since_last_scan" && !s.shadowed_by ? h("button", { type: "button", class: "link", disabled: !!busy,
+      title: "Scan the whole repository once, not only what changed since the last run", onclick: full }, "Full scan") : null,
     dash ? h("button", { type: "button", class: "link", onclick: () => openScanEditor(s, true) }, "Edit") : null,
     h("button", { type: "button", class: "link", onclick: () => openScanEditor(s, false) }, "Duplicate"),
     dash && s.markdown ? h("button", { type: "button", class: "link", onclick: exp }, "Export to repo") : null,

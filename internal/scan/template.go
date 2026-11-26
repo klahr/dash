@@ -29,6 +29,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/klahr/dash/internal/model"
@@ -78,7 +79,11 @@ type Template struct {
 	// must have a file for the scan to run; empty: it always runs. A run of
 	// a repository without one is skipped before Claude starts.
 	RequiresFiles []string `json:"requires_files,omitempty"`
-	Prompt        string   `json:"prompt"`
+	// FullScanDays, for ScopeSinceLastScan, makes a run scan everything
+	// again when the scan's last full pass is older than this many days
+	// (0: only the first run does), so old code is looked at again.
+	FullScanDays int    `json:"full_scan_days,omitempty"`
+	Prompt       string `json:"prompt"`
 	// File is the template's path in the repository; "" for a built-in.
 	File    string `json:"file,omitempty"`
 	Builtin bool   `json:"builtin,omitempty"`
@@ -222,8 +227,14 @@ func (t *Template) setFields(front string) error {
 			t.Tools = splitList(val)
 		case "requires_files":
 			t.RequiresFiles = splitList(val)
+		case "full_scan_days":
+			d, err := strconv.Atoi(val)
+			if err != nil || d < 0 {
+				return fmt.Errorf("frontmatter line %d: full_scan_days %q: want a number of days", n, val)
+			}
+			t.FullScanDays = d
 		default:
-			return fmt.Errorf("frontmatter line %d: unknown setting %q (name, title, kind, scope, path, model, effort, schedule, tools or requires_files)", n, key)
+			return fmt.Errorf("frontmatter line %d: unknown setting %q (name, title, kind, scope, path, model, effort, schedule, tools, requires_files or full_scan_days)", n, key)
 		}
 	}
 	return nil
@@ -261,6 +272,9 @@ func (t *Template) normalize() error {
 	}
 	if t.Scope == model.ScopePath && t.Path == "" {
 		return fmt.Errorf("scope path needs a path")
+	}
+	if t.FullScanDays > 0 && t.Scope != model.ScopeSinceLastScan {
+		return fmt.Errorf("full_scan_days needs scope %s", model.ScopeSinceLastScan)
 	}
 	if t.Effort != "" && !slices.Contains(efforts, t.Effort) {
 		return fmt.Errorf("unknown effort %q (%s)", t.Effort, strings.Join(efforts, ", "))
@@ -453,6 +467,9 @@ func (t Template) Markdown() string {
 	line("schedule", t.Schedule)
 	line("tools", strings.Join(t.Tools, ", "))
 	line("requires_files", strings.Join(t.RequiresFiles, ", "))
+	if t.FullScanDays > 0 {
+		line("full_scan_days", strconv.Itoa(t.FullScanDays))
+	}
 	b.WriteString("---\n")
 	b.WriteString(t.Prompt)
 	b.WriteString("\n")

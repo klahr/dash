@@ -34,7 +34,11 @@ Each finding names what breaks and who is affected: the file and line of
 the change, in the details the old and the new form quoted briefly and the
 callers, clients or stored data that depend on the old one. The suggested
 fix keeps the old form working (an alias, a default, a migration, a
-deprecation period) or says what has to be announced. Use
+deprecation period) or says what has to be announced. Severity:
+"critical" for a migration that destroys data, "high" for a break existing
+users or callers hit on upgrade with no way around it, "medium" when a
+workaround exists or few are affected, "low" for a documented change that
+only needs announcing. Use
 "<kind of interface>:<old name>" as the fingerprint, e.g. "flag:-port" or
 "endpoint:GET /api/items".
 

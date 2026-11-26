@@ -42,6 +42,10 @@ used and the styles it gets. Each finding names the file and line of the
 element, says who it stops (keyboard, screen reader, low vision) and what
 WCAG 2.2 criterion it fails, and the suggested fix is the corrected markup
 or style. Use "<file>:<component or element>:<problem>" as the fingerprint.
+Report each as type "bug". Severity: "high" when it stops a group of users
+from using a main task of the page (a keyboard trap, an unlabelled main
+form or control, a dialog a screen reader can't reach), "medium" when it
+makes a task hard or blocks a secondary feature, "low" otherwise.
 
 Only report problems you can see in the code. Leave out things that depend
 on content you can't see (the text of a user-supplied image), generated and

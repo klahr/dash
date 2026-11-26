@@ -118,7 +118,22 @@ func (s *Server) runScan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, errScansOff)
 		return
 	}
-	run, err := s.Scans.StartFor(r.PathValue("pid"), r.PathValue("name"), "manual", sv.c.User)
+	// An optional body: {"full": true} asks a since_last_scan scan for a
+	// full pass (it looks at everything, not only what changed).
+	var req struct {
+		Full bool `json:"full"`
+	}
+	if r.ContentLength != 0 {
+		if err := decode(r, &req); err != nil && !errors.Is(err, io.EOF) {
+			writeErr(w, err)
+			return
+		}
+	}
+	start := s.Scans.StartFor
+	if req.Full {
+		start = s.Scans.StartFullFor
+	}
+	run, err := start(r.PathValue("pid"), r.PathValue("name"), "manual", sv.c.User)
 	if err != nil {
 		writeErr(w, err)
 		return

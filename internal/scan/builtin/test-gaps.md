@@ -27,10 +27,12 @@ line of the untested code or the broken test, and says in the details what
 input or behaviour goes untested. The suggested fix describes the missing
 test concretely: what to call, with which input, and what to assert (for
 example "call parseRange with an empty string and check it returns
-ErrEmpty"). Use "<file>:<function>" as the fingerprint. Use severity "high"
-for untested code that handles security, money, data loss or concurrency,
-"medium" for other behaviour with branches or error handling, and "low"
-otherwise.
+ErrEmpty"). Use "<file>:<function>" as the fingerprint. A missing test is
+not itself a broken feature, so it is rarely "high" on the shared severity
+scale: use "medium" for untested code that handles security, money, data
+loss or concurrency, and for a test that can't fail on such code, and
+"low" otherwise. Use "high" only when the untested code is also visibly
+wrong, and then say what is wrong.
 
 Keep it low-noise. Do not report trivial getters and setters, plain data
 types, constants, generated code (files marked "Code generated", vendored or

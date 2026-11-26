@@ -20,13 +20,30 @@ audit --json`, `pip-audit --disable-pip --no-deps -r <requirements file>`,
 `cargo audit --json` (npm audit and cargo audit exactly as written). These,
 `pip show` and `cargo metadata` are the only commands you can run: no other
 shell commands, no fix modes, and do not install anything. Read files with
-the Read, Grep and Glob tools. Where a tool isn't installed or fails, judge
-the pinned versions from what you know.
+the Read, Grep and Glob tools. The tools' output is the evidence for a
+vulnerability.
 
 Report each vulnerable dependency once: the package and version in the
 title, the advisory ids and whether the vulnerable code is reachable in the
 details, the version that fixes it in the suggested fix, and the manifest as
 the file. Use the advisory id or "<package>@<version>" as the fingerprint.
+
+- Every vulnerability finding names at least one advisory id: a CVE
+  (CVE-2024-12345), GHSA (GHSA-xxxx-xxxx-xxxx) or OSV id (GO-2024-1234,
+  PYSEC-…, RUSTSEC-…). Without an id, don't report it.
+- A finding is verified when an audit tool you ran reported it for the
+  version in the lock file: say which tool in the details. Rate it with the
+  shared severity scale, from the advisory's severity and whether the
+  vulnerable code is reachable (govulncheck says so; otherwise check
+  whether the project calls the affected package or function).
+- A finding no tool confirmed (no tool for that ecosystem is installed, or
+  it couldn't run) starts its title with "Unverified:", says in the details
+  why it couldn't be checked and how to check it (the command to run), and
+  has severity "medium" at most.
+- If an ecosystem's audit tool is missing or fails, say so once, as type
+  "issue", severity "low", with the command to install or run it.
+  Fingerprint "audit-tool:<ecosystem>" (for example "audit-tool:npm").
+
 Also report dependencies that are abandoned or far behind a major version
 as type "issue" with severity "low".
 
