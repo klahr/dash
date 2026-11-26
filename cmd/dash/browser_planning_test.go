@@ -601,7 +601,10 @@ func TestBrowserPlanningOpenCard(t *testing.T) {
 	b.do("type, then Esc", chromedp.KeyEvent(kb.End), chromedp.SendKeys(`#pd-edit-title`, " as PDF"), chromedp.KeyEvent(kb.Escape))
 	b.waitJS("cancelled, the pane still open", `document.querySelector("#pd-title").textContent === "Export reports" && !document.querySelector("#card-detail").hidden`)
 	b.until("edit it again", `document.activeElement?.id === "pd-edit-title"`, chromedp.Click(chromedp.CSS(`#pd-title .title-edit`)))
-	b.do("type, then Enter", chromedp.KeyEvent(kb.End), chromedp.SendKeys(`#pd-edit-title`, " as PDF"), chromedp.KeyEvent(kb.Enter))
+	// enterKey, not chromedp.KeyEvent: its separate char event came after a
+	// quick save had put the focus back on the title's button, and clicked
+	// it, opening the box again.
+	b.do("type, then Enter", chromedp.KeyEvent(kb.End), chromedp.SendKeys(`#pd-edit-title`, " as PDF"), enterKey(0))
 	b.waitJS("saved, on the board too", fmt.Sprintf(`document.querySelector("#pd-title").textContent === "Export reports as PDF" && document.querySelector(%q)?.textContent === "Export reports as PDF"`, card+" .todo-title"))
 
 	// The column: the head's chip is a menu.
