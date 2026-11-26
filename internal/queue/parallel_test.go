@@ -9,9 +9,10 @@ import (
 // waitTimeout bounds a test's wait for background work (a merge job, a
 // fake gh call). Alone that work takes well under a second, but under a
 // full `go test ./...` on a busy machine (macOS especially) it has taken
-// over 10 seconds, so the bound is generous: a passing test never waits
-// for it.
-const waitTimeout = 60 * time.Second
+// over 10 seconds, and on Windows a single merge step (git subprocesses)
+// over 20, so a batch merge can pass a minute. The bound is generous: a
+// passing test never waits for it.
+const waitTimeout = 3 * time.Minute
 
 // parallelTests holds the tests that already called t.Parallel, which
 // panics when called twice.

@@ -198,11 +198,16 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
       // columns side by side. A column is a list of bordered cards (no rail
       // line or nodes; style.css: .pl-cards) and ends in Add card, which
       // opens a new card to type on at the end of the column (openComposer).
-      h("div", { class: "lanes pl-lanes", role: "tablist", "aria-label": "Columns" },
+      // A tab controls its column (a tabpanel); renderColumns sets which tab
+      // is selected and in the Tab order, laneTabsKey moves with the arrows.
+      h("div", { class: "lanes pl-lanes", role: "tablist", "aria-label": "Columns", onkeydown: laneTabsKey },
         ...COLUMNS.map((col) => h("button", { type: "button", role: "tab", class: `lane-tab s-${col.s}`, "data-col": col.key,
+          id: `pl-lane-${col.key}`, "aria-controls": `pl-colsec-${col.key}`, tabindex: "-1",
           onclick: () => { pl.lane = col.key; renderBoard(); } }, h("span", { class: "lane-label" }, col.title), h("span", { class: "n", id: `pl-tab-n-${col.key}` })))),
       h("div", { class: "board pl-board", id: "pl-board" },
-        ...COLUMNS.map((col) => h("section", { class: `col pl-col s-${col.s}`, "data-col": col.key, "aria-labelledby": `pl-col-${col.key}` },
+        // Labelled by the column's heading, which has the tab's name without its count.
+        ...COLUMNS.map((col) => h("section", { class: `col pl-col s-${col.s}`, "data-col": col.key, id: `pl-colsec-${col.key}`,
+          role: "tabpanel", "aria-labelledby": `pl-col-${col.key}` },
           h("header", { class: "col-head" },
             h("span", { class: "col-label", id: `pl-col-${col.key}` }, col.title), h("span", { class: "n", id: `pl-count-${col.key}` })),
           h("div", { class: "col-body" },
@@ -456,6 +461,22 @@ function boardTabsKey(e) {
   pickBoard(t.dataset.board);
 }
 
+// laneTabsKey: Arrow keys, Home and End move between the column tabs (the
+// phone's strip) and show the column, as boardTabsKey does for boards.
+function laneTabsKey(e) {
+  const tabs = $$(".lane-tab", e.currentTarget);
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  const t = tabs[Math.max(0, Math.min(tabs.length - 1, to))];
+  pl.lane = t.dataset.col;
+  renderBoard();
+  t.focus();
+  t.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
 // pickBoard shows board id (its cards; the filters stay; BOARDS_ALL: every
 // board's). A card of another board that is open closes.
 export function pickBoard(id) {
@@ -642,7 +663,9 @@ function renderColumns() {
     // A lane's count shows only when it has cards, so the four lanes fit a phone.
     $(`#pl-tab-n-${col.key}`).textContent = cards.length ? String(cards.length) : "";
     $(`.pl-col[data-col="${col.key}"]`, pl.root).classList.toggle("active", pl.lane === col.key);
-    $(`.pl-lanes [data-col="${col.key}"]`, pl.root).setAttribute("aria-selected", String(pl.lane === col.key));
+    const tab = $(`.pl-lanes [data-col="${col.key}"]`, pl.root);
+    tab.setAttribute("aria-selected", String(pl.lane === col.key));
+    tab.tabIndex = pl.lane === col.key ? 0 : -1;
   }
   renderSearch();
   markSelected();
