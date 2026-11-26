@@ -5,7 +5,9 @@ export { EditorView, keymap, placeholder, drawSelection, lineNumbers, highlightA
 export { EditorState, Compartment, Prec, Transaction } from "@codemirror/state";
 export { history, historyKeymap, defaultKeymap, insertNewline } from "@codemirror/commands";
 export { syntaxHighlighting, HighlightStyle, LanguageDescription, bracketMatching } from "@codemirror/language";
-export { tags } from "@lezer/highlight";
+// highlightCode and tagHighlighter colour code blocks outside an editor
+// (web/static/codehl.js).
+export { tags, highlightCode, tagHighlighter } from "@lezer/highlight";
 export { markdown } from "@codemirror/lang-markdown";
 export { languages } from "@codemirror/language-data";
 export { vim, getCM } from "@replit/codemirror-vim";

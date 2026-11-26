@@ -37,7 +37,7 @@ test("an svg block with a script or event handlers stays inert", () => {
 test("an svg block still streaming in shows as code", () => {
   const html = renderMarkdown("Drawing:\n\n```svg\n<svg viewBox=\"0 0 4 4\">\n<rect width=\"4\"");
   assert.doesNotMatch(html, /md-svg|<img/);
-  assert.match(html, /<div class="code-block"><button[^]*<code class="lang-svg">&lt;svg viewBox=&quot;0 0 4 4&quot;&gt;\n&lt;rect width=&quot;4&quot;<\/code>/);
+  assert.match(html, /<div class="code-block"><button[^]*<code class="lang-svg" data-open>&lt;svg viewBox=&quot;0 0 4 4&quot;&gt;\n&lt;rect width=&quot;4&quot;<\/code>/);
   assert.match(renderMarkdown("```svg\n<svg/>\n``"), /<div class="code-block">/, "a closing fence half there is not closed");
   assert.match(renderMarkdown("```svg\n<svg/>\n```"), /md-svg/);
 });

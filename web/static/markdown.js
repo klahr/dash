@@ -44,9 +44,10 @@ const LIST = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 // codeBlock is a fenced code block, with its copy button. The buttons
 // (copy, and an svg picture's Code) are handled by document-level click
 // listeners in app/dialogs.js, so they keep working when streaming replies
-// re-render the HTML.
-function codeBlock(src, lang, hidden = false) {
-  return `<div class="code-block"${hidden ? " hidden" : ""}><button type="button" class="code-copy" title="Copy" aria-label="Copy code"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v11H9zM5 15H4V4h11v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><pre><code${lang ? ` class="lang-${lang}"` : ""}>${esc(src)}</code></pre></div>`;
+// re-render the HTML. A block whose closing fence hasn't come yet (a reply
+// still streaming) is marked data-open: codehl.js colours it once it closes.
+function codeBlock(src, lang, hidden = false, open = false) {
+  return `<div class="code-block"${hidden ? " hidden" : ""}><button type="button" class="code-copy" title="Copy" aria-label="Copy code"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v11H9zM5 15H4V4h11v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><pre><code${lang ? ` class="lang-${lang}"${open ? " data-open" : ""}` : ""}>${esc(src)}</code></pre></div>`;
 }
 
 // svgFigure shows an svg code block as the picture it draws, with its code
@@ -77,7 +78,7 @@ function blocks(lines) {
       const closed = i < lines.length; // a reply still streaming may not have closed it yet
       i++;
       const src = body.join("\n");
-      out.push((closed && lang.toLowerCase() === "svg" && svgFigure(src, lang)) || codeBlock(src, lang));
+      out.push((closed && lang.toLowerCase() === "svg" && svgFigure(src, lang)) || codeBlock(src, lang, false, !closed));
       continue;
     }
     if ((m = line.match(/^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/))) {

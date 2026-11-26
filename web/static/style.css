@@ -660,6 +660,22 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .md-svg-code:hover { color: var(--text); }
 .md-svg .code-block { margin-top: 4px; }
 :is(.msg .reply, .md) pre code { background: none; padding: 0; font-size: var(--fs-s); white-space: pre; }
+/* Syntax colours (codehl.js's codeHighlighter): the prompt and file editors
+   and the code blocks in replies, prompts and goals. Theme variables, so
+   light and dark mode both follow. */
+.tok-heading, .tok-strong { color: var(--text); font-weight: 600; }
+.tok-mark, .tok-link, .tok-function, .tok-tag { color: var(--accent); }
+.tok-faint { color: var(--faint); }
+.tok-emphasis { color: var(--accent2); font-style: italic; }
+.tok-strike { text-decoration: line-through; }
+.tok-url { color: var(--muted); text-decoration: underline; text-decoration-color: var(--faint); }
+.tok-mono, .tok-type { color: var(--review); }
+.tok-muted { color: var(--muted); }
+.tok-keyword { color: var(--accent2); }
+.tok-string, .tok-inserted { color: var(--merged); }
+.tok-comment { color: var(--faint); font-style: italic; }
+.tok-number { color: var(--running); }
+.tok-deleted, .tok-invalid { color: var(--failed); }
 :is(.msg .reply, .md) blockquote { border-left: 2px solid var(--line); padding-left: 12px; color: var(--muted); }
 :is(.msg .reply, .md) hr { border: 0; border-top: 1px solid var(--line); }
 :is(.msg .reply, .md) .table-wrap { overflow-x: auto; }

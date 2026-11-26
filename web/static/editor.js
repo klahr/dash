@@ -6,11 +6,12 @@
 import {
   EditorView, EditorState, Compartment, Prec, Transaction, keymap, placeholder, drawSelection,
   lineNumbers, highlightActiveLine, highlightActiveLineGutter, highlightWhitespace, highlightTrailingWhitespace, highlightSpecialChars,
-  history, historyKeymap, defaultKeymap, insertNewline, syntaxHighlighting, HighlightStyle, LanguageDescription, bracketMatching, tags as t,
+  history, historyKeymap, defaultKeymap, insertNewline, syntaxHighlighting, LanguageDescription, bracketMatching,
   markdown, languages, vim, getCM,
 } from "./vendor/codemirror.js";
 import * as store from "./app/store.js";
 import { renderMarkdown } from "./markdown.js";
+import { codeHighlighter, fenceLanguage } from "./codehl.js";
 
 // Chat answers render with markdown.js; it is re-exported for the modules
 // that already import it from here.
@@ -62,29 +63,9 @@ function indent(view, out) {
   return true;
 }
 
-// Colours come from the page's CSS variables, so they follow its theme.
-const highlightStyle = HighlightStyle.define([
-  { tag: t.heading, color: "var(--text)", fontWeight: "600" },
-  { tag: t.processingInstruction, color: "var(--accent)" },
-  { tag: t.contentSeparator, color: "var(--faint)" },
-  { tag: t.emphasis, color: "var(--accent2)", fontStyle: "italic" },
-  { tag: t.strong, color: "var(--text)", fontWeight: "600" },
-  { tag: t.strikethrough, textDecoration: "line-through" },
-  { tag: t.link, color: "var(--accent)" },
-  { tag: t.url, color: "var(--muted)", textDecoration: "underline", textDecorationColor: "var(--faint)" },
-  { tag: t.monospace, color: "var(--review)" },
-  { tag: t.quote, color: "var(--muted)" },
-  { tag: [t.labelName, t.meta], color: "var(--muted)" },
-  // code in fences
-  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword, t.modifier], color: "var(--accent2)" },
-  { tag: [t.string, t.special(t.string), t.regexp, t.character], color: "var(--merged)" },
-  { tag: t.comment, color: "var(--faint)", fontStyle: "italic" },
-  { tag: [t.number, t.bool, t.null, t.atom, t.escape], color: "var(--running)" },
-  { tag: [t.typeName, t.className, t.namespace, t.standard(t.typeName)], color: "var(--review)" },
-  { tag: [t.function(t.variableName), t.function(t.propertyName), t.definition(t.function(t.variableName)), t.macroName], color: "var(--accent)" },
-  { tag: [t.tagName, t.attributeName], color: "var(--accent)" },
-  { tag: t.invalid, color: "var(--failed)" },
-]);
+// Syntax colours are codehl.js's tok-* classes, which style.css colours with
+// the page's CSS variables, so they follow its theme and match the code
+// blocks in chat replies.
 
 const theme = EditorView.theme({
   "&": { color: "var(--text)", backgroundColor: "var(--bg)", border: "1px solid var(--line)", borderRadius: "var(--r-m)" },
@@ -136,13 +117,6 @@ export const vimNormal = (view) => {
   if (!v || v.insertMode || v.visualMode) return false;
   const s = v.inputState;
   return !(s.operator || s.motion || s.keyBuffer.length || s.prefixRepeat.length || s.motionRepeat.length);
-};
-
-// A fence's info string names the language ("go", "python") or, often, its
-// file extension ("py", "rs").
-const fenceLanguage = (info) => {
-  const name = info.trim().split(/\s/)[0].toLowerCase();
-  return LanguageDescription.matchLanguageName(languages, name, false) || languages.find((l) => l.extensions.includes(name)) || null;
 };
 
 const hasFiles = (data) => !!data?.files?.length;
@@ -217,7 +191,7 @@ export function mdEditor(textarea) {
         // Esc closes the dialog and Ctrl-Enter submits the form, as before.
         keymap.of([...defaultKeymap.filter((b) => b.key !== "Escape" && b.key !== "Mod-Enter"), ...historyKeymap]),
         markdownLang(),
-        syntaxHighlighting(highlightStyle),
+        syntaxHighlighting(codeHighlighter),
         EditorView.lineWrapping,
         placeholder(textarea.placeholder),
         readOnly.of(EditorState.readOnly.of(textarea.readOnly)),
@@ -318,7 +292,7 @@ export function codeEditor(textarea) {
     Prec.high(keymap.of([{ key: "Tab", run: (v) => codeIndent(v, false), shift: (v) => codeIndent(v, true) }])),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     language.of([]),
-    syntaxHighlighting(highlightStyle),
+    syntaxHighlighting(codeHighlighter),
     EditorView.contentAttributes.of({
       spellcheck: "false", autocorrect: "off", autocapitalize: "off", writingsuggestions: "false",
       ...(label ? { "aria-label": label } : {}),

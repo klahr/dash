@@ -105,6 +105,14 @@ usual placeholder.
 To turn it off, open **Account → General** and clear **Suggest what to say next**. It's on by default
 and applies to this browser only. When it's off, no call is made.
 
+## Code in the chat
+
+A code block in a reply is coloured by its language, as in the prompt editor, when the block names
+one (```` ```go ````, ```` ```sh ````, ```` ```sql ````, ```` ```diff ````). Task prompts and goals
+colour their code blocks the same way. While a reply is coming in, a block is coloured once it is
+complete. A block with no language, a language Dash doesn't know, or more than 100 KB of code
+stays plain. The copy button on a block copies the plain code.
+
 ## Pictures in the chat
 
 Claude can show you a picture in its reply. Ask it to draw something (a diagram, a sketch, an

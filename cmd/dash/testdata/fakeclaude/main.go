@@ -133,6 +133,23 @@ func main() {
 				{"type": "tool_result", "tool_use_id": id, "content": toolText(out)}}}})
 		}
 		line(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start"}})
+		// "code reply": a Go block, closed, and a shell block whose closing
+		// fence waits while $FAKECLAUDE_LOG.chat-hold exists.
+		if strings.Contains(latest, "code reply") {
+			delta := func(text string) {
+				line(map[string]any{"type": "stream_event", "event": map[string]any{"type": "content_block_delta",
+					"delta": map[string]any{"type": "text_delta", "text": text}}})
+			}
+			delta("Code:\n\n```go\nfunc main() {}\n```\n\n```sh\necho \"hi\" # greet\n")
+			for f := os.Getenv("FAKECLAUDE_LOG"); f != ""; time.Sleep(50 * time.Millisecond) {
+				if _, err := os.Stat(f + ".chat-hold"); err != nil {
+					break
+				}
+			}
+			delta("```\n")
+			result("Code")
+			return
+		}
 		line(map[string]any{"type": "stream_event", "event": map[string]any{"type": "content_block_delta",
 			"delta": map[string]any{"type": "text_delta", "text": "Hello from the runner"}}})
 		// A reply stays streaming while $FAKECLAUDE_LOG.chat-hold exists.
