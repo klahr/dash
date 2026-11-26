@@ -10,7 +10,8 @@ import (
 // fake gh call). Alone that work takes well under a second, but under a
 // full `go test ./...` on a busy machine (macOS especially) it has taken
 // over 10 seconds, and on Windows a single merge step (git subprocesses)
-// over 20, so a batch merge can pass a minute. The bound is generous: a
+// over 20, so a batch merge, or a merge with its tests and a fix by Claude,
+// can take well over a minute. The bound is generous: a
 // passing test never waits for it.
 const waitTimeout = 3 * time.Minute
 
