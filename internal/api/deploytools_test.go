@@ -91,7 +91,7 @@ func TestDeployToolsAgentRules(t *testing.T) {
 		model.Environment{Name: "staging", DeployCommand: "true"},                          // members deploy, no approval
 		model.Environment{Name: "production", DeployCommand: "true"},                       // admins deploy and approve
 		model.Environment{Name: "qa", DeployCommand: "true", ApproveRole: model.RoleAdmin}) // members deploy, an admin approves
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 	call := func(tool, args string) (string, bool) { return toolCall(h, token, tool, args) }
 	const sha = "0123456789abcdef0123456789abcdef01234567"
@@ -222,7 +222,7 @@ func TestDeployToolsMemberRole(t *testing.T) {
 	holdDeploys(s)
 	h := s.Routes()
 	p = withEnvs(t, s, p, model.Environment{Name: "staging", DeployCommand: "true", DeployRole: model.RoleAdmin})
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 	if out, isErr := toolCall(h, token, "deploy", `{"environment":"staging"}`); !isErr || !strings.Contains(out, "only an admin") {
 		t.Errorf("deploy where admins deploy: %v %s", isErr, out)

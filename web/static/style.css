@@ -1911,6 +1911,13 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .perm-q { font-weight: 600; margin: 0 0 4px; }
 .perm-q .todo-ref { color: var(--muted); font-weight: 500; }
 .perm-cmd { display: block; font: var(--fs-code)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--cmd-text); background: var(--bg); border-radius: var(--r-s); padding: 8px 10px; margin: 6px 0 10px; max-height: 180px; overflow: auto; }
+.perm-changes { margin: 6px 0 10px; }
+.perm-changes dt { font-weight: 600; margin: 8px 0 2px; }
+.perm-changes dd { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(14em, 1fr)); gap: 6px 10px; }
+.perm-changes dd > div { min-width: 0; }
+.perm-when { display: block; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.perm-changes .perm-cmd { max-height: none; margin: 2px 0 0; }
+.perm-none { color: var(--muted); }
 .perm-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .perm-actions .btn { min-height: 40px; padding: 0 14px; }
 .perm-actions .btn.allow { background: var(--running); border-color: var(--running); color: var(--on-running); }

@@ -101,7 +101,8 @@ func TestChatArgsShell(t *testing.T) {
 
 // The Dash task tools are wired up in both modes: readonly may create, change
 // and queue tasks without asking, shell mode asks for create_todo and
-// queue_todo like for any other tool.
+// queue_todo like for any other tool. update_project asks the user itself
+// (it blocks on the chat's approver), so Claude Code passes it in both.
 func TestChatArgsBoard(t *testing.T) {
 	board := mcptools.ServerConfig("http://127.0.0.1:1", "b")
 	allowed := func(args []string) []string {
@@ -123,6 +124,7 @@ func TestChatArgsBoard(t *testing.T) {
 	if got := allowed(ro); !slices.Equal(got, []string{"mcp__dash_board__list_projects", "mcp__dash_board__list_todos",
 		"mcp__dash_board__get_todo", "mcp__dash_board__create_todo", "mcp__dash_board__queue_todo",
 		"mcp__dash_board__stop_todo", "mcp__dash_board__restart_todo", "mcp__dash_board__update_todo", "mcp__dash_board__delete_todo",
+		"mcp__dash_board__combine_todos", "mcp__dash_board__get_project", "mcp__dash_board__update_project",
 		"mcp__dash_board__report_issue", "mcp__dash_board__read_try_terminal",
 		"mcp__dash_board__list_goals", "mcp__dash_board__get_goal", "mcp__dash_board__create_goal", "mcp__dash_board__update_goal",
 		"mcp__dash_board__pause_goal", "mcp__dash_board__resume_goal", "mcp__dash_board__stop_goal",
@@ -144,9 +146,9 @@ func TestChatArgsBoard(t *testing.T) {
 		t.Errorf("shell --mcp-config %q", raw)
 	}
 	if got := allowed(sh); !slices.Equal(got, []string{"mcp__dash_board__list_projects", "mcp__dash_board__list_todos",
-		"mcp__dash_board__get_todo", "mcp__dash_board__read_try_terminal",
+		"mcp__dash_board__get_todo", "mcp__dash_board__get_project", "mcp__dash_board__read_try_terminal",
 		"mcp__dash_board__list_goals", "mcp__dash_board__get_goal", "mcp__dash_board__list_cards", "mcp__dash_board__get_card", "mcp__dash_board__list_deploys",
-		"mcp__dash_board__show_image", "Read"}) {
+		"mcp__dash_board__show_image", "mcp__dash_board__update_project", "Read"}) {
 		t.Errorf("shell --allowedTools %q", got)
 	}
 	if got, _ := flag(sh, "--permission-prompt-tool"); got != perm.PromptTool {

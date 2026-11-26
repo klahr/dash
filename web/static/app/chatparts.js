@@ -24,9 +24,37 @@ export const isQuestion = (p) => p?.tool === "AskUserQuestion";
 // permHead heads a toast or notification about request p.
 export const permHead = (p) => isQuestion(p) ? "Claude has a question" : "Claude needs your approval";
 
+// isSettingsChange says whether request p is the chat's update_project,
+// which asks every time: it shows each setting before and after, and is
+// never always allowed.
+export const isSettingsChange = (p) => /^(mcp__dash_board__)?update_project$/.test(p?.tool || "");
+
+const settingName = (k) => { const s = String(k).replace(/_/g, " "); return s.charAt(0).toUpperCase() + s.slice(1); };
+// settingValue is one setting's value as the card shows it, in full.
+function settingValue(v) {
+  if (v === "" || v == null || (Array.isArray(v) && !v.length)) return h("span", { class: "perm-none" }, "none");
+  const text = typeof v === "string" ? v
+    : Array.isArray(v) && v.every((x) => typeof x === "string") ? v.join("\n")
+    : typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
+  return h("code", { class: "perm-cmd" }, text);
+}
+
+// settingChanges lists what update_project request p changes: each setting
+// with its value before and after.
+export function settingChanges(p) {
+  const changes = Array.isArray(p.input?.changes) ? p.input.changes : [];
+  return h("dl", { class: "perm-changes" }, ...changes.flatMap((c) => [
+    h("dt", {}, settingName(c?.setting)),
+    h("dd", {},
+      h("div", { class: "perm-was" }, h("span", { class: "perm-when" }, "Before"), settingValue(c?.before)),
+      h("div", { class: "perm-now" }, h("span", { class: "perm-when" }, "After"), settingValue(c?.after))),
+  ]));
+}
+
 // describePerm says what an approval request p would let Claude do.
 export function describePerm(p) {
   const i = p.input || {};
+  if (isSettingsChange(p)) return { title: `change the settings of ${i.project || "the project"}`, detail: (Array.isArray(i.changes) ? i.changes : []).map((c) => settingName(c?.setting)).join(", ") };
   switch (p.tool) {
     case "AskUserQuestion": return { title: "ask you a question", detail: (Array.isArray(i.questions) ? i.questions : []).map((q) => q?.question).filter(Boolean).join("\n") };
     case "Bash": return { title: "run a command", detail: i.command, note: i.description };
@@ -327,7 +355,7 @@ export function chatPermCard(p, decide) {
   return h("div", { class: "perm", role: "group", "aria-label": `Permission request: ${d.title}`, "data-id": p.id },
     h("p", { class: "perm-q" }, `Claude wants to ${d.title}`),
     d.note ? h("p", { class: "hint", style: "margin:0" }, d.note) : null,
-    h("code", { class: "perm-cmd" }, toolDetail(p.tool, p.input || {})),
+    isSettingsChange(p) ? settingChanges(p) : h("code", { class: "perm-cmd" }, toolDetail(p.tool, p.input || {})),
     h("div", { class: "perm-actions" },
       ib({ class: "btn allow", onclick: answer("allow") }, "check", "Approve"),
       ib({ class: "btn danger", onclick: answer("deny") }, "x", "Deny")));

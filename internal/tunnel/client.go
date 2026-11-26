@@ -312,7 +312,19 @@ const (
 	// BoardGoalHeader names, with BoardProjectHeader, the hub's goal whose
 	// coordinator a chat runs for: its calls get that goal's tools.
 	BoardGoalHeader = "X-Dash-Hub-Goal"
+	// BoardApprovedHeader names, for a chat's call, the tool call
+	// (update_project) its user approved on the runner, where the chat
+	// runs and its approval card is answered.
+	BoardApprovedHeader = "X-Dash-Hub-Approved"
 )
+
+type boardApprovedKey struct{}
+
+// WithBoardApproved makes Board calls made with ctx say that the chat's
+// user approved this call of tool.
+func WithBoardApproved(ctx context.Context, tool string) context.Context {
+	return context.WithValue(ctx, boardApprovedKey{}, tool)
+}
 
 type boardGoalKey struct{}
 
@@ -337,6 +349,9 @@ func Board(ctx context.Context, creds Credentials, hubTodo, hubProject string, b
 		if g, _ := ctx.Value(boardGoalKey{}).(string); g != "" {
 			hdr.Set(BoardGoalHeader, g)
 		}
+	}
+	if t, _ := ctx.Value(boardApprovedKey{}).(string); t != "" && hubTodo == "" {
+		hdr.Set(BoardApprovedHeader, t)
 	}
 	// The answer may be a stream, passed on as it comes: hubDo, not HubJSON.
 	res, err := hubDo(ctx, &http.Client{Timeout: 2 * time.Minute}, creds.Server, creds.Token, http.MethodPost, BoardPath, bytes.NewReader(body), hdr)

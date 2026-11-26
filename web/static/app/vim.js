@@ -29,7 +29,7 @@ import { activeChat, toggleChatPane, togglePin } from "./chatpane.js";
 import { openShell } from "./terminal.js";
 import { openTry } from "./try.js";
 import { clearPriority, nextPriority } from "./dnd.js";
-import { isQuestion } from "./chatparts.js";
+import { isQuestion, isSettingsChange } from "./chatparts.js";
 import { dismissNote } from "./tags.js";
 
 // ------------------------------------------------------------------ vim keys
@@ -166,6 +166,7 @@ export async function permKey(k) {
   if (!p) return false;
   const decision = { y: "allow", A: "always", X: "deny" }[k];
   if (isQuestion(p) && decision !== "deny") return toast("Answer Claude's question in its card");
+  if (isSettingsChange(p) && decision === "always") return toast("Settings changes are allowed one at a time");
   await api("POST", `/api/permissions/${p.id}`, { decision });
   toast(decision === "deny" ? "Denied" : decision === "always" ? `${p.tool} always allowed in this project` : "Allowed");
   return true; // answered

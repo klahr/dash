@@ -266,7 +266,7 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 	ws.Close()
 
 	// The chat reads it with read_try_terminal: output, runner and commit.
-	token, release := hub.Board.Register(chatCaller(t, hub), p.ID)
+	token, release := hub.Board.Register(chatCaller(t, hub), p.ID, nil)
 	defer release()
 	eventually(t, "the output to reach the log", func() bool {
 		text, isErr := callResult(t, rpc(hub.Routes(), token, "tools/call", `{"name":"read_try_terminal","arguments":{"lines":20}}`))

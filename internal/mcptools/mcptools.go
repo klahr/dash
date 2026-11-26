@@ -415,12 +415,16 @@ type Options struct {
 	// Todo is the running task the tools serve, if any: report_issue
 	// credits issues to it ("agent:<todo>").
 	Todo string
+	// Ask asks the chat's user to approve a SelfAskTools call; nil where
+	// nobody can, and those tools refuse.
+	Ask Approver
 }
 
 // Tool names the chat may call; ReadTools never change anything.
 var (
-	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "read_try_terminal", "list_goals", "get_goal", "list_cards", "get_card", "list_deploys", ShowImageTool}
+	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "get_project", "read_try_terminal", "list_goals", "get_goal", "list_cards", "get_card", "list_deploys", ShowImageTool}
 	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "create_release", "delete_todo",
+		"combine_todos", "get_project", UpdateProjectTool,
 		"report_issue", "read_try_terminal",
 		"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal", "delete_goal", "accept_goal_plan", "reject_goal_plan", "message_goal",
 		"list_cards", "get_card", "create_card", "update_card", "comment_card", "start_card", "link_card",
@@ -437,12 +441,21 @@ var (
 
 // Tools returns list_projects, list_todos, get_todo, create_todo,
 // queue_todo, stop_todo and restart_todo (when b is a Restarter),
-// update_todo, create_release and delete_todo; the IssueTools; read_try_terminal when
+// update_todo, create_release and delete_todo; combine_todos when b combines
+// drafts (Combiner); get_project and update_project when b changes project
+// settings (SettingsBoard); the IssueTools; read_try_terminal when
 // b reads Try terminals (TryReader); the goal tools when b manages goals (GoalManager);
 // the planning tools when b has the org's plan (CardBoard); the deploy
 // tools when b deploys (Deployer); and show_image.
 func Tools(b Board, o Options) []Tool {
-	tools := append(boardTools(b, o), IssueTools(b, o)...)
+	tools := boardTools(b, o)
+	if c, ok := b.(Combiner); ok {
+		tools = append(tools, CombineTool(c))
+	}
+	if sb, ok := b.(SettingsBoard); ok {
+		tools = append(tools, ChatProjectTools(sb, o)...)
+	}
+	tools = append(tools, IssueTools(b, o)...)
 	if tr, ok := b.(TryReader); ok {
 		tools = append(tools, TryTool(b, tr, o))
 	}
@@ -1095,6 +1108,9 @@ type Scope struct {
 	// tools are GoalTools, for that goal only. HubGoal is the hub's id of
 	// it, for a Hub scope.
 	Goal, HubGoal string
+	// Ask asks the chat's user to approve a SelfAskTools call (nil: nobody
+	// can, and those tools refuse). Only the chat's own tools get it.
+	Ask Approver
 }
 
 type callerKey struct{}
@@ -1145,9 +1161,10 @@ func CallerFrom(ctx context.Context) (Caller, bool) {
 }
 
 // Register issues a token for one chat run of c; projectID is the default
-// project for the tools ("" for none). Call release when the run ends.
-func (t *Tokens) Register(c Caller, projectID string) (token string, release func()) {
-	return t.register(Scope{Org: c.Org, User: c.User, Project: projectID})
+// project for the tools ("" for none), and ask, if set, asks the chat's user
+// to approve the SelfAskTools. Call release when the run ends.
+func (t *Tokens) Register(c Caller, projectID string, ask Approver) (token string, release func()) {
+	return t.register(Scope{Org: c.Org, User: c.User, Project: projectID, Ask: ask})
 }
 
 // RegisterGoal issues a token for one turn of goalID's coordinator, acting
@@ -1171,9 +1188,9 @@ func (t *Tokens) RegisterTask(c Caller, projectID, todoID string) (token string,
 
 // RegisterHub issues a token for one chat run of c that this runner runs
 // for its hub: its tools are the hub's board, defaulting to the hub's
-// project hubProject. Call release when the run ends.
-func (t *Tokens) RegisterHub(c Caller, hubProject string) (token string, release func()) {
-	return t.register(Scope{Org: c.Org, User: c.User, Hub: true, HubProject: hubProject})
+// project hubProject; ask is as for Register. Call release when the run ends.
+func (t *Tokens) RegisterHub(c Caller, hubProject string, ask Approver) (token string, release func()) {
+	return t.register(Scope{Org: c.Org, User: c.User, Hub: true, HubProject: hubProject, Ask: ask})
 }
 
 func (t *Tokens) register(sc Scope) (token string, release func()) {
@@ -1253,7 +1270,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, sc Scope) {
 	srv := &Server{
 		Name:         ServerName,
 		Instructions: "The tasks on the Dash board. Each runs Claude Code in its own git worktree once queued.",
-		Tools:        Tools(board, Options{Project: sc.Project, Draft: true}),
+		Tools:        Tools(board, Options{Project: sc.Project, Draft: true, Ask: sc.Ask}),
 	}
 	pb, planner := board.(PlannerBoard)
 	switch {

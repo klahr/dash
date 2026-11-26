@@ -4,7 +4,7 @@ import { ask, attempt, toast } from "./dialogs.js";
 import { saveComments, state } from "./state.js";
 import { baseBranch } from "./events.js";
 import { renderBoard, title } from "./branches.js";
-import { describePerm, duration, isQuestion, questionGroups } from "./chatparts.js";
+import { describePerm, duration, isQuestion, isSettingsChange, questionGroups, settingChanges } from "./chatparts.js";
 import { openDetail, renderActions } from "./detail.js";
 import { renderPane } from "./drawmode.js";
 
@@ -144,10 +144,10 @@ function permCard(p, withTodo) {
     h("p", { class: "perm-q" }, `Claude wants to ${d.title}`,
       withTodo && t ? h("span", { class: "todo-ref" }, ` · ${title(t)}`) : null),
     d.note ? h("p", { class: "hint", style: "margin:0" }, d.note) : null,
-    d.detail ? h("code", { class: "perm-cmd" }, d.detail) : null,
+    isSettingsChange(p) ? settingChanges(p) : d.detail ? h("code", { class: "perm-cmd" }, d.detail) : null,
     h("div", { class: "perm-actions" },
       ib({ class: "btn allow", title: "Allow (y)", onclick: decide("allow") }, "check", "Allow"),
-      ib({ class: "btn", title: "Always allow (A)", onclick: decide("always") }, "checks", `Always allow ${p.tool}`),
+      isSettingsChange(p) ? null : ib({ class: "btn", title: "Always allow (A)", onclick: decide("always") }, "checks", `Always allow ${p.tool}`),
       ib({ class: "btn danger", title: "Deny (X)", onclick: decide("deny") }, "x", "Deny"),
       withTodo && t ? ib({ class: "link", onclick: () => openDetail(t.id) }, "right", "Open task") : null));
 }

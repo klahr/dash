@@ -167,7 +167,7 @@ func TestProjectChatPlanningTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 
 	for _, call := range []struct{ tool, args string }{
@@ -223,7 +223,7 @@ func TestProjectChatLinkCard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 
 	links := func(id string) []model.CardLink {

@@ -211,7 +211,7 @@ func TestReleaseTagsOnly(t *testing.T) {
 	clear()
 
 	// The deploy tool.
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 	if out, isErr := toolCall(s.Routes(), token, "deploy", `{"environment":"staging","commit":"`+c[3]+`"}`); !isErr || !strings.Contains(out, "isn't tagged") {
 		t.Errorf("tool, untagged: %v %s", isErr, out)

@@ -31,6 +31,18 @@ const (
 	AskTool = "AskUserQuestion"
 )
 
+// selfAsks reports whether tool (as Claude Code names it) asks the user
+// itself on every call (mcptools.SelfAskTools): it is never allowed
+// "always", by a saved grant or a grant for the rest of a task.
+func selfAsks(tool string) bool {
+	for _, t := range mcptools.SelfAskTools {
+		if tool == mcptools.ToolName(mcptools.ServerName, t) {
+			return true
+		}
+	}
+	return false
+}
+
 type Publisher interface{ Publish(model.Event) }
 
 var ErrNotFound = errors.New("permission request not found")
@@ -250,6 +262,10 @@ func (b *Broker) DecideAnswers(id, decision, message string, given map[string]st
 			return err
 		}
 	}
+	if decision == "always" && selfAsks(p.req.Tool) {
+		b.mu.Unlock()
+		return errors.New("this tool asks every time: allow or deny it")
+	}
 	always := decision == "always"
 	switch decision {
 	case "always":
@@ -284,11 +300,12 @@ func (b *Broker) publish(r Request) {
 // ask blocks until the request is answered, times out, or ctx ends.
 func (b *Broker) ask(ctx context.Context, rn run, tool string, input json.RawMessage) Request {
 	// A question always waits for its answers.
-	if tool != AskTool && b.Saved != nil && b.Saved.ToolAllowed(rn.projectID, tool) {
+	asks := tool == AskTool || selfAsks(tool)
+	if !asks && b.Saved != nil && b.Saved.ToolAllowed(rn.projectID, tool) {
 		return Request{Tool: tool, Input: input, Decision: "allow"}
 	}
 	b.mu.Lock()
-	if tool != AskTool && b.always[rn.todoID][tool] {
+	if !asks && b.always[rn.todoID][tool] {
 		b.mu.Unlock()
 		return Request{Tool: tool, Input: input, Decision: "allow"}
 	}
@@ -364,7 +381,12 @@ func (b *Broker) ServeMCP(w http.ResponseWriter, r *http.Request) {
 // tool's reply text for Claude Code.
 func (b *Broker) answer(ctx context.Context, rn run, tool string, input json.RawMessage) string {
 	var res Request
-	if rn.ask != nil {
+	switch {
+	case rn.ask != nil && selfAsks(tool):
+		// The tool asks the chat's user itself, showing what it changes:
+		// asking here too would ask twice.
+		res.Decision = "allow"
+	case rn.ask != nil:
 		a := rn.ask(ctx, tool, input)
 		res.Decision, res.Message = "deny", a.Message
 		if a.Allow {
@@ -377,7 +399,7 @@ func (b *Broker) answer(ctx context.Context, rn run, tool string, input json.Raw
 				res.Decision, res.Message = "deny", "The user didn't answer: "+err.Error()+"."
 			}
 		}
-	} else {
+	default:
 		res = b.ask(ctx, rn, tool, input)
 	}
 	reply := map[string]any{"behavior": "deny", "message": res.Message}

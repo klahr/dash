@@ -551,7 +551,7 @@ func TestBoardMCPIsScoped(t *testing.T) {
 	parallel(t)
 
 	o := newTwoOrgs(t)
-	token, release := o.s.Board.Register(mcptools.Caller{Org: o.beta.ID, User: o.bUser.ID}, "")
+	token, release := o.s.Board.Register(mcptools.Caller{Org: o.beta.ID, User: o.bUser.ID}, "", nil)
 	defer release()
 	text, _ := call(t, o.h, token, "list_projects", `{}`)
 	if strings.Contains(text, o.web.ID) || strings.Contains(text, "other") {
@@ -577,7 +577,7 @@ func TestBoardMCPIsScoped(t *testing.T) {
 	o.untouched(t, "board tools")
 
 	// A token without an org gets nothing.
-	bad, release2 := o.s.Board.Register(mcptools.Caller{}, "")
+	bad, release2 := o.s.Board.Register(mcptools.Caller{}, "", nil)
 	defer release2()
 	if w := rpc(o.h, bad, "tools/list", "{}"); w.Code != http.StatusForbidden {
 		t.Errorf("token without an org: %d %s", w.Code, w.Body)

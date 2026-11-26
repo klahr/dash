@@ -22,7 +22,7 @@ func TestGoalToolsForUser(t *testing.T) {
 			call("ask_user", `{"question":"Which database?"}`)
 		}
 	})
-	token, release := s.Board.Register(testOwner(t, s), p.ID)
+	token, release := s.Board.Register(testOwner(t, s), p.ID, nil)
 	defer release()
 	tool := func(name, args string) string {
 		t.Helper()

@@ -122,6 +122,14 @@ func (s *Server) toHubBoard(w http.ResponseWriter, r *http.Request, sc mcptools.
 		s.boardHandler().Serve(w, r, sc)
 		return true
 	}
+	if sc.Hub && sc.HubGoal == "" && mcptools.CallsTool(body, mcptools.UpdateProjectTool) {
+		// The chat's user approves it here, where the chat runs; the hub
+		// then applies what they approved.
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		hs := hubProjectSettings{s: s, ctx: r.Context(), project: hubProject}
+		(&mcptools.Server{Name: mcptools.ServerName, Tools: mcptools.ChatProjectTools(hs, mcptools.Options{Project: hubProject, Ask: sc.Ask})}).ServeHTTP(w, r)
+		return true
+	}
 	ctx := r.Context()
 	if sc.Hub && sc.HubGoal != "" {
 		ctx = tunnel.WithBoardGoal(ctx, sc.HubGoal) // the hub serves that goal's tools
@@ -164,8 +172,91 @@ func (s *Server) runnerBoard(rh *tunnel.Hub) http.HandlerFunc {
 			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
+		if r.Header.Get(tunnel.BoardApprovedHeader) == mcptools.UpdateProjectTool && sc.Todo == "" && sc.Goal == "" {
+			// The chat's user approved this update_project on the runner
+			// (hubProjectSettings there), which saw the settings before and after.
+			sc.Ask = approvedOnRunner
+		}
 		s.boardHandler().Serve(w, r, sc)
 	}
+}
+
+// approvedOnRunner approves the update_project call a runner's chat user
+// approved there.
+func approvedOnRunner(_ context.Context, tool string, _ json.RawMessage) (bool, string) {
+	return tool == mcptools.ToolName(mcptools.ServerName, mcptools.UpdateProjectTool), "only update_project is approved on the runner"
+}
+
+// hubProjectSettings is the hub's project settings, for update_project in a chat
+// this runner runs for its hub: the chat's user approves the change here,
+// and the hub, told so, applies it (with its own checks).
+type hubProjectSettings struct {
+	s       *Server
+	ctx     context.Context
+	project string // the hub's id of the chat's project
+}
+
+// call calls tool on the hub's board with args, and decodes its answer into out.
+func (h hubProjectSettings) call(ctx context.Context, tool string, args map[string]any, out any) error {
+	params, err := json.Marshal(map[string]any{"name": tool, "arguments": args})
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(mcptools.Request{JSONRPC: "2.0", ID: json.RawMessage("1"), Method: "tools/call", Params: params})
+	if err != nil {
+		return err
+	}
+	res, err := h.s.HubBoard(ctx, "", h.project, body)
+	if err != nil {
+		return fmt.Errorf("the hub's board can't be reached: %w", err)
+	}
+	defer res.Body.Close()
+	var rpc struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+		Error *mcptools.Error `json:"error"`
+	}
+	b, _ := io.ReadAll(io.LimitReader(res.Body, maxBoardRequest))
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("the hub's board: %s", strings.TrimSpace(string(b)))
+	}
+	if err := json.Unmarshal(b, &rpc); err != nil {
+		return fmt.Errorf("the hub's board: %w", err)
+	}
+	if rpc.Error != nil {
+		return errors.New(rpc.Error.Message)
+	}
+	text := ""
+	for _, c := range rpc.Result.Content {
+		text += c.Text
+	}
+	if rpc.Result.IsError {
+		return errors.New(text)
+	}
+	return json.Unmarshal([]byte(text), out)
+}
+
+func (h hubProjectSettings) Project(ref string) (model.Project, error) {
+	var p model.Project
+	err := h.call(h.ctx, "get_project", map[string]any{"project": ref}, &p)
+	return p, err
+}
+
+// CheckProjectUpdate leaves the checks to the hub, when it applies the change.
+func (hubProjectSettings) CheckProjectUpdate(string, map[string]any) error { return nil }
+
+func (h hubProjectSettings) UpdateProject(id string, changes map[string]any) (model.Project, error) {
+	args := map[string]any{"project": id}
+	for k, v := range changes {
+		args[k] = v
+	}
+	var p model.Project
+	err := h.call(tunnel.WithBoardApproved(h.ctx, mcptools.UpdateProjectTool), mcptools.UpdateProjectTool, args, &p)
+	return p, err
 }
 
 // runnerScope is what a board call from runner x for the hub's task
@@ -492,6 +583,93 @@ func (b board) ReportIssue(projectID string, is model.Issue) (mcptools.Reported,
 	return b.sv.reportIssue(is)
 }
 
+// projectChanges reads changes, update_project's settings, as the body of
+// PATCH /api/projects/{pid}.
+func projectChanges(changes map[string]any) (projectUpdate, error) {
+	var req projectUpdate
+	b, err := json.Marshal(changes)
+	if err != nil {
+		return req, err
+	}
+	if err := json.Unmarshal(b, &req); err != nil {
+		return req, fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	return req, nil
+}
+
+// updateProjectWith changes project id's settings as PATCH
+// /api/projects/{pid} does, with its checks, for update_project.
+func (sv *service) updateProjectWith(ctx context.Context, id string, changes map[string]any) (model.Project, error) {
+	if err := sv.maySetProject(); err != nil {
+		return model.Project{}, err
+	}
+	req, err := projectChanges(changes)
+	if err != nil {
+		return model.Project{}, err
+	}
+	return sv.updateProject(ctx, id, req)
+}
+
+// maySetProject is nil when the caller may change project settings at
+// all: not a planner (the API refuses them every settings route, see
+// plannerGate), and not while the org's board is read-only.
+func (sv *service) maySetProject() error {
+	if sv.c.Planner {
+		return fmt.Errorf("%w: %s", errForbidden, errPlanner)
+	}
+	return sv.writable()
+}
+
+// CheckProjectUpdate is nil when the caller may make changes to project id,
+// by the checks PATCH /api/projects/{pid} makes before it changes anything:
+// asked before the user approves update_project, which checks again.
+func (b board) CheckProjectUpdate(id string, changes map[string]any) error {
+	sv := b.sv
+	if err := sv.maySetProject(); err != nil {
+		return err
+	}
+	req, err := projectChanges(changes)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	if err := sv.normalizeProjectUpdate(ctx, &req); err != nil {
+		return err
+	}
+	cur, err := sv.data.GetProject(id)
+	if err != nil {
+		return err
+	}
+	if err := sv.checkCommandChange(cur, req, sv.s.projectRunners(cur)); err != nil {
+		return err
+	}
+	if req.Environments != nil {
+		return sv.s.checkEnvSettings(sv.c, cur.Environments, *req.Environments)
+	}
+	return nil
+}
+
+// UpdateProject changes project id's settings, for update_project once the
+// user approved.
+func (b board) UpdateProject(id string, changes map[string]any) (model.Project, error) {
+	return b.sv.updateProjectWith(context.Background(), id, changes)
+}
+
+// CombineTodos combines drafts into the first, for combine_todos.
+func (b board) CombineTodos(ids []string) (model.Todo, error) {
+	if err := b.sv.writable(); err != nil {
+		return model.Todo{}, err
+	}
+	if len(ids) == 0 {
+		return model.Todo{}, fmt.Errorf("%w: choose at least two drafts", store.ErrBadMerge)
+	}
+	first, err := b.Todo(ids[0])
+	if err != nil {
+		return model.Todo{}, err
+	}
+	return b.sv.combineTodos(first.ProjectID, ids)
+}
+
 // ReadTry is the end of the project's Try terminal, read from the runner
 // it runs on (try.go), for the chat's read_try_terminal.
 func (b board) ReadTry(projectID string, lines int) (mcptools.TryOutput, error) {
@@ -526,18 +704,7 @@ func (c localComputer) Projects() ([]model.Project, error) {
 }
 
 func (c localComputer) UpdateProject(id string, changes map[string]any) (model.Project, error) {
-	if err := c.sv.writable(); err != nil {
-		return model.Project{}, err
-	}
-	b, err := json.Marshal(changes)
-	if err != nil {
-		return model.Project{}, err
-	}
-	var req projectUpdate
-	if err := json.Unmarshal(b, &req); err != nil {
-		return model.Project{}, fmt.Errorf("%w: %v", errBadRequest, err)
-	}
-	return c.sv.updateProject(c.ctx, id, req)
+	return c.sv.updateProjectWith(c.ctx, id, changes)
 }
 
 func (c localComputer) Act(id, verb, feedback string) error {

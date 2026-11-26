@@ -112,7 +112,7 @@ func TestUnpaidOrgIsReadOnly(t *testing.T) {
 	}
 
 	// The chat's board tools may look but not change.
-	token, release := s.Board.Register(mcptools.Caller{Org: team.ID, User: owner.User.ID}, p.ID)
+	token, release := s.Board.Register(mcptools.Caller{Org: team.ID, User: owner.User.ID}, p.ID, nil)
 	defer release()
 	if text, isErr := call(t, h, token, "list_todos", `{"project":"`+p.ID+`"}`); isErr || !strings.Contains(text, "kept") {
 		t.Errorf("list_todos when unpaid: %v %s", isErr, text)

@@ -276,7 +276,7 @@ func TestCreateReleaseTool(t *testing.T) {
 
 	rr := newReleaseRepo(t, "release-X.Y.Z")
 	rr.commit(t, "Ship it", "", true)
-	token, release := rr.s.Board.Register(chatCaller(t, rr.s), rr.p.ID)
+	token, release := rr.s.Board.Register(chatCaller(t, rr.s), rr.p.ID, nil)
 	defer release()
 	text, isErr := callResult(t, rpc(rr.h, token, "tools/call", `{"name":"create_release","arguments":{"bump":"patch"}}`))
 	if isErr || !strings.Contains(text, `"tag": "release-0.1.0"`) && !strings.Contains(text, `"tag":"release-0.1.0"`) {

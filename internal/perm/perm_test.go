@@ -381,3 +381,42 @@ func TestRegisterFuncAnswersQuestion(t *testing.T) {
 		t.Fatalf("answers in input: %v", a["updatedInput"])
 	}
 }
+
+// update_project asks every time: a project's allow list doesn't skip it,
+// "always" is refused, and in a chat (whose approver the tool asks itself)
+// the prompt tool lets it through to that question instead of asking twice.
+func TestUpdateProjectAlwaysAsks(t *testing.T) {
+	const tool = "mcp__dash_board__update_project"
+	b := NewBroker(nopPub{})
+	b.Saved = memAllow{"proj1/" + tool: true}
+	srv := httptest.NewServer(http.HandlerFunc(b.ServeMCP))
+	defer srv.Close()
+	token, release := b.Register(owner, "todo1", "proj1")
+	defer release()
+
+	done := make(chan map[string]any)
+	go func() { _, out := rpc(t, srv, token, "tools/call", call(tool)); done <- out }()
+	req := waitPending(t, b)
+	if req.Tool != tool {
+		t.Fatalf("request %+v", req)
+	}
+	if err := b.Decide(req.ID, "always", ""); err == nil {
+		t.Fatal("update_project was always allowed")
+	}
+	if err := b.Decide(req.ID, "deny", ""); err != nil {
+		t.Fatal(err)
+	}
+	if a := answer(t, <-done); a["behavior"] != "deny" {
+		t.Fatalf("deny: %v", a)
+	}
+
+	asked := 0
+	chat, release2 := b.RegisterFunc(owner, func(context.Context, string, json.RawMessage) Answer {
+		asked++
+		return Answer{Allow: true}
+	})
+	defer release2()
+	if _, out := rpc(t, srv, chat, "tools/call", call(tool)); answer(t, out)["behavior"] != "allow" || asked != 0 {
+		t.Fatalf("chat: %v, asked %d", out, asked)
+	}
+}

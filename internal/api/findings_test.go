@@ -219,7 +219,7 @@ func TestTaskTags(t *testing.T) {
 	}
 
 	// The chat's tools set and filter by tags too.
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 	routes := s.Routes()
 	if text, isErr := call(t, routes, token, "update_todo", `{"todo":"`+td.ID+`","tags":["security","later"]}`); isErr || !strings.Contains(text, "later") {

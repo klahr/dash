@@ -64,7 +64,7 @@ func TestRunTokenOnlyReachesItsOrg(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	token, release := s.Board.Register(owner, web.ID)
+	token, release := s.Board.Register(owner, web.ID, nil)
 	defer release()
 	call := func(tool, args string) (string, bool) {
 		t.Helper()
@@ -104,7 +104,7 @@ func TestRunTokenOnlyReachesItsOrg(t *testing.T) {
 	}
 
 	// The same user's run in the other org sees only that one.
-	token2, release2 := s.Board.Register(model.Owner{User: owner.User, Org: two.ID}, "")
+	token2, release2 := s.Board.Register(model.Owner{User: owner.User, Org: two.ID}, "", nil)
 	defer release2()
 	text, _ = callResult(t, rpc(h, token2, "tools/call", `{"name":"list_projects","arguments":{}}`))
 	if !strings.Contains(text, other.ID) || strings.Contains(text, web.ID) {
@@ -122,7 +122,7 @@ func TestRunTokenNeedsOwnerInOrg(t *testing.T) {
 	owner := testOwner(t, s)
 
 	for _, o := range []model.Owner{{}, {User: owner.User}, {Org: owner.Org}} {
-		token, release := s.Board.Register(o, web.ID)
+		token, release := s.Board.Register(o, web.ID, nil)
 		if w := rpc(h, token, "ping", "{}"); w.Code != http.StatusForbidden {
 			t.Errorf("token of %+v: %d", o, w.Code)
 		}
@@ -130,7 +130,7 @@ func TestRunTokenNeedsOwnerInOrg(t *testing.T) {
 	}
 
 	bob := member(t, s, owner.Org, "bob", store.RoleMember)
-	token, release := s.Board.Register(model.Owner{User: bob, Org: owner.Org}, web.ID)
+	token, release := s.Board.Register(model.Owner{User: bob, Org: owner.Org}, web.ID, nil)
 	defer release()
 	if w := rpc(h, token, "ping", "{}"); w.Code != http.StatusOK {
 		t.Fatalf("bob's run: %d %s", w.Code, w.Body)

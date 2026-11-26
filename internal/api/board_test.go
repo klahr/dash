@@ -143,7 +143,7 @@ func TestBoardMCPAuth(t *testing.T) {
 		t.Errorf("GET: %d", w.Code)
 	}
 
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	if w := rpc(h, token, "ping", "{}"); w.Code != http.StatusOK {
 		t.Errorf("valid token: %d %s", w.Code, w.Body)
 	}
@@ -170,7 +170,7 @@ func TestBoardMCPCreateTodoDefaultsToChatProject(t *testing.T) {
 
 	s, evs, p := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 
 	text, isErr := callResult(t, rpc(h, token, "tools/call", `{"name":"create_todo","arguments":{"title":"Fix login"}}`))
@@ -219,7 +219,7 @@ func TestBoardMCPQueueTodo(t *testing.T) {
 
 	s, _, p := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 	draft, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Fix login"})
 	if err != nil {
@@ -312,7 +312,7 @@ func TestBoardMCPGeneralChatNeedsProject(t *testing.T) {
 
 	s, _, _ := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register(chatCaller(t, s), "")
+	token, release := s.Board.Register(chatCaller(t, s), "", nil)
 	defer release()
 	if text, isErr := callResult(t, rpc(h, token, "tools/call", `{"name":"create_todo","arguments":{"title":"x"}}`)); !isErr {
 		t.Errorf("created without a project: %s", text)
@@ -366,7 +366,7 @@ func TestBoardMCPUpdateTodo(t *testing.T) {
 
 	s, _, p := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 	mk := func(projectID, title string) model.Todo {
 		t.Helper()
@@ -494,7 +494,7 @@ func TestBoardMCPDeleteTodo(t *testing.T) {
 
 	s, _, p := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 	draft, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Oops"})
 	running, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Busy"})
@@ -556,7 +556,7 @@ func TestBoardMCPStopAndRestartARunningTask(t *testing.T) {
 	go s.Todos.Run(ctx)
 	t.Cleanup(func() { cancel(); s.Todos.Wait(10 * time.Second) })
 	h := s.Routes()
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 
 	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Page", Prompt: "add a page"})
@@ -623,7 +623,7 @@ func TestBoardMCPStopRestartRefusals(t *testing.T) {
 
 	s, _, p := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 	merged := withStatus(t, s, p.ID, model.StatusReview)
 	if _, err := raw(s).SetStatus(merged.ID, model.StatusMerged, ""); err != nil {
@@ -696,7 +696,7 @@ func TestRunnerChatStopsAndRestartsHubTasks(t *testing.T) {
 	fleet := &hubFleet{hub: hub}
 	hub.Dispatch = &dispatch.Dispatcher{Store: raw(hub), Fleet: fleet}
 	h := runner.BoardMCP()
-	token, release := runner.Board.RegisterHub(chatCaller(t, runner), linked.ID)
+	token, release := runner.Board.RegisterHub(chatCaller(t, runner), linked.ID, nil)
 	defer release()
 
 	td := withStatus(t, hub, linked.ID, model.StatusInProgress)

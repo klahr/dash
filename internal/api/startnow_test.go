@@ -40,7 +40,7 @@ func TestBoardMCPStartNow(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := s.Routes()
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 
 	queuedTask := withStatus(t, s, p.ID, model.StatusQueued)
@@ -97,7 +97,7 @@ func TestHubBoardStartNow(t *testing.T) {
 		Owner:    &store.RunnerOwner{UserID: owner.User, Org: store.Org{ID: owner.Org}},
 		Reported: &tunnel.Reported{Usage: &usage.Snapshot{Paused: true, Pacing: true, Reason: "Waiting 2h to stay on pace"}}}}}
 	h := runner.BoardMCP()
-	token, release := runner.Board.RegisterHub(chatCaller(t, runner), linked.ID)
+	token, release := runner.Board.RegisterHub(chatCaller(t, runner), linked.ID, nil)
 	defer release()
 
 	td := withStatus(t, hub, linked.ID, model.StatusQueued)

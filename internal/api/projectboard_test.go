@@ -84,7 +84,7 @@ func TestProjectChatCantReachOtherProjects(t *testing.T) {
 	s, _, p := boardServer(t)
 	h := s.Routes()
 	other, otherTodo, otherGoal := otherProject(t, s)
-	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID, nil)
 	defer release()
 
 	text, isErr := toolCall(h, token, "list_projects", `{}`)
@@ -148,7 +148,7 @@ func TestGeneralChatSeesEveryProject(t *testing.T) {
 	s, _, _ := boardServer(t)
 	h := s.Routes()
 	_, otherTodo, _ := otherProject(t, s)
-	token, release := s.Board.Register(chatCaller(t, s), "")
+	token, release := s.Board.Register(chatCaller(t, s), "", nil)
 	defer release()
 
 	if text, isErr := toolCall(h, token, "list_projects", `{}`); isErr || !strings.Contains(text, `"web"`) || !strings.Contains(text, `"other"`) {

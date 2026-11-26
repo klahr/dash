@@ -111,17 +111,22 @@ func (s *Server) mergeTodos(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	pid := r.PathValue("pid")
-	for _, id := range req.IDs {
-		if t, err := sv.data.GetTodo(id); err != nil || t.ProjectID != pid {
-			writeErr(w, fmt.Errorf("task %q: %w", id, store.ErrNotFound))
-			return
-		}
-	}
-	t, err := sv.data.MergeTodos(req.IDs)
+	t, err := sv.combineTodos(r.PathValue("pid"), req.IDs)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
+}
+
+// combineTodos combines drafts ids of project pid into the first, for the
+// board's Combine and combine_todos: every one must be in pid; the store
+// takes drafts of one project only. Their issues stay linked to it.
+func (sv *service) combineTodos(pid string, ids []string) (model.Todo, error) {
+	for _, id := range ids {
+		if t, err := sv.data.GetTodo(id); err != nil || t.ProjectID != pid {
+			return model.Todo{}, fmt.Errorf("task %q: %w", id, store.ErrNotFound)
+		}
+	}
+	return sv.data.MergeTodos(ids)
 }

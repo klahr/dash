@@ -3,11 +3,14 @@ package api
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/klahr/dash/internal/gitops"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/tunnel"
@@ -53,7 +56,7 @@ func TestRunnerChatBoardToolsActOnTheHub(t *testing.T) {
 	h := runner.BoardMCP()
 	runnerTodos := len(raw(runner).ListTodos(""))
 
-	token, release := runner.Board.RegisterHub(chatCaller(t, runner), linked.ID)
+	token, release := runner.Board.RegisterHub(chatCaller(t, runner), linked.ID, nil)
 	defer release()
 	text, isErr := call(t, h, token, "create_todo", `{"title":"From the runner's chat","prompt":"do it"}`)
 	if isErr {
@@ -68,14 +71,14 @@ func TestRunnerChatBoardToolsActOnTheHub(t *testing.T) {
 	}
 
 	// The general chat sees the hub's projects.
-	general, release2 := runner.Board.RegisterHub(chatCaller(t, runner), "")
+	general, release2 := runner.Board.RegisterHub(chatCaller(t, runner), "", nil)
 	defer release2()
 	if text, isErr := call(t, h, general, "list_projects", `{}`); isErr || !strings.Contains(text, "shared") {
 		t.Errorf("list_projects from the hub's general chat: %s", text)
 	}
 
 	// A project not linked to this runner is refused.
-	other, release3 := runner.Board.RegisterHub(chatCaller(t, runner), unlinked.ID)
+	other, release3 := runner.Board.RegisterHub(chatCaller(t, runner), unlinked.ID, nil)
 	defer release3()
 	if w := rpc(h, other, "tools/list", `{}`); w.Code != http.StatusForbidden {
 		t.Errorf("chat in a project not linked to the runner: %d %s", w.Code, w.Body)
@@ -164,7 +167,7 @@ func TestRunnerHubBoardUnreachable(t *testing.T) {
 		return nil, errors.New("connection refused")
 	}
 	before := len(raw(runner).ListTodos(""))
-	token, release := runner.Board.RegisterHub(chatCaller(t, runner), linked.ID)
+	token, release := runner.Board.RegisterHub(chatCaller(t, runner), linked.ID, nil)
 	defer release()
 	if w := rpc(runner.BoardMCP(), token, "tools/call", `{"name":"create_todo","arguments":{"title":"x","prompt":"y"}}`); w.Code != http.StatusBadGateway {
 		t.Errorf("hub unreachable: %d %s", w.Code, w.Body)
@@ -214,5 +217,52 @@ func TestRunnerCoordinatorActsOnTheHubsGoal(t *testing.T) {
 	defer release2()
 	if w := rpc(h, wrong, "tools/list", `{}`); w.Code != http.StatusForbidden {
 		t.Errorf("a goal of another project: %d %s", w.Code, w.Body)
+	}
+}
+
+// A chat the hub runs on a runner asks its user there before update_project
+// changes the hub's project, and the hub applies only what was approved: a
+// call without the runner's approval is refused.
+func TestRunnerChatUpdateProjectAsksOnTheRunner(t *testing.T) {
+	parallel(t)
+
+	hub, runner, creds, linked, _ := hubWithRunner(t)
+	hub.Git, runner.Git = gitops.New(nil), gitops.New(nil)
+	h := runner.BoardMCP()
+	ap := &approver{}
+	token, release := runner.Board.RegisterHub(chatCaller(t, runner), linked.ID, ap.ask)
+	defer release()
+
+	if text, isErr := call(t, h, token, "update_project", `{"test_command":"./scripts/check.sh"}`); !isErr || !strings.Contains(text, "unchanged") {
+		t.Fatalf("denied: %s", text)
+	}
+	if len(ap.asked) != 1 || len(ap.asked[0].Changes) != 1 || ap.asked[0].Changes[0] != (mcptools.SettingChange{Setting: "test_command", Before: "", After: "./scripts/check.sh"}) {
+		t.Fatalf("asked %+v", ap.asked)
+	}
+	if p, _ := raw(hub).GetProject(linked.ID); p.TestCommand != "" {
+		t.Fatalf("denied, the hub's project changed: %q", p.TestCommand)
+	}
+
+	ap.allow = true
+	if text, isErr := call(t, h, token, "update_project", `{"test_command":"./scripts/check.sh"}`); isErr || !strings.Contains(text, "./scripts/check.sh") {
+		t.Fatalf("approved: %s", text)
+	}
+	if p, _ := raw(hub).GetProject(linked.ID); p.TestCommand != "./scripts/check.sh" {
+		t.Fatalf("approved, the hub's project: %q", p.TestCommand)
+	}
+
+	// Straight to the hub, without the runner saying it was approved.
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"update_project","arguments":{"test_command":"rm -rf ~"}}}`
+	res, err := tunnel.Board(context.Background(), creds, "", linked.ID, []byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	if !strings.Contains(string(b), `"isError":true`) {
+		t.Fatalf("unapproved call: %s", b)
+	}
+	if p, _ := raw(hub).GetProject(linked.ID); p.TestCommand != "./scripts/check.sh" {
+		t.Fatalf("unapproved, the hub's project: %q", p.TestCommand)
 	}
 }

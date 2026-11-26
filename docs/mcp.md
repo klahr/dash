@@ -100,7 +100,8 @@ sends it only to that one of the project's runners),
 also a queued task, when you ask to start it now despite the weekly pace), `stop_todo` and
 `restart_todo` (see below), `update_todo` (title, prompt, priority, or
 `clear_priority` to unset it, dependencies, `builds_on`, `run_on` or `tags`; the prompt, `builds_on` and `run_on` only while the task is a draft, queued or failed), `delete_todo` (only
-draft, queued or failed tasks, when you ask to remove one), `create_release`,
+draft, queued or failed tasks, when you ask to remove one), `combine_todos` and
+`get_project`, `update_project` (see [Project settings and combining drafts](#project-settings-and-combining-drafts)), `create_release`,
 `report_issue` (see [Tags and reported problems](#tags-and-reported-problems)), the
 [goal tools](#goals), the [planning tools](#planning), the [deploy tools](#deploys) and
 `show_image` (see [Pictures in the chat](chat.md#pictures-in-the-chat)). A read-only chat calls them without asking, except `create_release`,
@@ -175,6 +176,21 @@ dashboard, and `update_project` sets `tag_format`.
 
 `dash-mcp` and the connector have `update_todo` too. Their `delete_todo` deletes a task in any
 status except running or merging.
+
+### Project settings and combining drafts
+
+- `get_project(project?)` shows a project's settings. It never asks.
+- `update_project(project?, …)` changes the settings it is given, the same ones as `dash-mcp`'s
+  (for example `test_command: "./scripts/check.sh"`). It asks you every time, in every
+  permission mode, even when the tool is on an allow list: the card shows each changed setting
+  before and after, in full. There is no **Always allow** for it. **Deny** leaves the project
+  as it was. It needs the same rights as **Project settings**: a planner, or a member who may not
+  change a command or an environment, gets the same error as there. A goal's coordinator and a
+  task's run don't have it.
+- `combine_todos(todos)` combines two or more drafts of one project into the first, like
+  **Combine** on the board. The other drafts are removed; their reported problems and scan
+  findings stay linked to the combined task, so they aren't dismissed. It returns the combined
+  task. Only drafts, all in one project.
 
 ### Task priority
 

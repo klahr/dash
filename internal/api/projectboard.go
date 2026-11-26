@@ -327,3 +327,29 @@ func (pb projectBoard) LinkCard(cardID, kind, workID string) (mcptools.CardRow, 
 	}
 	return pb.b.LinkCard(cardID, kind, workID)
 }
+
+// CheckProjectUpdate checks a change to the run's own project only.
+func (pb projectBoard) CheckProjectUpdate(id string, changes map[string]any) error {
+	if err := pb.check(id); err != nil {
+		return err
+	}
+	return pb.b.CheckProjectUpdate(pb.project, changes)
+}
+
+// UpdateProject changes the run's own project only.
+func (pb projectBoard) UpdateProject(id string, changes map[string]any) (model.Project, error) {
+	if err := pb.check(id); err != nil {
+		return model.Project{}, err
+	}
+	return pb.b.UpdateProject(pb.project, changes)
+}
+
+// CombineTodos combines drafts of the run's project only.
+func (pb projectBoard) CombineTodos(ids []string) (model.Todo, error) {
+	for _, id := range ids {
+		if _, err := pb.todo(id); err != nil {
+			return model.Todo{}, err
+		}
+	}
+	return pb.b.CombineTodos(ids)
+}

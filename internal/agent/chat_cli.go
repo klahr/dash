@@ -178,6 +178,15 @@ func (c ClaudeCodeChat) args(dir string, servers map[string]any, coordinator boo
 		}
 		// shell mode asks for AskTools; read-only mode has no one to ask, so it can't.
 		allow = slices.DeleteFunc(slices.Clone(allow), func(t string) bool { return slices.Contains(mcptools.AskTools, t) })
+		if !coordinator {
+			// SelfAskTools ask the user themselves, every time, whatever
+			// Claude Code allows: it isn't asked first, so the user isn't asked twice.
+			for _, t := range mcptools.SelfAskTools {
+				if !slices.Contains(allow, t) {
+					allow = append(allow, t)
+				}
+			}
+		}
 		if coordinator {
 			allow = append(allow, mcptools.GoalToolNames...) // the goal's server has no others
 		}
@@ -230,7 +239,7 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	}
 	cmd := exec.CommandContext(ctx, bin, c.args(dir, servers, coordinator)...)
 	cmd.Env = localrun.Environ()
-	if servers[perm.ServerName] != nil {
+	if servers[perm.ServerName] != nil || servers[mcptools.ServerName] != nil {
 		// Claude waits on the MCP tool while the user decides; don't let it time out first.
 		cmd.Env = append(cmd.Env, "MCP_TOOL_TIMEOUT=3600000")
 	}
@@ -381,13 +390,26 @@ func chatBoard(ctx context.Context, board *mcptools.Tokens, url string) (map[str
 	case hub && goal != "":
 		token, release = board.RegisterHubGoal(caller, hp, goal)
 	case hub:
-		token, release = board.RegisterHub(caller, hp) // a turn for this runner's hub uses the hub's board
+		token, release = board.RegisterHub(caller, hp, boardApprover(ctx)) // a turn for this runner's hub uses the hub's board
 	case goal != "":
-		token, release = board.RegisterGoal(caller, pid, goal)
+		token, release = board.RegisterGoal(caller, pid, goal) // a coordinator never gets update_project
 	default:
-		token, release = board.Register(caller, pid)
+		token, release = board.Register(caller, pid, boardApprover(ctx))
 	}
 	return mcptools.ServerConfig(url, token), release
+}
+
+// boardApprover asks the user of the chat turn run with ctx to approve a
+// mcptools.SelfAskTools call, in any mode; nil without an approver.
+func boardApprover(ctx context.Context) mcptools.Approver {
+	ask := approverFrom(ctx)
+	if ask == nil {
+		return nil
+	}
+	return func(c context.Context, tool string, input json.RawMessage) (bool, string) {
+		a := ask(c, tool, input)
+		return a.Allow, a.Message
+	}
 }
 
 // maxToolOutput caps the tool output sent to the chat per call.

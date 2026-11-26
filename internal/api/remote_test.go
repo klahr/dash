@@ -138,7 +138,7 @@ func TestRemoteMCPTokensAreSeparate(t *testing.T) {
 		`resource_metadata="`+publicURL+`/.well-known/oauth-protected-resource"`) {
 		t.Errorf("no token: %d %q", w.Code, w.Header().Get("WWW-Authenticate"))
 	}
-	chat, release := s.Board.Register(chatCaller(t, s), home.ID)
+	chat, release := s.Board.Register(chatCaller(t, s), home.ID, nil)
 	defer release()
 	if w := rpcAt(h, "/mcp", chat, "ping", "{}"); w.Code != http.StatusUnauthorized {
 		t.Errorf("/mcp took a chat-run token: %d", w.Code)

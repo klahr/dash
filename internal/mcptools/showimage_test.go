@@ -117,7 +117,7 @@ func TestHandlerServesShowImageHere(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	hubChat, release := toks.RegisterHub(Caller{Org: 1, User: 1}, "hp")
+	hubChat, release := toks.RegisterHub(Caller{Org: 1, User: 1}, "hp", nil)
 	defer release()
 	w := call(hubChat, ShowImageTool)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "chart.png") || hubCalls != 0 {
