@@ -703,8 +703,7 @@ async function finishPlan(run, made) {
   }
   gp.project = made;
   if (!state.goals.has(g.id)) state.goals.set(g.id, { ...g, log: undefined });
-  gp.planFor.add(g.id);
-  toast("The coordinator reads the brief; its plan of the first tasks opens here for you to check", { tone: "ok", head: `Launched ${made.name}`, icon: "rocket" });
+  toast(g.title || made.name, { tone: "ok", head: `Launched ${made.name}`, icon: "rocket" });
   await showGoal(g.id);
 }
 

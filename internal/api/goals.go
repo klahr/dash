@@ -251,8 +251,109 @@ func (s *Server) goalChat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, msgs)
+	writeJSON(w, http.StatusOK, goalChatView(g, msgs))
 }
+
+// goalChatView is g's conversation as its chat shows it. Dash's own
+// messages to the coordinator (its wake-ups) aren't shown, but what the user
+// wrote in one is, as theirs. A reply to a wake-up shows what the
+// coordinator said to the user in that turn (its plan, question, notes and
+// summary, from the goal's log), or else its answer. A reply to the user
+// shows its answer, with the question it asked, if the answer doesn't
+// already say it.
+func goalChatView(g model.Goal, msgs []model.ChatMessage) []model.ChatMessage {
+	out := []model.ChatMessage{}
+	wake := false
+	for i, m := range msgs {
+		if m.Role == "user" {
+			wake = m.Wake || legacyWake(m)
+			if !wake {
+				out = append(out, m)
+			} else if m.Said != "" {
+				out = append(out, model.ChatMessage{Role: "user", Content: m.Said, At: m.At})
+				wake = false // the user's message: its reply is to them
+			}
+			continue
+		}
+		var from, to time.Time
+		if i > 0 && msgs[i-1].At != nil {
+			from = *msgs[i-1].At
+		}
+		for _, n := range msgs[i+1:] {
+			if n.Role == "user" && n.At != nil {
+				to = *n.At
+				break
+			}
+		}
+		said := coordinatorSaid(g.Log, from, to)
+		switch {
+		case wake && len(said.all) > 0:
+			m.Content = strings.Join(said.all, "\n\n")
+			m.Tools = nil // placed in the answer it replaces
+		case !wake && said.question != "" && !strings.Contains(m.Content, said.question):
+			m.Content = strings.TrimSpace(m.Content + "\n\n" + said.question)
+		}
+		if strings.TrimSpace(m.Content) != "" || len(m.Tasks) > 0 {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// legacyWake reports whether m is a wake-up stored before wake-ups were
+// marked (Wake): Dash wrote it, as no user did.
+func legacyWake(m model.ChatMessage) bool {
+	if m.CreatedBy != 0 || m.Action != nil || m.Shell != nil {
+		return false
+	}
+	for _, p := range []string{"The goal was made: ", "The user rejected the plan", "The user wrote to you: ", "Task "} {
+		if strings.HasPrefix(m.Content, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// saidToUser is what a coordinator said to the user in one turn.
+type saidToUser struct {
+	all      []string // its plan, question, notes and summary, in order
+	question string   // the question it asked, if any
+}
+
+// coordinatorSaid is what the coordinator said to the user between from
+// and to (zero: no end), as its log has it.
+func coordinatorSaid(log []model.GoalLogEntry, from, to time.Time) saidToUser {
+	var s saidToUser
+	with := func(text, why string) string {
+		if why = strings.TrimSpace(why); why != "" {
+			return text + "\n\n" + why
+		}
+		return text
+	}
+	for _, e := range log {
+		if e.At.Before(from) || (!to.IsZero() && !e.At.Before(to)) {
+			continue
+		}
+		switch {
+		case e.Kind == model.GoalLogPlan:
+			s.all = append(s.all, with(e.Text, e.Why))
+		case e.Kind == model.GoalLogNote && strings.HasPrefix(e.Text, askedPrefix):
+			s.question = strings.TrimPrefix(e.Text, askedPrefix)
+			s.all = append(s.all, s.question)
+		case e.Kind == model.GoalLogNote:
+			s.all = append(s.all, with(e.Text, e.Why))
+		case e.Kind == model.GoalLogStatus && strings.HasPrefix(e.Text, finishedPrefix):
+			s.all = append(s.all, strings.TrimPrefix(e.Text, finishedPrefix))
+		}
+	}
+	return s
+}
+
+// How the log words a coordinator's question and its summary.
+const (
+	askedPrefix    = "Asked you: "
+	finishedPrefix = "Finished the goal: "
+)
 
 func (s *Server) updateGoal(w http.ResponseWriter, r *http.Request) {
 	sv, g, ok := s.goal(w, r)
@@ -1029,7 +1130,7 @@ func (gb goalBoard) AskUser(question string) error {
 	}
 	_, err := gb.sv().data.UpdateGoal(gb.goal, func(g *model.Goal) error {
 		g.Status, g.WaitingFor, g.Note = model.GoalWaiting, model.GoalWaitQuestion, strings.TrimSpace(question)
-		g.AddLog(model.GoalLogEntry{Kind: model.GoalLogNote, Text: "Asked you: " + strings.TrimSpace(question)})
+		g.AddLog(model.GoalLogEntry{Kind: model.GoalLogNote, Text: askedPrefix + strings.TrimSpace(question)})
 		return nil
 	})
 	return err
@@ -1042,7 +1143,7 @@ func (gb goalBoard) FinishGoal(summary string) error {
 	_, err := gb.sv().data.UpdateGoal(gb.goal, func(g *model.Goal) error {
 		g.Status, g.WaitingFor, g.Plan, g.Pending = model.GoalDone, "", nil, nil
 		g.Note = strings.TrimSpace(summary)
-		g.AddLog(model.GoalLogEntry{Kind: model.GoalLogStatus, Text: "Finished the goal: " + strings.TrimSpace(summary)})
+		g.AddLog(model.GoalLogEntry{Kind: model.GoalLogStatus, Text: finishedPrefix + strings.TrimSpace(summary)})
 		return nil
 	})
 	return err

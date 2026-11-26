@@ -1,6 +1,6 @@
 import { renderMarkdown } from "../editor.js";
 import { $, $$, dateTimeText, fill, h, ib, ico, nameHue, plural } from "./dom.js";
-import { desktop } from "./viewport.js";
+import { chatBeside } from "./viewport.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
@@ -10,7 +10,7 @@ import { renderBoard, title } from "./branches.js";
 import { agoText } from "../time.js";
 import { detailBackground, openDetail, renderDetail } from "./detail.js";
 import { openGoalPlan } from "./todoform.js";
-import { openGoalChat } from "./chatpane.js";
+import { followGoal, openGoalChat, pane as chatPane } from "./chatpane.js";
 import { fmtTokens } from "./runstats.js";
 import { notifyGoal } from "./notifications.js";
 import { showView } from "./nav.js";
@@ -55,7 +55,6 @@ export const gp = {
   detail: null,    // that goal in full (with its log)
   error: "",
   editing: null,   // the goal the sheet edits (null: a new one)
-  planFor: new Set(), // goals made here: their first plan opens by itself once it is in
 };
 
 const goalAPI = (id) => `/api/goals/${id}`;
@@ -145,7 +144,7 @@ const statusTag = (g) => h("span", { class: `status goal-status g-${shownStatus(
 function waitText(g) {
   if (goalBlocked(g)) return `Can't run: ${g.blocked}`;
   if (g.status !== "waiting_for_you") return "";
-  if (g.waiting_for === "plan") return `A plan of ${plural(g.plan?.length || 0, "task")} waits for you`;
+  if (g.waiting_for === "plan") return `A plan of ${plural(g.plan?.length || 0, "task")} waits for you to accept it`;
   if (g.waiting_for === "question") return "The coordinator asks you something";
   if (g.waiting_for === "drafts") return "Its drafts wait for you to queue them";
   return g.note || "";
@@ -203,12 +202,6 @@ export function onGoalEvent(ev) {
     clearTimeout(detailTimer);
     detailTimer = setTimeout(() => loadGoal(g.id).catch(() => {}), 300);
   }
-  // Its first plan, for a goal made here: shown as soon as it is in.
-  if (gp.planFor.has(g.id) && g.waiting_for === "plan" && g.plan?.length && !document.querySelector("dialog[open]")) {
-    gp.planFor.delete(g.id);
-    reviewPlan(next).catch(fail);
-  }
-  if (g.status === "done" || g.status === "out_of_budget") gp.planFor.delete(g.id);
 }
 
 // onGoalDeleted drops goal id, deleted here or in another window: its pane
@@ -217,7 +210,6 @@ export function onGoalEvent(ev) {
 export function onGoalDeleted(id) {
   if (!id || !state.goals.has(id)) return;
   state.goals.delete(id);
-  gp.planFor.delete(id);
   if (gp.open === id) closeGoal();
   if (state.goalFilter === id) filterGoal(null);
   renderGoals();
@@ -260,12 +252,20 @@ export function goalTaskChanged(t) {
 
 // ------------------------------------------------------------------ the goal pane
 // Open: beside the list on a desktop (not modal), full screen on a phone.
+// The chat lies beside it, never over it (style.css): on a desktop the list
+// narrows for both; on a tablet the pane keeps left of the chat; on a phone
+// the chat is a page that takes the pane's place until its Goal button
+// leads back (chatpane.js). The chat is never made inert under the pane.
+const chatPage = () => !chatBeside.matches && chatPane.open;
 const goalPane = detailPane({
   pane: () => $("#goal-detail"),
   closeBtn: () => $("#gd-close"),
-  background: () => detailBackground(), // detail.js imports this module: read it when called
+  // detail.js imports this module: read it when called.
+  background: () => detailBackground().filter((el) => el.id !== "chat-pane"),
+  modal: () => !chatPage(),
   isOpen: () => !!gp.open,
   rowFor: (id) => $(`#goal-list li[data-id="${id}"] .goal-open`),
+  onHidden: () => $(".app").classList.remove("goal-open"),
   onViewport: () => renderGoal(),
 });
 
@@ -282,12 +282,17 @@ export async function openGoal(id) {
   gp.detail = state.goals.get(id) || null;
   gp.error = "";
   goalPane.open();
+  $(".app").classList.add("goal-open"); // the list narrows (style.css)
   markSelected();
   renderGoal();
   $("#gd-body").scrollTop = 0;
+  followGoal(gp.detail || { id }, gp.project || state.project);
   changed("push");
   await loadGoal(id);
 }
+// The chat opened or closed, or changed tabs: on a phone the pane is modal
+// only while the chat page isn't over it.
+document.addEventListener("chatpane", () => { if (gp.open) goalPane.setModal(); });
 
 async function loadGoal(id) {
   try {
@@ -297,6 +302,7 @@ async function loadGoal(id) {
     gp.error = "";
     state.goals.set(id, { ...g, log: undefined });
     renderGoals();
+    followGoal(g, gp.project || state.project); // its title
   } catch (e) {
     if (gp.open !== id) return;
     gp.error = e.message;
@@ -312,6 +318,7 @@ export function closeGoal() {
   changed("close");
   markSelected();
   goalPane.close(id);
+  followGoal(null);
 }
 $("#gd-close").addEventListener("click", closeGoal);
 
@@ -357,21 +364,23 @@ function renderGoal() {
 // The buttons: what fits where the goal stands. Approve and Merge are never
 // here: a goal's tasks are approved and merged on the board, by you.
 function renderGoalActions(g) {
-  const btn = (icon, label, run, cls = "btn small", title = "") => ib({ type: "button", class: cls, title, onclick: attempt((e) => busy(e.currentTarget, run)) }, icon, label);
+  const btn = (icon, label, run, cls = "btn small") => ib({ type: "button", class: cls, onclick: attempt((e) => busy(e.currentTarget, run)) }, icon, label);
   const active = ACTIVE.includes(g.status);
   const resumable = g.status === "paused" || g.status === "out_of_budget";
+  const plan = g.waiting_for === "plan" && g.plan?.length;
   fill($("#gd-actions"),
-    g.waiting_for === "plan" && g.plan?.length ? btn("checks", "Review plan", () => reviewPlan(g), "btn small primary", "Edit the coordinator's plan, then save it as drafts or queue it") : null,
-    g.waiting_for === "drafts" ? btn("queue", "Queue drafts", () => queueDrafts(g), "btn small primary", "Queue the goal's draft tasks") : null,
-    btn("comment", "Talk to coordinator", () => talk(g), g.waiting_for === "question" ? "btn small primary" : "btn small", "Open the coordinator's conversation in the chat"),
-    active ? btn("pause", "Pause", () => goalAction(g, "pause"), "btn small", "Hold the coordinator; the tasks carry on") : null,
-    goalBlocked(g) ? btn("redo", "Try again", () => goalAction(g, "resume"), "btn small primary", "Have the coordinator try to run again") : null,
-    resumable ? btn("play", "Resume", () => goalAction(g, "resume"), "btn small", g.status === "out_of_budget" ? "Raise the budget first (Edit goal)" : "Go on where it was") : null,
+    plan ? btn("check", "Accept plan", () => acceptPlan(g), "btn small primary") : null,
+    plan ? btn("edit", "Edit plan…", () => reviewPlan(g)) : null,
+    g.waiting_for === "drafts" ? btn("queue", "Queue drafts", () => queueDrafts(g), "btn small primary") : null,
+    btn("comment", "Talk to coordinator", () => talk(g), g.waiting_for === "question" ? "btn small primary" : "btn small"),
+    active ? btn("pause", "Pause", () => goalAction(g, "pause")) : null,
+    goalBlocked(g) ? btn("redo", "Try again", () => goalAction(g, "resume"), "btn small primary") : null,
+    resumable ? btn("play", "Resume", () => goalAction(g, "resume")) : null,
     g.status !== "done" ? btn("edit", "Edit goal", () => openGoalSheet({ goal: g })) : null,
-    prefix() ? null : btn("plan", "Link to card", () => linkToCard("goal", g.id), "btn small", "Show this goal's status on a Planning card"),
-    btn("link", "Copy link", () => copy(linkTo({ view: "goals", goal: g.id }, state.project), "Link copied"), "btn small", "Copy a link that opens this goal"),
-    g.status !== "done" ? btn("stop", "Stop", () => stopGoal(g), "btn small danger", "End the goal for good; its tasks stay on the board") : null,
-    btn("trash", "Delete", () => deleteGoal(g), "btn small danger", "Delete the goal; its tasks stay on the board"));
+    prefix() ? null : btn("plan", "Link to card", () => linkToCard("goal", g.id)),
+    btn("link", "Copy link", () => copy(linkTo({ view: "goals", goal: g.id }, state.project), "Link copied")),
+    g.status !== "done" ? btn("stop", "Stop", () => stopGoal(g), "btn small danger") : null,
+    btn("trash", "Delete", () => deleteGoal(g), "btn small danger"));
 }
 
 // The note says why the goal waits, ended or can't go on: the
@@ -404,13 +413,16 @@ function renderPlan(g) {
           h("span", { class: "status" }, t.paused ? "Paused" : statusLabel(t)),
           after.length ? h("span", {}, `after ${after.join(", ")}`) : null)));
   });
+  // A plan waiting to be accepted: each task with its instructions, to read before Accept plan.
   const waiting = g.waiting_for === "plan" ? (g.plan || []) : [];
   const proposed = waiting.map((it, i) => h("li", { class: "goal-task proposed s-draft" },
     h("span", { class: "split-num", "aria-hidden": "true" }, String(ts.length + i + 1)),
-    h("span", { class: "goal-task-open" },
-      h("span", { class: "goal-task-title" }, it.title || it.prompt.split("\n")[0]),
-      h("span", { class: "goal-task-sub" }, h("span", { class: "status" }, "Proposed"),
-        it.after?.length ? h("span", {}, `after ${it.after.map((a) => ts.length + a + 1).join(", ")}`) : null))));
+    h("details", { class: "goal-task-open goal-proposal" },
+      h("summary", {},
+        h("span", { class: "goal-task-title" }, it.title || it.prompt.split("\n")[0]),
+        h("span", { class: "goal-task-sub" }, h("span", { class: "status" }, "Proposed"),
+          it.after?.length ? h("span", {}, `after ${it.after.map((a) => ts.length + a + 1).join(", ")}`) : null)),
+      h("div", { class: "goal-proposal-prompt md", innerHTML: renderMarkdown(it.prompt || "") }))));
   const empty = !rows.length && !proposed.length
     ? [h("li", { class: "pane-empty" }, shownStatus(g) === "planning" ? "The coordinator reads the code and plans the tasks…" : "No tasks yet.")]
     : [];
@@ -481,8 +493,15 @@ async function queueDrafts(g) {
   toast(`Queued ${plural(drafts.length, "task")}`);
 }
 
-// reviewPlan opens the goal's waiting plan in the Split into tasks sheet,
-// to edit and save as drafts or queue.
+// acceptPlan accepts the goal's waiting plan as it stands: its tasks are made and queued.
+async function acceptPlan(g) {
+  const res = await api("POST", `${goalAPI(g.id)}/plan/accept`, { queue: true }, prefix());
+  if (gp.open === g.id) { gp.detail = res; renderGoal(); }
+  toast(`Queued ${plural(res.created?.length || g.plan.length, "task")} for “${g.title}”`, { tone: "ok", icon: "target" });
+}
+
+// reviewPlan opens the goal's waiting plan in the plan sheet, to edit
+// before accepting it.
 async function reviewPlan(g) {
   const full = g.plan ? g : await api("GET", goalAPI(g.id), null, prefix());
   if (full.waiting_for !== "plan" || !full.plan?.length) throw new Error("The goal has no plan waiting for you.");
@@ -490,14 +509,13 @@ async function reviewPlan(g) {
 }
 
 function talk(g) {
-  if (!desktop.matches) closeGoal(); // a phone's chat page lies under the pane
   openGoalChat(g, gp.project || state.project);
 }
 
 // ------------------------------------------------------------------ New goal / Edit goal
 // The sheet asks what to get done, a budget and whether its tasks wait for
-// you. A new goal opens in the pane, planning; its first plan opens in the
-// Split into tasks sheet once the coordinator has one.
+// you. A new goal opens in the pane, planning; its plan shows there to
+// accept once the coordinator has one.
 export function openGoalSheet({ goal = null, title: t = "", description = "" } = {}) {
   if (!state.project) throw new Error(projectFirst());
   if (!goal && !goalsOn(state.project)) throw new Error(NO_GOALS);
@@ -552,8 +570,7 @@ $("#goal-sheet").addEventListener("close", attempt(async () => {
     if (projectKey(state.project) !== projectKey(p)) return;
     gp.project = p;
     if (!state.goals.has(g.id)) state.goals.set(g.id, { ...g, log: undefined });
-    if (body.mode === "ask") gp.planFor.add(g.id);
-    toast(body.mode === "ask" ? "The coordinator reads the code; its plan opens here for you to check" : "The coordinator reads the code and queues its plan", { tone: "ok", head: "Goal started", icon: "target" });
+    toast(g.title, { tone: "ok", head: "Goal started", icon: "target" });
     await showGoal(g.id);
   } catch (e) { reopen(); throw e; }
 }));

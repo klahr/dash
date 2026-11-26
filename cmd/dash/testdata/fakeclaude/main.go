@@ -9,7 +9,8 @@
 // answer to permission.txt; one whose prompt says "ask a question" asks two
 // questions with AskUserQuestion through the same tool and writes the
 // answers it got to question.txt; a resumed run (rework) writes the notes it got
-// to rework-by-runner.txt.
+// to rework-by-runner.txt. A chat turn that wakes a goal's coordinator to plan
+// proposes a plan, or asks a question (see "chat" below).
 package main
 
 import (
@@ -100,6 +101,22 @@ func main() {
 		latest := string(stdin)
 		if _, after, ok := strings.Cut(latest, "Reply to my latest message:"); ok {
 			latest = after
+		}
+		// A goal's coordinator, woken to plan: a goal whose description says
+		// "Ask first: <question>" asks it with ask_user; any other proposes a
+		// plan of two tasks with propose_plan.
+		if strings.Contains(latest, "propose a plan with propose_plan") {
+			tool, input := "propose_plan", map[string]any{"tasks": []any{
+				map[string]any{"title": "Add the export", "prompt": "Write the **CSV** export."},
+				map[string]any{"title": "Link it", "prompt": "Link the export from the invoices page.", "after": []int{0}}},
+				"why": "The export first, then the link to it."}
+			if _, q, ok := strings.Cut(latest, "Ask first: "); ok {
+				tool, input = "ask_user", map[string]any{"question": firstLine(q)}
+			}
+			if _, err := callTool(args, "dash_board", tool, input); err != nil {
+				fmt.Fprintln(os.Stderr, tool+":", err)
+				os.Exit(1)
+			}
 		}
 		if _, title, ok := strings.Cut(latest, "draft task: "); ok {
 			title = firstLine(title)

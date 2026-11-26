@@ -1010,6 +1010,13 @@ type ChatMessage struct {
 	// messages only), so the chat shows them where they were when it is
 	// loaded again.
 	Tools []ChatTool `json:"tools,omitempty"`
+	// Wake is set on a user message Dash wrote to a goal's coordinator
+	// itself (a wake-up: the goal was made, a task entered review, …):
+	// Claude sees it, the goal's chat doesn't show it as the user's. Said is
+	// what the user wrote in it, if anything (a message sent with
+	// message_goal), which the chat shows as theirs.
+	Wake bool   `json:"wake,omitempty"`
+	Said string `json:"said,omitempty"`
 }
 
 // ChatTool is a tool call a chat answer made, as the chat shows it. Its

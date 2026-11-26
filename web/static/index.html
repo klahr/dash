@@ -365,6 +365,7 @@
       <div class="resize-handle chat-pane-resize" id="pc-resize" role="separator" aria-orientation="vertical" aria-label="Resize the chat" aria-valuenow="400" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <header class="chat-pane-head">
         <button class="btn small chat-try-back" id="chat-try-back" type="button" data-icon="terminal" hidden title="Back to the Shell">Terminal</button>
+        <button class="btn small chat-try-back" id="chat-goal-back" type="button" data-icon="target" hidden>Goal</button>
         <div class="chat-pane-tabs" id="chat-tabs" role="tablist" aria-label="Chats"></div>
         <!-- + adds another project's chat as a tab; outside the tabs, so it never scrolls away. -->
         <button class="icon-btn chat-tab-add" id="chat-tab-add" type="button" aria-label="Add a project's chat as a tab" title="Add a project's chat" aria-haspopup="true" aria-expanded="false" aria-controls="chat-tab-picker" data-icon="plus" hidden></button>
@@ -763,12 +764,12 @@
       <ol class="split-parts" id="split-parts"></ol>
       <div class="split-tools">
         <button class="link" type="button" id="split-add" data-icon="plus">Another task</button>
-        <button class="link" type="button" id="split-replan" data-icon="redo" hidden title="Tell the coordinator what to change; it plans again">Plan again…</button>
+        <button class="link" type="button" id="split-replan" data-icon="redo" hidden>Plan again…</button>
       </div>
       <label class="toggle" id="split-order-row"><input type="checkbox" id="split-order" checked><span>Start each one after the tasks it builds on</span></label>
       <footer class="sheet-actions">
-        <button class="btn" value="draft" data-icon="draft">Save draft</button>
-        <button class="btn primary" value="queue" data-icon="queue">Queue</button>
+        <button class="btn" value="draft" data-icon="draft" id="split-draft">Save draft</button>
+        <button class="btn primary" value="queue" data-icon="queue" id="split-queue">Queue</button>
       </footer>
     </form>
   </dialog>

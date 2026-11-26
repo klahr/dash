@@ -15,10 +15,11 @@ import { leave } from "./dialogs.js";
 //   rowFor(id)    the list's row for id, which gets focus back on close
 //   onHidden()    runs once the pane is hidden
 //   onViewport()  redraws the open pane when crossing the desktop breakpoint
-export function detailPane({ pane, closeBtn, background, isOpen, rowFor, onHidden, onViewport }) {
+//   modal()       whether a phone's open pane is modal now (default: always)
+export function detailPane({ pane, closeBtn, background, isOpen, rowFor, onHidden, onViewport, modal }) {
   let opener = null;
   const setModal = () => {
-    const on = !pane().hidden && !desktop.matches;
+    const on = !pane().hidden && !desktop.matches && (modal?.() ?? true);
     (background() || []).forEach((el) => { el.inert = on; });
     closeBtn()?.setAttribute("aria-label", desktop.matches ? "Close" : "Back");
   };

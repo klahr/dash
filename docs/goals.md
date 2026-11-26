@@ -35,12 +35,15 @@ instead.
    Leave them empty for no limit.
 3. Pick **Ask me before queuing** (the default) or **Queue on its own**, then **Start goal**.
 
-The goal opens on the **Goals** page, *planning*. In ask mode its first plan opens in the
-**Split into tasks** sheet once the coordinator has one. Edit the tasks, remove or add some, and
-set which earlier tasks each one waits for (the numbers after **After**). Then click
-**Save draft** to save them as drafts, or **Queue** to queue them. **Plan again…** tells the
-coordinator what to change instead. If you close the sheet, **Review plan** on the goal opens it
-again.
+The goal opens on the **Goals** page, *planning*. In ask mode its plan shows in the goal once the
+coordinator has one: each task under **Plan**, marked *Proposed*. Click a task to read its
+instructions.
+
+- **Accept plan** makes the plan's tasks and queues them.
+- **Edit plan…** opens the plan in a sheet. Edit the tasks, remove or add some, and set which
+  earlier tasks each one waits for (the numbers after **After**). Then click **Accept and queue**,
+  or **Accept as drafts** to queue them yourself later. **Plan again…** tells the coordinator what
+  to change instead.
 
 ## The Goals page
 
@@ -48,8 +51,9 @@ again.
 `go` on the keyboard). Each goal shows how many of its tasks are merged ("4 of 7 merged") and
 its status. Goals waiting for you, and goals that can't run, come first.
 
-Pick a goal to open it beside the list (full screen with **Back** on a phone). `Esc` closes it;
-`j` and `k` open the next and previous goal. It shows:
+Pick a goal to open it beside the list (full screen with **Back** on a phone). The list narrows
+and the goal you picked stays marked in it. `Esc` closes it; `j` and `k` open the next and
+previous goal. It shows:
 
 - **Plan**: the goal's tasks in dependency order, with their status. Pick one to open it. A plan
   waiting for you is listed below them as *Proposed*.
@@ -57,9 +61,15 @@ Pick a goal to open it beside the list (full screen with **Back** on a phone). `
   of its tasks so far.
 - **Log**: what the coordinator did and why, newest first.
 
-Its buttons: **Review plan** (a plan waits), **Queue drafts** (its drafts wait), **Talk to
-coordinator**, **Pause**, **Resume**, **Try again** (it can't run), **Edit goal**, **Copy link**, **Stop** and **Delete**. **Talk to
-coordinator** opens the goal's chat as a tab in the chat pane; answer its questions there.
+Its buttons: **Accept plan** and **Edit plan…** (a plan waits), **Queue drafts** (its drafts
+wait), **Talk to coordinator**, **Pause**, **Resume**, **Try again** (it can't run), **Edit goal**,
+**Copy link**, **Stop** and **Delete**.
+
+**Talk to coordinator** opens the goal's chat in the chat pane, with the coordinator's question,
+plan and notes as its messages; answer there. On the **Goals** page the chat sits beside the goal
+and the list, never over them. It has one goal tab, which follows the goal you open, and it closes
+when you close the goal or leave **Goals**, unless the chat is pinned. On a phone the chat is a
+page of its own: its **Goal** button leads back to the goal.
 **Copy link** copies the goal's address, which opens it for anyone in the project (see
 [Links](links.md)).
 
@@ -91,10 +101,10 @@ the goal. To show only one goal's tasks:
 1. **Planning.** When you make a goal, the coordinator reads the code and proposes a plan:
    tasks, each with instructions, and the earlier tasks it needs merged first (they become its
    `depends_on`).
-2. **Your turn (ask before queuing).** The plan waits for you: the goal is *waiting for you*.
-   Accept it, edit it first, or reject it with feedback (the coordinator then plans again).
-   Accepted tasks are saved as drafts; queue them from the board, or accept with `queue` to queue
-   them at once. While drafts of the goal wait, so does the goal.
+2. **Your turn (ask before queuing).** The plan waits for you to accept it: the goal is *waiting
+   for you*. Accept it, edit it first, or reject it with feedback (the coordinator then plans
+   again). **Accept plan** queues its tasks; accepted as drafts, you queue them from the board.
+   While drafts of the goal wait, so does the goal.
    **Queue on its own** skips this: the plan is queued right away.
 3. **Wake-ups.** The coordinator wakes only when one of the goal's tasks enters review, fails
    or is merged, never on a timer. It reads the task's diff and log, then may send the task back
@@ -153,7 +163,9 @@ reason, and you are notified. The events wait; the next event, or **Try again**,
 The goal's chat is connected to the coordinator's session: what you write there continues the
 same conversation its wake-ups add to. Send it over the chat WebSocket (`/ws/chat`) with `"goal"`
 set to the goal's id; only your latest message counts, the goal keeps the rest.
-`GET /api/goals/{id}/chat` returns the conversation. `!` commands don't run in a goal's chat.
+`GET /api/goals/{id}/chat` returns the conversation as the chat shows it: Dash's own messages that
+wake the coordinator are left out, and what it said to you in those turns (its plan, question,
+notes and summary) shows as its messages. `!` commands don't run in a goal's chat.
 
 `POST /api/goals/{id}/message` (and the `message_goal` tool) sends a message without waiting for
 the answer: the coordinator is woken with it, like by a task event, and acts on it. It answers

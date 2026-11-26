@@ -282,15 +282,19 @@ export function openGoalPlan(g, p) {
   openSplit(planParts(g.plan));
 }
 
+// For a goal's plan the sheet is the goal's: titled for it, and its buttons
+// accept the plan, as drafts or queued.
 function openSplit(parts) {
   split.parts = parts;
   const one = parts.length === 1;
   const g = split.goal;
-  $("#split-hint").textContent = g
-    ? `The coordinator proposes ${plural(parts.length, "task")} for “${g.title}”. Nothing is made until you save.`
-    : (one
-      ? "Claude thinks this is small enough for one task."
-      : `Claude proposes ${parts.length} tasks. Nothing is saved until you do.`)
+  $("#split-title").textContent = g ? `Plan for “${g.title}”` : "Split into tasks";
+  $("#split-draft").lastChild.textContent = g ? "Accept as drafts" : "Save draft";
+  $("#split-queue").lastChild.textContent = g ? "Accept and queue" : "Queue";
+  $("#split-hint").hidden = !!g;
+  $("#split-hint").textContent = g ? "" : (one
+    ? "Claude thinks this is small enough for one task."
+    : `Claude proposes ${parts.length} tasks. Nothing is saved until you do.`)
       + (editing ? ` They replace “${title(editing)}”.` : "");
   $("#split-replan").hidden = !g;
   renderSplit();

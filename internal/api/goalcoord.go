@@ -350,12 +350,7 @@ func (e *goalEngine) turn(id string) bool {
 		cancel()
 	}()
 
-	var lines []string
-	for _, w := range wakes {
-		lines = append(lines, wakeText(w))
-	}
-	msg := strings.Join(lines, "\n")
-	err = s.coordinatorTurn(ctx, g, msg)
+	err = s.coordinatorTurn(ctx, g, wakeMessage(wakes))
 	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
 	g, uerr := data.UpdateGoal(id, func(g *model.Goal) error {
 		g.Running = false
@@ -485,9 +480,22 @@ func (e *goalEngine) answered(data interface {
 	e.refresh(id)
 }
 
-// coordinatorTurn runs one turn of g's coordinator with msg, a wake-up, as
+// wakeMessage is the message that wakes a coordinator for wakes: Dash's own
+// (Wake), with what the user wrote in it, if anything, as Said.
+func wakeMessage(wakes []model.GoalWake) agent.ChatMessage {
+	var lines, said []string
+	for _, w := range wakes {
+		lines = append(lines, wakeText(w))
+		if w.Event == model.GoalWakeMessage {
+			said = append(said, w.Note)
+		}
+	}
+	return agent.ChatMessage{Role: "user", Content: strings.Join(lines, "\n"), Wake: true, Said: strings.Join(said, "\n\n"), At: ptr(now())}
+}
+
+// coordinatorTurn runs one turn of g's coordinator with asked, a wake-up, as
 // the goal's owner, and adds it and the reply to the goal's conversation.
-func (s *Server) coordinatorTurn(ctx context.Context, g model.Goal, msg string) error {
+func (s *Server) coordinatorTurn(ctx context.Context, g model.Goal, asked agent.ChatMessage) error {
 	org, ok := s.Store.GoalOrg(g.ID)
 	if !ok {
 		return errors.New("the goal is gone")
@@ -510,7 +518,6 @@ func (s *Server) coordinatorTurn(ctx context.Context, g model.Goal, msg string) 
 	ctx = mcptools.WithGoal(ctx, g.ID)
 	ctx = agent.AsCoordinator(ctx)
 	history, _ := sv.data.GoalChat(g.ID)
-	asked := agent.ChatMessage{Role: "user", Content: msg, At: ptr(now())}
 	prompt := s.coordinatorPrompt(sv, g, history, asked)
 	var reply strings.Builder
 	var usage *model.ChatUsage

@@ -91,6 +91,7 @@ function applyView(name) {
   if (navView(name) === "code") store.set(CODE_TAB, tabOf(name));
   renderNavActive();
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${sectionOf(name)}`));
+  $(".app").classList.toggle("on-goals", name === "goals"); // the chat lies beside the page there (style.css)
   $("#view-run").classList.toggle("at-commit", name === "try");
   $("#shell-at-main").setAttribute("aria-pressed", String(name === "run"));
   $("#shell-at-commit").setAttribute("aria-pressed", String(name === "try"));

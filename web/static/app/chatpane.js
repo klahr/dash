@@ -27,10 +27,11 @@ const wide = matchMedia("(min-width: 1280px)");
 const CHAT_MIN_W = 280;
 export const pane = (() => {
   // projectTabs: the chats added with + in each project, by projectKey.
-  // goalTabs: the goals' coordinator chats opened with Talk to coordinator ({key, id, pk, title}).
-  const base = { open: false, pinned: false, width: null, tab: null, projectTabs: {}, goalTabs: [] };
-  const goalTabList = (v) => (Array.isArray(v) ? v : []).filter((t) => t && typeof t.id === "string" && typeof t.pk === "string" && t.key === `goal:${t.pk}/${t.id}`)
-    .map((t) => ({ key: t.key, id: t.id, pk: t.pk, title: String(t.title || "Goal") }));
+  // goal: the one goal chat, opened with Talk to coordinator ({key, id, pk, title}): it
+  // follows the goal open on Goals (followGoal).
+  const base = { open: false, pinned: false, width: null, tab: null, projectTabs: {}, goal: null };
+  const goalSlot = (t) => (t && typeof t.id === "string" && typeof t.pk === "string" && t.key === `goal:${t.pk}/${t.id}`
+    ? { key: t.key, id: t.id, pk: t.pk, title: String(t.title || "Goal") } : null);
   // Only well-formed tab lists survive: stored data may be stale or from an older version.
   const tabLists = (v) => Object.fromEntries(Object.entries(v && typeof v === "object" && !Array.isArray(v) ? v : {})
     .map(([k, list]) => [k, Array.isArray(list) ? [...new Set(list.filter((t) => typeof t === "string" && t && t !== k))] : []])
@@ -38,9 +39,12 @@ export const pane = (() => {
   try {
     const s = store.getJSON("dash.chatPane");
     if (s && typeof s === "object") {
-      // The old shared tab list ("tabs") is dropped, not carried over.
-      const { tabs, ...rest } = s;
-      return { ...base, ...rest, tab: typeof s.tab === "string" ? s.tab : null, projectTabs: tabLists(s.projectTabs), goalTabs: goalTabList(s.goalTabs) };
+      // The old shared tab list ("tabs") and goal tabs ("goalTabs") are dropped, not carried over.
+      const { tabs, goalTabs, ...rest } = s;
+      // A goal's chat outlives a reload only pinned: no goal is open yet.
+      const goal = s.pinned ? goalSlot(s.goal) : null;
+      const tab = typeof s.tab === "string" && (!s.tab.startsWith("goal:") || s.tab === goal?.key) ? s.tab : null;
+      return { ...base, ...rest, tab, projectTabs: tabLists(s.projectTabs), goal };
     }
   } catch {}
   // Carry over the board chat's settings: it pushed the board aside, like pinned.
@@ -171,12 +175,15 @@ export function projectChatEvent(ev, m) {
 
 // ------------------------------------------------------------------ goal chats
 // A goal's chat talks to its coordinator: the same conversation its
-// wake-ups add to (docs/goals.md). Opened with Talk to coordinator, a tab
-// each, kept until closed, whichever project is selected. It runs no
-// commands and can't be cleared: the conversation is the coordinator's memory.
+// wake-ups add to (docs/goals.md). Talk to coordinator opens it in the
+// pane's one goal tab, which then follows the goal open on Goals and closes
+// with it, unless the chat is pinned. It runs no commands and can't be
+// cleared: the conversation is the coordinator's memory. Each goal's chat
+// keeps its controller, so a reply streams on after the tab moved on.
 const goalChats = new Map(); // tab key → { panel, chat, loaded, tab }
 const isGoalTab = (key) => typeof key === "string" && key.startsWith("goal:");
-const goalTab = (key) => pane.goalTabs.find((t) => t.key === key) || null;
+const goalTab = (key) => (pane.goal?.key === key ? pane.goal : null);
+const goalKey = (g, p) => `goal:${projectKey(p)}/${g.id}`;
 function goalChatFor(t) {
   if (goalChats.has(t.key)) return goalChats.get(t.key);
   const panel = $("#project-chat-tpl").content.firstElementChild.cloneNode(true);
@@ -208,19 +215,49 @@ async function loadGoalChat(gc) {
   const saved = await api("GET", `/api/goals/${gc.tab.id}/chat`, null, p.prefix || "");
   if (!gc.chat.busy) gc.chat.reset(saved);
 }
+// setGoalSlot puts goal g (of project p) in the goal tab, in place of the
+// goal there; a tab shown on the old goal shows the new one.
+function setGoalSlot(g, p) {
+  const key = goalKey(g, p), old = pane.goal;
+  if (old?.key === key) { old.title = g.title || old.title; return key; }
+  if (old) leaveGoalChat(old.key);
+  pane.goal = { key, id: g.id, pk: projectKey(p), title: g.title || "Goal" };
+  if (old && pane.tab === old.key) pane.tab = key;
+  return key;
+}
+function leaveGoalChat(key) {
+  if (goalChats.get(key)?.chat.busy) chatDismissed.add(key);
+  if (chatUnread.delete(key)) saveChatUnread();
+}
 // openGoalChat opens the chat with goal g's coordinator (g in project p).
 export function openGoalChat(g, p) {
-  const pk = projectKey(p), key = `goal:${pk}/${g.id}`;
-  const t = goalTab(key);
-  if (t) t.title = g.title;
-  else pane.goalTabs = [...pane.goalTabs, { key, id: g.id, pk, title: g.title }];
+  const key = setGoalSlot(g, p);
   chatDismissed.delete(key);
   toggleChatPane(true, key);
 }
+// followGoal: goal g (of project p) is the one open on Goals now, or none
+// (null: closed, or Goals left). The goal tab, if there is one, follows it;
+// with none open it closes (and the pane with it, if it showed it), unless
+// the chat is pinned.
+export function followGoal(g, p) {
+  if (!pane.goal) return;
+  if (g && p) {
+    const showing = pane.open && pane.tab === pane.goal.key;
+    const key = setGoalSlot(g, p);
+    if (showing) chatDismissed.delete(key);
+    savePane();
+    renderChatPane();
+    return;
+  }
+  if (pane.pinned) return;
+  const showing = pane.open && pane.tab === pane.goal.key;
+  closeGoalTab(pane.goal.key);
+  if (showing) toggleChatPane(false);
+}
 function closeGoalTab(key) {
-  pane.goalTabs = pane.goalTabs.filter((t) => t.key !== key);
-  if (goalChats.get(key)?.chat.busy) chatDismissed.add(key);
-  if (chatUnread.delete(key)) saveChatUnread();
+  if (pane.goal?.key !== key) return;
+  pane.goal = null;
+  leaveGoalChat(key);
   if (pane.tab === key) pane.tab = "project";
   savePane();
   renderChatPane();
@@ -228,9 +265,11 @@ function closeGoalTab(key) {
 // goalChatEvent: a goal changed (a wake-up may have added to its
 // conversation); its chat, when loaded and idle, reads it again.
 export function goalChatEvent(g, m) {
+  const t = pane.goal;
+  if (t && t.id === g?.id && g.title && t.title !== g.title && projectByKey(t.pk)?.machine === m.name) { t.title = g.title; savePane(); renderChatPane(); }
   for (const gc of goalChats.values()) {
     if (gc.tab.id !== g?.id || projectByKey(gc.tab.pk)?.machine !== m.name || gc.chat.busy) continue;
-    if (g.title && gc.tab.title !== g.title) { gc.tab.title = g.title; savePane(); renderChatPane(); }
+    if (g.title) gc.tab.title = g.title;
     if (!gc.loaded || g.running) continue; // read once its turn is over
     gc.loaded = false;
     if (viewingChat(gc.tab.key)) loadGoalChat(gc).catch(() => {});
@@ -238,10 +277,8 @@ export function goalChatEvent(g, m) {
 }
 // goalChatGone: goal g was deleted (here or elsewhere); its chat's tab closes.
 export function goalChatGone(g, m) {
-  for (const t of pane.goalTabs) {
-    if (t.id !== g?.id || projectByKey(t.pk)?.machine !== m.name) continue;
-    closeGoalTab(t.key);
-  }
+  const t = pane.goal;
+  if (t && t.id === g?.id && projectByKey(t.pk)?.machine === m.name) closeGoalTab(t.key);
 }
 
 // Tabs are This project, General, then the chats added with + in the selected
@@ -337,7 +374,7 @@ export function renderChatPane() {
     ...keptTabs().map((p) => h("div", { class: "chat-pane-tab" },
       tabBtn(projectKey(p), p.name, [projectIcon(p)], grouped() ? `${p.name} · ${projectWhere(p)}` : p.name),
       ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close this tab", onclick: () => closeChatTab(projectKey(p)) }, "x"))),
-    ...pane.goalTabs.map((t) => h("div", { class: "chat-pane-tab" },
+    ...(pane.goal ? [pane.goal] : []).map((t) => h("div", { class: "chat-pane-tab chat-tab-goal" },
       tabBtn(t.key, t.title, [ico("target")], `Coordinator of the goal ${t.title}`),
       ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the chat with the coordinator of ${t.title}`, title: "Close this tab", onclick: () => closeGoalTab(t.key) }, "x"))),
   );
@@ -362,6 +399,7 @@ export function renderChatPane() {
   if (gt && pane.open) loadGoalChat(goalChats.get(tab)).catch((e) => toast(`Couldn't load the coordinator's conversation: ${e.message}`, true));
   renderChatHead();
   renderTryBack();
+  renderGoalBack();
   if (cur && pane.open) loadProjectChat(cur).catch((e) => toast(`Couldn't load the project chat: ${e.message}`, true));
   markChatSeen();
 }
@@ -469,6 +507,16 @@ export function renderTryBack() {
   }
 }
 
+// On a phone, where the chat is a page over the goal it talks about, its Goal
+// button leads back to the goal. The pane (and goals.js) hear of each change.
+function renderGoalBack() {
+  const on = !chatBeside.matches && pane.open && state.view === "goals" && !!state.goalOpen && isGoalTab(paneTab());
+  $("#chat-goal-back").hidden = !on;
+  document.dispatchEvent(new CustomEvent("chatpane"));
+}
+$("#chat-goal-back").addEventListener("click", () => toggleChatPane(false));
+chatBeside.addEventListener("change", renderGoalBack);
+
 function showChatTab(tab) {
   pane.tab = tab;
   savePane();
@@ -512,7 +560,7 @@ export function renderChatBadge() {
   const chats = [chat, ...[...projectChats.values(), ...goalChats.values()].map((pc) => pc.chat)];
   const waiting = chats.some((c) => c.waiting), busy = chats.some((c) => c.busy);
   // Only chats that still have a tab count: a closed tab's reply can't be read.
-  const tabs = new Set(["general", state.project && projectKey(state.project), ...keptTabs().map(projectKey), ...pane.goalTabs.map((t) => t.key)]);
+  const tabs = new Set(["general", state.project && projectKey(state.project), ...keptTabs().map(projectKey), pane.goal?.key]);
   const unread = [...chatUnread].some((k) => tabs.has(k));
   const kind = waiting ? "perm" : busy ? "busy" : unread ? "unread" : "";
   const says = { perm: "Claude needs approval", busy: "Claude is answering", unread: "new reply" }[kind];

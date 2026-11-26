@@ -2468,10 +2468,11 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   html .sheet[open] > .toasts { top: calc(var(--vv-top, 0px) + env(safe-area-inset-top, 0px) + 12px); bottom: auto; right: calc(44px + var(--sp-4) + 12px); }
 }
 
-/* A phone: the chat is a page, the view under it hidden. */
+/* A phone: the chat is a page, the view under it hidden, and an open goal too until the
+   chat's Goal button (app/chatpane.js) leads back to it. */
 @media (max-width: 719px) {
   html:has(.app.chat-open) { overflow: hidden; }
-  .app.chat-open main { display: none; }
+  .app.chat-open :is(main, #goal-detail) { display: none; }
   #pc-close { display: none; }
 }
 /* A tablet: the chat sits beside the view, the same height as the phone's page
@@ -2484,6 +2485,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   /* Typing keeps the nav: the chat covers only part of it. */
   .chat-pane:has(.composer textarea:focus), .kb-env .chat-pane:has(.composer textarea:focus) { z-index: 15; height: calc(var(--vv-top, 0px) + var(--vv-h, 100dvh) - var(--chat-top) - var(--nav-h) - var(--safe-b)); }
   .app.chat-open main { margin-right: var(--chat-pane-w); }
+  /* A goal's pane keeps left of the chat, as the view does. */
+  .app.chat-open .goal-detail { right: var(--chat-pane-w); }
   .app.chat-open .fab { right: calc(var(--chat-pane-w) + 16px); }
   .app.chat-open .toasts { right: calc(var(--chat-pane-w) + 16px + var(--fab-space, 68px)); }
   .try-tabs { display: none; }
@@ -2689,11 +2692,16 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
      start of subjects) to click and to show where j/k are. */
   .commit-detail { --cd-room: calc(100vw - var(--side-w)); width: calc(var(--cd-room) * .86); }
   .chat-pinned.chat-open .commit-detail { --cd-room: calc(100vw - var(--side-w) - var(--chat-pane-w)); }
-  /* A goal's pane lies beside the Goals list (app/goals.js), headed like the commit pane. */
-  .goal-detail { width: min(820px, calc((100vw - var(--side-w)) * .62)); }
-  .chat-pinned.chat-open .goal-detail { width: min(820px, calc((100vw - var(--side-w) - var(--chat-pane-w)) * .62)); }
-  /* With a goal open, the list moves over to stay beside it. */
-  .app:has(#goal-detail:not([hidden])) .page.goals { margin-left: 0; max-width: min(860px, calc(100% - min(820px, 62%))); }
+  /* A goal's pane lies beside the Goals list (app/goals.js), headed like the commit pane: the
+     list keeps to the room left of it, the goal opened marked and in sight. On Goals the chat,
+     overlaid or pinned, lies beside them, never over them: --goal-chat is the room it takes at
+     the right, --goal-shift the part of it the pinned chat's grid column doesn't already take.
+     (.on-goals: app/nav.js marks the Goals page; .goal-open: app/goals.js, a goal's pane.) */
+  .app { --goal-chat: 0px; --goal-shift: 0px; --goal-pane-w: min(760px, calc((100vw - var(--side-w) - var(--goal-chat)) * .56)); }
+  .app.chat-open.on-goals { --goal-chat: var(--chat-pane-w); --goal-shift: var(--chat-pane-w); }
+  .goal-detail { right: var(--goal-chat); width: var(--goal-pane-w); box-shadow: none; }
+  #view-goals { margin-right: var(--goal-shift); }
+  .app.goal-open #view-goals { margin-right: calc(var(--goal-pane-w) + var(--goal-shift)); }
   /* A deploy's pane lies beside the Deploys page the same way (app/deploys.js). */
   .deploy-detail { width: min(820px, calc((100vw - var(--side-w)) * .58)); }
   .chat-pinned.chat-open .deploy-detail { width: min(820px, calc((100vw - var(--side-w) - var(--chat-pane-w)) * .58)); }
@@ -2780,6 +2788,13 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .chat-pinned.chat-open .toasts { right: calc(var(--chat-pane-w) + 28px + var(--fab-space, 0px)); }
   .chat-pinned.chat-open.detail-beside .toasts { right: calc(var(--chat-pane-w) + var(--detail-beside-w) + 28px); }
   .chat-pinned.chat-open :is(.detail, .statusline) { right: var(--chat-pane-w); }
+  .app.chat-pinned.chat-open.on-goals { --goal-shift: 0px; }
+}
+/* Too narrow for the Goals list, a goal and the chat side by side: the goal takes the list's
+   room until it is closed (or the chat is). */
+@media (min-width: 1024px) and (max-width: 1359px) {
+  .app.chat-open.on-goals.goal-open { --goal-pane-w: calc(100vw - var(--side-w) - var(--goal-chat)); }
+  .app.chat-open.goal-open #view-goals { visibility: hidden; }
 }
 
 .copy-prompt { float: right; margin: 0 0 8px 12px; color: var(--muted); }
@@ -3847,12 +3862,20 @@ a.tag-build:hover, a.tag-build:focus-visible { text-decoration: underline; }
 .goal-task { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
 .goal-task-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; margin: -2px 0; text-align: left; border-radius: var(--r-s); }
 button.goal-task-open:hover { background: var(--raised); }
+/* A proposed task: its instructions open under it, to read before Accept plan. */
+.goal-proposal { display: block; }
+.goal-proposal > summary { display: flex; flex-direction: column; gap: 2px; cursor: pointer; list-style: none; }
+.goal-proposal > summary::-webkit-details-marker { display: none; }
+.goal-proposal:hover, .goal-proposal[open] { background: var(--raised); }
+.goal-proposal-prompt { margin: 8px 0 4px; padding-left: 10px; border-left: 2px solid var(--line); font-size: var(--fs-s); overflow-wrap: anywhere; }
+.goal-proposal-prompt :is(p, ul, ol):last-child { margin-bottom: 0; }
 .goal-task-title { font-weight: 500; overflow-wrap: anywhere; }
 .goal-task-sub { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--fs-xs); color: var(--muted); }
 .goal-task-sub .status { font-weight: 600; }
 .goal-task.s-merged .goal-task-title { color: var(--muted); }
 .goal-task.proposed .goal-task-title { color: var(--muted); } /* not opacity: its text keeps 4.5:1 */
-.goal-task.proposed .split-num { border: 1px dashed var(--line); background: transparent; }
+.goal-task.proposed { align-items: flex-start; }
+.goal-task.proposed .split-num { margin-top: 6px; border: 1px dashed var(--line); background: transparent; }
 
 .goal-budget { display: grid; gap: 10px; }
 .goal-meter { display: grid; grid-template-columns: 7.5em 1fr; align-items: center; gap: 12px; font-size: var(--fs-s); }

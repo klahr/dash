@@ -239,6 +239,12 @@ func TestGoalAskMode(t *testing.T) {
 	if chat := raw(s).GoalChat(g.ID); len(chat) != 2 || chat[1].Content != "Done." {
 		t.Fatalf("the coordinator's conversation %+v", chat)
 	}
+	// Its chat shows the plan as the coordinator's, not the wake-up as the user's.
+	var shown []model.ChatMessage
+	_ = json.Unmarshal(do(t, h, "GET", "/api/goals/"+g.ID+"/chat", "").Body.Bytes(), &shown)
+	if len(shown) != 1 || shown[0].Role != "assistant" || shown[0].Content != "Proposed a plan of 2 tasks.\n\nindex first" {
+		t.Fatalf("the goal's chat shows %+v", shown)
+	}
 
 	// The coordinator's tools: no approving, merging or publishing.
 	token, release := s.Board.RegisterGoal(testOwner(t, s), p.ID, g.ID)
@@ -546,6 +552,59 @@ func TestGoalChat(t *testing.T) {
 	}
 	if !strings.Contains(fc.turns[0], "<goal ") {
 		t.Fatal("the wake-up lacked the goal's state")
+	}
+
+	// The chat shows the coordinator's question and plan as its own
+	// messages, and never Dash's wake-ups as the user's.
+	h := loggedIn(t, s.Routes())
+	shown := func() []model.ChatMessage {
+		t.Helper()
+		w := do(t, h, "GET", "/api/goals/"+g.ID+"/chat", "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("chat: %d %s", w.Code, w.Body)
+		}
+		var msgs []model.ChatMessage
+		_ = json.Unmarshal(w.Body.Bytes(), &msgs)
+		return msgs
+	}
+	got := shown()
+	if len(got) != 3 || got[0].Role != "assistant" || got[0].Content != "Postgres or SQLite?" ||
+		got[1].Role != "user" || got[1].Content != "SQLite, please" ||
+		got[2].Role != "assistant" || got[2].Content != "Done." {
+		t.Fatalf("the chat shows %+v", got)
+	}
+	// A message sent outside the chat (message_goal) shows as the user's.
+	fc.setAct(func(string, func(string, string) (string, bool)) {})
+	if _, err := s.as(ownerCaller(t, s)).messageGoal(g.ID, "Keep it small"); err != nil {
+		t.Fatal(err)
+	}
+	settleGoals(s)
+	got = shown()
+	if n := len(got); n != 5 || got[3].Role != "user" || got[3].Content != "Keep it small" || got[4].Content != "Done." {
+		t.Fatalf("after message_goal the chat shows %+v", got)
+	}
+	for _, m := range got {
+		if strings.Contains(m.Content, "propose_plan") || strings.Contains(m.Content, "wrote to you") {
+			t.Fatalf("a wake-up shows: %+v", got)
+		}
+	}
+}
+
+// goalChatView hides wake-ups stored before they were marked, too.
+func TestGoalChatViewLegacyWake(t *testing.T) {
+	at := func(s int) *time.Time { v := time.Date(2026, 11, 1, 0, 0, s, 0, time.UTC); return &v }
+	g := model.Goal{Log: []model.GoalLogEntry{
+		{At: *at(2), Kind: model.GoalLogNote, Text: "Asked you: Include refunded invoices?"},
+		{At: *at(5), Kind: model.GoalLogUser, Text: "You wrote to the coordinator: no"},
+	}}
+	got := goalChatView(g, []model.ChatMessage{
+		{Role: "user", Content: "The goal was made: read the code and propose a plan with propose_plan.", At: at(1)},
+		{Role: "assistant", Content: "I asked.", At: at(1)},
+		{Role: "user", Content: "No", CreatedBy: 1, At: at(4)},
+		{Role: "assistant", Content: "Fine.", At: at(4)},
+	})
+	if len(got) != 3 || got[0].Content != "Include refunded invoices?" || got[1].Content != "No" || got[2].Content != "Fine." {
+		t.Fatalf("shown %+v", got)
 	}
 }
 
