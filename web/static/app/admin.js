@@ -1,4 +1,4 @@
-import { $, avatar, dateText, dateTimeText, fill, h, ico, plural } from "./dom.js";
+import { $, avatar, dateText, dateTimeText, debounce, fill, h, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, openSheet, railOf, toast } from "./dialogs.js";
 import { askPassword } from "./myaccount.js";
@@ -128,11 +128,6 @@ sheet?.addEventListener("cancel", (e) => {
 const backButton = (k) => h("button", { class: "btn small admin-back", type: "button", onclick: () => closeDetail(k) },
   h("span", { class: "ico-back" }, ico("left")), h("span", { class: "ico-close" }, ico("x")),
   h("span", { class: "back-word" }, "Back"), h("span", { class: "close-word" }, "Close"));
-
-function debounce(fn, ms = 200) {
-  let t;
-  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-}
 
 const markCurrent = (b, on) => (on ? b.setAttribute("aria-current", "true") : b.removeAttribute("aria-current"));
 

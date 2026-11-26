@@ -1,4 +1,4 @@
-import { $, $$, dateTimeText, fill, h, ib, plural, setLabel } from "./dom.js";
+import { $, $$, dateTimeText, debounce, fill, h, ib, plural, setLabel } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, copy, fail, openSheet, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
@@ -599,7 +599,8 @@ async function decide(d, approve) {
 // ------------------------------------------------------------------ live updates
 // deploy.updated carries the deploy without its log: the list takes it, the
 // environments are read again, and the open deploy's log with it.
-let envTimer = 0, detailTimer = 0;
+let detailTimer = 0;
+const reloadEnvs = debounce(() => state.view === "deploys" && loadEnvs().catch(() => {}), 300);
 export function onDeployEvent(ev) {
   const d = ev.data;
   if (!d?.id || dp.project?.id !== d.project_id) return;
@@ -609,8 +610,7 @@ export function onDeployEvent(ev) {
   }
   mergeDeploy(d);
   refreshGraph(); // History → Commits marks the commits deploys shipped (when it shows)
-  clearTimeout(envTimer);
-  envTimer = setTimeout(() => state.view === "deploys" && loadEnvs().catch(() => {}), 300);
+  reloadEnvs();
   // Another deploy to the same environment may change what the open one offers (Roll back).
   if (dp.open && (dp.open === d.id || dp.detail?.environment === d.environment)) {
     clearTimeout(detailTimer);

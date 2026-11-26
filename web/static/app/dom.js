@@ -54,6 +54,19 @@ export const whenText = (iso) => {
 export const dateTimeText = (iso) => new Date(iso).toLocaleString(timeLocale, { dateStyle: "medium", timeStyle: "short" });
 // plural counts a noun: "1 task", "3 tasks"; many is for nouns that don't just add an s.
 export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// sizeText is a size in bytes for people: "512 B", "12 KB", "3.4 MB", "250 GB".
+export function sizeText(n) {
+  if (!(n >= 0)) return "";
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 2 ** 20) return `${Math.round(n / 1024)} KB`;
+  const [v, unit] = n < 2 ** 30 ? [n / 2 ** 20, "MB"] : [n / 2 ** 30, "GB"];
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${unit}`;
+}
+// debounce calls fn once calls to the function it returns stop for ms.
+export function debounce(fn, ms = 200) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
 export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 export const h = (tag, props = {}, ...kids) => {
   const el = document.createElement(tag);

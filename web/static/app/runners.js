@@ -1,4 +1,4 @@
-import { $, docsLink, fill, h, ib, ico, plural } from "./dom.js";
+import { $, docsLink, fill, h, ib, ico, plural, sizeText } from "./dom.js";
 import { api } from "./api.js";
 import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
 import { checked, saveField } from "./autosave.js";
@@ -192,9 +192,6 @@ const runnerClaudeWarnings = (r) => r.reported?.claude?.warnings || [];
 // Disk space. The runner reports its free space with its heartbeat; the hub
 // works out under the runner's thresholds (r.disk) whether it is low
 // (r.disk_low, the warning) and too full to start a task (r.disk_full).
-const GiB = 2 ** 30;
-const sizeText = (n) => n >= 100 * GiB ? `${Math.round(n / GiB)} GB` : n >= GiB ? `${(n / GiB).toFixed(1)} GB`
-  : n >= 2 ** 20 ? `${Math.round(n / 2 ** 20)} MB` : `${Math.round(n / 1024)} KB`;
 const diskDefaults = { warn_percent: 10, warn_gb: 10, min_free_gb: 2 };
 const minFreeText = (r) => `${r.disk?.min_free_gb || diskDefaults.min_free_gb} GB`;
 const diskWarning = (r) => r.disk_low ? `${r.disk_low}.${r.disk_full ? ` It starts no tasks until it has ${minFreeText(r)} free.` : ""}` : "";

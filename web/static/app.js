@@ -51,6 +51,7 @@ import "./app/admin.js";
 import "./app/roles.js";
 import "./app/myaccount.js";
 import "./app/glide.js";
+import "./app/carddrag.js";
 import "./app/avatar.js";
 import "./app/people.js";
 import "./app/stars.js";

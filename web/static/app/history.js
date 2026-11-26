@@ -1,6 +1,6 @@
 import { graphLayout, graphTips, reachable } from "../graphlayout.js";
 import { latestOnly } from "../commitnav.js";
-import { $, $$, dateTimeText, fill, h, ib, ico, plural } from "./dom.js";
+import { $, $$, dateTimeText, debounce, fill, h, ib, ico, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { copy, fail, toast } from "./dialogs.js";
@@ -84,8 +84,7 @@ async function showDeploy(id) {
   await openDeploy(id);
 }
 
-let graphTimer = 0;
-export const refreshGraph = () => { clearTimeout(graphTimer); graphTimer = setTimeout(() => state.view === "history" && loadGraph().catch(() => {}), 800); };
+export const refreshGraph = debounce(() => state.view === "history" && loadGraph().catch(() => {}), 800);
 
 // refreshHistory is History's Refresh (and r): with a remote it fetches
 // origin now and waits for it, then redraws the graph and says how many

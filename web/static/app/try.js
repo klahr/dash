@@ -1,4 +1,4 @@
-import { $, $$, h, ib, setLabel } from "./dom.js";
+import { $, $$, debounce, h, ib, setLabel } from "./dom.js";
 import { chatBeside, desktop, wsURL } from "./viewport.js";
 import { api } from "./api.js";
 import { attempt, fail, openSheet, toast } from "./dialogs.js";
@@ -436,8 +436,7 @@ async function openTryCommits() {
     if (res.warning) note.textContent = res.warning;
     render(res.commits || [], q);
   };
-  let timer;
-  search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => load(search.value.trim()).catch(fail), 250); });
+  search.addEventListener("input", debounce(() => load(search.value.trim()).catch(fail), 250));
   search.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     e.preventDefault();

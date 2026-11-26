@@ -1,4 +1,4 @@
-import { $, $$, dateText, docsLink, fill, h, ib } from "./dom.js";
+import { $, $$, dateText, debounce, docsLink, fill, h, ib, sizeText } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, fail, toast } from "./dialogs.js";
 import { checked, fieldError, saveField, saveQueue } from "./autosave.js";
@@ -474,27 +474,24 @@ labelPicker({ input: $("#settings-runs-on"), any: true, label: "Runs on", onChan
 
 // The tag format is checked as it is typed: placeholders, a valid git tag,
 // and whether the repository's release workflows run for its tags.
-let tagFormatTimer = 0, tagFormatSeq = 0;
+let tagFormatSeq = 0;
 const tagFormatCheck = (format, p = state.project) => api("GET", `/api/projects/${p.id}/tag-format?format=${encodeURIComponent(format)}`, null, p.prefix || "");
-function checkTagFormat() {
-  clearTimeout(tagFormatTimer);
-  tagFormatTimer = setTimeout(attempt(async () => {
-    const f = $("#settings-form");
-    const format = f.tag_format.value.trim() || "X.Y.Z";
-    const seq = ++tagFormatSeq;
-    const res = await tagFormatCheck(format);
-    if (seq !== tagFormatSeq) return;
-    const hint = $("#tag-format-hint");
-    f.tag_format.setCustomValidity(res.valid ? "" : res.error);
-    hint.className = `hint${!res.valid ? " err-text" : res.hint ? " warn" : ""}`;
-    if (!res.valid) return hint.replaceChildren(res.error);
-    hint.replaceChildren(`Tags look like ${res.example}.`);
-    if (res.hint) {
-      hint.append(" ", res.hint.message);
-      if (res.hint.suggest) hint.append(" ", h("button", { type: "button", class: "link inline", onclick: () => { f.tag_format.value = res.hint.suggest; checkTagFormat(); saveSetting("tag_format"); } }, `Use ${res.hint.suggest}`));
-    }
-  }), 250);
-}
+const checkTagFormat = debounce(attempt(async () => {
+  const f = $("#settings-form");
+  const format = f.tag_format.value.trim() || "X.Y.Z";
+  const seq = ++tagFormatSeq;
+  const res = await tagFormatCheck(format);
+  if (seq !== tagFormatSeq) return;
+  const hint = $("#tag-format-hint");
+  f.tag_format.setCustomValidity(res.valid ? "" : res.error);
+  hint.className = `hint${!res.valid ? " err-text" : res.hint ? " warn" : ""}`;
+  if (!res.valid) return hint.replaceChildren(res.error);
+  hint.replaceChildren(`Tags look like ${res.example}.`);
+  if (res.hint) {
+    hint.append(" ", res.hint.message);
+    if (res.hint.suggest) hint.append(" ", h("button", { type: "button", class: "link inline", onclick: () => { f.tag_format.value = res.hint.suggest; checkTagFormat(); saveSetting("tag_format"); } }, `Use ${res.hint.suggest}`));
+  }
+}), 250);
 $("#settings-form").tag_format.addEventListener("input", checkTagFormat);
 // The project color: one picker with None, a few colors, and any other
 // color from the color input (picking one there chooses it).
@@ -695,7 +692,6 @@ async function loadRepoInfo() {
 }
 
 const LICENSE_NAMES = { other: "Other (GitHub couldn't tell which)" };
-const fmtSize = (kb) => (kb >= 1024 * 1024 ? `${(kb / 1024 / 1024).toFixed(1)} GB` : kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`);
 // ext links to an outside web page; anything but an absolute http(s) URL
 // (javascript:, data:, a path on Dash itself, …) is shown as plain text, since
 // the links come from a runner's answer (the hub drops the ones it won't show).
@@ -738,7 +734,7 @@ function renderRepoInfo(p, res) {
     row("Open", ext(`${g.url}/issues`, `${g.open_issues} issues`), " · ", ext(`${g.url}/pulls`, `${g.open_prs} pull requests`)),
     isSet(g.pushed_at) ? row("Last push", agoText(g.pushed_at)) : null,
     isSet(g.created_at) ? row("Created", dateText(g.created_at)) : null,
-    g.disk_kb ? row("Size", fmtSize(g.disk_kb)) : null,
+    g.disk_kb ? row("Size", sizeText(g.disk_kb * 1024)) : null,
     g.viewer_permission ? row("Your access", g.viewer_permission.toLowerCase()) : null,
   ];
   const methods = [g.squash_merge && "squash", g.merge_commit && "merge commit", g.rebase_merge && "rebase"].filter(Boolean);

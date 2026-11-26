@@ -1,4 +1,4 @@
-import { ib } from "./dom.js";
+import { ib, plural } from "./dom.js";
 import * as store from "./store.js";
 import { state } from "./state.js";
 import { describePerm, isQuestion } from "./chatparts.js";
@@ -104,7 +104,6 @@ function pickVoice() {
 }
 
 // ---- Markdown to speech
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 // A path of three parts or more is read as its last one: "web/static/app/chat.js" → "chat.js".
 const PATH = /(?:~|\.{1,2})?\/?(?:[\w@.+-]+\/){2,}([\w@.+-]+)/g;
 const shortPaths = (s) => s.replace(PATH, "$1");

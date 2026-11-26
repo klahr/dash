@@ -1,4 +1,4 @@
-import { $, clockTime, dateTimeText, h, ib, whenText } from "./dom.js";
+import { $, clockTime, dateTimeText, h, ib, plural, whenText } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, busy, toast } from "./dialogs.js";
 import { projectFirst, state } from "./state.js";
@@ -60,7 +60,7 @@ function renderProgress(bar, r, list = ciHistory()) {
   bar.setAttribute("aria-valuemax", "100");
   bar.setAttribute("aria-valuenow", String(Math.round(p.frac * 100)));
   bar.setAttribute("aria-label", `${r.workflow}: ${buildEtaText(p)}`);
-  bar.title = `${r.workflow} usually takes ${Math.max(1, Math.round(p.typical / 60000))}m (median of the last ${p.n} successful run${p.n === 1 ? "" : "s"})`;
+  bar.title = `${r.workflow} usually takes ${Math.max(1, Math.round(p.typical / 60000))}m (median of the last ${plural(p.n, "successful run")})`;
   if (label) label.textContent = p.over ? "Running · longer than usual" : `Running · ${buildEtaText(p)}`;
 }
 

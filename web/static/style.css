@@ -2059,13 +2059,14 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   transition: none; will-change: transform;
 }
 .todo.dragging { opacity: .3; }
-/* The dragged card leaves its place to the gap (app/dnd.js), which starts where it was. */
+/* The dragged card leaves its place to the gap (app/carddrag.js), which starts where it was. */
 .cards > li.drag-src { display: none; }
 .drop-slot {
   list-style: none; margin: 4px 12px 4px 44px; border-radius: var(--r-m);
   border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 6%, transparent);
   animation: fade-in .15s var(--ease);
 }
+.drop-slot.placed { animation: none; }
 .col.drop-no, .lane-tab.drop-no { opacity: .45; }
 .col.drop-over { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .col.drop-ok .col-head { color: var(--text); }

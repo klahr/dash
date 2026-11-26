@@ -1,4 +1,4 @@
-import { fill, h, ib, ico } from "./dom.js";
+import { fill, h, ib, ico, sizeText } from "./dom.js";
 
 // ------------------------------------------------------------------ lightbox
 // Previews attached files over the page: images at full size; text files
@@ -24,14 +24,6 @@ let files = [], at = 0, shown = 0;
 
 export const isImage = (f) => (f.type || "").startsWith("image/");
 const isText = (f) => /^text\/|^application\/json$/.test(f.type || "");
-
-// sizeText is a file's size for people: "12 KB", "3.4 MB".
-export function sizeText(n) {
-  if (!(n >= 0)) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1 << 20) return `${Math.round(n / 1024)} KB`;
-  return `${(n / (1 << 20)).toFixed(1)} MB`;
-}
 
 // extOf is a file name's extension in capitals, for a file without a picture.
 export const extOf = (name) => (String(name).includes(".") ? String(name).split(".").pop() : "file").toUpperCase().slice(0, 5);

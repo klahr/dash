@@ -1,6 +1,5 @@
 import { projectGroups as groupProjects, isShared, LABEL_ANY, parseLabels, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, servesProject, starKey, starSections, uniqueProjects } from "../groups.js";
-import { $, $$, h, ib, ico, plural, resizeHandle, setLabel } from "./dom.js";
-import { sizeText } from "./lightbox.js";
+import { $, $$, h, ib, ico, plural, resizeHandle, setLabel, sizeText } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { setStatus } from "./status.js";

@@ -2,7 +2,7 @@ import { $, h } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { state } from "./state.js";
 import { todoRow } from "./branches.js";
-import { drag, pendDrag } from "./dnd.js";
+import { drag } from "./dnd.js";
 
 // ------------------------------------------------------------------ hover card
 // On the desktop board with a mouse, resting on a card shows it widened to a
@@ -77,7 +77,7 @@ export const hoverCard = {
     this.card = card;
     this.el = h("div", { class: "todo-float", "aria-hidden": "true",
       onpointerleave: (e) => { if (e.pointerType !== "touch") this.close(); },
-      onpointerdown: (e) => { if (this.card) pendDrag(this.card, e); },
+      onpointerdown: (e) => { if (this.card) drag.press(this.card, e); },
       onscroll: () => { if (this.el?.scrollTop > 0) this.reading = true; },
       // A tall copy scrolls itself; at its end (or if it fits) the wheel
       // scrolls the column underneath, as it would without the copy.

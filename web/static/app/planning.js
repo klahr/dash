@@ -1,4 +1,4 @@
-import { $, $$, avatarURL, dateText, dateTimeText, fill, h, ib, ico, nameHue } from "./dom.js";
+import { $, $$, avatarURL, dateText, dateTimeText, debounce, fill, h, ib, ico, nameHue, plural } from "./dom.js";
 import { previewText, renderMarkdown } from "../markdown.js";
 import { agoText } from "../time.js";
 import { popMenu } from "./popmenu.js";
@@ -8,9 +8,10 @@ import { detailPane } from "./detailpane.js";
 import { changed, linkTo } from "./routes.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
-import { dropBefore, edgeScroller, glide } from "./glide.js";
+import { dropBefore } from "./glide.js";
+import { makeCardDrag } from "./carddrag.js";
 import { ACCEPT, clip, postFile } from "./attachments.js";
-import { extOf, isImage, sizeText } from "./lightbox.js";
+import { extOf, isImage } from "./lightbox.js";
 import { dictation } from "./dictation.js";
 
 // ------------------------------------------------------------------ Planning
@@ -28,7 +29,7 @@ import { dictation } from "./dictation.js";
 //
 // One module for both places Planning shows: the app's Planning view
 // (members, admins, owners; index.html) and planning.html, the page a
-// planner lands on. It uses only dom, api, dialogs, store, viewport, glide,
+// planner lands on. It uses only dom, api, dialogs, store, viewport, glide, carddrag,
 // attachments, lightbox, dictation, popmenu, markdown and time,
 // which load outside the app too, and builds its own markup in the root
 // it is mounted on. Planning is the hub's (api prefix "").
@@ -75,10 +76,6 @@ const pl = {
   detail: null, // its view, with its discussion
   error: "",
   editing: false,
-  timer: 0,
-  pending: null, // a press on a card that may become a drag
-  drag: null, // the card being dragged
-  suppressClick: false,
   lane: "", // the column a phone shows (one at a time, as the task board)
   composer: null, // the new card being typed on the board: { col, li, ta, busy }
   uploading: {}, // card id → how many files are on their way to it
@@ -220,7 +217,7 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
           onclick: () => pl.open && copy(linkTo({ view: "planning", card: pl.open }), "Link copied") }, "link")),
       h("div", { class: "detail-body", id: "pd-body" })),
     h("datalist", { id: "pl-tag-options" }));
-  wireDrag(root);
+  cardDrag.attach(root);
   wireSwipe($("#pl-board", root));
   wireFileDrop(paneEl(), () => pl.open);
   wireFileDrop(root, (e) => e.target.closest?.(".pl-card:not(.pl-composer)")?.dataset.id);
@@ -274,16 +271,16 @@ export async function loadPlanning() {
 export function onPlanningEvent(ev) {
   if (!pl.root) return;
   const cards = ev.data?.cards || (ev.data?.card ? [ev.data.card] : []);
-  clearTimeout(pl.timer);
-  pl.timer = setTimeout(() => {
-    if (pl.hooks.visible && !pl.hooks.visible() && !pl.open) { pl.loaded = false; return; }
-    loadPlanning().catch(() => {});
-    if (pl.open && (cards.includes(pl.open) || !cards.length)) {
-      if (ev.data?.deleted && ev.data.card === pl.open) { closeCard(); return; }
-      loadCard(pl.open).catch(() => {});
-    }
-  }, 250);
+  reloadPlanning(cards, ev);
 }
+const reloadPlanning = debounce((cards, ev) => {
+  if (pl.hooks.visible && !pl.hooks.visible() && !pl.open) { pl.loaded = false; return; }
+  loadPlanning().catch(() => {});
+  if (pl.open && (cards.includes(pl.open) || !cards.length)) {
+    if (ev.data?.deleted && ev.data.card === pl.open) { closeCard(); return; }
+    loadCard(pl.open).catch(() => {});
+  }
+}, 250);
 
 // planningShown is called when the Planning view is shown: it loads the
 // board if it isn't current.
@@ -480,7 +477,7 @@ async function boardChange(fn) {
 async function deleteBoard(b) {
   const n = b.cards || 0;
   const ok = await ask({ title: `Delete the board ${b.name}?`, ok: "Delete", danger: true,
-    body: n ? `Its ${n} card${n === 1 ? "" : "s"} move${n === 1 ? "s" : ""} to ${defaultBoard()?.name || "the default board"}.` : "It has no cards." });
+    body: n ? `Its ${plural(n, "card")} move${n === 1 ? "s" : ""} to ${defaultBoard()?.name || "the default board"}.` : "It has no cards." });
   if (!ok) return;
   if (b.id === boardShown() && !allBoards()) pickBoard("");
   await boardChange(() => call("DELETE", boardAPI(b.id)));
@@ -539,7 +536,7 @@ function editBoard(id) {
 // they are now (as the task board's do), new ones fade in. Not under a
 // drag: the board is drawn again once the card is dropped.
 function renderBoard() {
-  if (pl.drag) return;
+  if (cardDrag.active) return;
   const was = new Map($$(".pl-card[data-id]", pl.root).map((li) => [li.dataset.id, li.getBoundingClientRect()]));
   renderColumns();
   if (reduceMotion.matches || !was.size) return;
@@ -732,8 +729,8 @@ function cardEl(c) {
     ...(c.tags || []).map((t) => tagChip(t, "span", { "aria-label": `Tag: ${t}` }, t)),
     allBoards() && c.board_name ? h("span", { class: "pl-chip pl-board-chip", "aria-label": `Board: ${c.board_name}` }, ico("plan"), c.board_name) : null,
     projectChip(c),
-    c.comments ? h("span", { class: "pl-comments", "aria-label": `${c.comments} comment${c.comments === 1 ? "" : "s"}` }, ico("comment"), String(c.comments)) : null,
-    c.files?.length ? h("span", { class: "pl-comments pl-file-count", "aria-label": `${c.files.length} file${c.files.length === 1 ? "" : "s"}` }, clip(), String(c.files.length)) : null,
+    c.comments ? h("span", { class: "pl-comments", "aria-label": plural(c.comments, "comment") }, ico("comment"), String(c.comments)) : null,
+    c.files?.length ? h("span", { class: "pl-comments pl-file-count", "aria-label": plural(c.files.length, "file") }, clip(), String(c.files.length)) : null,
     peopleEl(c),
   ].filter(Boolean);
   // Under the title: the status of the linked work, or else the start of the description.
@@ -758,27 +755,19 @@ function cardEl(c) {
       meta.length ? h("span", { class: "todo-side" }, ...meta) : null));
 }
 
-// ---- dragging, as the task board drags (dnd.js): a mouse drags after a
-// few pixels, a finger after a long press (a quick swipe still scrolls).
-// A ghost of the card follows the pointer. The card leaves its place for a
-// gap (the slot) where it would land, and the cards around it glide aside.
+// ---- dragging, as the task board drags (carddrag.js): the card leaves
+// its place for a gap where it would land; a drop moves it there.
+const cardDrag = makeCardDrag({
+  item: ".pl-card:not(.pl-composer)", li: ".pl-card", list: ".pl-cards", ghost: "pl-ghost", slot: "pl-slot",
+  pick: (li) => li.dataset.id,
+  move: moveDrag,
+  drop: dropCard,
+  end: clearDropMarks,
+  abort: () => renderBoard(), // back to its place, with what changed meanwhile
+});
 
 // cardsOf are ol's cards, but the one dragged and one being typed.
-const cardsOf = (ol) => $$(".pl-card:not(.pl-composer):not(.pl-slot)", ol).filter((li) => li.dataset.id !== pl.drag?.id);
-
-// placeSlot moves the gap to before ref in ol (nowhere, without ol); the
-// cards where it was and where it goes glide.
-// The gap and the dragged card (hidden) take no place of their own, so a ref
-// that is either of them means the node after it, and a gap already there
-// stays put: moving it would restart its fade-in and it would never show.
-function placeSlot(ol, ref = null) {
-  const s = pl.drag.slot;
-  const skip = (n) => { while (n && (n === s || n === pl.drag.li)) n = n.nextSibling; return n; };
-  ref = skip(ref);
-  if (ol ? s.parentNode === ol && skip(s.nextSibling) === ref : !s.parentNode) return;
-  const around = [s.parentNode, ol].filter(Boolean).flatMap((x) => [...x.children]).filter((el) => el !== s && el !== pl.drag.li);
-  glide(around, () => ol ? ol.insertBefore(s, ref) : s.remove());
-}
+const cardsOf = (ol) => $$(".pl-card:not(.pl-composer):not(.pl-slot)", ol).filter((li) => li.dataset.id !== cardDrag.data);
 
 function clearDropMarks() {
   $$(".drop-over", pl.root).forEach((x) => x.classList.remove("drop-over"));
@@ -793,101 +782,32 @@ function dropTarget(x, y) {
   return $(`.pl-cards[data-col="${at.dataset.col}"]`, pl.root);
 }
 
-function startDrag(x, y) {
-  const p = pl.pending;
-  pl.pending = null;
-  if (!p || !p.li.isConnected) return;
-  const r = p.li.getBoundingClientRect();
-  const ghost = p.li.cloneNode(true);
-  ghost.classList.add("pl-ghost");
-  ghost.style.width = `${r.width}px`;
-  document.body.append(ghost);
-  // The gap starts where the card was, as tall.
-  const slot = h("li", { class: "pl-slot", "aria-hidden": "true" });
-  slot.style.height = `${r.height}px`;
-  // It fades in once; moved later, it shows at once.
-  slot.addEventListener("animationend", () => slot.classList.add("placed"), { once: true });
-  p.li.before(slot);
-  p.li.classList.add("dragging");
-  pl.drag = { id: p.id, li: p.li, ghost, slot, dx: p.x - r.left, dy: p.y - r.top };
-  moveDrag(x, y);
-}
-
-// Held near the top or bottom, the column (or the page, on a phone) scrolls.
-const edge = edgeScroller((x, y) => pl.drag && moveDrag(x, y));
-
 function moveDrag(x, y) {
-  const d = pl.drag;
-  edge.move(x, y);
-  d.ghost.style.transform = `translate(${x - d.dx}px, ${y - d.dy}px)`;
   clearDropMarks();
   const ol = dropTarget(x, y);
-  if (!ol) { placeSlot(null); return; }
+  if (!ol) { cardDrag.place(null); return; }
   const tab = document.elementFromPoint(x, y)?.closest?.(".pl-lanes .lane-tab");
   (tab || ol.closest(".pl-col")).classList.add("drop-over");
-  if (tab) { placeSlot(null); return; } // to the end of that column
+  if (tab) { cardDrag.place(null); return; } // to the end of that column
   // Measured where the cards rest, not mid-glide, so the gap doesn't flicker.
   const cards = cardsOf(ol);
   const before = dropBefore(cards, y);
   if (ol.hidden) ol.hidden = false; // an empty column's list, to hold the gap
-  placeSlot(ol, before || cards.at(-1)?.nextSibling || (cards.length ? null : ol.firstChild));
+  cardDrag.place(ol, before || cards.at(-1)?.nextSibling || (cards.length ? null : ol.firstChild));
 }
 
-// endDrag drops the card at the point (drop), or puts it back.
-function endDrag(x, y, drop) {
-  const d = pl.drag;
-  if (!d) return;
-  edge.stop();
-  d.ghost.remove();
-  clearDropMarks();
-  const ol = drop ? dropTarget(x, y) : null;
-  const onTab = ol && document.elementFromPoint(x, y)?.closest?.(".pl-lanes .lane-tab");
+// dropCard is the move of the card let go at the point (null: none, it goes back).
+function dropCard(x, y) {
+  const id = cardDrag.data, slot = cardDrag.slot;
+  const ol = dropTarget(x, y);
+  if (!ol) return null;
+  const onTab = document.elementFromPoint(x, y)?.closest?.(".pl-lanes .lane-tab");
   // Where the gap is: the cards before it in its column.
   // (In All boards, among the cards of the dragged card's board.)
-  const board = byId(d.id)?.board_id;
-  const index = !ol ? 0 : onTab || d.slot.parentNode !== ol ? 1 << 20
-    : cardsOf(ol).filter((li) => byId(li.dataset.id)?.board_id === board && li.compareDocumentPosition(d.slot) & Node.DOCUMENT_POSITION_FOLLOWING).length;
-  // The card takes the gap's place, so the board drawn after the drop glides
-  // it and its neighbours on from where they are.
-  if (ol && d.slot.parentNode === ol) d.slot.replaceWith(d.li); else d.slot.remove();
-  d.li.classList.remove("dragging");
-  pl.drag = null;
-  // The click that ends a mouse drag isn't a click on the card.
-  pl.suppressClick = true;
-  setTimeout(() => { pl.suppressClick = false; }, 0);
-  if (ol) moveCard(d.id, ol.dataset.col, index).catch(fail);
-  else renderBoard(); // back to its place, with what changed meanwhile
-}
-
-function cancelPending() {
-  if (pl.pending?.timer) clearTimeout(pl.pending.timer);
-  pl.pending = null;
-}
-
-function wireDrag(root) {
-  root.addEventListener("pointerdown", (e) => {
-    const li = e.target.closest?.(".pl-card");
-    if (!li || li.matches(".pl-composer") || e.button > 0 || !root.contains(li)) return;
-    pl.pending = { li, id: li.dataset.id, x: e.clientX, y: e.clientY, touch: e.pointerType !== "mouse" };
-    if (pl.pending.touch) pl.pending.timer = setTimeout(() => pl.pending && startDrag(pl.pending.x, pl.pending.y), 320);
-  });
-  document.addEventListener("pointermove", (e) => {
-    if (pl.drag) { moveDrag(e.clientX, e.clientY); return; }
-    const p = pl.pending;
-    if (!p) return;
-    const dist = Math.hypot(e.clientX - p.x, e.clientY - p.y);
-    if (p.touch) { if (dist > 10) cancelPending(); return; } // a scroll
-    if (dist > 6) startDrag(e.clientX, e.clientY);
-  });
-  document.addEventListener("pointerup", (e) => { if (pl.drag) endDrag(e.clientX, e.clientY, true); cancelPending(); });
-  document.addEventListener("pointercancel", () => { if (pl.drag) endDrag(0, 0, false); cancelPending(); });
-  document.addEventListener("touchmove", (e) => { if (pl.drag) e.preventDefault(); }, { passive: false });
-  document.addEventListener("keydown", (e) => { if (pl.drag && e.key === "Escape") { e.stopPropagation(); endDrag(0, 0, false); } }, true);
-  // A long press opens no menu on the card it drags.
-  root.addEventListener("contextmenu", (e) => { if (pl.drag || pl.pending?.touch) e.preventDefault(); });
-  root.addEventListener("click", (e) => {
-    if (pl.suppressClick && e.target.closest?.(".pl-card")) { e.stopPropagation(); e.preventDefault(); }
-  }, true);
+  const board = byId(id)?.board_id;
+  const index = onTab || slot.parentNode !== ol ? 1 << 20
+    : cardsOf(ol).filter((li) => byId(li.dataset.id)?.board_id === board && li.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).length;
+  return () => moveCard(id, ol.dataset.col, index).catch(fail);
 }
 
 // ---- swiping between columns (phones), as the task board does
@@ -901,7 +821,7 @@ function wireSwipe(board) {
   let s = null;
   board.addEventListener("touchstart", (e) => {
     s = null;
-    if (desktop.matches || e.touches.length !== 1 || pl.drag) return;
+    if (desktop.matches || e.touches.length !== 1 || cardDrag.active) return;
     const t = e.touches[0];
     if (t.clientX < SWIPE.edge || t.clientX > innerWidth - SWIPE.edge) return;
     if (e.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
@@ -911,7 +831,7 @@ function wireSwipe(board) {
   board.addEventListener("touchend", (e) => {
     const start = s;
     s = null;
-    if (!start || pl.drag || desktop.matches) return;
+    if (!start || cardDrag.active || desktop.matches) return;
     const t = e.changedTouches[0];
     if (!t) return;
     const dx = t.clientX - start.x, dy = t.clientY - start.y;
@@ -953,7 +873,7 @@ function cardKeys(e, c) {
 // pressed: the keyup that would press it is swallowed too.
 let spaceTaken = false;
 document.addEventListener("keydown", (e) => {
-  if (e.key !== " " || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !pl.root || pl.drag) return;
+  if (e.key !== " " || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !pl.root || cardDrag.active) return;
   if (document.querySelector("dialog[open]") || (pl.hooks.visible && !pl.hooks.visible())) return;
   if (e.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false]), .cm-editor")) return;
   const li = pl.root.querySelector(".pl-card:hover");

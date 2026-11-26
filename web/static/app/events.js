@@ -1,4 +1,4 @@
-import { $ } from "./dom.js";
+import { $, debounce } from "./dom.js";
 import { setStatus } from "./status.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on, signIn } from "./api.js";
@@ -344,11 +344,9 @@ function trackActive(ev, m) {
 
 // A task started or stopped running: the runners' running counts changed.
 // Reloaded once a burst of changes settles.
-let runnerCountsTimer = 0;
+const reloadRunnerCountsSoon = debounce(() => ($("#runners-sheet").open ? renderRunners() : loadRunners()).catch(() => {}), 400);
 function reloadRunnerCounts() {
-  if (!Array.isArray(state.runners)) return;
-  clearTimeout(runnerCountsTimer);
-  runnerCountsTimer = setTimeout(() => ($("#runners-sheet").open ? renderRunners() : loadRunners()).catch(() => {}), 400);
+  if (Array.isArray(state.runners)) reloadRunnerCountsSoon();
 }
 
 // Yellow while Claude works on something, green when work waits for review.
