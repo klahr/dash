@@ -1,4 +1,4 @@
-import { $ } from "./dom.js";
+import { $, isApple } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { ask, attempt, railOf, toast } from "./dialogs.js";
@@ -40,7 +40,12 @@ import { dismissNote } from "./tags.js";
 export const VIEWS = ["board", "goals", "history", "code", "planning"];
 export const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gn|gc|gs|gh|go|gf|gp|gv|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+// The keys normal mode takes; any other key keeps the browser's behaviour.
+// web/keys_test.go checks it against the Keyboard sheet.
+export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gn|gc|gs|gh|go|gd|gf|gp|gv|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|z|a|r|e|E|\+|-|_|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+// The Ctrl keys that scroll. Off a Mac, Ctrl-f and Ctrl-b are the browser's
+// Find and bookmarks, so they stay the browser's.
+export const CTRL_KEYS = isApple ? ["d", "u", "f", "b"] : ["d", "u"];
 export const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 export const openDialog = () => document.querySelector("dialog[open]");
 
@@ -88,10 +93,17 @@ export function moveCursor(lane, row) {
 }
 
 // The element j/k and Ctrl-d/u scroll in the current context.
+// On a wide board each lane scrolls on its own: the cursor's lane.
 export function scroller() {
   if (state.detail) return $("#detail .detail-body");
-  return desktop.matches ? $(".view.active") : document.scrollingElement;
+  if (!desktop.matches) return document.scrollingElement;
+  if (state.view === "board") return $(`#board .col[data-lane="${LANES[keys.cur.lane].key}"] .col-body`) || $(".view.active");
+  return $(".view.active");
 }
+
+// Where Ctrl-d/u (and Ctrl-f/b on a Mac) scroll: an open task and the pages
+// whose keys handle them (palette.js). Elsewhere they stay the browser's.
+export const ctrlScrolls = () => !!state.detail || (state.view === "board" ? !!state.project : ["history", "goals", "deploys"].includes(state.view));
 
 export function scrollBy(el, how, n) {
   const page = el.clientHeight || innerHeight;

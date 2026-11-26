@@ -39,7 +39,7 @@ import { closeDeploy, dp, stepDeploy } from "./deploys.js";
 import { cardOpen, closeCard } from "./planning.js";
 import { focusTry, openTry } from "./try.js";
 import { startVoiceMode } from "./voicemode.js";
-import { BOUND, VIEWS, openKeys, cursorTodo, enterKey, isTyping, keys, laneCount, laneSkipped, laneTodos, moveCursor, openCommandLine, openDialog, permKey, runCommand, scrollBy, scroller, setMode, stepLane, todoKey } from "./vim.js";
+import { BOUND, CTRL_KEYS, VIEWS, ctrlScrolls, openKeys, cursorTodo, enterKey, isTyping, keys, laneCount, laneSkipped, laneTodos, moveCursor, openCommandLine, openDialog, permKey, runCommand, scrollBy, scroller, setMode, stepLane, todoKey } from "./vim.js";
 
 // ------------------------------------------------------------------ palette
 // Ctrl-k: one search over commands, projects and the current project's todos.
@@ -266,7 +266,7 @@ document.addEventListener("keydown", (e) => {
 
   let k = e.key;
   if (e.ctrlKey) {
-    if (!["d", "u", "f", "b"].includes(k)) return;
+    if (!CTRL_KEYS.includes(k) || !ctrlScrolls()) return;
     k = `ctrl+${k}`;
   }
   if (k === "Shift" || k === "Control") return;
@@ -445,6 +445,7 @@ async function handleNormal(k, n, hadCount) {
         case "l": case "ArrowRight": return moveCursor(stepLane(lane, n), row);
         case "gg": return moveCursor(lane, hadCount ? n - 1 : 0);
         case "G": return moveCursor(lane, hadCount ? n - 1 : Infinity);
+        case "ctrl+d": case "ctrl+u": case "ctrl+f": case "ctrl+b": return scrollBy(scroller(), k, n);
         case "w": case "b": {
           const step = k === "w" ? 1 : -1;
           for (let li = lane + step; li >= 0 && li < laneCount(); li += step) {
