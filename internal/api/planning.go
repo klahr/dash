@@ -633,10 +633,15 @@ func (sv *service) cardViews(ctx context.Context, cards []model.Card) ([]cardVie
 // autoDone moves card v, whose linked work is all done, to the top of Done,
 // and notes on the card why, unless someone moved it out of Done since its
 // work was last linked (store.OrgStore.AutoDoneHeld). It reports whether it
-// moved it.
+// moved it, or found it moved there meanwhile (by another call of autoDone).
 func (sv *service) autoDone(v cardView) bool {
 	if sv.writable() != nil {
 		return false
+	}
+	sv.s.autoDoneMu.Lock()
+	defer sv.s.autoDoneMu.Unlock()
+	if c, err := sv.data.GetCard(v.ID); err != nil || c.Column == model.CardDone {
+		return err == nil
 	}
 	if held, err := sv.data.AutoDoneHeld(v.ID); err != nil || held {
 		return false

@@ -206,6 +206,9 @@ type Server struct {
 	routes []string
 	// ships remembers which release shipped a commit (planning.go).
 	ships shipCache
+	// autoDoneMu makes autoDone's check and move one step: a read of a card
+	// and ObservePlanning's goroutine both move it, and note it, only once.
+	autoDoneMu sync.Mutex
 	// spoken keeps the spoken summaries made lately (speech.go).
 	spoken spokenCache
 }

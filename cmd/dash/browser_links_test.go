@@ -86,7 +86,13 @@ func TestBrowserLinks(t *testing.T) {
 	b.waitJS("the field left, the task still open", detailOpen+` && document.querySelector(".todo.selected") && document.activeElement !== document.querySelector(`+fmt.Sprintf("%q", composer)+`)`)
 	b.until("Esc again closes it", `document.querySelector("#detail").hidden`, chromedp.KeyEvent(kb.Escape))
 	b.waitJS("the board's URL once more", path(board))
-	b.do("empty the composer", chromedp.SetValue(chromedp.CSS(composer), ""))
+	// In the page, not with chromedp.SetValue: that resolves a node ID chromedp
+	// cached earlier, and its check failed in CI with no word of what it read.
+	b.run("empty the composer", fmt.Sprintf(`const q = document.querySelector(%q);
+q.value = "";
+q.dispatchEvent(new Event("input", { bubbles: true }));
+if (q.value) throw new Error("the composer still has " + JSON.stringify(q.value));
+true`, composer))
 
 	// A reload opens the same place: the task, over the board; a sheet with its section.
 	b.do("open the task's link", chromedp.Navigate(h.base+taskURL))

@@ -419,10 +419,19 @@ function renderBoards() {
   });
   if (pl.boards.length > 1) kids.unshift(tab(BOARDS_ALL, "All boards"));
   if (pl.boardEdit?.id === "") kids.push(pl.boardEdit.input);
-  // Keep the box being typed in where it is, with its text and focus.
-  const focused = document.activeElement === pl.boardEdit?.input;
+  // Keep the box being typed in where it is, with its text and focus. Moving
+  // it takes its focus (a blur): that isn't leaving the box, so it doesn't save.
+  const edit = pl.boardEdit;
+  const focused = edit && (document.activeElement === edit.input || edit.moving);
+  if (focused) edit.moving = true;
   fill(el, ...kids);
-  if (focused) pl.boardEdit.input.focus();
+  if (focused) {
+    edit.input.focus();
+    queueMicrotask(() => {
+      edit.moving = false;
+      if (pl.boardEdit === edit && edit.input.isConnected && document.activeElement !== edit.input) edit.input.focus();
+    });
+  }
 }
 
 function boardTabsKey(e) {
@@ -515,8 +524,9 @@ function editBoard(id) {
     if (e.key === "Enter") { e.preventDefault(); save(); }
     else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done = true; end(id || ""); }
   });
-  input.addEventListener("blur", () => { if (document.hasFocus() && !done) save(); });
-  pl.boardEdit = { id, input };
+  const edit = { id, input, moving: false };
+  input.addEventListener("blur", () => { if (document.hasFocus() && !done && !edit.moving) save(); });
+  pl.boardEdit = edit;
   renderBoards();
   input.focus();
   input.select();
