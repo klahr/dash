@@ -34,6 +34,9 @@ takes the place of **Add to rework notes**:
 To attach it to another chat (General, another project's tab, a goal's coordinator), press **▾**
 beside **Attach to chat** and pick one. **Copy** works as on a task's preview.
 
+Started with **Run**, the preview offers **New commit abc1234 · Update** once the fix is merged.
+Press it to see the fix (see [Run and Terminate](previews.md#run-and-terminate-the-latest-commit-in-one-click)).
+
 ## Exact capture
 
 The picture is the page's own rendering of itself, which can be wrong for WebGL, video or unusual

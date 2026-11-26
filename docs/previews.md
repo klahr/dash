@@ -69,7 +69,13 @@ A web project with a start server command has the same button, with a
 - **Run** previews the tip of the default branch on a runner. It opens **History** on that commit
   with the app beside it, as **Preview** there does (full screen on a phone, with a button that
   leads back). `Esc` closes the pane; the preview keeps running.
-- **▾ → Pick a commit…** previews any commit you pick.
+- When a newer commit lands on the default branch, the preview's bar shows **New commit abc1234 ·
+  Update** (on a phone: in the preview's actions button, which gets a dot). Press it to preview
+  that commit instead, on the same runner and at the same width. The preview doesn't update by
+  itself: a new checkout and setup take a while, and would clear the page or a drawing. Dash sees
+  commits it merges and fetches; one pushed elsewhere shows after **History → Refresh** or the
+  next automatic fetch.
+- **▾ → Pick a commit…** previews any commit you pick. It stays on that commit: no **Update**.
 - **▾ → Run in checkout** runs the command in the project's own checkout, uncommitted changes
   included, and shows its output on **Code → Shell** (`R` there does the same). It says **Stop the
   checkout server** while that runs.

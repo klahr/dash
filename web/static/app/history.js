@@ -15,7 +15,7 @@ import { showView } from "./nav.js";
 import { changed } from "./routes.js";
 import { agoText } from "../time.js";
 import { loadRemote } from "./origin.js";
-import { closeCommitPreview, commitPreviewState, commitPreviewWhy, previewingCommit, showCommitPreview } from "./commitpreview.js";
+import { closeCommitPreview, commitPreviewState, graphChanged, commitPreviewWhy, previewingCommit, showCommitPreview } from "./commitpreview.js";
 import { loadTry, tryAtCommit } from "./try.js";
 import { PV_LABEL } from "./preview.js";
 
@@ -152,6 +152,7 @@ export function renderGraph(res) {
   hist.byHash = new Map(hist.commits.map((c) => [c.hash, c]));
   hist.remote = remote;
   hist.branch = branch;
+  graphChanged(); // a Run's preview: New commit · Update
   // Another project's graph: its commit pane goes.
   if (cp.sha && cp.project !== state.project?.id) closeCommit();
   const graph = $("#graph");

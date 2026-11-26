@@ -3431,6 +3431,10 @@ a.claude-incident-name:hover { text-decoration: underline; }
 /* ---------- preview draw mode ---------- */
 .pv-draw-btn { margin-left: 6px; }
 .pv-draw-btn:disabled { opacity: .4; }
+/* A Run's preview behind the default branch: New commit abc1234 · Update.
+   As tall as Draw, on one line; a dot on the phone's actions button. */
+.pv-update-btn { margin-right: 6px; white-space: nowrap; }
+.pv-fab.has-news::after { content: ""; position: absolute; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%; background: var(--on-brand); box-shadow: 0 0 0 2px var(--brand); }
 /* The picture must sit exactly where the page was: the draw bar covers the
    preview's toolbar instead of taking room of its own. */
 .preview.drawing .pv-bar { visibility: hidden; }

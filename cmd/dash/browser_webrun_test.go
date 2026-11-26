@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/chromedp/chromedp"
@@ -67,6 +68,27 @@ func TestBrowserWebRunPreviewsTheLatestCommit(t *testing.T) {
 		t.Fatalf("session after Run: %+v", st.Session)
 	}
 	b.waitJS("the pane is the session's commit", `document.querySelector("#graph li.selected")?.dataset.hash === "`+st.Session.Commit+`"`)
+
+	// A newer commit on main (pushed elsewhere: History → Refresh fetches it):
+	// New commit · Update, which runs it on the same runner at the same width.
+	b.waitJS("no Update while it runs the newest", `document.querySelector("#pv-update").hidden`)
+	b.until("Phone width", `document.querySelector(".pv-widths [aria-pressed=true]")?.dataset.width === "390"`,
+		chromedp.Click(chromedp.CSS(`.pv-widths [data-width="390"]`)))
+	next := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "commit-tree", "main^{tree}", "-p", "main", "-m", "the fix"))
+	run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "update-ref", "refs/heads/main", next)
+	b.until("History → Refresh", `(() => { const u = document.querySelector("#pv-update");
+		return !u.hidden && u.textContent === "New commit `+next[:7]+` · Update" && u.getBoundingClientRect().height === document.querySelector("#pv-draw-btn").getBoundingClientRect().height; })()`,
+		chromedp.Click(chromedp.ID("graph-refresh")))
+	b.until("Update", `document.querySelector("#pv-update").hidden`, chromedp.Click(chromedp.ID("pv-update")))
+	b.waitJS("no warning; the new commit, starting, at the same width", `!document.querySelector("#ask-sheet").open
+		&& document.querySelector("#graph li.selected")?.dataset.hash === "`+next+`" && `+inPane+`
+		&& document.querySelector(".pv-widths [aria-pressed=true]")?.dataset.width === "390"
+		&& /starting-the-app/.test(document.querySelector("#pv-log-text").textContent)`)
+	api.must("GET", "/api/projects/"+pid+"/try", nil, http.StatusOK, &st)
+	if st.Session == nil || st.Session.Commit != next || st.Session.Ref != "" {
+		t.Fatalf("session after Update: %+v, want %s", st.Session, next)
+	}
+	b.waitJS("still no Update", `document.querySelector("#pv-update").hidden`)
 
 	// Esc hides the preview; it keeps running.
 	runJS(t, b, `document.activeElement?.blur(), true`)

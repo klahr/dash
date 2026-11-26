@@ -101,7 +101,7 @@ export async function previewTodo(t) {
 }
 
 // The pane lives in the task's panel; History's commit pane borrows it.
-let commitSrc = null; // commitpreview.js: { preview(), render(status), stop(), close() }
+let commitSrc = null; // commitpreview.js: { preview(), state(), start(), update(), stop(), close() }
 export function setCommitSource(src) { commitSrc = src; }
 // shownPreview is the preview the pane shows: the task's or the commit's.
 export const shownPreview = () => (pv.commit ? commitSrc?.preview() : previewOf(pv.todo)) || null;
@@ -306,6 +306,7 @@ function drawButton(drawable, p, st, then) {
 // renderWebBar sets up a web preview's bar (widths, links, Reload) and
 // returns where its page loads from.
 function renderWebBar(p, st) {
+  updateButton("");
   $("#pv-term").hidden = $("#pv-keys").hidden = $("#pv-transcript").hidden = true;
   if (pv.term) disconnectTerm();
   for (const b of $$(".pv-widths button")) b.setAttribute("aria-pressed", String(b.dataset.width === pv.width));
@@ -317,6 +318,19 @@ function renderWebBar(p, st) {
   $("#pv-reload").disabled = !(st === "live" && target?.src);
   return target;
 }
+
+// updateButton shows the bar's New commit abc1234 · Update while a preview
+// Run started is behind the default branch's newest commit, sha ("": none).
+// On a phone the bar is hidden: the actions button gets a dot, and the item.
+function updateButton(sha) {
+  const b = $("#pv-update"), short = sha.slice(0, 7);
+  b.hidden = !sha;
+  $("#pv-fab").classList.toggle("has-news", !!sha);
+  if (!sha) return;
+  b.replaceChildren(ico("merge"), `New commit ${short} · Update`);
+  b.title = `Preview ${short}, the newest ${state.project?.default_branch || "main"}, on the same runner (it checks out and sets up again)`;
+}
+$("#pv-update").addEventListener("click", attempt(() => commitSrc?.update()));
 
 // showFrame shows a live page in the iframe (and says so), else empties it
 // and shows the status in its place.
@@ -353,6 +367,7 @@ function renderCommitPreview() {
     c.checkingOut ? "Checking out…" : p ? `${PV_LABEL[st]}${st === "live" ? ` · ${c.short}` : ""}` : "Not running");
   $("#pv-log summary").textContent = "Server log";
   const target = renderWebBar(p, st);
+  updateButton(c.newer);
   drawButton(st === "live" && !!target?.src && !!p?.url, p, st, "attach it to a chat");
   $("#pv-stop").disabled = !p;
   if (showFrame(p, st, target)) return;
@@ -395,6 +410,7 @@ function renderTermPreview(t, p, st) {
   frame.hidden = true;
   const live = st === "live";
   $("#pv-term").hidden = $("#pv-keys").hidden = !live;
+  updateButton("");
   $("#pv-transcript").hidden = false;
   $("#pv-transcript").disabled = !live || !canRework(t);
   $("#pv-stop").disabled = !p;
@@ -493,6 +509,8 @@ $("#pv-fab").addEventListener("click", attempt(async (e) => {
     const p = shownPreview(), page = [["minimize", "Back to the commit", hidePreview]], link = [], stop = [];
     if (p?.state === "live" && p.url) page.push(["edit", "Draw", startDraw]);
     if (p?.state === "live") page.push(["reload", "Reload", reloadPreview]);
+    const newer = commitShown()?.newer;
+    if (newer) page.push(["merge", `New commit ${newer.slice(0, 7)} · Update`, () => commitSrc?.update()]);
     if (p?.url) link.push(["external", "Open in a new tab", () => window.open(p.url, "_blank", "noopener")], ["link", "Copy link", () => copy(p.url, "Preview link copied")]);
     if (p) stop.push(["stop", "Stop the preview", () => commitSrc?.stop()]);
     return popMenu(e.currentTarget, [page, link, stop]);

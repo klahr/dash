@@ -266,7 +266,7 @@ function onEvent(ev, m = { name: "" }) {
       if (state.detail === ev.todo_id) addWorkerEvent(ev.todo_id, ev.data);
       break;
     case "git.op":
-      if (mine) refreshGraph();
+      if (mine) refreshGraph(); // and a Run's preview: New commit · Update
       break;
     case "merge.queue":
       if (sameMachine) {
@@ -318,6 +318,7 @@ function onEvent(ev, m = { name: "" }) {
       if (state.remote?.ahead !== ev.data.ahead || state.remote?.behind !== ev.data.behind) loadUnpushed().catch(() => {});
       state.remote = ev.data;
       renderRemote();
+      refreshGraph(); // a fetch brought commits: History, and a Run's preview's Update
       loadCheckouts().catch(() => {});
       break;
     case "checkouts.updated":

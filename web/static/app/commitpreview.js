@@ -22,13 +22,18 @@ import { endDraw } from "./drawmode.js";
 //
 // A web project's header Run is the same preview, of the latest commit of the
 // default branch (previewOnRunner, from try.js): it opens History on that
-// commit with the pane beside it, and its Terminate is this Stop.
+// commit with the pane beside it, and its Terminate is this Stop. When a newer
+// commit lands on that branch (History's graph redraws on merges and fetches),
+// its bar offers New commit abc1234 · Update: the same Run, on the same runner.
+// Only when pressed: a checkout and setup take a while, and would wipe the
+// page or a drawing in progress.
 
 // changed tells the commit pane (history.js) to redraw its Preview button,
 // and the header's Run (try.js) to follow the session.
 const changed = () => { document.dispatchEvent(new Event("dash:commitpreview")); renderTryButton(); };
 
-const cpv = { pid: null, sha: "", short: "", runner: "", checkingOut: false, timer: 0, seq: 0 };
+// follows is the commit a Run started (the latest, then): "" for a picked one.
+const cpv = { pid: null, sha: "", short: "", runner: "", checkingOut: false, timer: 0, seq: 0, follows: "" };
 const shortSHA = (sha) => (sha || "").slice(0, 7);
 const warnKey = (pid) => `dash.commitPreview.warned.${pid}`;
 
@@ -71,7 +76,35 @@ function preview() {
 function paneState() {
   const s = webSession();
   const other = s && s.commit !== cpv.sha && s.state !== "crashed" ? shortSHA(s.commit) : "";
-  return { preview: preview(), checkingOut: cpv.checkingOut, short: cpv.short, runner: cpv.runner || s?.runner || "", other, why: commitPreviewWhy() || "" };
+  return { preview: preview(), checkingOut: cpv.checkingOut, short: cpv.short, runner: cpv.runner || s?.runner || "", other, why: commitPreviewWhy() || "", newer: newerCommit() };
+}
+
+// newerCommit is the newest commit of the default branch when the pane shows
+// a preview Run started and the branch has moved on since ("" otherwise).
+// The graph must know the running commit: one the runner fetched past the
+// graph would make the graph's newest an older one.
+export function newerCommit() {
+  const p = state.project, s = webSession();
+  if (!p || !pv.commit || cpv.pid !== p.id || cpv.checkingOut || !cpv.follows) return "";
+  if (pv.commit.sha !== cpv.follows || s?.commit !== cpv.follows || !hist.byHash?.has(cpv.follows)) return "";
+  const newest = latestCommit();
+  return newest && newest !== cpv.follows && isLatest(p, newest) ? newest : "";
+}
+
+// graphChanged is History's graph redrawn (a merge, a fetch, Refresh): the
+// bar's New commit · Update may come, or name a newer commit.
+export function graphChanged() {
+  if (pv.commit) renderPreview();
+}
+
+// updateCommitPreview is that button: Run again, on the runner the preview
+// runs on, at the width the pane has (no warning: it is today's code).
+export async function updateCommitPreview() {
+  const p = state.project, sha = newerCommit(), runner = webSession()?.runner_id;
+  if (!p || !sha || !runner) return;
+  open(p, sha, shortSHA(sha));
+  selectCommit(sha).catch(fail);
+  await start(p, runner, "", true);
 }
 
 // showCommitPreview opens the pane on the commit (sha, short), starting its
@@ -93,7 +126,7 @@ export async function showCommitPreview({ sha, short }, anchor) {
 function open(p, sha, short) {
   // Registered here, not when this module loads: preview.js may not have run
   // yet then (the modules import each other).
-  setCommitSource({ preview, state: paneState, start: () => startCommitPreview(), stop: stopCommitPreview, close: closeCommitPreview });
+  setCommitSource({ preview, state: paneState, start: () => startCommitPreview(), update: updateCommitPreview, stop: stopCommitPreview, close: closeCommitPreview });
   if (pv.todo) hidePreview();
   endDraw(); // a picture of another commit
   Object.assign(cpv, { pid: p.id, sha, short: short || shortSHA(sha) });
@@ -143,7 +176,7 @@ export async function previewOnRunner(ref, runner) {
   const latest = !ref || ref === branch || ref === `origin/${branch}` || (exact && isLatest(p, sha));
   if (!latest && !await warned(p)) return;
   open(p, sha, !ref ? `the latest ${branch}` : exact ? shortSHA(sha) : ref);
-  await start(p, runner, ref);
+  await start(p, runner, ref, !ref || ref === branch || ref === `origin/${branch}`);
 }
 
 // startCommitPreview starts the open commit's preview: after the first-time
@@ -157,14 +190,18 @@ export async function startCommitPreview(anchor = $("#pv-status")) {
     !await ask({ title: `Preview ${cpv.short} instead?`, body: `${s.kind === "web" ? "A preview" : "A Try terminal"} runs at ${shortSHA(s.commit)} on ${s.runner}. One runs per project: it stops, and its worktree is removed.`, ok: "Replace it" })) {
     return renderPreview();
   }
-  await chooseRunner(anchor, (runner) => start(p, runner));
+  // Start again on a preview Run started (it crashed, say) keeps it Run's.
+  const run = !!cpv.follows && cpv.follows === cpv.sha;
+  await chooseRunner(anchor, (runner) => start(p, runner, cpv.sha, run));
 }
 
-// start starts the preview at ref (the open commit's, by default) on runner.
+// start starts the preview at ref (the open commit's, by default) on runner;
+// run says it is the default branch's latest commit, to follow (cpv.follows).
 // While it checks out, the header's Run is Terminate (tryState.starting); one
 // pressed then stops it once it has started.
-async function start(p, runner, ref = cpv.sha) {
+async function start(p, runner, ref = cpv.sha, run = false) {
   const sha = cpv.sha;
+  cpv.follows = "";
   rememberRunner(p.id, runner);
   cpv.runner = tryState.runners.find((r) => r.id === runner)?.name || "";
   cpv.checkingOut = true;
@@ -180,6 +217,7 @@ async function start(p, runner, ref = cpv.sha) {
     tryState.session = s;
     tryState.runner = s.runner_id;
     ok = true;
+    if (run) cpv.follows = s.commit;
     // Run and a picked ref: the pane moves to the commit the runner checked out.
     if (pv.commit && cpv.sha === sha && s.commit !== sha) {
       Object.assign(cpv, { sha: s.commit, short: shortSHA(s.commit) });
@@ -233,6 +271,7 @@ export async function stopCommitPreview() {
   tryState.stopAsked = false;
   await api("DELETE", `/api/projects/${p.id}/try`);
   tryState.session = null;
+  cpv.follows = "";
   clearTimeout(cpv.timer);
   if (pv.commit) renderPreview();
   changed();
