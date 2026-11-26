@@ -66,7 +66,7 @@ func TestLinkCarriesReviewSettings(t *testing.T) {
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	p := fx.project(t, fx.orgA, "laptop")
-	p.AutoApprove, p.MaxAutoFixes = true, 5
+	p.AutoApprove, p.MaxAutoFixes, p.TestTimeoutMinutes = true, 5, 90
 	if _, err := fx.d.Link(context.Background(), "laptop", p); err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +76,9 @@ func TestLinkCarriesReviewSettings(t *testing.T) {
 	l := fx.fleet.links[0]
 	if l.AutoApprove == nil || !*l.AutoApprove || l.MaxAutoFixes == nil || *l.MaxAutoFixes != 5 {
 		t.Errorf("link %+v, want auto approve and 5 automatic fixes", l)
+	}
+	if l.TestTimeoutMinutes == nil || *l.TestTimeoutMinutes != 90 {
+		t.Errorf("link test timeout %v, want 90 minutes", l.TestTimeoutMinutes)
 	}
 	// Turned off, it is sent as false, not left out.
 	p.AutoApprove = false
