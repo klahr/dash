@@ -51,6 +51,7 @@ model, tags, dependencies, the task it builds on and attachments.
 
 - **Priority** is **None**, **High** or **Urgent**: urgent tasks start first, then high ones, then
   the rest, oldest first. The API takes the same levels; see [Task priority](mcp.md#task-priority).
+  The card shows a priority and a model as chips beside its tags.
 - **Split…** has Claude propose smaller tasks for a large one, each reviewed and merged on its
   own. Edit, remove or add to them, then save them all, each one waiting for the tasks it builds
   on.
@@ -74,13 +75,14 @@ line, suggested fix, severity and type. It gets tags for its type (`bug`, `secur
 its severity and its source (`scan:<scan name>` or `reported`).
 
 - A problem a task already has adds no draft. That task's card shows how many times it was
-  reported, e.g. "×3".
+  reported, with its severity, e.g. "low · 3 reports".
 - Deleting such a draft dismisses the problem: it won't come back as a draft. See
   **Scans → Dismissed** to undo it.
 - A problem that comes back after its task was merged gets a new draft that names that task.
 - Drafts from scans below `high` severity show only under the **From scans (N)** chip, which
   shows only the tasks scans added. **Scans…** beside it opens the scans.
-- To combine drafts into one, tick two or more and click **Combine**. **Clear** unticks them.
+- To combine drafts into one, pick two or more and click **Combine**. See [Queue it](#queue-it)
+  for how to pick drafts.
 
 See [Scans](scans.md#findings-on-the-board) for how Dash spots the same problem twice.
 
@@ -90,6 +92,11 @@ Every way of making tasks ends with the same two buttons: **Save draft** keeps i
 *Drafts* column to queue later, **Queue** queues it. In the **New task** sheet, <kbd>Enter</kbd>
 saves a draft and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac)
 queues.
+
+To queue a draft from the board, point at its card and click **Queue**. To queue several, tick
+the box beside **Queue** on each, or click **Select** at the foot of *Drafts* (on a phone, that is
+the way to pick). The bar at the bottom then has **Queue** for the picked drafts, **Select all**,
+**Combine** (from two) and **Clear**. <kbd>Esc</kbd> clears it too.
 
 The task moves to *Queued*, then *Running* as soon as Claude starts on it in its own worktree.
 Open the card to follow along. If Claude needs permission for something, Dash asks you.
@@ -111,7 +118,8 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
 ## Review
 
-When Claude is done the task lands in *Review*. Click **Review** on the card (or open it) and
+When Claude is done the task lands in *Review*. Its card shows Claude's summary of what it did
+instead of your prompt. Click **Review** on the card (or open it) and
 read the diff on the **Changes** tab. The spark button on the card (**Ask Claude**) has Claude
 review it first. A changed image
 (PNG, JPEG, GIF or WebP) shows as pictures, before and after, here and in **History**.
@@ -167,7 +175,9 @@ task's first run continues that task's Claude session (as a fork; the earlier se
 was), so Claude doesn't explore the code again. The list shows the project's recently merged or
 failed tasks.
 
-A task that builds on an unfinished one waits in *Queued* until it is merged or failed. The
+A task that builds on an unfinished one waits in *Queued* until it is merged or failed.
+A task with dependencies waits the same way, and its card says "waits for" and the task's name.
+When that task is still a draft, click **Queue both** on the card. When it failed, the line is red. The
 task's detail shows **Builds on #id title**. On a wide screen, change it there under **Build on**
 while the task is a draft, queued or failed.
 

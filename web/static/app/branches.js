@@ -9,7 +9,7 @@ import { baseBranch, projectKey } from "./events.js";
 import { openNewProject, renderProjectHeader, renderProjectList } from "./projects.js";
 import { landsOnGitHub, loadUnpushed, pushBar } from "./board.js";
 import { activityNodes } from "./activity.js";
-import { canStartNow, closeDetail, openDetail, pacing, renderActions, renderDetail, startNow, startNowHelp } from "./detail.js";
+import { canStartNow, closeDetail, openDetail, pacing, renderActions, renderDetail, startNow } from "./detail.js";
 import { canPreview, previewOf, previewTag, previewTodo } from "./preview.js";
 import { reviewTodo } from "./drawmode.js";
 import { renderRunnerStatus, runnerName, welcomeScreen } from "./runners.js";
@@ -26,7 +26,9 @@ import { chatPage } from "./nav.js";
 import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
 import { creator, mineOn, multiMember, myID, people, setMine } from "./people.js";
 import { isQuestion } from "./chatparts.js";
-import { onBoard, pickBox, picked, renderCombineBar, renderTagFilter, tagRow } from "./tags.js";
+import { onBoard, pickBox, picked, renderCombineBar, renderTagFilter, startPicking, tagRow } from "./tags.js";
+import { plainText } from "../markdown.js";
+import { servesProject } from "../groups.js";
 
 // ------------------------------------------------------------------ branches
 // The open switcher's GET /branches answer, for the project it was opened on.
@@ -306,9 +308,9 @@ function renderBoardNow() {
     h("div", { class: "col-body" },
       l.key === "done" ? pushBar() : null,
       items[l.key].length
-        ? h("ol", { class: "rail" }, items[l.key].map((t, ri) => h("li", {}, todoRow(t, li, ri))))
+        ? h("ol", { class: "cards" }, items[l.key].map((t, ri) => h("li", {}, todoRow(t, li, ri))))
         : h("p", { class: "col-empty" }, l.empty),
-      l.key === "draft" ? enqueueAllBtn(items.draft) : null,
+      l.key === "draft" ? selectBtn(items.draft) : null,
       l.key === "done" ? oldToggle() : null,
       l.key === "done" ? clearDoneBtn() : null))));
   // What needs you counts every task, whatever the board is filtered to.
@@ -504,20 +506,11 @@ function oldToggle() {
     state.showOld ? "Hide merged tasks older than a day" : `Show ${plural(hidden, "older merged task")}`);
 }
 
-// Queues every visible draft, in board order, so they keep their relative priority.
-function enqueueAllBtn(drafts) {
-  if (drafts.length < 2) return null;
-  return ib({ class: "link older", title: "Move every draft in this column to the queue", onclick: attempt(() => enqueueAll(drafts)) },
-    "queue", `Queue all ${drafts.length}`);
-}
-
-async function enqueueAll(drafts) {
-  let bad = 0;
-  for (const t of drafts) {
-    try { await api("POST", `/api/todos/${t.id}/enqueue`); } catch { bad++; }
-  }
-  const n = drafts.length - bad;
-  toast(bad ? `Queued ${n}, ${bad} failed` : `Queued ${plural(n, "task")}`);
+// Select, at the foot of Drafts: shows every draft's box and the bar, which
+// queues or combines the drafts picked (a phone has no hover to show a box).
+function selectBtn(drafts) {
+  if (drafts.length < 2 || document.body.classList.contains("picking")) return null;
+  return ib({ class: "link older select-drafts", onclick: startPicking }, "checks", "Select");
 }
 
 // Failed tasks wait in Review to be retried, reworked or deleted, so Delete merged leaves them.
@@ -600,7 +593,7 @@ function depWait(t) {
   const base = t.builds_on && !t.depends_on?.includes(t.builds_on) ? state.todos.get(t.builds_on) : null;
   if (base && base.status !== "merged" && base.status !== "failed") deps.push(base);
   if (!deps.length) return null;
-  return { deps, stuck: deps.filter((d) => d.status === "failed" || d.status === "draft") };
+  return { deps, failed: deps.filter((d) => d.status === "failed"), drafts: deps.filter((d) => d.status === "draft") };
 }
 
 // A dependency's title (or label) that opens it.
@@ -622,14 +615,24 @@ export function taskLink(d, label = title(d)) {
   }, label);
 }
 
-// "⏳ waiting for A, B +2", or "blocked: A failed" when a dependency is stuck.
-function depLine({ deps, stuck }, max = 2) {
-  const list = (xs, what) => [
-    ...xs.slice(0, max).flatMap((d, i) => [i ? ", " : "", depLink(d), what ? ` ${what(d)}` : ""]),
+// "waits for A, B +2", or "waits for A, which failed" when a dependency
+// failed (the only case shown as a problem). A draft it waits for has
+// Queue both on the card; drafts marks them in the task's pane, which hasn't.
+function depLine({ deps, failed }, max = 2, drafts = false) {
+  const list = (xs) => [
+    ...xs.slice(0, max).flatMap((d, i) => [i ? ", " : "", depLink(d), drafts && d.status === "draft" ? " (draft)" : ""]),
     xs.length > max ? ` +${xs.length - max}` : "",
   ];
-  if (stuck.length) return ["blocked: ", ...list(stuck, (d) => d.status === "draft" ? "is a draft" : "failed")];
-  return ["⏳ waiting for ", ...list(deps)];
+  if (failed.length) return ["waits for ", ...list(failed), ", which failed"];
+  return ["waits for ", ...list(deps)];
+}
+
+// queueDepsChip queues the drafts a queued task waits for.
+function queueDepsChip(drafts) {
+  return cardChip("enqueue-chip", "", "queue", drafts.length > 1 ? `Queue all ${drafts.length + 1}` : "Queue both", async () => {
+    for (const d of drafts) await api("POST", `/api/todos/${d.id}/enqueue`);
+    toast(`Queued ${drafts.length > 1 ? plural(drafts.length, "task") : title(drafts[0])}`);
+  });
 }
 
 // The detail view's line about the task t builds on: "Builds on #id title".
@@ -735,7 +738,7 @@ export function conflictMeta(t) {
 // The detail view's line about dependencies.
 export function depMeta(t) {
   const wait = depWait(t);
-  if (wait) return h("span", { class: `deps${wait.stuck.length ? " stuck" : ""}` }, depLine(wait, 5));
+  if (wait) return h("span", { class: `deps${wait.failed.length ? " failed" : ""}` }, depLine(wait, 5, true));
   const deps = (t.depends_on || []).map((id) => state.todos.get(id)).filter(Boolean);
   if (!deps.length) return null;
   return h("span", { class: "deps" }, "Depends on ", deps.flatMap((d, i) => [i ? ", " : "", depLink(d)]));
@@ -755,11 +758,11 @@ function needsOwnRunnerTag(t) {
 
 export function todoRow(t, li = -1, ri = -1) {
   const atCursor = keys.active && keys.cur.lane === li && keys.cur.row === ri;
-  let sub = t.prompt.replace(/\s+/g, " ");
+  let sub = plainText(t.prompt);
   let subClass = "todo-sub";
-  if (t.summary && t.status === "merged") sub = t.summary;
-  // Claude's answer, readable on the card, so it can be closed unopened.
-  if (t.summary && closable(t)) sub = t.summary;
+  // Once Claude has run: what it did (its answer, for a task with no changes,
+  // so it can be closed unopened), not the prompt.
+  if (t.summary && ["review", "merging", "merged"].includes(t.status)) sub = plainText(t.summary);
   const fixing = t.sent_back && ["queued", "in_progress"].includes(t.status) ? t.sent_back : "";
   if (fixing && t.status === "queued") sub = `${/^review /.test(fixing) ? "Sent back from GitHub" : "Sent back from merge"}: ${fixing}`;
   if (t.status === "in_progress") { sub = state.lastLine.get(t.id) || "Working…"; subClass += " progress"; }
@@ -774,7 +777,7 @@ export function todoRow(t, li = -1, ri = -1) {
   const asks = state.perms.filter((p) => p.todo_id === t.id);
   if (asks.length) { sub = asks.every(isQuestion) ? "Waiting for your answer" : "Waiting for your approval"; subClass = "todo-sub waiting"; }
   const wait = !t.paused && !t.error && depWait(t);
-  if (wait) { sub = depLine(wait); subClass = `todo-sub deps${wait.stuck.length ? " stuck" : ""}`; }
+  if (wait) { sub = depLine(wait); subClass = `todo-sub deps${wait.failed.length ? " failed" : ""}`; }
   // Held back only by the weekly pace: it says so, with Start now beside it.
   const paced = canStartNow(t) && !t.error && !wait && pacing(t) && (!t.waiting || /to stay on pace/.test(t.waiting))
     && !state.perms.some((p) => p.todo_id === t.id);
@@ -791,22 +794,22 @@ export function todoRow(t, li = -1, ri = -1) {
     "data-id": t.id,
     onclick: (e) => { if (!e.target.closest("a, button:not(.todo-open), label")) openDetail(t.id); },
   },
-    h("span", { class: "node", "aria-hidden": "true" }),
-    pickBox(t),
     h("span", { class: "todo-main" },
       h("button", { type: "button", class: "todo-open" }, h("span", { class: "todo-title" }, title(t))),
       h("span", { class: subClass }, sub),
       linkRow(t),
-      tagRow(t),
+      tagRow(t, [prioChip(t), t.model ? h("span", { class: "meta-chip model-chip" }, t.model) : null, t.run_on ? runOnChip(t.run_on) : null]),
       goalChip(t)),
+    // A draft's Queue and pick box: on hover or focus, the box on every draft while picking.
+    t.status === "draft" ? h("span", { class: "card-actions draft-actions" }, enqueueChip(t), pickBox(t)) : null,
     h("span", { class: "todo-side" },
       checkTag,
       t.status === "failed" ? h("span", { class: "failed-tag" }, "Failed") : null,
-      t.no_changes && t.status === "review" ? h("span", { class: "nochange-tag", title: "Claude finished without changing any files" }, "No changes") : null,
-      closedNoChanges(t) ? h("span", { class: "nochange-tag", title: "Closed without changes: nothing was merged" }, "Closed · no changes") : null,
+      t.no_changes && t.status === "review" ? h("span", { class: "nochange-tag" }, "No changes") : null,
+      closedNoChanges(t) ? h("span", { class: "nochange-tag" }, "Closed · no changes") : null,
       t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,
       needsOwnRunnerTag(t),
-      t.runner && ["in_progress", "review", "merging", "failed"].includes(t.status) ? h("span", { class: "runner-tag", title: "Runs on this runner" }, runnerName(t.runner)) : null,
+      t.runner && ["in_progress", "review", "merging", "failed"].includes(t.status) && severalRunners() ? h("span", { class: "runner-tag" }, runnerName(t.runner)) : null,
       t.reviewing ? h("span", { class: "reviewing-tag" }, "Reviewing") : null,
       t.pr && t.status !== "merged" ? prTag(t.pr) : null,
       waitsOnGitHub(t) ? prReviewTag(t.pr) : null,
@@ -822,20 +825,36 @@ export function todoRow(t, li = -1, ri = -1) {
       t.status === "in_progress" && t.started_at ? runClock(t.started_at) : null,
       previewTag(t),
       t.status === "merged" && doneAt(t) ? h("span", { class: "done-ago", title: `${closedNoChanges(t) ? "Closed" : "Merged"} ${dateTimeText(doneAt(t))}` }, agoText(doneAt(t))) : null,
-      t.status === "review" && t.finished_at ? h("span", { class: "card-ago", title: waitsOnGitHub(t) ? "Waiting on GitHub since" : "Waiting for review" }, agoText(t.finished_at)) : null,
-      t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
-      t.run_on ? runOnTag(t.run_on) : null,
-      hasPriority(t) ? h("span", { class: `prio-tag prio-${priorityLevel(t.priority)}`, title: `${PRIORITY_LEVELS[priorityLevel(t.priority)]} priority: runs before tasks without one` }, PRIORITY_LEVELS[priorityLevel(t.priority)]) : null,
+      unpushed(t) ? h("span", { class: "unpushed-tag" }, "Not pushed") : null,
+      t.status === "review" && t.finished_at ? h("span", { class: "card-ago", title: dateTimeText(t.finished_at) }, agoText(t.finished_at)) : null,
       creatorEl(t),
-      t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null,
+      wait?.drafts.length && !wait.failed.length ? h("span", { class: "card-actions" }, queueDepsChip(wait.drafts)) : null,
       paced ? h("span", { class: "card-actions" }, startNowChip(t)) : null),
     t.status === "review" && !t.reviewing ? reviewActions(t) : null);
 }
 
-// runOnTag names the runner a task is set to run on, on its card.
-function runOnTag(id) {
+// The card's chips for its priority, and the runner it is set to run on.
+function prioChip(t) {
+  if (!hasPriority(t)) return null;
+  const level = priorityLevel(t.priority);
+  return h("span", { class: `meta-chip prio-chip prio-${level}` }, ico(level === "urgent" ? "alert" : "up"), PRIORITY_LEVELS[level]);
+}
+
+function runOnChip(id) {
   const name = state.runners?.find((r) => r.id === id)?.name || id;
-  return h("span", { class: "model-tag", title: `Runs only on runner ${name}` }, name);
+  return h("span", { class: "meta-chip run-on-chip" }, ico("computer"), name);
+}
+
+// A card names the runner a task ran on only when the project has several.
+function severalRunners() {
+  const p = state.project;
+  return (state.runners || []).filter((r) => !p || p.prefix || servesProject(r, p)).length > 1;
+}
+
+// A merged task whose commit origin doesn't have yet (Push, at the top of Merged).
+function unpushed(t) {
+  const p = state.project;
+  return t.status === "merged" && !closedNoChanges(t) && !!p?.remote_url && !landsOnGitHub(p) && !!state.unpushedTodos?.has(t.id);
 }
 
 // A task whose pull request is open on GitHub: it is reviewed, and merged
@@ -1084,13 +1103,12 @@ addEventListener("pagehide", () => {
 });
 
 function enqueueChip(t) {
-  return cardChip("enqueue-chip", "Queue it", "queue", "Queue", () => todoKey(t, "s"));
+  return cardChip("enqueue-chip", "Queue", "queue", "", () => todoKey(t, "s"));
 }
 
 // startNowChip starts a queued card that waits for the weekly pace.
 function startNowChip(t) {
-  return cardChip("enqueue-chip start-now-chip", `${state.usage?.pacing && state.usage.reason ? `${state.usage.reason}. ` : ""}${startNowHelp}`,
-    "play", "Start now", () => startNow(t));
+  return cardChip("enqueue-chip start-now-chip", "", "play", "Start now", () => startNow(t));
 }
 
 export function updateLiveLine(id) {

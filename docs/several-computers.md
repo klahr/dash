@@ -395,6 +395,8 @@ key ([Whose work a runner does](#whose-work-a-runner-does)). From then on:
   then waits queued while that runner is offline or busy, and never goes to another one. Pick
   **Any** to let any runner take it again. You can change it while the task is a draft, queued
   or failed.
+- When the project has more than one runner, a running or finished task's card names the runner
+  it ran on.
 - If none can take it, the task stays queued and its card says why ("no runner online: laptop is
   offline", "waiting for a runner: laptop is busy (3 of 3 tasks)", "waiting: no runner of alice's
   has the labels Linux; laptop is bob's runner and only takes bob's tasks"). It starts as soon as

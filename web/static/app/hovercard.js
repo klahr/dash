@@ -28,7 +28,8 @@ import { drag, pendDrag } from "./dnd.js";
 //     has been scrolled (reading a long text), it stays open until the
 //     pointer leaves the copy.
 //   - A draft's copy isn't shifted up to line up its buttons with the card's,
-//     so its pick box stays over the card's.
+//     and its corner buttons are kept over the card's (--card-right), so its
+//     pick box stays over the card's.
 const HOVER_DELAY = 500, HOVER_W = 460, HOVER_MAX_H = 360, HOVER_MARGIN = 12;
 const canHover = matchMedia("(hover: hover) and (pointer: fine)");
 // A card's controls: on them the copy doesn't open, so a button doesn't move
@@ -133,6 +134,9 @@ export const hoverCard = {
     if (left + w > innerWidth - HOVER_MARGIN) left = r.right - w; // rightmost column: grow to the left
     left = Math.max(HOVER_MARGIN, Math.min(left, innerWidth - HOVER_MARGIN - w));
     el.style.width = `${w}px`;
+    // A draft's corner buttons (Queue, its pick box) stay over the card's, so
+    // reaching them doesn't cross the neighbouring cards the copy covers.
+    this.row.style.setProperty("--card-right", `${Math.max(0, left + w - r.right)}px`);
     // Long texts don't cover the whole board: past a cap the copy scrolls.
     el.style.maxHeight = `${Math.max(r.height, Math.min(HOVER_MAX_H, innerHeight - 2 * HOVER_MARGIN))}px`;
     el.style.left = `${left}px`;

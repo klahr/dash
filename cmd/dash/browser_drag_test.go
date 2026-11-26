@@ -45,29 +45,29 @@ func TestBrowserBoardDragMakesRoom(t *testing.T) {
 	for _, id := range ids {
 		b.waitCard(id, "draft")
 	}
-	b.waitJS("three drafts", `document.querySelectorAll('#board .col[data-lane=draft] .rail > li').length === 3`)
+	b.waitJS("three drafts", `document.querySelectorAll('#board .col[data-lane=draft] .cards > li').length === 3`)
 	// The last card, dragged to the top of its lane.
 	b.run("drag the last draft to the top", dragJS+`
-		const rail = document.querySelector('#board .col[data-lane=draft] .rail');
-		const lis = [...rail.children];
+		const list = document.querySelector('#board .col[data-lane=draft] .cards');
+		const lis = [...list.children];
 		const src = lis.at(-1), r = src.getBoundingClientRect();
 		fire("pointerdown", r.left + 60, r.top + 20, src.querySelector(".todo"));
 		fire("pointermove", r.left + 70, r.top + 24);
-		window.e2e = { home: src.offsetHeight === 0 && shown(rail).at(-1)?.matches(".drop-slot") };
+		window.e2e = { home: src.offsetHeight === 0 && shown(list).at(-1)?.matches(".drop-slot") };
 		const top = lis[0].getBoundingClientRect();
 		fire("pointermove", top.left + 70, top.top + 4);
-		window.e2e.first = rail.firstElementChild.matches(".drop-slot");
+		window.e2e.first = list.firstElementChild.matches(".drop-slot");
 		window.e2e.glides = glides(lis.slice(0, 2));
 		true`)
 	b.waitJS("the gap opened where the card was", `window.e2e.home`)
 	b.waitJS("the gap moved to the top", `window.e2e.first`)
 	b.waitJS("the other two glided down", `window.e2e.glides === 2`)
 	b.run("drop it", dragJS+`
-		const top = document.querySelector('#board .col[data-lane=draft] .rail .drop-slot').getBoundingClientRect();
+		const top = document.querySelector('#board .col[data-lane=draft] .cards .drop-slot').getBoundingClientRect();
 		fire("pointerup", top.left + 70, top.top + 4);
 		true`)
 	b.waitJS("it's first", fmt.Sprintf(`!document.querySelector(".drop-slot, .drag-src") &&
-		document.querySelector('#board .col[data-lane=draft] .rail > li:first-child .todo')?.dataset.id === %q`, ids[2]))
+		document.querySelector('#board .col[data-lane=draft] .cards > li:first-child .todo')?.dataset.id === %q`, ids[2]))
 }
 
 // On a phone, a card held still near the bottom of the screen (just above
@@ -94,7 +94,7 @@ func TestBrowserBoardDragScrollsAtEdges(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`.lanes .lane-tab[data-lane=draft]`)))
 	b.waitJS("a page taller than the screen", `scrollY === 0 && document.scrollingElement.scrollHeight > innerHeight + 300`)
 	b.run("pick up the first draft", dragJS+`
-		const src = document.querySelector('#board .col[data-lane=draft] .rail > li .todo'), r = src.getBoundingClientRect();
+		const src = document.querySelector('#board .col[data-lane=draft] .cards > li .todo'), r = src.getBoundingClientRect();
 		fire("pointerdown", r.left + 60, r.top + 20, src);
 		fire("pointermove", r.left + 70, r.top + 30);
 		window.e2eX = r.left + 70;
@@ -105,8 +105,8 @@ func TestBrowserBoardDragScrollsAtEdges(t *testing.T) {
 		fire("pointermove", e2eX, document.querySelector("#drop-bar").getBoundingClientRect().top - 20);
 		true`)
 	b.waitJS("the page scrolled down by itself", `scrollY > 200`)
-	b.run("the gap followed", `const rail = document.querySelector('#board .col[data-lane=draft] .rail');
-		[...rail.children].indexOf(document.querySelector(".drop-slot")) > 4`)
+	b.run("the gap followed", `const list = document.querySelector('#board .col[data-lane=draft] .cards');
+		[...list.children].indexOf(document.querySelector(".drop-slot")) > 4`)
 	b.run("hold it under the lane tabs", dragJS+`
 		const tabs = document.querySelector(".lanes").getBoundingClientRect();
 		fire("pointermove", e2eX, tabs.bottom + 10);

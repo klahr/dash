@@ -335,28 +335,19 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .col-head { display: none; }
 .col-empty { padding: 36px 24px; text-align: center; color: var(--muted); }
 
-/* the branch rail: one line per lane, one node per todo */
-.rail { list-style: none; margin: 0; padding: 0; position: relative; }
-.rail::before {
-  content: ""; position: absolute; left: 27px; top: 0; bottom: 0; width: 2px;
-  background: linear-gradient(var(--line), var(--line)) no-repeat; border-radius: 1px;
-}
+/* A lane's cards: a plain list, one card per task. */
+.cards { list-style: none; margin: 0; padding: 0; position: relative; }
 .todo {
-  --c: var(--muted);
-  position: relative; display: grid; grid-template-columns: 24px minmax(8em, 1fr) minmax(0, auto); align-items: start; gap: 4px 14px;
+  --c: var(--muted); --card-bg: var(--bg); /* --card-bg: what the card looks like, under its corner buttons */
+  position: relative; display: grid; grid-template-columns: minmax(8em, 1fr) minmax(0, auto); align-items: start; gap: 4px 14px;
   width: 100%; text-align: left; padding: 14px 16px; min-height: 64px; cursor: pointer;
 }
-.todo:hover, .todo.selected { background: var(--surface); }
+.todo:hover, .todo.selected { background: var(--surface); --card-bg: var(--surface); }
 /* The card's title is the button that opens it (app/branches.js: todoRow); the whole
    card is clickable, and the focus ring goes around the card. */
 .todo-open { display: block; width: 100%; text-align: left; }
 .todo-open:focus-visible { outline: none; }
 .todo:has(> .todo-main > .todo-open:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-s); }
-.todo .node {
-  justify-self: center; margin-top: 4px; width: 14px; height: 14px; border-radius: 50%;
-  background: var(--bg); border: 3px solid var(--c); position: relative; z-index: 1;
-}
-.todo.pushed .node { background: var(--c); }
 .todo-main { min-width: 0; }
 .todo-title { display: block; font-weight: 600; line-height: 1.35; overflow-wrap: break-word; hyphens: auto; }
 .todo-sub {
@@ -423,15 +414,15 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
    long runner's name gives way first, and what doesn't fit is cut (the hover
    copy shows it all). */
 .todo:has(> .review-actions) { container-type: inline-size; }
-.todo:has(> .review-actions) > .todo-main { grid-column: 2 / -1; }
+.todo:has(> .review-actions) > .todo-main { grid-column: 1 / -1; }
 .todo:has(> .review-actions) > .todo-side {
-  grid-column: 2 / -1; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 10px; padding: 0; min-width: 0; overflow: hidden;
+  grid-column: 1 / -1; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 10px; padding: 0; min-width: 0; overflow: hidden;
   mask-image: linear-gradient(to left, transparent, #000 14px);
 }
 .todo:has(> .review-actions) > .todo-side > * { flex: none; white-space: nowrap; }
 .todo:has(> .review-actions) > .todo-side > .runner-tag { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; }
 .todo-float > .todo:has(> .review-actions) > .todo-side { flex-wrap: wrap; mask-image: none; }
-.todo > .review-actions { grid-column: 2 / -1; flex-wrap: nowrap; margin-top: 4px; position: relative; z-index: 1; }
+.todo > .review-actions { grid-column: 1 / -1; flex-wrap: nowrap; margin-top: 4px; position: relative; z-index: 1; }
 /* In a narrow column Approve is its icon, named by its title. */
 @container (max-width: 229px) {
   .review-actions .approve-chip { width: 28px; padding: 0; justify-content: center; }
@@ -445,11 +436,22 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .needs-runner-tag { color: var(--running); white-space: nowrap; }
 /* A failed task waits in Review: say so plainly, as a badge. */
 .failed-tag { color: var(--failed); border: 1px solid currentColor; border-radius: var(--r-s); padding: 0 5px; line-height: 1.5; }
-.prio-tag.prio-urgent { color: var(--failed); font-weight: 600; }
+/* A card's priority, model and runner chips, in its row of tags (app/branches.js: todoRow):
+   the tag chips' shape, quiet; Urgent in the failed colour, High in the running one. */
+.meta-chip {
+  display: inline-flex; align-items: center; gap: 3px; max-width: 18ch; min-height: 20px; padding: 0 7px;
+  border: 1px solid var(--line); border-radius: var(--r-pill); color: var(--muted);
+  font-size: var(--fs-2xs); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.meta-chip .ico { width: 11px; height: 11px; flex: none; }
+.prio-chip.prio-high { color: var(--running); border-color: color-mix(in srgb, var(--running) 45%, transparent); }
+.prio-chip.prio-urgent { color: var(--failed); border-color: color-mix(in srgb, var(--failed) 55%, transparent); font-weight: 600; }
+@media (pointer: coarse) { .meta-chip { min-height: 26px; } }
+.unpushed-tag { color: var(--muted); white-space: nowrap; }
 .start-now-tag { color: var(--running); } /* the task skips the wait for the weekly pace */
 .live-tag { color: var(--merged); font-weight: 600; } /* a merged task, live in an environment */
 /* A card's small word tags (paused, reviewing, a PR, CI, checks, a revert): one size; each sets its colour. */
-:is(.failed-tag, .paused-tag, .needs-runner-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag, .nochange-tag) { font-size: var(--fs-xs); font-weight: 600; }
+:is(.failed-tag, .paused-tag, .needs-runner-tag, .start-now-tag, .reviewing-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag, .nochange-tag) { font-size: var(--fs-xs); font-weight: 600; }
 /* A task that changed no files: in Review it is closed, not merged; once closed it says so. */
 .nochange-tag { color: var(--muted); border: 1px solid currentColor; border-radius: var(--r-s); padding: 0 5px; line-height: 1.5; white-space: nowrap; }
 /* A link to other tasks (a conflict, a note, an active_work lookup): one short line, the rest on hover.
@@ -470,10 +472,8 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .s-merging, .s-merged { --c: var(--merged); }
 .s-failed { --c: var(--failed); }
 
-/* the one ambient motion: running nodes breathe */
+/* the one ambient motion: the Running tab's dot breathes */
 @keyframes breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--running) 55%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
-.s-in_progress .node { animation: breathe 1.8s ease-in-out infinite; }
-.todo.reviewing .node { animation: breathe 1.8s ease-in-out infinite; }
 .reviewing-tag { color: var(--running); }
 .lane-tab.s-in_progress[data-count]:not([data-count="0"])::before { animation: breathe 1.8s ease-in-out infinite; }
 
@@ -1942,7 +1942,7 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .kb-probe { position: fixed; top: 0; left: 0; width: 1px; height: env(keyboard-inset-height, 0px); visibility: hidden; pointer-events: none; }
 
 /* ---------- keyboard ---------- */
-.todo.cursor { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.todo.cursor { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); --card-bg: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 /* Status line: mode and command line, shown only while the command line is focused. */
 .statusline {
   position: fixed; z-index: 45; left: 0; right: 0; bottom: calc(var(--nav-h) + var(--safe-b));
@@ -1981,7 +1981,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .board-tools .lanes { position: static; flex: 1; border: 0; min-width: 0; }
 .diffsize, .token-tag { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .push-done { display: block; width: calc(100% - 32px); margin: 8px 16px; }
-.older { display: flex; margin: 4px 16px 16px 52px; min-height: 36px; font-size: var(--fs-m); }
+.older { display: flex; margin: 4px 16px 16px; min-height: 36px; font-size: var(--fs-m); }
 .diff-lines div[data-ln] { cursor: pointer; position: relative; }
 .diff-lines .ln-comment {
   position: absolute; left: 0; top: 0; width: 12px; height: 100%; padding: 0; border: 0; border-radius: 2px;
@@ -2033,7 +2033,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 }
 .todo.dragging { opacity: .3; }
 /* The dragged card leaves its place to the gap (app/dnd.js), which starts where it was. */
-.rail > li.drag-src { display: none; }
+.cards > li.drag-src { display: none; }
 .drop-slot {
   list-style: none; margin: 4px 12px 4px 44px; border-radius: var(--r-m);
   border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 6%, transparent);
@@ -2077,7 +2077,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
    so the layout is the card's, and the background reaches the edges. */
 .todo-float > .todo > .todo-side {
   position: sticky; bottom: 0; z-index: 1; background: var(--raised);
-  margin: -4px -14px -12px -47px; padding: 4px 14px 12px 47px; /* 3px: the keyboard cursor's stripe */
+  margin: -4px -14px -12px -11px; padding: 4px 14px 12px 11px; /* 3px: the keyboard cursor's stripe */
 }
 .todo-float > .todo.cursor > .todo-side { background: inherit; }
 
@@ -2616,13 +2616,10 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .col-empty { padding: 20px 16px; text-align: left; font-size: var(--fs-m); color: var(--faint); }
   /* minmax(0, …) and wrapping keep a card inside its column: tags and actions wrap
      instead of running out under the next column. */
-  .todo { padding: 12px 14px; grid-template-columns: 22px minmax(0, 1fr); }
-  .todo-side { grid-column: 2; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0; min-width: 0; }
+  .todo { padding: 12px 14px; grid-template-columns: minmax(0, 1fr); }
+  .todo-side { grid-column: 1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0; min-width: 0; }
   .todo-side .card-actions { flex-wrap: wrap; margin-top: 0; }
   .todo-side:empty { display: none; }
-  /* A review card's actions use the card's whole width, the node's column too. */
-  .todo > .review-actions { grid-column: 1 / -1; }
-  .rail::before { left: 25px; }
   .fab { right: 28px; bottom: 28px; width: auto; padding: 0 20px 0 16px; }
   .fab > span { display: inline; }
   /* Chat pane: overlays the right edge, or (pinned, wide screens) a column of .app. */
@@ -3176,11 +3173,11 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .dep-option:hover { background: var(--raised); }
 .dep-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .dep-status { flex: none; font-size: var(--fs-s); color: var(--c, var(--faint)); }
+/* What a queued task waits for: muted, with plain links; only a failed one is a problem. */
 .todo-sub.deps, .deps { color: var(--muted); }
-.todo-sub.deps.stuck, .deps.stuck { color: var(--running); font-weight: 600; }
+.todo-sub.deps.failed, .deps.failed { color: var(--failed); }
 .dep-link { display: inline; text-align: inherit; color: var(--text); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; cursor: pointer; border-radius: var(--r-xs); }
 .dep-link:hover, .dep-link:focus-visible { text-decoration-color: currentColor; }
-.deps.stuck .dep-link, .todo-sub.deps.stuck .dep-link { color: var(--failed); }
 
 /* ---------- live preview ---------- */
 .pv-dot { background: var(--faint); }
@@ -3347,8 +3344,13 @@ a.claude-incident-name:hover { text-decoration: underline; }
 }
 button.tag-chip { cursor: pointer; }
 button.tag-chip:hover { color: var(--text); border-color: var(--faint); }
-.tag-chip.sev { width: auto; padding: 0 7px; font-size: var(--fs-3xs); border-color: currentColor; }
+/* A severity, coloured by level, in the tags' case and size (not .sev's capitals). */
+.tag-chip.sev { width: auto; max-width: 24ch; padding: 0 7px; font-size: var(--fs-2xs); font-weight: 600; text-transform: none; letter-spacing: 0; border-color: color-mix(in srgb, currentColor 55%, transparent); }
 .tag-chip.sev-critical { color: var(--bg); background: var(--failed); border-color: var(--failed); }
+.tag-chip.sev-high { color: var(--failed); }
+.tag-chip.sev-medium { color: var(--running); }
+.tag-chip.sev-low { color: var(--review); }
+.tag-chip.sev-info { color: var(--muted); }
 button.tag-chip.sev:hover { border-color: currentColor; filter: brightness(1.15); }
 /* Each other tag has a colour of its own (--tag-h, a hue from its name, app/tags.js), as goal chips do. */
 .hued { --tag: hsl(var(--tag-h, 230) 80% 74%); }
@@ -3356,7 +3358,7 @@ button.tag-chip.sev:hover { border-color: currentColor; filter: brightness(1.15)
 button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); background: color-mix(in srgb, var(--tag) 18%, transparent); }
 .tag-chip.on { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tag-chip.hued.on { color: var(--tag); border-color: var(--tag); background: color-mix(in srgb, var(--tag) 24%, transparent); }
-.reports-tag { font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tag-chip.more-tags { border-style: dashed; font-variant-numeric: tabular-nums; }
 @media (pointer: coarse) { .tag-chip { min-height: 26px; } }
 .detail-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
 .tag-field { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -3397,13 +3399,23 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .scans-open .badge[hidden] { display: none; }
 .tag-filter-pick { min-height: 26px; max-width: 14rem; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted); font: inherit; font-size: var(--fs-xs); }
 @media (pointer: coarse) { .filter-chip, .tag-filter-pick { min-height: 32px; } }
-/* Picking drafts to combine: a box over the card's node, shown on hover, while
-   picking and on touch screens; the bar floats above the bottom edge. */
-.todo-pick { position: absolute; left: 16px; top: 12px; z-index: 2; display: grid; place-items: center; width: 24px; height: 24px; opacity: 0; cursor: pointer; }
+/* A draft's Queue and pick box, in its top right corner over the title's end:
+   shown on hover or focus (and on the card open in the pane), the box alone on
+   every draft while picking, with room kept for it. The bar floats above the bottom edge. */
+.draft-actions {
+  position: absolute; top: 8px; right: calc(8px + var(--card-right, 0px)); z-index: 2; margin: 0; flex-wrap: nowrap; align-items: center; gap: 4px;
+  padding-left: 16px; opacity: 0;
+  background: linear-gradient(to right, transparent, var(--card-bg) 16px);
+}
+.todo:is(:hover, :focus-within, .selected) > .draft-actions, .picking .draft-actions { opacity: 1; }
+/* No hover on a touch screen: nothing there to tap until it shows. */
+@media (hover: none) { .todo:not(:focus-within, .selected) > .draft-actions { visibility: hidden; } .picking .todo > .draft-actions { visibility: visible; } }
+.picking .draft-actions .enqueue-chip { display: none; }
+.picking .todo.s-draft { padding-right: 40px; }
+.picking .draft-actions { background: none; }
+.todo-float > .todo { --card-bg: var(--raised); }
+.todo-pick { display: grid; place-items: center; width: 28px; height: 28px; cursor: pointer; }
 .todo-pick input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
-.todo:hover > .todo-pick, .todo-pick:focus-within, .picking .todo-pick { opacity: 1; }
-.todo:has(> .todo-pick:is(:hover, :focus-within)) > .node, .todo:hover:has(> .todo-pick) > .node, .picking .todo:has(> .todo-pick) > .node { opacity: 0; }
-@media (hover: none) { .todo-pick { opacity: 1; } .todo:has(> .todo-pick) > .node { opacity: 0; } }
 .todo.picked { background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .combine-bar {
   position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + var(--safe-b) + 16px);
@@ -3413,6 +3425,7 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 }
 .combine-bar[hidden] { display: none; }
 .combine-count { font-weight: 600; white-space: nowrap; }
+.combine-bar .link { white-space: nowrap; }
 .picking .fab { display: none; }
 /* Scans → Dismissed: issues whose drafts were deleted, each with Undo. */
 .scan-dismissed { margin-top: 24px; }

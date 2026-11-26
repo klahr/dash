@@ -96,7 +96,7 @@ function startDrag(x, y) {
   drag.slot = h("li", { class: "drop-slot", "aria-hidden": "true" });
   drag.slot.style.height = `${Math.max(r.height - 8, 24)}px`;
   card.classList.add("dragging");
-  drag.li = card.closest(".rail > li");
+  drag.li = card.closest(".cards > li");
   if (drag.li) {
     drag.li.before(drag.slot);
     drag.li.classList.add("drag-src");
@@ -156,14 +156,14 @@ function moveDrag(x, y) {
 
   // Inside a visible column, show where the card would land.
   const col = laneEl.classList.contains("col") ? laneEl : null;
-  const rail = col?.querySelector(".rail") || null;
+  const list = col?.querySelector(".cards") || null;
   if (!col || laneEl.matches(".col:not(.active)") && !desktop.matches) { placeSlot(null); return; }
   // Measured where the cards rest, not mid-glide, so the gap doesn't flicker.
-  const items = rail ? [...rail.children].filter((li) => li !== drag.slot && li !== drag.li) : [];
+  const items = list ? [...list.children].filter((li) => li !== drag.slot && li !== drag.li) : [];
   const before = dropBefore(items, y);
   drag.target.index = before ? items.indexOf(before) : items.length;
   const body = col.querySelector(".col-body");
-  if (rail) placeSlot(rail, before);
+  if (list) placeSlot(list, before);
   else if (body) placeSlot(body, body.firstChild === drag.slot ? drag.slot.nextSibling : body.firstChild);
 }
 
@@ -189,7 +189,7 @@ function cleanupDrag() {
   drag.ghost?.remove();
   // The card takes the gap's place, so the board re-rendered after a drop
   // glides it (and its neighbours) on from where they are.
-  if (drag.li && drag.slot?.parentNode?.matches(".rail")) drag.slot.replaceWith(drag.li);
+  if (drag.li && drag.slot?.parentNode?.matches(".cards")) drag.slot.replaceWith(drag.li);
   else drag.slot?.remove();
   drag.li?.classList.remove("drag-src");
   drag.li = null;

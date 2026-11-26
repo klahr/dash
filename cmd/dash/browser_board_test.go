@@ -15,7 +15,7 @@ import (
 // actions, Review first, at every width. Approve on the card and dropping
 // it on Drafts both wait for an Undo before anything is sent; while it is
 // dragged, the columns say what a drop does. Picked drafts are combined with
-// Combine, which shows from two on.
+// Combine, which shows from two on, or queued with the bar's Queue.
 func TestBrowserBoardRiskyActions(t *testing.T) {
 	endToEnd(t)
 	chrome := needChrome(t)
@@ -33,6 +33,19 @@ func TestBrowserBoardRiskyActions(t *testing.T) {
 
 	b := newBrowser(t, chrome)
 	b.signIn(h)
+
+	// In Review the card shows what Claude did, not the prompt; with one
+	// runner it doesn't name it.
+	var sum struct{ Summary string }
+	waitFor(t, nil, "Claude's summary", func() bool {
+		api.must("GET", "/api/todos/"+rv.ID, nil, http.StatusOK, &sum)
+		return sum.Summary != ""
+	})
+	b.waitCard(rv.ID, "review")
+	b.waitJS("the summary, no runner", fmt.Sprintf(`(() => {
+		const c = document.querySelector(%q);
+		return c.querySelector(".todo-sub")?.textContent === %q && !c.querySelector(".runner-tag");
+	})()`, card, sum.Summary))
 
 	// The card's layout: the title on the card's width, a single line under
 	// it, and the actions in one row, Review first and filled, Approve
@@ -148,4 +161,25 @@ func TestBrowserBoardRiskyActions(t *testing.T) {
 	b.do("combine them", chromedp.Click(chromedp.CSS(`#combine-bar .combine`)))
 	b.waitJS("one draft left", fmt.Sprintf(`!document.querySelector(%q) && !!document.querySelector(%q) && document.querySelector("#combine-bar").hidden`, cardSel(d2.ID), cardSel(d1.ID)))
 	b.waitJS("the toast", `[...document.querySelectorAll(".toast")].some((e) => e.textContent.includes("Combined 2 drafts"))`)
+
+	// A draft's Queue shows only on hover; the bar queues what is picked.
+	b.waitJS("Queue hidden at rest", fmt.Sprintf(`getComputedStyle(document.querySelector(%q)).opacity === "0"`, cardSel(d1.ID)+" .draft-actions"))
+	b.until("pick the draft left", `/1 selected/.test(document.querySelector("#combine-bar").textContent) && !!document.querySelector("#combine-bar .queue-picked")`,
+		chromedp.Click(chromedp.CSS(cardSel(d1.ID)+" .todo-pick input")))
+	b.do("queue it from the bar", chromedp.Click(chromedp.CSS(`#combine-bar .queue-picked`)))
+	b.waitJS("it left Drafts", fmt.Sprintf(`!document.querySelector('#board .col[data-lane="draft"] .todo[data-id=%q]') && document.querySelector("#combine-bar").hidden`, d1.ID))
+
+	// A queued task waiting for a draft says so calmly, with Queue both.
+	var dep, waiter struct{ ID string }
+	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Groundwork", "prompt": "Stay a draft"}, http.StatusCreated, &dep)
+	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Needs groundwork", "prompt": "add a later file", "depends_on": []string{dep.ID}, "enqueue": true}, http.StatusCreated, &waiter)
+	b.waitCard(waiter.ID, "queued")
+	b.waitJS("waits for the draft, with Queue both", fmt.Sprintf(`(() => {
+		const c = document.querySelector(%q), line = c?.querySelector(".todo-sub.deps");
+		return line?.textContent === "waits for Groundwork" && !line.classList.contains("failed") &&
+			getComputedStyle(line.querySelector(".dep-link")).color === getComputedStyle(c.querySelector(".todo-title")).color &&
+			[...c.querySelectorAll(".enqueue-chip")].some((e) => e.textContent.trim() === "Queue both");
+	})()`, cardSel(waiter.ID)))
+	shot(b, "board-waits-for-draft")
+	b.clickTextUntil(cardSel(waiter.ID)+" .enqueue-chip", "Queue both", fmt.Sprintf(`!document.querySelector('#board .col[data-lane="draft"] .todo[data-id=%q]')`, dep.ID))
 }

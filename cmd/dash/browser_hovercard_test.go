@@ -96,8 +96,8 @@ func TestBrowserHoverCard(t *testing.T) {
 			}
 		}
 	}
-	// body is a spot on a card's text, away from its controls.
-	body := func(id string) pt { return at(cardSel(id)+" .todo-title", 0.5, 0.5) }
+	// body is a spot on a card's text, away from its controls (a draft's are in its top right corner).
+	body := func(id string) pt { return at(cardSel(id)+" .todo-title", 0.3, 0.5) }
 	cards := order()
 
 	// Resting opens the copy; passing over cards doesn't.

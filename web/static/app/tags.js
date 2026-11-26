@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { isTyping } from "./vim.js";
-import { renderBoard, title } from "./branches.js";
+import { laneItems, renderBoard, title } from "./branches.js";
 import { openDetail } from "./detail.js";
 import { goalHue } from "./goals.js";
 import { MAX_TAG_LEN, addTag, cleanTag } from "../tagtext.js";
@@ -121,35 +121,45 @@ export function renderTagFilter() {
   return !el.hidden;
 }
 
-// tagRow is a card's tags: the severity of its issues and how many times
-// they were reported (×N), then its tags, each a button that filters the
-// Board by it.
-export function tagRow(t) {
-  const tags = t.tags || [];
+// sevText is a severity chip's words: the severity, and how many times
+// the issues were reported when more than once ("low · 4 reports").
+const sevText = (sev, n) => (n > 1 ? `${sev} · ${n} reports` : sev);
+
+// tagRow is a card's chips: lead first (the card's priority, model, runner),
+// then the severity of its issues with how many times they were reported,
+// then its tags, each a button that filters the Board by it.
+export function tagRow(t, lead = []) {
+  lead = lead.filter(Boolean);
   const sev = worstSeverity(t);
   const n = reportCount(t);
-  if (!tags.length && !sev) return null;
+  // The severity's own tag is the severity chip, not a chip of its own.
+  const tags = (t.tags || []).filter((x) => x.toLowerCase() !== sev);
+  const sevTag = sev && (t.tags || []).find((x) => x.toLowerCase() === sev);
+  if (!lead.length && !tags.length && !sev) return null;
   const shown = tags.slice(0, 5);
-  const chip = (x) => {
+  const on = (x) => boardFilter.tag.toLowerCase() === x.toLowerCase();
+  const chip = (x, label = x) => {
     const look = tagLook(x);
     return h("button", {
-      type: "button", class: `tag-chip${look.cls}${boardFilter.tag.toLowerCase() === x.toLowerCase() ? " on" : ""}`,
-      style: look.style, title: boardFilter.tag.toLowerCase() === x.toLowerCase() ? "Show every task again" : `Show only tasks tagged ${x}`,
+      type: "button", class: `tag-chip${look.cls}${on(x) ? " on" : ""}`, style: look.style,
       onpointerdown: (e) => e.stopPropagation(),
       onclick: (e) => { e.stopPropagation(); setTagFilter(x); },
-    }, x);
+    }, label);
   };
   return h("span", { class: "todo-tags" },
-    sev && !tags.some((x) => x.toLowerCase() === sev) ? h("span", { class: `tag-chip sev sev-${sev}`, title: `Severity: ${sev}` }, sev) : null,
-    n > 1 ? h("span", { class: "reports-tag", title: `Reported ${n} times` }, `×${n}`) : null,
-    ...shown.map(chip),
-    tags.length > shown.length ? h("span", { class: "reports-tag", title: tags.slice(shown.length).join(", ") }, `+${tags.length - shown.length}`) : null);
+    ...lead,
+    sev ? (sevTag ? chip(sevTag, sevText(sev, n)) : h("span", { class: `tag-chip sev sev-${sev}` }, sevText(sev, n))) : null,
+    ...shown.map((x) => chip(x)),
+    tags.length > shown.length ? h("span", { class: "tag-chip more-tags", title: tags.slice(shown.length).join(", ") }, `+${tags.length - shown.length}`) : null);
 }
 
-// ------------------------------------------------------------------ picking drafts to combine
+// ------------------------------------------------------------------ picking drafts
 // picked are the drafts chosen on the Board, in the order they were chosen:
-// Combine makes them one task, the first.
+// the bar queues them, or combines them into one task, the first. A draft's
+// box shows on hover or focus, and on every draft once picking has started:
+// a box ticked, or Select at the foot of Drafts (a phone has no hover).
 export const picked = new Set();
+let selecting = false;
 
 export function pickBox(t) {
   if (t.status !== "draft") return null;
@@ -158,25 +168,51 @@ export function pickBox(t) {
     h("input", { type: "checkbox", checked: on, "aria-label": `Select ${title(t)}`, onchange: (e) => { if (e.target.checked) picked.add(t.id); else picked.delete(t.id); renderBoard(); } }));
 }
 
-export function clearPicked() {
-  if (!picked.size) return;
-  picked.clear();
+// startPicking shows every draft's box, with the bar, before any is ticked.
+export function startPicking() {
+  selecting = true;
   renderBoard();
 }
 
-// renderCombineBar shows "N selected · Combine · Clear" while drafts are
-// picked (only drafts that are still drafts count); Combine from two on.
+export function clearPicked() {
+  if (!picked.size && !selecting) return;
+  picked.clear();
+  selecting = false;
+  renderBoard();
+}
+
+// renderCombineBar shows "N selected · Select all · Queue · Combine · Clear"
+// while picking (only drafts that are still drafts count); Combine from two on.
 export function renderCombineBar() {
   sameProject();
   for (const id of [...picked]) if (state.todos.get(id)?.status !== "draft") picked.delete(id);
   const bar = $("#combine-bar");
   const n = picked.size;
-  document.body.classList.toggle("picking", n > 0);
-  bar.hidden = !n;
-  if (!n) { bar.replaceChildren(); return; }
-  bar.replaceChildren(h("span", { class: "combine-count" }, `${n} selected`),
+  if (n) selecting = false; // the ticks keep it going; none left ends it
+  const on = n > 0 || selecting;
+  document.body.classList.toggle("picking", on);
+  bar.hidden = !on;
+  if (!on) { bar.replaceChildren(); return; }
+  const drafts = laneItems().draft;
+  bar.replaceChildren(...[h("span", { class: "combine-count" }, `${n} selected`),
+    drafts.some((t) => !picked.has(t.id)) ? h("button", { type: "button", class: "link select-all", onclick: () => { for (const t of drafts) picked.add(t.id); renderBoard(); } }, "Select all") : null,
+    n ? h("button", { type: "button", class: `btn small${n > 1 ? "" : " primary"} queue-picked`, onclick: attempt(queuePicked) }, ico("queue"), "Queue") : null,
     n > 1 ? h("button", { type: "button", class: "btn small primary combine", onclick: attempt(combinePicked) }, ico("box"), "Combine") : null,
-    h("button", { type: "button", class: "link", onclick: clearPicked }, "Clear"));
+    h("button", { type: "button", class: "link clear-picks", onclick: clearPicked }, "Clear")].filter(Boolean));
+}
+
+// queuePicked queues the picked drafts in the Board's order, so they keep
+// their order in the queue.
+async function queuePicked() {
+  const ids = laneItems(true).draft.map((t) => t.id).filter((id) => picked.has(id));
+  if (!ids.length) return;
+  picked.clear();
+  renderBoard();
+  let bad = 0;
+  for (const id of ids) {
+    try { await api("POST", `/api/todos/${id}/enqueue`); } catch { bad++; }
+  }
+  toast(bad ? `Queued ${ids.length - bad}, ${bad} failed` : `Queued ${plural(ids.length, "task")}`);
 }
 
 // combinePicked makes the picked drafts one task: the first picked, with
@@ -207,7 +243,7 @@ export function pickDrafts(ids) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !picked.size || e.defaultPrevented || state.detail || state.view !== "board") return;
+  if (e.key !== "Escape" || (!picked.size && !selecting) || e.defaultPrevented || state.detail || state.view !== "board") return;
   if (document.querySelector("dialog[open]") || isTyping(document.activeElement)) return;
   clearPicked();
 });

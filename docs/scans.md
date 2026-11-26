@@ -195,9 +195,9 @@ type, the file and the rule (or the title, when there is no rule). The line is l
 problem keeps its fingerprint when code above it moves.
 
 - **A task has it already** (a draft, or a task that is queued, running, in Review, merging or
-  failed): no new draft. The task counts the report and its card shows "×N". The same source
-  twice in a row counts once, so a daily scan doesn't inflate it. The line and details are
-  updated. A draft's prompt is written again, unless someone edited it.
+  failed): no new draft. The task counts the report and its card shows it with the severity,
+  e.g. "high · 2 reports". The same source twice in a row counts once, so a daily scan doesn't
+  inflate it. The line and details are updated. A draft's prompt is written again, unless someone edited it.
 - **It was dismissed:** nothing is added. Deleting a draft (or any task with findings that isn't
   merged) dismisses its findings. They are listed under **Scans → Dismissed**. Click **Undo** to
   let the next report add a draft again.
@@ -211,7 +211,8 @@ To keep the Board usable when scans find a lot:
 - Drafts from scans with severity `critical` or `high` show on the Board. Lower ones show only
   under **From scans (N)** above the board. Click it to see every task scans added.
 - Click a tag on a card to show only tasks with that tag. Remove the filter with its chip.
-- Tick two or more drafts and click **Combine** to make them one draft. It keeps all their
+- Pick two or more drafts (tick their boxes, or **Select** at the foot of *Drafts*) and click
+  **Combine** to make them one draft. It keeps all their
   fingerprints, so later reports of any of them land on it, and adds up their counts.
 
 ## API

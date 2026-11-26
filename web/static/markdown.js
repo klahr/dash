@@ -138,3 +138,24 @@ function blocks(lines) {
 export function renderMarkdown(text) {
   return blocks(text.replace(/\r\n?/g, "\n").split("\n"));
 }
+
+// plainText is Markdown as one line of plain text, for a card's preview: no
+// headings' #s, emphasis, link or image syntax, code fences or backticks,
+// quote, list or table markers; the words stay, separated by single spaces.
+export function plainText(md) {
+  return (md || "").replace(/\r\n?/g, "\n")
+    .replace(/^\s*(```|~~~).*$/gm, "") // fences: the code inside stays
+    .replace(/^\s{0,3}([-*_])(\s*\1){2,}\s*$/gm, "") // rules
+    .replace(/^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/gm, "$1") // headings
+    .replace(/^\s*(>\s?)+/gm, "") // quotes
+    .replace(/^\s*([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?/gm, "") // list items and task boxes
+    .replace(/^\s*\|?(\s*:?-+:?\s*\|)+\s*:?-*:?\s*$/gm, "") // a table's divider row
+    .replace(/\s*\|\s*/g, " ") // table cells
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1") // links and images: their text
+    .replace(/<((?:https?:|mailto:)[^>\s]+)>/g, "$1") // autolinks
+    .replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, __, c) => c.trim() || c) // code spans
+    .replace(/(\*\*\*|___|\*\*|__|~~)(?=\S)([\s\S]*?\S)\1/g, "$2") // strong, strikethrough
+    .replace(/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?!\w)/g, "$1$2") // *em*
+    .replace(/(^|[^\w_])_(?=\S)([^_\n]*?\S)_(?!\w)/g, "$1$2") // _em_, not snake_case
+    .replace(/\s+/g, " ").trim();
+}

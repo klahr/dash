@@ -10,7 +10,7 @@ import (
 )
 
 // Reported issues are drafts on the Board: From scans (N) shows only what
-// scans added, and scans' drafts below high show only there; cards show severity, ×N and tags (a tag filters
+// scans added, and scans' drafts below high show only there; cards show severity with its report count and tags (a tag filters
 // the Board), drafts can be picked and merged, a task's tags are edited in
 // its pane, and old links to Issues open the Board. On a wide screen and a
 // phone's.
@@ -42,11 +42,12 @@ func TestBrowserFindingDrafts(t *testing.T) {
 	b.waitCard(plain.ID, "draft")
 	b.waitJS("the scans' low drafts hidden, From scans (3)", fmt.Sprintf(`!document.querySelector(%q) && !document.querySelector(%q) &&
 		document.querySelector("#tag-filter .scan-filter")?.textContent === "From scans (3)" && !document.querySelector("#board-filters").hidden`, cardSel(low1), cardSel(low2)))
-	b.waitJS("the high draft's severity, ×2 and tags", fmt.Sprintf(`(() => {
+	b.waitJS("the high draft's severity with its reports, and tags", fmt.Sprintf(`(() => {
 		const c = document.querySelector(%q);
 		const tags = [...c.querySelectorAll(".todo-tags .tag-chip")].map((e) => e.textContent);
-		return c.querySelector(".reports-tag")?.textContent === "×2" && tags.includes("security") && tags.includes("high") && tags.includes("scan:security") &&
-			c.querySelector(".tag-chip.sev-high") !== null &&
+		const sev = c.querySelector(".tag-chip.sev-high");
+		return sev?.textContent === "high · 2 reports" && getComputedStyle(sev).textTransform === "none" && !tags.includes("high") &&
+			tags.includes("security") && tags.includes("scan:security") &&
 			[...c.querySelectorAll(".tag-chip.hued")].some((e) => e.textContent === "security" && e.style.getPropertyValue("--tag-h") !== "");
 	})()`, cardSel(high)))
 	scanFilter := func(on bool, expr string) {
@@ -93,13 +94,15 @@ func TestBrowserFindingDrafts(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`#d-tags .tag-x[aria-label="Remove tag urgent"]`)))
 	b.do("close the task", chromedp.Click(chromedp.CSS(`#d-close`)))
 
-	// A phone: the pick boxes show without hovering, the bar fits the screen.
+	// A phone: Select at the foot of Drafts shows the pick boxes, the bar fits the screen.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.do("reload", chromedp.Reload())
 	b.waitJS("the board", `document.querySelector("#project-name")?.textContent === "app"`)
 	b.until("the drafts lane", `document.querySelector('#board .col[data-lane="draft"]')?.offsetWidth > 0`, chromedp.Click(chromedp.CSS(`.lane-tab[data-lane="draft"]`)))
 	b.waitJS("From scans (2) on a phone", `document.querySelector("#tag-filter .scan-filter")?.offsetWidth > 0 && document.querySelector("#tag-filter .scan-filter").textContent === "From scans (2)"`)
-	b.waitJS("a pick box shows without hovering", fmt.Sprintf(`getComputedStyle(document.querySelector(%q)).opacity === "1"`, cardSel(high)+" .todo-pick"))
+	b.waitJS("no pick box or Queue before Select", fmt.Sprintf(`getComputedStyle(document.querySelector(%q)).visibility === "hidden"`, cardSel(high)+" .draft-actions"))
+	b.until("Select shows them", fmt.Sprintf(`(() => { const s = getComputedStyle(document.querySelector(%q)); return s.visibility === "visible" && s.opacity === "1"; })() && /0 selected/.test(document.querySelector("#combine-bar").textContent)`, cardSel(high)+" .todo-pick"),
+		chromedp.Click(chromedp.CSS(`#board .col[data-lane="draft"] .select-drafts`)))
 	still()
 	b.do("tap a pick box", chromedp.Click(chromedp.CSS(cardSel(high)+` .todo-pick input`)))
 	still()
@@ -108,7 +111,7 @@ func TestBrowserFindingDrafts(t *testing.T) {
 		const r = document.querySelector("#combine-bar").getBoundingClientRect(), nav = document.querySelector(".nav").getBoundingClientRect();
 		return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.bottom <= nav.top && /2 selected/.test(document.querySelector("#combine-bar").textContent);
 	})()`)
-	b.do("clear", chromedp.Click(chromedp.CSS(`#combine-bar .link`)))
+	b.do("clear", chromedp.Click(chromedp.CSS(`#combine-bar .clear-picks`)))
 	b.do("a wide screen", chromedp.EmulateReset())
 
 	// Old links to Issues open the Board, or the draft an issue became.
