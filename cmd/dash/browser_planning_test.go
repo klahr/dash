@@ -611,10 +611,13 @@ func TestBrowserPlanningOpenCard(t *testing.T) {
 
 	// The description: a click makes it a box; Esc cancels, Ctrl+Enter saves.
 	b.until("edit the description", `document.activeElement === document.querySelector("textarea#pd-desc")`, chromedp.Click(chromedp.CSS(`#pd-desc`)))
-	b.do("type, then Esc", chromedp.SendKeys(`textarea#pd-desc`, "\nDropped."), chromedp.KeyEvent(kb.Escape))
+	// Typed into the focused box, not looked up by selector: a redraw of the
+	// card (the column change coming back) moves the box, keeping its focus
+	// and text, but gives it a new DevTools node id, which SendKeys can't find.
+	b.do("type, then Esc", chromedp.KeyEvent("\nDropped."), chromedp.KeyEvent(kb.Escape))
 	b.waitJS("as it was, the pane still open", `document.querySelector("#pd-desc").tagName === "DIV" && !document.querySelector("#pd-desc").textContent.includes("Dropped") && !document.querySelector("#card-detail").hidden`)
 	b.until("edit it with the pencil", `document.activeElement === document.querySelector("textarea#pd-desc")`, chromedp.Click(chromedp.CSS(`.pl-desc-edit-btn`)))
-	b.do("type, then Ctrl+Enter", chromedp.SendKeys(`textarea#pd-desc`, "\n\n- *Monthly*"), chromedp.KeyEvent(kb.Enter, chromedp.KeyModifiers(chromedp.ModifierCtrl)))
+	b.do("type, then Ctrl+Enter", chromedp.KeyEvent("\n\n- *Monthly*"), chromedp.KeyEvent(kb.Enter, chromedp.KeyModifiers(chromedp.ModifierCtrl)))
 	b.waitJS("saved, as Markdown", `document.querySelector("#pd-desc").tagName === "DIV" && document.querySelector("#pd-desc li em")?.textContent === "Monthly"`)
 	var v struct{ Description string }
 	h.api.must("GET", "/api/planning/cards/"+c.ID, nil, http.StatusOK, &v)

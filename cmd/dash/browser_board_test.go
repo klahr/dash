@@ -101,7 +101,10 @@ func TestBrowserBoardRiskyActions(t *testing.T) {
 	b.do("approve on the card", chromedp.Click(chromedp.CSS(card+" .approve-chip")))
 	b.waitCard(rv.ID, "merging")
 	b.waitJS("Undo in the toast", `[...document.querySelectorAll(".toast")].some((e) => e.textContent.includes("Approved") && e.querySelector(".toast-action")?.textContent === "Undo")`)
-	b.clickText(".toast .toast-action", "Undo")
+	// Until it is back: the toasts stack from the bottom, so one leaving (or
+	// this one still rising) can move Undo between the press and the release,
+	// and then no click fires; focused, the toast stays, waiting for one.
+	b.clickTextUntil(".toast .toast-action", "Undo", fmt.Sprintf(`!!document.querySelector('#board .col[data-lane="review"] .todo[data-id=%q]')`, rv.ID))
 	b.waitCard(rv.ID, "review")
 	b.waitJS("Merging folded away again", `document.querySelector('#board .col[data-lane=merging]').hidden`)
 	time.Sleep(6 * time.Second) // past the toast's time: an Undo that failed would have sent it by now
