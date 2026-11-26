@@ -60,6 +60,14 @@ func liveDeploy(t *testing.T, s *Server, p model.Project, env, commit string, at
 			_, _ = raw(s).UpdateDeploy(d.ID, func(x *model.Deploy) error { x.SetStatus(model.DeploySuperseded, at); return nil })
 		}
 	}
+	// Deploys list newest first by when they were made, ties by random ID:
+	// on a coarse clock (Windows) two made in a row could swap. Wait for the
+	// clock to pass the newest, so this one is newer than all before it.
+	if ds := raw(s).ListDeploys(p.ID, env); len(ds) > 0 {
+		for !time.Now().After(ds[0].CreatedAt) {
+			time.Sleep(time.Millisecond)
+		}
+	}
 	d, err := raw(s).CreateDeploy(model.Deploy{ProjectID: p.ID, Environment: env, Ref: commit, Trigger: model.DeployByUser})
 	if err != nil {
 		t.Fatal(err)

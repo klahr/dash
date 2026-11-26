@@ -30,7 +30,7 @@ import { openShell } from "./terminal.js";
 import { openTry } from "./try.js";
 import { clearPriority, nextPriority } from "./dnd.js";
 import { isQuestion, isSettingsChange } from "./chatparts.js";
-import { dismissNote } from "./tags.js";
+import { deleteBody } from "./tags.js";
 
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
@@ -142,7 +142,7 @@ export async function todoKey(t, k) {
     case "t": return previewTodo(t);
     case "!": return openShell({ todo_id: t.id }, t.runner);
     case "dd":
-      if (await ask({ title: `Delete "${title(t)}"?`, body: `Its worktree and branch are removed too.${dismissNote(t)} This can't be undone.`, ok: "Delete", danger: true })) {
+      if (await ask({ title: `Delete "${title(t)}"?`, body: deleteBody(t), ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
         if (state.detail === t.id) closeDetail();
         toast("Task deleted");

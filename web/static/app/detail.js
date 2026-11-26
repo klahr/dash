@@ -24,7 +24,7 @@ import { agentCan, cantSay } from "./agents.js";
 import { creator } from "./people.js";
 import { avatar } from "./avatar.js";
 import { changed, linkTo } from "./routes.js";
-import { dismissNote, renderDetailTags, renderFinding } from "./tags.js";
+import { deleteBody, renderDetailTags, renderFinding } from "./tags.js";
 
 // ------------------------------------------------------------------ detail
 // On a desktop's Board the panel lies beside the board, as a list's detail
@@ -397,8 +397,7 @@ $("#d-more").addEventListener("click", attempt(async (e) => {
   if (t.status === "merged" && !t.revert && !closedNoChanges(t) && here) danger.push(["undo", "Revert…", () => revertTodo(t), { danger: true }]);
   if (settled) {
     danger.push(["trash", "Delete task…", async () => {
-      const pr = t.pr?.state === "OPEN" ? ` Its pull request #${t.pr.number} is closed on GitHub: the task is rejected.` : "";
-      if (await ask({ title: "Delete this task?", body: `Its worktree and branch are removed too.${pr}${dismissNote(t)} This can't be undone.`, ok: "Delete", danger: true })) {
+      if (await ask({ title: "Delete this task?", body: deleteBody(t), ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
         closeDetail();
         toast("Task deleted");
