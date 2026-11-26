@@ -1,5 +1,7 @@
 import { $, $$, avatarURL, dateText, dateTimeText, fill, h, ib, ico, nameHue } from "./dom.js";
-import { previewText } from "../markdown.js";
+import { previewText, renderMarkdown } from "../markdown.js";
+import { agoText } from "../time.js";
+import { popMenu } from "./popmenu.js";
 import { api } from "./api.js";
 import { EASE, ask, attempt, busy, copy, fail, openSheet, reduceMotion, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
@@ -25,7 +27,7 @@ import { dictation } from "./dictation.js";
 // One module for both places Planning shows: the app's Planning view
 // (members, admins, owners; index.html) and planning.html, the page a
 // planner lands on. It uses only dom, api, dialogs, store, viewport, glide,
-// attachments, lightbox, dictation and markdown,
+// attachments, lightbox, dictation, popmenu, markdown and time,
 // which load outside the app too, and builds its own markup in the root
 // it is mounted on. Planning is the hub's (api prefix "").
 
@@ -179,7 +181,9 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
         h("div", { class: "detail-titles" },
           h("h2", { id: "pd-title" }),
           h("div", { class: "detail-meta", id: "pd-meta" }),
-          h("div", { class: "commit-actions", id: "pd-actions" }))),
+          h("div", { class: "commit-actions pl-actions", id: "pd-actions" })),
+        ib({ type: "button", class: "icon-btn", id: "pd-copy", "aria-label": "Copy link", title: "Copy link",
+          onclick: () => pl.open && copy(linkTo({ view: "planning", card: pl.open }), "Link copied") }, "link")),
       h("div", { class: "detail-body", id: "pd-body" })),
     h("datalist", { id: "pl-tag-options" }));
   wireDrag(root);
@@ -1046,11 +1050,14 @@ export async function openCard(id) {
   pl.detail = byId(id) || null;
   pl.error = "";
   pl.editing = false;
+  pl.desc = null;
   pl.root.classList.add("card-open");
   cardPane.open();
   markSelected();
   renderCard();
   $("#pd-body").scrollTop = 0;
+  // On a desktop the board narrows beside the pane: the card opened stays in sight.
+  if (desktop.matches) requestAnimationFrame(() => $(".pl-card .todo.selected", pl.root)?.scrollIntoView({ block: "nearest", inline: "nearest" }));
   changed("push");
   await loadCard(id);
 }
@@ -1252,13 +1259,13 @@ function pasteFiles(e) {
   if (files.length && pl.open) { e.preventDefault(); attachFiles(pl.open, files); }
 }
 
-// filesSection is the card's files: a picture's thumbnail or a file's
-// extension, each opening its preview, with × to take it off the card.
+// filesSection is the card's files, when it has some (or some on their way):
+// a picture's thumbnail or a file's extension, each opening its preview,
+// with × to take it off the card. The Add row's File adds one.
 function filesSection(c) {
   const files = c.files || [];
   const n = pl.uploading[c.id] || 0;
-  const input = h("input", { type: "file", accept: ACCEPT, multiple: true, hidden: true,
-    onchange: () => { attachFiles(c.id, input.files); input.value = ""; } });
+  if (!files.length && !n) return null;
   return h("section", { class: "pl-section", "aria-labelledby": "pd-files" },
     h("h3", { id: "pd-files" }, "Files"),
     h("div", { class: "attach pl-files", "data-preview-group": "" },
@@ -1272,14 +1279,28 @@ function filesSection(c) {
             if (!await ask({ title: `Delete ${f.name}?`, body: "It is deleted from the card. Tasks already started from the card keep it.", ok: "Delete", danger: true })) return;
             applyCard(await call("DELETE", cardAPI(c.id, `/files/${encodeURIComponent(f.id)}`)));
           }) }, "×"))),
-      n ? h("span", { class: "chip uploading" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Uploading ${n}…`) : null,
-      h("button", { type: "button", class: "btn small attach-btn", onclick: () => input.click() }, clip(), "Attach file"),
-      input),
-    files.length ? null : h("p", { class: "hint" }, "Pictures, PDFs and text files, up to 20 MB each. You can paste or drop them here too."));
+      n ? h("span", { class: "chip uploading" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Uploading ${n}…`) : null));
 }
 
-function field(label, control) {
-  return h("label", { class: "field pl-field" }, h("span", {}, label), control);
+// addRow is the small Add actions for what the card has none of yet, or
+// more of: a file, a card it depends on. Their sections show once there is
+// something in them.
+function addRow(c) {
+  const input = h("input", { type: "file", accept: ACCEPT, multiple: true, hidden: true,
+    onchange: () => { attachFiles(c.id, input.files); input.value = ""; } });
+  return h("div", { class: "pl-add-row" },
+    ib({ type: "button", class: "btn small pl-file-add", onclick: () => input.click() }, "plus", "File"),
+    ib({ type: "button", class: "btn small pl-dep-add", onclick: attempt(() => depSheet(c)) }, "plus", "Dependency"),
+    input);
+}
+
+// prop is a row of the card's properties: its name, and the control that
+// changes it. group names a control that is a group of them, not a field.
+function prop(label, control, group = "") {
+  if (!group) control.id ||= `pd-${label.toLowerCase()}`;
+  return h("div", { class: "pl-prop" },
+    group ? h("span", { class: "pl-prop-name", id: group }, label) : h("label", { class: "pl-prop-name", for: control.id }, label),
+    control);
 }
 
 // membersField is the card's members, each with × to take them off, the
@@ -1293,22 +1314,20 @@ function membersField(c) {
   // Who may delete the card may change its owner (the server checks too).
   const me = pl.hooks.me?.();
   const mayOwn = me && (me.admin || me.id === c.created_by || me.id === c.owner);
-  return h("div", { class: "field pl-field pl-members-field", role: "group", "aria-labelledby": "pd-members" },
-    h("span", { id: "pd-members" }, "Members"),
-    h("div", { class: "pl-member-list" },
-      ...(c.people || []).map((p) => h("span", { class: `pl-member${p.id === c.owner ? " pl-owner" : ""}` },
-        face(p, p.id === c.owner ? "pl-owner-face" : ""), h("span", { class: "pl-member-name" }, p.username),
-        p.id === c.owner ? h("span", { class: "pl-owner-badge" }, "Owner") : null,
-        mayOwn ? ib({ type: "button", class: "icon-btn small pl-owner-btn", "aria-pressed": String(p.id === c.owner),
-          "aria-label": `Owner: ${p.username}`,
-          title: p.id === c.owner ? "No owner" : "Make owner",
-          onclick: () => patchCard({ owner: p.id === c.owner ? 0 : p.id })().catch(fail) }, "star") : null,
-        ib({ type: "button", class: "icon-btn small", "aria-label": `Take ${p.username} off the card`, title: "Take off the card",
-          disabled: p.id === c.owner && !mayOwn,
-          onclick: () => set(ids.filter((id) => id !== p.id)) }, "x"))),
-      others.length ? h("select", { "aria-label": "Add a member", onchange: (e) => e.target.value && set([...ids, Number(e.target.value)]) },
-        h("option", { value: "" }, ids.length ? "Add…" : "Add a member…"),
-        ...others.map((u) => h("option", { value: String(u.id) }, u.username))) : null));
+  return prop("Members", h("div", { class: "pl-member-list pl-members-field", role: "group", "aria-labelledby": "pd-members" },
+    ...(c.people || []).map((p) => h("span", { class: `pl-member${p.id === c.owner ? " pl-owner" : ""}` },
+      face(p, p.id === c.owner ? "pl-owner-face" : ""), h("span", { class: "pl-member-name" }, p.username),
+      p.id === c.owner ? h("span", { class: "pl-owner-badge" }, "Owner") : null,
+      mayOwn ? ib({ type: "button", class: "icon-btn small pl-owner-btn", "aria-pressed": String(p.id === c.owner),
+        "aria-label": `Owner: ${p.username}`,
+        title: p.id === c.owner ? "No owner" : "Make owner",
+        onclick: () => patchCard({ owner: p.id === c.owner ? 0 : p.id })().catch(fail) }, "star") : null,
+      ib({ type: "button", class: "icon-btn small", "aria-label": `Take ${p.username} off the card`, title: "Remove",
+        disabled: p.id === c.owner && !mayOwn,
+        onclick: () => set(ids.filter((id) => id !== p.id)) }, "x"))),
+    others.length ? h("select", { "aria-label": "Add a member", onchange: (e) => e.target.value && set([...ids, Number(e.target.value)]) },
+      h("option", { value: "" }, "Add…"),
+      ...others.map((u) => h("option", { value: String(u.id) }, u.username))) : null), "pd-members");
 }
 
 // tagsField is the card's tags, each a button that shows only the cards
@@ -1323,58 +1342,186 @@ function tagsField(c) {
     if (fresh.length) set([...tags, ...fresh]).then(() => $("#card-detail .pl-tag-input")?.focus());
   };
   const input = h("input", { class: "pl-tag-input", list: "pl-tag-options", maxlength: 40, autocomplete: "off", "aria-label": "Add a tag",
-    placeholder: tags.length ? "Add…" : "Add a tag…",
+    placeholder: "Add…",
     onkeydown: (e) => {
       if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(e.target); }
       else if (e.key === "Backspace" && !e.target.value && tags.length) set(tags.slice(0, -1));
     },
     onchange: (e) => { if (e.target.value.trim()) add(e.target); } });
-  return h("div", { class: "field pl-field pl-tags-field", role: "group", "aria-labelledby": "pd-tags" },
-    h("span", { id: "pd-tags" }, "Tags"),
-    h("div", { class: "pl-member-list pl-tag-list" },
-      ...tags.map((t) => tagChip(t, "span", { class: tagPicked(t) ? "pl-tag-on" : "" },
-        h("button", { type: "button", class: "pl-tag-name", "aria-pressed": String(tagPicked(t)),
-          "aria-label": `Filter by ${t}`, onclick: () => pickTag(t, !tagPicked(t)) }, t),
-        ib({ type: "button", class: "icon-btn small", "aria-label": `Remove the tag ${t}`, title: "Remove", onclick: () => set(tags.filter((x) => x !== t)) }, "x"))),
-      tags.length < 20 ? input : null));
+  return prop("Tags", h("div", { class: "pl-member-list pl-tag-list pl-tags-field", role: "group", "aria-labelledby": "pd-tags" },
+    ...tags.map((t) => tagChip(t, "span", { class: tagPicked(t) ? "pl-tag-on" : "" },
+      h("button", { type: "button", class: "pl-tag-name", "aria-pressed": String(tagPicked(t)),
+        "aria-label": `Filter by ${t}`, onclick: () => pickTag(t, !tagPicked(t)) }, t),
+      ib({ type: "button", class: "icon-btn small", "aria-label": `Remove the tag ${t}`, title: "Remove", onclick: () => set(tags.filter((x) => x !== t)) }, "x"))),
+    tags.length < 20 ? input : null), "pd-tags");
 }
 
-// descriptionEl is the card's description: a text box that is always there,
-// saved when it loses focus (or on Ctrl+Enter). The same box stays across
-// redraws of the card while it has focus or unsaved text, so a change from
-// elsewhere doesn't take what is being typed.
-function descriptionEl(c) {
+// ---- the description: shown as Markdown; a click on it (or Edit) makes it
+// a text box, which leaving or Ctrl/Cmd+Enter saves and Esc cancels. Empty,
+// it is the box. pl.desc is the description's state while the card is open:
+// { id, el (the box, or null), saved (the text last loaded or saved),
+// version (the card's then, sent so the save is refused if someone else
+// changed the card since), editing, saving (the save on its way) }.
+
+// A press in progress (pointerdown, not up yet): what leaving the box
+// redraws waits for it, so the click it is part of lands where it was aimed.
+let pressing = false;
+document.addEventListener("pointerdown", () => { pressing = true; }, true);
+document.addEventListener("pointerup", () => { pressing = false; }, true);
+document.addEventListener("pointercancel", () => { pressing = false; }, true);
+const afterPress = (fn) => pressing ? document.addEventListener("click", () => setTimeout(fn), { once: true, capture: true }) : fn();
+
+// redrawDesc draws the description's section again, alone.
+function redrawDesc() {
+  const sec = $("#pd-desc-sec"), c = pl.detail;
+  if (sec && c) sec.replaceWith(descSection(c));
+}
+
+function editDesc() {
   const d = pl.desc;
-  if (d?.id === c.id && (document.activeElement === d.el || d.el.value !== d.saved)) return d.el;
-  const el = h("textarea", { class: "pl-desc-edit", rows: 4, maxlength: 20000, "aria-label": "Description",
-    placeholder: "What it is, who it's for, and how you'll know it's done. Markdown works." }, c.description || "");
-  const save = () => {
+  if (!d || pl.open !== d.id) return;
+  d.editing = true;
+  redrawDesc();
+  const el = pl.desc?.el;
+  el?.focus();
+  el?.setSelectionRange(el.value.length, el.value.length);
+}
+
+function descBox(d) {
+  const el = h("textarea", { class: "pl-desc-edit", id: "pd-desc", rows: 4, maxlength: 20000, "aria-label": "Description" }, d.saved);
+  // finish saves the text if it changed, then shows it rendered.
+  const finish = () => {
     const d = pl.desc;
-    if (d?.el !== el || el.value.trim() === (d.saved || "").trim()) return;
+    if (d?.el !== el || d.saving) return;
     const text = el.value;
-    saveText(d.id, "description", text, d.version, d.saved).then((v) => {
-      if (v && pl.desc?.el === el) Object.assign(pl.desc, { saved: text, version: v.version });
-    }).catch(fail);
+    if (text.trim() === d.saved.trim()) { d.editing = false; afterPress(() => { if (pl.desc?.el === el && document.activeElement !== el) redrawDesc(); }); return; }
+    d.saving = saveText(d.id, "description", text, d.version, d.saved).then((v) => {
+      if (v && pl.desc?.el === el) Object.assign(pl.desc, { saved: text, version: v.version, editing: false });
+    }).catch(fail).finally(() => {
+      if (pl.desc?.el !== el) return;
+      pl.desc.saving = null;
+      if (document.activeElement !== el) afterPress(redrawDesc);
+    });
   };
-  el.addEventListener("change", save);
+  el.addEventListener("change", finish);
+  // Not when the window, rather than the box, loses focus.
+  el.addEventListener("blur", () => { if (document.hasFocus()) finish(); });
   el.addEventListener("paste", pasteFiles);
-  el.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); } });
-  // version: the card's when the text was last loaded or saved, which the
-  // save sends to be refused if someone else changed the card since.
-  pl.desc = { id: c.id, el, saved: c.description || "", version: c.version };
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); el.blur(); finish(); }
+    else if (e.key === "Escape" && !e.isComposing) {
+      e.preventDefault();
+      e.stopPropagation(); // not the pane's Esc (close)
+      const d = pl.desc;
+      if (d?.el !== el || d.saving) return;
+      el.value = d.saved;
+      d.editing = false;
+      redrawDesc();
+      $("#pd-desc-sec .pl-desc-edit-btn")?.focus();
+    }
+  });
+  d.el = el;
   return el;
 }
 
-// claudeActions are the card's buttons that ask Claude, or what Claude
-// needs instead (hooks.claudeNeeded: a planner without a runner online).
-function claudeActions(c) {
+// descSection is the description: the box being typed in stays across
+// redraws of the card (while it has focus, unsaved text or a save on its
+// way), so a change from elsewhere doesn't take what is being typed.
+function descSection(c) {
+  let d = pl.desc;
+  if (d?.id !== c.id) d = pl.desc = { id: c.id, el: null, saved: c.description || "", version: c.version, editing: false, saving: null };
+  const keep = d.el && (document.activeElement === d.el || d.el.value !== d.saved || d.saving);
+  if (!keep) {
+    d.saved = c.description || "";
+    d.version = c.version;
+    d.el = null;
+  }
+  const boxed = keep || d.editing || !d.saved.trim();
+  const view = keep ? d.el : boxed ? descBox(d) : h("div", { class: "md pl-desc", id: "pd-desc", innerHTML: renderMarkdown(d.saved),
+    onclick: (e) => { if (!e.target.closest("a, button, input, summary") && !getSelection()?.toString()) editDesc(); } });
+  return h("section", { class: "pl-section pl-desc-sec", id: "pd-desc-sec", "aria-labelledby": "pd-desc-h" },
+    h("h3", { class: "pl-section-head" }, h("span", { id: "pd-desc-h" }, "Description"),
+      boxed ? null : ib({ type: "button", class: "icon-btn small pl-desc-edit-btn", "aria-label": "Edit the description", title: "Edit", onclick: editDesc }, "edit")),
+    view);
+}
+
+// ---- the card's head: its title (a click edits it), the column it is in
+// (a menu moves it), its status, and its actions.
+
+// renderTitle shows the title, a button that edits it in place, unless it
+// is being edited.
+function renderTitle(c) {
+  const el = $("#pd-title");
+  if (pl.editing && el.contains($("#pd-edit-title"))) return;
+  pl.editing = false;
+  el.classList.add("editable");
+  fill(el, h("button", { type: "button", class: "title-edit", onclick: editTitle }, c.title || ""));
+}
+
+// editTitle makes the title a box: Enter (or leaving it) saves, Esc cancels.
+function editTitle() {
+  const c = pl.detail;
+  if (!c || pl.editing) return;
+  pl.editing = true;
+  const { id, version } = c, base = c.title || "";
+  const el = $("#pd-title");
+  const t = h("input", { id: "pd-edit-title", class: "title-input", value: base, maxlength: 200, autocomplete: "off", "aria-label": "Title" });
+  let done = false;
+  const end = (refocus) => {
+    if (pl.open !== id) return;
+    pl.editing = false;
+    if (pl.detail) renderTitle(pl.detail);
+    if (refocus) $("#pd-title .title-edit")?.focus();
+  };
+  const save = async (refocus) => {
+    if (done) return;
+    done = true;
+    const v = t.value.trim();
+    if (v && v !== base) {
+      t.readOnly = true;
+      try { await saveText(id, "title", v, version, base); } catch (e) { fail(e); }
+    }
+    end(refocus);
+  };
+  t.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
+    if (e.key === "Enter") { e.preventDefault(); save(true); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done = true; end(true); }
+  });
+  t.addEventListener("blur", () => { if (document.hasFocus()) save(false); });
+  el.classList.remove("editable");
+  fill(el, t);
+  t.focus();
+  t.select();
+}
+
+// columnPicker is the column the card is in, a button whose menu moves it
+// to another.
+function columnPicker(c) {
+  const col = COLUMNS.find((x) => x.key === c.column);
+  const name = col?.title || c.column;
+  return h("button", { type: "button", class: `pl-col-tag s-${col?.s || "draft"}`, id: "pd-column", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": `Column: ${name}`,
+    onclick: (e) => popMenu(e.currentTarget, [COLUMNS.map((x) => [x.key === c.column ? "check" : "right", x.title,
+      () => x.key !== c.column && moveCard(c.id, x.key, 1 << 20), { title: x.key === c.column ? "" : `Move to ${x.title}` }])], { heading: "Column" }) },
+    h("span", {}, name), ico("down"));
+}
+
+// actionsEl is the card's actions: Start… (the main one), Write a feature
+// brief, and the rest in a menu. Without Claude for the user
+// (hooks.claudeNeeded: a planner without a runner online), what it needs
+// shows in place of the brief, and Ask in chat isn't offered.
+function actionsEl(c) {
   const needed = pl.hooks.claudeNeeded?.();
-  if (needed) return [needed];
+  const more = [
+    pl.planner ? null : ["link", "Link existing…", () => linkExistingSheet(c)],
+    !needed && pl.hooks.askChat ? ["comment", "Ask in chat", () => pl.hooks.askChat(c)] : null,
+  ].filter(Boolean);
   return [
-    pl.hooks.featureBrief ? ib({ type: "button", class: "btn small", title: c.description ? "Claude interviews you about this card and refines its description into a brief" : "Claude interviews you about this card and writes its description as a brief",
-      onclick: () => pl.hooks.featureBrief({ card: c, project: pl.filter }) }, "spark", "Write a feature brief") : null,
-    pl.hooks.askChat ? ib({ type: "button", class: "btn small", title: c.project_id && !pl.planner ? "Ask Claude about this card in its project's chat" : "Ask Claude about this card in the general chat",
-      onclick: () => pl.hooks.askChat(c) }, "comment", "Ask in chat") : null,
+    ib({ type: "button", class: "btn small primary", id: "pd-start", onclick: attempt(() => startSheet(c)) }, "play", "Start…"),
+    needed || (pl.hooks.featureBrief ? ib({ type: "button", class: "btn small", id: "pd-brief",
+      onclick: () => pl.hooks.featureBrief({ card: c, project: pl.filter }) }, "spark", "Write a feature brief") : null),
+    more.length ? ib({ type: "button", class: "icon-btn pl-more-btn", id: "pd-more", "aria-label": "More actions", title: "More", "aria-haspopup": "menu", "aria-expanded": "false",
+      onclick: (e) => popMenu(e.currentTarget, [more]) }, "more") : null,
   ];
 }
 
@@ -1382,45 +1529,37 @@ function claudeActions(c) {
 // Claude can run for the user changed (hooks.claudeNeeded).
 export function claudeChanged() { renderCard(); }
 
+// renderCard draws the open card: its head, then the description first
+// (on a phone it shows without scrolling), its properties, the sections
+// with something in them, the Add row, the comments.
 function renderCard() {
   const c = pl.detail;
   if (!c || paneEl().hidden) return;
-  $("#pd-title").textContent = c.title || "";
+  renderTitle(c);
   fill($("#pd-meta"),
-    h("span", { class: "pl-col-tag" }, COLUMN_TITLE[c.column] || c.column),
+    columnPicker(c),
     c.status ? statusEl(c.status) : null,
     c.created_at ? h("span", { title: dateTimeText(c.created_at) }, `added ${dateText(c.created_at)}`) : null);
-  const started = (c.links || []).length > 0;
-  fill($("#pd-actions"),
-    ib({ type: "button", class: `btn small ${started ? "" : "primary"}`, title: "Make a task or a goal in a project for this card", onclick: attempt(() => startSheet(c)) }, "play", "Start…"),
-    pl.planner ? null : ib({ type: "button", class: "btn small", title: "Link a task or goal that's already on a board", onclick: attempt(() => linkExistingSheet(c)) }, "link", "Link existing…"),
-    ...claudeActions(c),
-    ib({ type: "button", class: "btn small", title: "Change the title", onclick: () => { pl.editing = true; renderCard(); $("#pd-edit-title")?.focus(); } }, "edit", "Rename"),
-    ib({ type: "button", class: "btn small", title: "Copy a link that opens this card", onclick: () => copy(linkTo({ view: "planning", card: c.id }), "Link copied") }, "link", "Copy link"));
+  fill($("#pd-actions"), ...actionsEl(c));
   const body = $("#pd-body");
   if (pl.error) { fill(body, h("p", { class: "error-note" }, pl.error)); return; }
-
-  const desc = descriptionEl(c);
-  desc.id = "pd-desc";
   const keep = body.scrollTop;
-  fill(body, renameEl(c), suggestEl(c), factsEl(c),
-    h("section", { class: "pl-section" }, h("h3", {}, h("label", { for: "pd-desc" }, "Description")), desc),
-    filesSection(c), depsSection(c), workSection(c), commentsSection(c), dangerEl(c));
+  fill(body, suggestEl(c), descSection(c), propsEl(c), workSection(c), depsSection(c), filesSection(c), addRow(c),
+    commentsSection(c), dangerEl(c));
   body.scrollTop = keep;
 }
 
-// factsEl is the card's fields: board, column, priority, target, project,
-// members and tags.
-function factsEl(c) {
-  const sel = (opts, value, onchange, label) => h("select", { "aria-label": label, onchange }, ...opts.map(([v, t]) => h("option", { value: v, selected: v === value }, t)));
-  return h("div", { class: "pl-fields" },
-    pl.boards.length > 1 ? field("Board", sel(pl.boards.map((b) => [b.id, b.name]), c.board_id, (e) => moveToBoard(c, e.target.value).catch(fail), "Board")) : null,
-    field("Column", sel(COLUMNS.map((x) => [x.key, x.title]), c.column, (e) => moveCard(c.id, e.target.value, 1 << 20).catch(fail), "Column")),
-    field("Priority", sel([["", "None"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]], c.priority || "", (e) => patchCard({ priority: e.target.value })().catch(fail), "Priority")),
-    field("Target", h("input", { value: c.target || "", placeholder: "1.4, or a date", maxlength: 60, autocomplete: "off",
+// propsEl is the card's properties, compact: board, priority, target,
+// project, members and tags. (The column is the head's picker.)
+function propsEl(c) {
+  const sel = (opts, value, onchange) => h("select", { onchange }, ...opts.map(([v, t]) => h("option", { value: v, selected: v === value }, t)));
+  return h("div", { class: "pl-props" },
+    pl.boards.length > 1 ? prop("Board", sel(pl.boards.map((b) => [b.id, b.name]), c.board_id, (e) => moveToBoard(c, e.target.value).catch(fail))) : null,
+    prop("Priority", sel([["", "None"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]], c.priority || "", (e) => patchCard({ priority: e.target.value })().catch(fail))),
+    prop("Target", h("input", { value: c.target || "", maxlength: 60, autocomplete: "off",
       onchange: (e) => patchCard({ target: e.target.value })().catch(fail) })),
-    field("Project", sel([["", "None yet"], ...pl.projects.map((p) => [p.id, p.name])], c.project_id || "",
-      (e) => patchCard({ project: e.target.value })().catch(fail), "Project")),
+    prop("Project", sel([["", "None"], ...pl.projects.map((p) => [p.id, p.name])], c.project_id || "",
+      (e) => patchCard({ project: e.target.value })().catch(fail))),
     membersField(c),
     tagsField(c));
 }
@@ -1433,43 +1572,27 @@ function suggestEl(c) {
     ib({ type: "button", class: "btn small primary", onclick: attempt((e) => busy(e.currentTarget, () => moveCard(c.id, "done", 0))) }, "check", "Move to Done"));
 }
 
-// renameEl is the title in a box, above the rest, while renaming.
-function renameEl(c) {
-  if (!pl.editing) return null;
-  const t = h("input", { id: "pd-edit-title", value: c.title, maxlength: 200, autocomplete: "off", "aria-label": "Title" });
-  const save = attempt((e) => busy(e.currentTarget, async () => {
-    await saveText(c.id, "title", t.value, c.version, c.title || ""); pl.editing = false; renderCard();
-  }));
-  t.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); save({ currentTarget: t }); }
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); pl.editing = false; renderCard(); }
-  });
-  return h("div", { class: "pl-edit" }, field("Title", t),
-    h("div", { class: "pl-edit-actions" },
-      ib({ type: "button", class: "btn small", onclick: () => { pl.editing = false; renderCard(); } }, "x", "Cancel"),
-      ib({ type: "button", class: "btn small primary", onclick: save }, "check", "Save")));
-}
-
-// workSection lists the tasks and goals started for the card.
+// workSection lists the tasks and goals started for the card, when there are some.
 function workSection(c) {
   const links = c.links || [];
+  if (!links.length) return null;
   return h("section", { class: "pl-section", "aria-labelledby": "pd-work" },
     h("h3", { id: "pd-work" }, "Work"),
-    links.length
-      ? h("ul", { class: "pl-links" }, ...links.map((l) => h("li", { class: `pl-link t-${l.tone}` },
-        h("span", { class: "pl-link-kind", title: l.kind === "goal" ? "Goal" : "Task" }, ico(l.kind === "goal" ? "target" : "checks")),
-        h("span", { class: "pl-link-main" },
-          !pl.planner && l.id && pl.hooks.openWork
-            ? h("button", { type: "button", class: "link pl-link-title", title: `Open the ${l.kind}`, onclick: () => pl.hooks.openWork(l) }, l.title)
-            : h("span", { class: "pl-link-title" }, l.title),
-          h("span", { class: "pl-link-sub" }, l.project ? `${l.kind === "goal" ? "Goal" : "Task"} in ${l.project}` : l.kind === "goal" ? "Goal" : "Task")),
-        h("span", { class: `pl-state t-${l.tone}` }, l.state),
-        !pl.planner && l.id ? ib({ type: "button", class: "icon-btn small", "aria-label": `Unlink ${l.title}`, title: "Unlink",
-          onclick: attempt((e) => busy(e.currentTarget, () => unlink(c, l))) }, "x") : null)))
-      : h("p", { class: "hint" }, "Nothing started yet. Start makes a task or a goal for this card in a project."));
+    h("ul", { class: "pl-links" }, ...links.map((l) => h("li", { class: `pl-link t-${l.tone}` },
+      h("span", { class: "pl-link-kind", title: l.kind === "goal" ? "Goal" : "Task" }, ico(l.kind === "goal" ? "target" : "checks")),
+      h("span", { class: "pl-link-main" },
+        !pl.planner && l.id && pl.hooks.openWork
+          ? h("button", { type: "button", class: "link pl-link-title", onclick: () => pl.hooks.openWork(l) }, l.title)
+          : h("span", { class: "pl-link-title" }, l.title),
+        h("span", { class: "pl-link-sub" }, l.project ? `${l.kind === "goal" ? "Goal" : "Task"} in ${l.project}` : l.kind === "goal" ? "Goal" : "Task")),
+      h("span", { class: `pl-state t-${l.tone}` }, l.state),
+      !pl.planner && l.id ? ib({ type: "button", class: "icon-btn small", "aria-label": `Unlink ${l.title}`, title: "Unlink",
+        onclick: attempt((e) => busy(e.currentTarget, () => unlink(c, l))) }, "x") : null))));
 }
 
-// commentsSection is the card's discussion and the box to add a comment.
+// commentsSection is the card's discussion, each comment in Markdown with
+// how long ago it was written (the date on hover), and the box to add one.
+// Its author may delete a comment (the icon shows on hover or focus).
 function commentsSection(c) {
   const comments = c.discussion || [];
   const me = pl.hooks.me?.();
@@ -1479,10 +1602,10 @@ function commentsSection(c) {
     comments.length ? h("ol", { class: "pl-comments-list" }, ...comments.map((m) => h("li", { class: "pl-comment" },
       h("div", { class: "pl-comment-head" },
         h("strong", {}, m.author_name || "Someone"),
-        h("time", { datetime: m.created_at, title: dateTimeText(m.created_at) }, dateTimeText(m.created_at)),
-        me && (m.author === me.id || me.admin) ? ib({ type: "button", class: "icon-btn small", "aria-label": "Delete comment", title: "Delete",
+        h("time", { datetime: m.created_at, title: dateTimeText(m.created_at) }, agoText(m.created_at)),
+        me && m.author === me.id ? ib({ type: "button", class: "icon-btn small pl-comment-del", "aria-label": "Delete comment", title: "Delete",
           onclick: attempt(async () => { if (await ask({ title: "Delete this comment?", ok: "Delete", danger: true })) await call("DELETE", cardAPI(c.id, `/comments/${m.id}`)); await loadCard(c.id); }) }, "trash") : null),
-      h("p", { class: "pl-comment-text" }, m.text)))) : null,
+      h("div", { class: "md pl-comment-text", innerHTML: renderMarkdown(m.text || "") })))) : null,
     h("form", { class: "pl-comment-form", onsubmit: attempt(async (e) => {
       e.preventDefault();
       const text = box.value.trim();
@@ -1532,24 +1655,23 @@ function cardRow(d, remove) {
   return h("li", { class: `pl-link t-${d.done ? "done" : "idle"}` },
     h("span", { class: "pl-link-kind", title: "Card" }, ico("plan")),
     h("span", { class: "pl-link-main" },
-      h("button", { type: "button", class: "link pl-link-title", title: "Open the card", onclick: () => openCard(d.id).catch(fail) }, d.title),
+      h("button", { type: "button", class: "link pl-link-title", onclick: () => openCard(d.id).catch(fail) }, d.title),
       h("span", { class: "pl-link-sub" }, [COLUMN_TITLE[d.column] || d.column, d.board && pl.boards.length > 1 && d.board !== pl.detail?.board_name ? `on ${d.board}` : ""].filter(Boolean).join(" · "))),
     h("span", { class: `pl-state t-${d.done ? "done" : "idle"}` }, d.done ? "Done" : "Not done yet"),
-    remove ? ib({ type: "button", class: "icon-btn small", "aria-label": `Remove ${d.title}`, title: "No longer depends on it",
+    remove ? ib({ type: "button", class: "icon-btn small", "aria-label": `Remove ${d.title}`, title: "Remove",
       onclick: attempt((e) => busy(e.currentTarget, remove)) }, "x") : null);
 }
 
+// depsSection is the cards this one depends on, and those that wait for
+// it, each when there are some. The Add row's Dependency adds one.
 function depsSection(c) {
   const deps = c.deps || [];
   const ids = deps.map((d) => d.id);
   const needed = c.needed_by || [];
   return [
-    h("section", { class: "pl-section", "aria-labelledby": "pd-deps" },
+    deps.length ? h("section", { class: "pl-section", "aria-labelledby": "pd-deps" },
       h("h3", { id: "pd-deps" }, "Depends on"),
-      deps.length
-        ? h("ul", { class: "pl-links" }, ...deps.map((d) => cardRow(d, () => patchCard({ depends_on: ids.filter((x) => x !== d.id) })())))
-        : h("p", { class: "hint" }, "No other cards. Add the ones that must be done before this one."),
-      ib({ type: "button", class: "btn small pl-dep-add", title: "Add a card that must be done before this one", onclick: attempt(() => depSheet(c)) }, "plus", "Add a card…")),
+      h("ul", { class: "pl-links" }, ...deps.map((d) => cardRow(d, () => patchCard({ depends_on: ids.filter((x) => x !== d.id) })())))) : null,
     needed.length ? h("section", { class: "pl-section", "aria-labelledby": "pd-needed" },
       h("h3", { id: "pd-needed" }, "Needed by"),
       h("ul", { class: "pl-links" }, ...needed.map((d) => cardRow(d)))) : null,
@@ -1587,7 +1709,7 @@ async function depSheet(c) {
   };
   q.addEventListener("input", render);
   render();
-  const done = sheet("Depends on", [h("p", { class: "hint" }, "Pick a card that must be done before this one."), q, list], null);
+  const done = sheet("Depends on", [q, list], null);
   q.focus();
   await done;
   if (!picked) return;

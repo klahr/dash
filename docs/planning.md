@@ -38,7 +38,7 @@ It looks like a project's **Board**: on a phone, tap a column's name at the top 
   starts a new line, `Esc` cancels. Clicking elsewhere adds it, if you typed something.
 - Drag a card to another column, or up and down its own. A gap opens where it would land,
   and the cards around it move aside. Hold it near the top or bottom of the screen to scroll. With the keyboard, focus a card
-  and press `Alt` with an arrow key. On a phone, drag it onto a column's name at the top, or change **Column** on the card.
+  and press `Alt` with an arrow key. On a phone, drag it onto a column's name at the top, or pick the column in the open card's head.
 - The project filter at the top shows one project's cards. A card may name a project, or
   none yet. Picking a project in the sidebar picks it here too; opening the page keeps the
   filter you had.
@@ -53,14 +53,31 @@ It looks like a project's **Board**: on a phone, tap a column's name at the top 
 - The filters stay as you left them, and are in the page's address, so a link shows the same
   cards (see [Links](links.md)).
 
-Click a card to open it beside the board. On a phone it opens full screen, with **Back**.
-`Esc` closes it. A card has:
+Click a card to open it beside the board. The board narrows, so the card stays in sight. On a
+phone it opens full screen, with **Back**. `Esc` closes it.
 
-- a title: **Rename**
+The card's head has:
+
+- the title: click it to edit it. `Enter` saves, `Esc` cancels.
+- the column, such as **Planned**: click it to move the card to another column.
+- the status of its work, and when it was added.
+- **Start…**: start a task or a goal for the card (see [Start](#start)).
+- **Write a feature brief** (see [Write a feature brief](#write-a-feature-brief)).
+- **⋯**: **Link existing…** and **Ask in chat**.
+- the link icon: copy the card's link.
+
+Below the head:
+
+- **Description** (markdown), shown formatted. Click it, or the pencil, to edit it. It saves
+  when you click elsewhere, or press `Ctrl+Enter` (`Cmd+Enter` on a Mac). `Esc` cancels. The
+  card on the board shows its first paragraph as plain text, without headings.
+  If someone else saved the title or description while you were editing it, Dash asks:
+  **Reload theirs** drops your text, **Keep mine** replaces theirs.
 - **Board**, with more than one board: pick another to move the card there, to the end of its
   column. It leaves the board shown.
 - **Priority** (high, medium, low or none) and **Target**: free text, such as a version
   (`1.4`), a milestone or a date. Give cards of one milestone the same target, and filter by it.
+- **Project**: the project the card is for, or none yet.
 - **Members**: the people in the org on the card, any number. Pick one from the list to add
   them, and click **×** on a member to take them off. Their pictures show on the card on the
   board; someone without a picture shows as their initials on a colour of their own. Anyone in the org, planners too, can be a member and can add members. On
@@ -75,32 +92,31 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   and press `Enter` (or a comma) to add it; the org's other tags are offered as you type.
   Click **×** on a tag to take it off. Tags show on the card on the board, each in a colour of
   its own. Case doesn't matter: `Backend` and `backend` are the same tag.
-- **Description** (markdown): type in the box. It saves when you click elsewhere, or press
-  `Ctrl+Enter`. The card on the board shows its first paragraph as plain text, without
-  headings.
-  If someone else saved the title or description while you were editing it, Dash asks:
-  **Reload theirs** drops your text, **Keep mine** replaces theirs.
+- **Work**: the tasks and goals linked to it, each with its status.
+- **Depends on**: the cards that must be done before this one, on any board. **+ Dependency**
+  picks one; **×** takes it off. A card can't depend on itself, or on a card that already
+  depends on it. **Needed by** lists the cards that depend on this one. Click a card in either
+  list to open it.
 - **Files**: pictures (PNG, JPEG, GIF, WebP, SVG), PDFs and text files (`.txt`, `.md`, `.log`,
-  `.json`, `.csv`), up to 20 MB each and 30 a card. Click **Attach file**, paste into the
+  `.json`, `.csv`), up to 20 MB each and 30 a card. Click **+ File**, paste into the
   description or a comment, or drop files on the open card, or on a card on the board. Anyone in
   the org, planners too, can attach and remove files. A card with a picture shows the first one
   across its top on the board, and how many files it has by a paper clip.
-- **Depends on**: the cards that must be done before this one, on any board. **Add a card…** picks one;
-  **×** takes it off. A card can't depend on itself, or on a card that already depends on it.
-  **Needed by** lists the cards that depend on this one. Click a card in either list to open it.
+- **Comments**: anyone in the org can comment, in markdown. Each shows how long ago it was
+  written; point at the time for the date. Point at your own comment to delete it. A card with
+  comments shows how many on the board, by a speech bubble. Write `@` and
+  someone's username, such as `@pia`, to mention them: they get a
+  [notification](notifications.md#planning-cards).
 - **Delete card…**: the card's creator, its owner or an admin can delete a card. Before it
   goes, the card names the tasks and goals that lose their card and the cards that no longer
   depend on it. It can't be undone.
-- **Comments**: anyone in the org can comment; a comment's author or an admin can delete it.
-  A card with comments shows how many on the board, by a speech bubble. Write `@` and
-  someone's username, such as `@pia`, to mention them: they get a
-  [notification](notifications.md#planning-cards).
-- **Work**: the tasks and goals linked to it, each with its status
 
-**Copy link** in the card's head copies its address, `/planning/cards/<id>`. It opens the card
+Work, Depends on, Needed by and Files show only when they have something in them.
+
+The link icon in the card's head copies its address, `/planning/cards/<id>`. It opens the card
 for anyone in the org, after signing in if needed (see [Links](links.md)).
 
-**Ask in chat** in the card's head opens the chat about the card: its project's chat, or the
+**Ask in chat**, under **⋯** in the card's head, opens the chat about the card: its project's chat, or the
 **General** chat for a card of no project. The message box starts with the card's title and id;
 add your question and send it. Claude reads the card with `get_card`. A planner's opens their
 **Chat**, on their own runner. Without one online, the card says **Install a runner to use
@@ -240,7 +256,7 @@ member who presses **Start** owns the goal themselves.
 
 Members can link work that is already on a board:
 
-- On the card: **Link existing…**, then pick a task or goal.
+- On the card: **⋯** → **Link existing…**, then pick a task or goal.
 - On a task: **⋯ → Link to a planning card…**.
 - On a goal: **Link to card**.
 

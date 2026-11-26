@@ -36,7 +36,7 @@ func TestBrowserLinks(t *testing.T) {
 	)
 	b.waitJS("the card open on Planning", `document.querySelector("#view-planning.active") && !document.querySelector("#card-detail").hidden && document.querySelector("#pd-title")?.textContent === "Linked card"`)
 	b.waitJS("its URL", path("/planning/cards/"+card.ID))
-	b.waitJS("the Copy link button", `[...document.querySelectorAll("#pd-actions button")].some((e) => e.textContent === "Copy link")`)
+	b.waitJS("the Copy link button, in the head", `document.querySelector("#card-detail .detail-head #pd-copy")?.getAttribute("aria-label") === "Copy link"`)
 	// Back closes it and stays on Planning, as the pane's Back button would.
 	b.do("go back", chromedp.NavigateBack())
 	b.waitJS("the card closed", `document.querySelector("#card-detail").hidden && document.querySelector("#view-planning.active")`)

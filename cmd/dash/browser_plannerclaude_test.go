@@ -95,7 +95,7 @@ func TestBrowserPlannerClaude(t *testing.T) {
 	b.until("open the card", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-desc")`,
 		chromedp.Click(chromedp.CSS(card+" .pl-open")))
 	b.until("write a feature brief", `document.querySelector("#feature-sheet").open && !document.querySelector("#plan-work").hidden`,
-		chromedp.Click(chromedp.CSS(`#pd-actions button[title^="Claude interviews you about this card"]`)))
+		chromedp.Click(chromedp.CSS(`#pd-brief`)))
 	b.waitJS("the card's idea, on the runner", `document.querySelector("#plan-idea").value === "Finance wants the reports as files." &&
 		document.querySelector("#plan-where").textContent.includes("pias-mac")`)
 	b.until("start the interview", `document.querySelector(".plan-q-card")`, chromedp.Click(chromedp.CSS(`#plan-next:not(:disabled)`)))

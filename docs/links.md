@@ -6,7 +6,7 @@ opens the same place, and a copied address opens it for someone else.
 ## Share a task, a card or a goal
 
 - A task: open it and click **Copy link** (the link icon beside **More actions**).
-- A Planning card: open it and click **Copy link**.
+- A Planning card: open it and click the link icon in its head.
 - A goal: open it on **Goals** and click **Copy link**.
 
 Anyone who can see the project (or, for a card, is in the organization) opens the same item.

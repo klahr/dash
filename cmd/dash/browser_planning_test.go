@@ -246,9 +246,9 @@ func TestBrowserPlanningAskInChat(t *testing.T) {
 	b.until("open the card", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-desc")`,
 		chromedp.Click(chromedp.CSS(card+" .pl-open")))
 	want := fmt.Sprintf(`About the planning card "Dark mode" (card %s): `, c.ID)
-	b.until("the general chat, about the card", fmt.Sprintf(`!document.querySelector("#chat-pane").hidden && !document.querySelector("#chat-general").hidden &&
-		document.querySelector("#chat-general textarea")?.value === %q`, want),
-		chromedp.Click(chromedp.CSS(`#pd-actions button[title^="Ask Claude about this card"]`)))
+	b.until("the card's menu", `!!document.querySelector(".pop-menu")`, chromedp.Click(chromedp.CSS(`#pd-more`)))
+	b.clickTextUntil(".pop-menu [role=menuitem]", "Ask in chat", fmt.Sprintf(`!document.querySelector("#chat-pane").hidden && !document.querySelector("#chat-general").hidden &&
+		document.querySelector("#chat-general textarea")?.value === %q`, want))
 	b.waitJS("nothing sent", `!document.querySelector("#chat-general .chat-log .msg")`)
 
 	// On a phone, a card of a project opens that project's chat, full screen.
@@ -262,12 +262,12 @@ func TestBrowserPlanningAskInChat(t *testing.T) {
 	b.waitJS("the card, full screen", `!document.querySelector("#card-detail").hidden && document.querySelector("#pd-title")?.textContent === "Gift cards" &&
 		document.querySelector("#card-detail").offsetWidth >= innerWidth - 1`)
 	want = fmt.Sprintf(`About the planning card "Gift cards" (card %s): `, c2.ID)
-	b.until("shop's chat, full screen, about the card", fmt.Sprintf(`(() => {
+	b.until("the card's menu", `!!document.querySelector(".pop-menu")`, chromedp.Click(chromedp.CSS(`#pd-more`)))
+	b.clickTextUntil(".pop-menu [role=menuitem]", "Ask in chat", fmt.Sprintf(`(() => {
 		const pane = document.querySelector("#chat-pane");
 		const panel = [...pane.querySelectorAll(".chat-panel[data-chat]")].find((p) => !p.hidden);
 		return !pane.hidden && pane.offsetWidth >= innerWidth - 1 && panel?.querySelector("textarea")?.value === %q;
-	})()`, want),
-		chromedp.Click(chromedp.CSS(`#pd-actions button[title^="Ask Claude about this card"]`)))
+	})()`, want))
 }
 
 // A card's pane adds a card it depends on from a list of the org's cards;
@@ -285,7 +285,7 @@ func TestBrowserPlanningCardDeps(t *testing.T) {
 	b.until("open Planning", `document.querySelector("#view-planning.active")`,
 		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
 	card := fmt.Sprintf(`#view-planning .pl-card[data-id=%q]`, second.ID)
-	b.until("open Billing", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-deps")`,
+	b.until("open Billing", `!document.querySelector("#card-detail").hidden && !!document.querySelector(".pl-add-row .pl-dep-add") && !document.querySelector("#pd-deps")`,
 		chromedp.Click(chromedp.CSS(card+" .pl-open")))
 	b.until("the list of cards", `!!document.querySelector("dialog .pl-pick-item")`,
 		chromedp.Click(chromedp.CSS(`.pl-dep-add`)))
@@ -401,9 +401,9 @@ func TestBrowserPlanningBoards(t *testing.T) {
 	}
 
 	// An open card moves to another board, and leaves the one shown.
-	b.until("open Push alerts", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-body select[aria-label=Board]")`,
+	b.until("open Push alerts", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-board")`,
 		chromedp.Click(chromedp.CSS(cardOf(onMobile.ID)+" .pl-open")))
-	b.run("move it to Main", `(() => { const s = document.querySelector("#pd-body select[aria-label=Board]"); s.value = s.options[0].value; s.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`)
+	b.run("move it to Main", `(() => { const s = document.querySelector("#pd-board"); s.value = s.options[0].value; s.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`)
 	b.waitJS("gone from Mobile", fmt.Sprintf(`!document.querySelector(%q)`, cardOf(onMobile.ID)))
 	if got := titles(""); len(got) != 2 || got[1] != "Push alerts" {
 		t.Fatalf("Main's cards after the move: %v", got)
@@ -485,4 +485,98 @@ func TestBrowserPlanningStart(t *testing.T) {
 	if td.Status != "draft" || td.Prompt != "Export the monthly reports as PDF." {
 		t.Fatalf("the task: %+v", td)
 	}
+}
+
+// The open card: Start… the one main action, Write a feature brief beside
+// it and the rest in ⋯; Copy link in the head; the title edited in place;
+// the column a menu in the head; the description first, as Markdown, a box
+// on a click; sections only when they have something, else a small Add; no
+// help texts. Comments are Markdown, with how long ago, and their author's
+// delete. The pane lies beside the board, which keeps every column and the
+// card in sight; on a phone it is full screen, the description in sight.
+func TestBrowserPlanningOpenCard(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	var c struct{ ID string }
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Export reports", "column": "planned", "description": "## Why\nSo **finance** can file them."}, http.StatusCreated, &c)
+	for _, col := range []string{"ideas", "in_progress", "done"} {
+		h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Card in " + col, "column": col}, http.StatusCreated, nil)
+	}
+	h.api.must("POST", "/api/planning/cards/"+c.ID+"/comments", map[string]any{"text": "Mine, with **bold**."}, http.StatusCreated, nil)
+	var me struct{ Org struct{ ID int64 } }
+	h.api.must("GET", "/api/me", nil, http.StatusOK, &me)
+	var inv struct{ Token string }
+	h.api.must("POST", fmt.Sprintf("/api/orgs/%d/invitations", me.Org.ID), map[string]any{"email": "ana@example.com", "password": h.password}, http.StatusCreated, &inv)
+	ana := newClient(t, h.base)
+	ana.must("POST", "/api/invitations/register", map[string]any{"token": inv.Token, "username": "ana", "password": "another-long-password"}, http.StatusCreated, nil)
+	ana.must("POST", "/api/planning/cards/"+c.ID+"/comments", map[string]any{"text": "Ana's."}, http.StatusCreated, nil)
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open Planning", `document.querySelector("#view-planning.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
+	card := fmt.Sprintf(`#view-planning .pl-card[data-id=%q]`, c.ID)
+	b.until("open the card", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-desc")`,
+		chromedp.Click(chromedp.CSS(card+" .pl-open")))
+	b.waitJS("Start… the main action, the brief, ⋯; Copy link in the head", `(() => {
+		const a = [...document.querySelectorAll("#pd-actions > button")];
+		return a.map((x) => x.textContent || x.getAttribute("aria-label")).join() === "Start…,Write a feature brief,More actions" &&
+			document.querySelectorAll("#pd-actions .btn.primary").length === 1 && document.querySelector("#pd-start").matches(".primary") &&
+			!!document.querySelector(".detail-head > #pd-copy"); })()`)
+	b.waitJS("the description first, as Markdown; the properties after it, no Column select", `(() => {
+		const d = document.querySelector("#pd-desc");
+		return d.tagName === "DIV" && d.querySelector("h2")?.textContent === "Why" && d.querySelector("strong")?.textContent === "finance" &&
+			!!(d.compareDocumentPosition(document.querySelector(".pl-props")) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+			!document.querySelector("#pd-column-select, #pd-body select[aria-label=Column]") && !document.querySelector("#pd-body #pd-column"); })()`)
+	b.waitJS("no empty sections, a small Add instead, and no help texts", `!document.querySelector("#pd-files, #pd-deps, #pd-work") &&
+		[...document.querySelectorAll(".pl-add-row button")].map((x) => x.textContent).join() === "File,Dependency" &&
+		!document.querySelector("#card-detail .hint, #card-detail [placeholder*='.']") && !document.querySelector("#pd-actions [title]:not(#pd-more)")`)
+	b.waitJS("comments: Markdown, how long ago, the date on hover, delete only on your own", `(() => {
+		const cs = [...document.querySelectorAll(".pl-comment")];
+		return cs.length === 2 && cs[0].querySelector(".pl-comment-text strong")?.textContent === "bold" &&
+			cs[0].querySelector("time").textContent === "just now" && cs[0].querySelector("time").title.length > 8 &&
+			!!cs[0].querySelector(".pl-comment-del") && !cs[1].querySelector(".pl-comment-del") &&
+			getComputedStyle(cs[0].querySelector(".pl-comment-del")).opacity === "0"; })()`)
+	b.waitJS("the pane beside the board: every column, the card in sight and selected", fmt.Sprintf(`(() => {
+		const pane = document.querySelector("#card-detail").getBoundingClientRect();
+		const cols = [...document.querySelectorAll("#view-planning .pl-col")].map((x) => x.getBoundingClientRect());
+		const r = document.querySelector(%q).getBoundingClientRect();
+		return cols.length === 4 && cols.every((x) => x.right <= pane.left + 1 && x.width > 100) && r.right <= pane.left && r.left >= 0 &&
+			document.querySelector(%q).matches(".selected"); })()`, card, card+" .todo"))
+	shot(b, "planning-card-wide")
+
+	// The title, in place: Esc cancels, Enter saves.
+	b.until("edit the title", `document.activeElement?.id === "pd-edit-title"`, chromedp.Click(chromedp.CSS(`#pd-title .title-edit`)))
+	b.do("type, then Esc", chromedp.KeyEvent(kb.End), chromedp.SendKeys(`#pd-edit-title`, " as PDF"), chromedp.KeyEvent(kb.Escape))
+	b.waitJS("cancelled, the pane still open", `document.querySelector("#pd-title").textContent === "Export reports" && !document.querySelector("#card-detail").hidden`)
+	b.until("edit it again", `document.activeElement?.id === "pd-edit-title"`, chromedp.Click(chromedp.CSS(`#pd-title .title-edit`)))
+	b.do("type, then Enter", chromedp.KeyEvent(kb.End), chromedp.SendKeys(`#pd-edit-title`, " as PDF"), chromedp.KeyEvent(kb.Enter))
+	b.waitJS("saved, on the board too", fmt.Sprintf(`document.querySelector("#pd-title").textContent === "Export reports as PDF" && document.querySelector(%q)?.textContent === "Export reports as PDF"`, card+" .todo-title"))
+
+	// The column: the head's chip is a menu.
+	b.until("the column menu", `!!document.querySelector(".pop-menu")`, chromedp.Click(chromedp.CSS(`#pd-column`)))
+	b.clickTextUntil(".pop-menu [role=menuitem]", "In progress", fmt.Sprintf(`document.querySelector("#pd-column").textContent === "In progress" && !!document.querySelector(%q)`,
+		`#view-planning .pl-col[data-col=in_progress] .pl-card[data-id="`+c.ID+`"]`))
+
+	// The description: a click makes it a box; Esc cancels, Ctrl+Enter saves.
+	b.until("edit the description", `document.activeElement === document.querySelector("textarea#pd-desc")`, chromedp.Click(chromedp.CSS(`#pd-desc`)))
+	b.do("type, then Esc", chromedp.SendKeys(`textarea#pd-desc`, "\nDropped."), chromedp.KeyEvent(kb.Escape))
+	b.waitJS("as it was, the pane still open", `document.querySelector("#pd-desc").tagName === "DIV" && !document.querySelector("#pd-desc").textContent.includes("Dropped") && !document.querySelector("#card-detail").hidden`)
+	b.until("edit it with the pencil", `document.activeElement === document.querySelector("textarea#pd-desc")`, chromedp.Click(chromedp.CSS(`.pl-desc-edit-btn`)))
+	b.do("type, then Ctrl+Enter", chromedp.SendKeys(`textarea#pd-desc`, "\n\n- *Monthly*"), chromedp.KeyEvent(kb.Enter, chromedp.KeyModifiers(chromedp.ModifierCtrl)))
+	b.waitJS("saved, as Markdown", `document.querySelector("#pd-desc").tagName === "DIV" && document.querySelector("#pd-desc li em")?.textContent === "Monthly"`)
+	var v struct{ Description string }
+	h.api.must("GET", "/api/planning/cards/"+c.ID, nil, http.StatusOK, &v)
+	if v.Description != "## Why\nSo **finance** can file them.\n\n- *Monthly*" {
+		t.Fatalf("description: %q", v.Description)
+	}
+
+	// On a phone: full screen, the description in sight without scrolling.
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("full screen, the actions on one row, the description in sight", `(() => {
+		const pane = document.querySelector("#card-detail"), d = document.querySelector("#pd-desc").getBoundingClientRect();
+		const a = [...document.querySelectorAll("#pd-actions > *")].map((x) => x.getBoundingClientRect().top);
+		return pane.offsetWidth >= innerWidth - 1 && d.top > 0 && d.top < innerHeight * 0.6 && a.every((t) => Math.abs(t - a[0]) < 2); })()`)
+	shot(b, "planning-card-phone")
 }

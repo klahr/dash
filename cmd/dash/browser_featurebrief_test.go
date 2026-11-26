@@ -33,7 +33,7 @@ func TestBrowserFeatureBrief(t *testing.T) {
 	b.until("open the card", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-desc")`,
 		chromedp.Click(chromedp.CSS(card+" .pl-open")))
 	b.until("write a feature brief", `document.querySelector("#feature-sheet").open && !document.querySelector("#feature-slot #plan-work").hidden`,
-		chromedp.Click(chromedp.CSS(`#pd-actions button[title^="Claude interviews you about this card"]`)))
+		chromedp.Click(chromedp.CSS(`#pd-brief`)))
 	b.waitJS("the card's words, its project, and a feature's steps", `document.querySelector("#plan-idea").value === "Finance wants the reports as files." &&
 		document.querySelector("#plan-name").value === "Export reports" && document.querySelector("#plan-project").selectedOptions[0]?.textContent === "app" &&
 		[...document.querySelectorAll("#plan-stepper .plan-st-title")].map((e) => e.textContent).join() === "Idea,Interview,Brief,Start" &&
@@ -55,7 +55,7 @@ func TestBrowserFeatureBrief(t *testing.T) {
 		document.querySelector("#plan-next").textContent.trim() === "Start the task" && document.querySelector("#plan-start-summary").textContent.includes("app")`)
 	shot(b, "feature-start-wide")
 	b.until("start the task", `!document.querySelector("#feature-sheet").open`, chromedp.Click(chromedp.CSS(`#plan-next:not(:disabled)`)))
-	b.waitJS("the card, with the brief and the task", `!document.querySelector("#card-detail").hidden && document.querySelector("#pd-desc")?.value.startsWith("# Fake feature") &&
+	b.waitJS("the card, with the brief and the task", `!document.querySelector("#card-detail").hidden && document.querySelector("#pd-desc.md h1")?.textContent === "Fake feature" &&
 		document.querySelectorAll("#pd-body .pl-link").length === 1`)
 
 	var drafts []json.RawMessage

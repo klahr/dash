@@ -80,6 +80,7 @@ import "./app/goals.js";
 import "./app/deploys.js";
 import "./app/planning.js";
 import "./app/planningview.js";
+import "./app/popmenu.js";
 import "./app/terminal.js";
 import "./app/try.js";
 import "./app/history.js";

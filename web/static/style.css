@@ -2695,12 +2695,15 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .deploy-detail { width: min(820px, calc((100vw - var(--side-w)) * .58)); }
   .chat-pinned.chat-open .deploy-detail { width: min(820px, calc((100vw - var(--side-w) - var(--chat-pane-w)) * .58)); }
   .app:has(#deploy-detail:not([hidden])) .page.deploys { margin-left: 0; max-width: min(860px, calc(100% - min(820px, 58%))); }
-  /* A planning card's pane lies beside the board (app/planning.js), headed like the goal's;
-     the board keeps to the room left of it and scrolls sideways when that is narrow. */
-  .card-detail { width: min(640px, calc((100vw - var(--side-w)) * .46)); }
-  .chat-pinned.chat-open .card-detail { width: min(640px, calc((100vw - var(--side-w) - var(--chat-pane-w)) * .46)); }
-  .app:has(#card-detail:not([hidden])) .page.planning { margin-left: 0; max-width: calc(100% - min(640px, 46%)); }
+  /* A planning card's pane lies beside the board (app/planning.js), as a task's pane lies
+     beside the Board (.detail-beside, the same width): the board narrows to the room left of
+     it (app/planning.js marks its root .card-open), the card opened marked and scrolled into sight. Headed like the goal's pane, its close
+     button and Copy link at the right. */
+  .card-detail { width: var(--detail-beside-w); box-shadow: none; }
+  .card-open > .page.planning { margin-right: var(--detail-beside-w); width: auto; }
   .card-detail .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  #card-detail .detail-head { flex-direction: row; }
+  #pd-close { order: 2; }
   .card-detail .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
   :is(.commit-detail, .goal-detail, .deploy-detail, .card-detail) .detail-head { flex-direction: row-reverse; padding: 8px 8px 0 24px; border-bottom: 0; }
   :is(#cd-close, #gd-close, #dd-close, #pd-close) .cd-back { display: none; }
@@ -4039,12 +4042,32 @@ button.goal-task-open:hover { background: var(--raised); }
 
 .card-detail { z-index: 34; }
 .card-detail .detail-titles h2 { overflow-wrap: anywhere; }
-.pl-col-tag { padding: 1px 8px; border-radius: var(--r-pill); background: var(--raised); color: var(--text); }
-.pl-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 12px; margin: 0 0 20px; }
-.pl-field { margin: 0; }
-.pl-field select, .pl-field input { width: 100%; }
-/* The pane's Members: a chip per member (face, name, ×), then a list to add one. Across the fields' row. */
-.pl-members-field { grid-column: 1 / -1; }
+/* The head (app/planning.js: renderCard): the title (a click edits it), then the column, a
+   button whose menu moves the card, the status and the date; then the actions: Start…, Write a
+   feature brief and ⋯. Copy link sits beside the close button. */
+.pl-col-tag {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 6px 0 9px;
+  border: 1px solid transparent; border-radius: var(--r-pill); background: var(--raised); color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+}
+.pl-col-tag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+.pl-col-tag .ico { width: 14px; height: 14px; color: var(--muted); }
+.pl-col-tag:hover, .pl-col-tag[aria-expanded="true"] { border-color: var(--line); background: var(--surface); }
+.card-detail .pl-actions { flex-basis: 100%; gap: 8px; }
+.pl-actions .pl-more-btn { width: 34px; height: 34px; }
+#pd-copy { flex: none; }
+/* A phone keeps the three actions on one row: their words, without icons. */
+@media (max-width: 479px) { .pl-actions .btn .ico { display: none; } .pl-actions { gap: 6px; } }
+/* The properties, below the description: a name and its control on each row, compact. */
+.pl-props {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 16px;
+  margin: 0 0 22px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface);
+}
+.pl-prop { display: contents; }
+.pl-prop-name { color: var(--muted); font-size: var(--fs-s); }
+.pl-props :is(select, input) { width: auto; max-width: 100%; min-height: 32px; height: 32px; padding-block: 0; font-size: var(--fs-s); }
+.pl-props input:not(.pl-tag-input) { width: 14em; }
+.pl-props > .pl-prop:nth-last-child(-n+2) .pl-prop-name { align-self: start; padding-top: 6px; }
+/* The pane's Members: a chip per member (face, name, ×), then a list to add one. */
 .pl-member-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pl-member { display: inline-flex; align-items: center; gap: 6px; padding: 2px 2px 2px 4px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface); }
 .pl-member .avatar { width: 22px; height: 22px; }
@@ -4058,18 +4081,17 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-member .pl-owner-btn[aria-pressed=true] { color: var(--accent); }
 .pl-owner-btn[aria-pressed=true] .ico path { fill: currentColor; }
 .pl-member.pl-owner { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
-.pl-member-list select { width: auto; min-width: 9em; }
+.pl-member-list select { width: auto; min-width: 7em; }
 /* Tags: a chip each, on the card and in the pane (name, ×), then a box to add one. */
 .pl-tag { max-width: 14em; color: var(--text); border: 1px solid var(--line); background: var(--surface); }
 .pl-card .pl-tag { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
 .pl-tag.pl-tag-on:not(.hued) { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.pl-tags-field { grid-column: 1 / -1; }
 .pl-tags-field .pl-tag { padding: 0 0 0 9px; gap: 2px; font-size: var(--fs-s); }
 .pl-tag-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.pl-tag-name { border: 0; padding: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
 button.pl-tag-name:hover { text-decoration: underline; }
 .pl-tag .icon-btn { width: 24px; height: 24px; min-height: 0; }
-.pl-field input.pl-tag-input { width: auto; min-width: 9em; flex: 1; max-width: 16em; }
+.pl-props input.pl-tag-input { width: auto; min-width: 6em; flex: 1; max-width: 12em; }
 /* The board's other filters, beside the project filter: Mine, a list of
    the tags and targets to filter by, and the tags and target picked, each
    with × to take it off. */
@@ -4081,10 +4103,17 @@ button.pl-tag-name:hover { text-decoration: underline; }
 select.pl-more-filter { width: auto; min-height: 32px; max-width: 12em; font-size: var(--fs-s); }
 .pl-section { margin: 0 0 22px; }
 .pl-section h3 { margin: 0 0 8px; font-size: var(--fs-m); color: var(--muted); }
-/* The description: a text box that is always there, as tall as its text. */
+.pl-section-head { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.pl-section-head .icon-btn { width: 28px; height: 28px; min-height: 0; color: var(--faint); }
+.pl-section-head .icon-btn:hover { color: var(--text); }
+/* The description: Markdown, which a click makes a text box as tall as its text. */
+.pl-desc { cursor: text; margin: -4px -6px; padding: 4px 6px; border-radius: var(--r-s); overflow-wrap: anywhere; }
+.pl-desc:hover { background: var(--raised); }
 .pl-desc-edit { width: 100%; min-height: 6.5em; max-height: 60vh; field-sizing: content; resize: vertical; }
-.pl-edit { display: grid; gap: 10px; }
-.pl-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* Add: what the card has none of yet (a file, a card it depends on), small, in one row. */
+.pl-add-row { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 22px; }
+.pl-add-row .btn { min-height: 30px; color: var(--muted); }
+.pl-add-row .btn:hover { color: var(--text); }
 .pl-suggest-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 18px; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--merged) 45%, var(--line)); border-radius: var(--r-m); background: color-mix(in srgb, var(--merged) 10%, var(--surface)); }
 .pl-suggest-box p { margin: 0; flex: 1; }
 .pl-links, .pl-pick, .pl-comments-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -4095,11 +4124,15 @@ select.pl-more-filter { width: auto; min-height: 32px; max-width: 12em; font-siz
 .pl-link-title { font-weight: 600; overflow-wrap: anywhere; text-align: left; }
 .pl-link-sub { font-size: var(--fs-xs); color: var(--muted); }
 .pl-state { flex: none; font-weight: 600; }
-.pl-dep-add { margin-top: 8px; }
 .pl-comment { padding: 8px 10px; border-radius: var(--r-m); background: var(--surface); border: 1px solid var(--line); }
-.pl-comment-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-s); }
+.pl-comment-head { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: var(--fs-s); }
 .pl-comment-head time { color: var(--muted); margin-right: auto; }
-.pl-comment-text { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pl-comment-text { margin: 2px 0 0; overflow-wrap: anywhere; }
+/* Delete, for its author: on hover or focus; a touch screen (no hover) shows it, quiet. */
+.pl-comment-del { width: 28px; height: 28px; min-height: 0; color: var(--faint); opacity: 0; }
+.pl-comment:hover .pl-comment-del, .pl-comment-del:focus-visible { opacity: 1; }
+.pl-comment-del:hover { color: var(--failed); }
+@media (hover: none) { .pl-comment-del { opacity: .7; } }
 .pl-comment-form { display: grid; gap: 8px; margin-top: 10px; }
 .pl-comment-form .btn { justify-self: end; }
 .pl-comment-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
