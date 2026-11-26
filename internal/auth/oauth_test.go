@@ -451,8 +451,8 @@ func TestOAuthImportsLegacyTokens(t *testing.T) {
 		"account": a.legacy,
 		"clients": map[string]any{"c1": map[string]any{"redirect_uris": []string{callback}, "auth_method": "none", "created": time.Now()}},
 		"tokens": map[string]any{
-			sessionKey("old-access"):  map[string]any{"client": "c1", "expires": time.Now().Add(time.Hour)},
-			sessionKey("old-refresh"): map[string]any{"client": "c1", "refresh": true, "expires": time.Now().Add(time.Hour)},
+			store.TokenHash("old-access"):  map[string]any{"client": "c1", "expires": time.Now().Add(time.Hour)},
+			store.TokenHash("old-refresh"): map[string]any{"client": "c1", "refresh": true, "expires": time.Now().Add(time.Hour)},
 		},
 	})
 	os.WriteFile(path, b, 0o600)

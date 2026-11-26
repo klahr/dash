@@ -1001,23 +1001,6 @@ func (s *Store) RewindProjectChat(projectID string, user int64, n, keep int) (bo
 	return err == nil, err
 }
 
-// ClearProjectChat deletes user's chat about a project; other users' stay.
-func (s *Store) ClearProjectChat(projectID string, user int64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	p, ok := s.data.Projects[projectID]
-	if !ok {
-		return ErrNotFound
-	}
-	owner := projectChatOwner(projectID, user)
-	delete(s.data.ProjectChats, owner)
-	err := s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatProject, owner, p.OrgID, nil) })
-	if err == nil {
-		s.projectChatChangedLocked(p, user)
-	}
-	return err
-}
-
 // projectChatChangedLocked tells user's open dashboards that their chat
 // about p changed (EvProjectChat), and nobody else. The caller holds the lock.
 func (s *Store) projectChatChangedLocked(p *model.Project, user int64) {

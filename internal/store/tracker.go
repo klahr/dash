@@ -46,9 +46,7 @@ func scanTracker(row scanner) (model.TrackerConfig, error) {
 	if cursor != 0 {
 		c.Cursor = time.Unix(0, cursor).UTC()
 	}
-	if lastSync.Valid {
-		c.LastSyncAt = time.Unix(lastSync.Int64, 0).UTC()
-	}
+	c.LastSyncAt = nullUnix(lastSync)
 	c.UpdatedAt = time.Unix(updated, 0).UTC()
 	return c, nil
 }
@@ -161,9 +159,7 @@ func scanLink(row scanner) (model.TrackerLink, error) {
 	if state != "" && state != "{}" {
 		l.State = json.RawMessage(state)
 	}
-	if synced.Valid {
-		l.SyncedAt = time.Unix(synced.Int64, 0).UTC()
-	}
+	l.SyncedAt = nullUnix(synced)
 	return l, nil
 }
 

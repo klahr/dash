@@ -53,20 +53,7 @@ func (s *Store) GitHubHook(org int64, repo string) (model.GitHubHook, error) {
 
 // GitHubHooks are all the saved webhooks.
 func (s *Store) GitHubHooks() ([]model.GitHubHook, error) {
-	rows, err := s.db.Query("SELECT " + githubHookCols + " FROM github_hooks ORDER BY org_id, repo")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.GitHubHook
-	for rows.Next() {
-		h, err := scanGitHubHook(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, h)
-	}
-	return out, rows.Err()
+	return queryAll(s.db, scanGitHubHook, "SELECT "+githubHookCols+" FROM github_hooks ORDER BY org_id, repo")
 }
 
 // PutGitHubHook saves h, replacing what was saved for its org and repository.

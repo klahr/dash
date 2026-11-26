@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/rand"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -270,7 +271,7 @@ func (a *Auth) googleStart(w http.ResponseWriter, r *http.Request) {
 
 // flowCookie is the name of f's browser-binding cookie: one per flow, so
 // two tabs signing in at once don't undo each other.
-func flowCookie(f *oidcFlow) string { return googleCookiePrefix + sessionKey(f.State)[:16] }
+func flowCookie(f *oidcFlow) string { return googleCookiePrefix + store.TokenHash(f.State)[:16] }
 
 // hdHint is the hosted domain Google's account chooser is limited to: the
 // org's, when it verified exactly one.
@@ -711,7 +712,7 @@ func identityDetail(cl oidcClaims) string {
 // pendingLink is a Google identity waiting for its account's password.
 type pendingLink struct {
 	user    int64
-	binding string // sessionKey of the nonce in the originating browser's cookie
+	binding string // store.TokenHash of the nonce in the originating browser's cookie
 	ident   store.Identity
 	org     int64
 	expires time.Time
@@ -719,12 +720,12 @@ type pendingLink struct {
 
 // linkCookie is the name of the cookie binding the pending link tok to the
 // browser that completed its Google flow.
-func linkCookie(tok string) string { return linkCookiePrefix + sessionKey(tok)[:16] }
+func linkCookie(tok string) string { return linkCookiePrefix + store.TokenHash(tok)[:16] }
 
 // newPendingLink returns the link's token and the nonce the originating
 // browser must present (in its linkCookie) to redeem it.
 func (a *Auth) newPendingLink(uid int64, ident store.Identity, f *oidcFlow) (tok, nonce string) {
-	tok, nonce = randomString(32), randomString(32)
+	tok, nonce = rand.Text(), rand.Text()
 	now := a.now()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -733,7 +734,7 @@ func (a *Auth) newPendingLink(uid int64, ident store.Identity, f *oidcFlow) (tok
 			delete(a.links, k)
 		}
 	}
-	a.links[sessionKey(tok)] = &pendingLink{user: uid, binding: sessionKey(nonce), ident: ident, org: f.Org, expires: now.Add(flowTTL)}
+	a.links[store.TokenHash(tok)] = &pendingLink{user: uid, binding: store.TokenHash(nonce), ident: ident, org: f.Org, expires: now.Add(flowTTL)}
 	return tok, nonce
 }
 
@@ -749,14 +750,14 @@ func (a *Auth) redeemLink(r *http.Request, tok string, uid int64) bool {
 	if err != nil || c.Value == "" {
 		return false
 	}
-	bound := sessionKey(c.Value)
+	bound := store.TokenHash(c.Value)
 	a.mu.Lock()
-	l, ok := a.links[sessionKey(tok)]
+	l, ok := a.links[store.TokenHash(tok)]
 	if ok && (l.user != uid || !constantEqual(l.binding, bound)) {
 		ok = false
 	}
 	if ok {
-		delete(a.links, sessionKey(tok))
+		delete(a.links, store.TokenHash(tok))
 	}
 	a.mu.Unlock()
 	if !ok || a.now().After(l.expires) {

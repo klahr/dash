@@ -1,6 +1,7 @@
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"strconv"
@@ -69,7 +70,7 @@ func (a *Accounts) SignUp(email string, now time.Time) (SignupResult, error) {
 	if err != nil {
 		return res, err
 	}
-	hash, err := passhash.Hash(newToken())
+	hash, err := passhash.Hash(rand.Text())
 	if err != nil {
 		return res, err
 	}
@@ -125,20 +126,31 @@ func deleteStaleUnverified(tx *sql.Tx, now time.Time) error {
 }
 
 func createUnverified(tx *sql.Tx, email, hash string, now time.Time) (User, error) {
+	id, name, err := insertUserWithFreeName(tx, email, hash, "unverified", 1, now)
+	if err != nil {
+		return User{}, err
+	}
+	return User{ID: id, Username: name, Email: email}, nil
+}
+
+// insertUserWithFreeName adds a user for email, with col (a users column,
+// not from input) set to val. Its username is made from email, with a
+// number added when another user has it.
+func insertUserWithFreeName(tx *sql.Tx, email, hash, col string, val int, now time.Time) (id int64, name string, err error) {
 	base := usernameFrom(email)
-	name := base
+	name = base
 	for i := 2; ; i++ {
-		res, err := tx.Exec(`INSERT INTO users (username, email, password_hash, unverified, password_changed_at, created_at)
-			VALUES (?, ?, ?, 1, ?, ?)`, name, email, hash, now.UnixNano(), now.Unix())
+		res, err := tx.Exec(`INSERT INTO users (username, email, password_hash, `+col+`, password_changed_at, created_at)
+			VALUES (?, ?, ?, ?, ?, ?)`, name, email, hash, val, now.UnixNano(), now.Unix())
 		if isUnique(err) && !strings.Contains(err.Error(), "users.email") && i < 10000 {
 			name = base + strconv.Itoa(i)
 			continue
 		}
 		if err != nil {
-			return User{}, err
+			return 0, "", err
 		}
-		id, _ := res.LastInsertId()
-		return User{ID: id, Username: name, Email: email}, nil
+		id, err = res.LastInsertId()
+		return id, name, err
 	}
 }
 
@@ -175,9 +187,9 @@ func newEmailToken(tx *sql.Tx, uid int64, purpose EmailPurpose, now time.Time) (
 	if _, err := tx.Exec("DELETE FROM email_tokens WHERE expires_at <= ?", now.Unix()); err != nil {
 		return "", err
 	}
-	tok := newToken()
+	tok := rand.Text()
 	_, err := tx.Exec("INSERT INTO email_tokens (token_hash, user_id, purpose, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
-		hashToken(tok), uid, purpose, now.Unix(), now.Add(ttl).Unix())
+		TokenHash(tok), uid, purpose, now.Unix(), now.Add(ttl).Unix())
 	return tok, err
 }
 
@@ -185,7 +197,7 @@ func newEmailToken(tx *sql.Tx, uid int64, purpose EmailPurpose, now time.Time) (
 func useEmailToken(tx *sql.Tx, tok string, purpose EmailPurpose, now time.Time) (int64, error) {
 	var uid int64
 	err := tx.QueryRow("DELETE FROM email_tokens WHERE token_hash = ? AND purpose = ? AND expires_at > ? RETURNING user_id",
-		hashToken(tok), purpose, now.Unix()).Scan(&uid)
+		TokenHash(tok), purpose, now.Unix()).Scan(&uid)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, ErrEmailLink
 	}
@@ -197,7 +209,7 @@ func useEmailToken(tx *sql.Tx, tok string, purpose EmailPurpose, now time.Time) 
 func (a *Accounts) checkEmailToken(tok string, purpose EmailPurpose, now time.Time) error {
 	var ok bool
 	err := a.db.QueryRow("SELECT EXISTS (SELECT 1 FROM email_tokens WHERE token_hash = ? AND purpose = ? AND expires_at > ?)",
-		hashToken(tok), purpose, now.Unix()).Scan(&ok)
+		TokenHash(tok), purpose, now.Unix()).Scan(&ok)
 	if err == nil && !ok {
 		return ErrEmailLink
 	}

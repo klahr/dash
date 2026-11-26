@@ -71,9 +71,7 @@ func scanAdminUser(sc scanner) (AdminUser, error) {
 	var err error
 	u.User, err = scanUser(sc, &u.HasPassword, &u.SSO, &u.Disabled, &u.Unverified, &u.EnvAccount, &created, &last)
 	u.Created = time.Unix(created, 0).UTC()
-	if last > 0 {
-		u.LastLogin = time.Unix(last, 0).UTC()
-	}
+	u.LastLogin = unixOrZero(last)
 	u.Orgs = []Membership{}
 	return u, err
 }

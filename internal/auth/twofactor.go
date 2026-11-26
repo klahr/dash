@@ -72,7 +72,7 @@ func twoFactorFree(path string) bool {
 
 // newTicketFor keeps t, waiting for its second factor, and returns its token.
 func (a *Auth) newTicketFor(t *loginTicket) string {
-	tok := randomString(32)
+	tok := rand.Text()
 	now := a.now()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -82,16 +82,16 @@ func (a *Auth) newTicketFor(t *loginTicket) string {
 		}
 	}
 	t.expires = now.Add(ticketTTL)
-	a.tickets[sessionKey(tok)] = t
+	a.tickets[store.TokenHash(tok)] = t
 	return tok
 }
 
 func (a *Auth) ticket(tok string) (*loginTicket, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	t, ok := a.tickets[sessionKey(tok)]
+	t, ok := a.tickets[store.TokenHash(tok)]
 	if ok && a.now().After(t.expires) {
-		delete(a.tickets, sessionKey(tok))
+		delete(a.tickets, store.TokenHash(tok))
 		return nil, false
 	}
 	return t, ok
@@ -103,13 +103,13 @@ func (a *Auth) failedTicket(tok string, t *loginTicket) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if t.tries++; t.tries >= a.lockout().PerIP {
-		delete(a.tickets, sessionKey(tok))
+		delete(a.tickets, store.TokenHash(tok))
 	}
 }
 
 func (a *Auth) dropTicket(tok string) {
 	a.mu.Lock()
-	delete(a.tickets, sessionKey(tok))
+	delete(a.tickets, store.TokenHash(tok))
 	a.mu.Unlock()
 }
 

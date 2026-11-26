@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -421,11 +419,6 @@ func (h *Hub) changed() {
 	}
 }
 
-func hash(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:])
-}
-
 func normCode(s string) string {
 	s = strings.ToUpper(s)
 	return strings.Map(func(r rune) rune {
@@ -453,7 +446,7 @@ func (h *Hub) NewCode(owner model.Owner) (code string, expires time.Time, err er
 	now := h.clock()
 	h.pruneCodesLocked(now)
 	expires = now.Add(codeTTL)
-	h.codes = append(h.codes, regCode{Hash: hash(normCode(code)), Expires: expires, Owner: owner})
+	h.codes = append(h.codes, regCode{Hash: store.TokenHash(normCode(code)), Expires: expires, Owner: owner})
 	h.saveLocked()
 	return code, expires, nil
 }
@@ -489,7 +482,7 @@ func (h *Hub) register(code, name, prev string) (id, token string, owner model.O
 		return "", "", model.Owner{}, ErrTooManyBad
 	}
 	h.pruneCodesLocked(now)
-	want := hash(normCode(code))
+	want := store.TokenHash(normCode(code))
 	i := slices.IndexFunc(h.codes, func(c regCode) bool {
 		return subtle.ConstantTimeCompare([]byte(c.Hash), []byte(want)) == 1
 	})

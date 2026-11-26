@@ -1,7 +1,10 @@
 package store
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -145,7 +148,7 @@ func (a *Accounts) CreateToken(n NewToken, now time.Time) (string, Token, error)
 	if err != nil {
 		return "", Token{}, err
 	}
-	secret := prefix + newToken()
+	secret := prefix + rand.Text()
 	var id int64
 	err = inTx(a.db, func(tx *sql.Tx) error {
 		if _, err := membership(tx, n.UserID, n.OrgID); err != nil {
@@ -158,7 +161,7 @@ func (a *Accounts) CreateToken(n NewToken, now time.Time) (string, Token, error)
 		}
 		res, err := tx.Exec(`INSERT INTO tokens (kind, user_id, org_id, name, token_hash, token_prefix, scopes, created_at, expires_at, runner_id)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			n.Kind, n.UserID, n.OrgID, name, hashToken(secret), secret[:prefixShown], string(sc), now.UnixNano(), nullTime(n.Expires), runner)
+			n.Kind, n.UserID, n.OrgID, name, TokenHash(secret), secret[:prefixShown], string(sc), now.UnixNano(), nullTime(n.Expires), runner)
 		if err != nil {
 			return err
 		}
@@ -190,13 +193,8 @@ func scanToken(sc scanner) (Token, error) {
 		return t, err
 	}
 	_ = json.Unmarshal([]byte(scopes), &t.Scopes)
-	t.Created = time.Unix(0, created)
-	if used.Valid {
-		t.LastUsed = time.Unix(used.Int64, 0)
-	}
-	if expires.Valid {
-		t.Expires = time.Unix(expires.Int64, 0)
-	}
+	t.Created = time.Unix(0, created).UTC()
+	t.LastUsed, t.Expires = nullUnix(used), nullUnix(expires)
 	return t, nil
 }
 
@@ -214,11 +212,16 @@ func (a *Accounts) Authenticate(secret string, now time.Time, kinds ...TokenKind
 	if secret == "" {
 		return Token{}, Session{}, ErrTokenInvalid
 	}
-	return a.AuthenticateHash(hashToken(secret), now, kinds...)
+	return a.AuthenticateHash(TokenHash(secret), now, kinds...)
 }
 
-// TokenHash is what a secret is stored as, for AuthenticateHash.
-func TokenHash(secret string) string { return hashToken(secret) }
+// TokenHash is what a secret is stored as, for AuthenticateHash: a hash,
+// so the database can't be used to sign in. Sessions, codes and runner
+// registration codes are kept the same way.
+func TokenHash(secret string) string {
+	h := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(h[:])
+}
 
 // AuthenticateHash is Authenticate for a secret's TokenHash: an open
 // connection checks its token again with it.
@@ -442,7 +445,7 @@ func (a *Accounts) OAuthClient(id string) (OAuthClient, error) {
 	if err != nil {
 		return c, err
 	}
-	c.Created = time.Unix(created, 0)
+	c.Created = unixOrZero(created)
 	return c, json.Unmarshal([]byte(uris), &c.RedirectURIs)
 }
 
@@ -470,7 +473,7 @@ func (a *Accounts) CreateGrant(g Grant, accessTTL, refreshTTL time.Duration, now
 	if err != nil {
 		return TokenPair{}, err
 	}
-	p := TokenPair{Access: prefixAccess + newToken(), Refresh: prefixRefresh + newToken(), Scopes: scopes}
+	p := TokenPair{Access: prefixAccess + rand.Text(), Refresh: prefixRefresh + rand.Text(), Scopes: scopes}
 	err = inTx(a.db, func(tx *sql.Tx) error {
 		m, err := membership(tx, g.UserID, g.OrgID)
 		if err != nil {
@@ -487,8 +490,8 @@ func (a *Accounts) CreateGrant(g Grant, accessTTL, refreshTTL time.Duration, now
 		_, err = tx.Exec(`INSERT INTO tokens (kind, user_id, org_id, name, token_hash, token_prefix, scopes, created_at, expires_at,
 				oauth_client_id, refresh_hash, refresh_expires_at)
 			VALUES ('oauth', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			g.UserID, g.OrgID, client+" · "+m.Name, hashToken(p.Access), p.Access[:prefixShown], string(sc), now.UnixNano(),
-			now.Add(accessTTL).Unix(), g.ClientID, hashToken(p.Refresh), now.Add(refreshTTL).Unix())
+			g.UserID, g.OrgID, client+" · "+m.Name, TokenHash(p.Access), p.Access[:prefixShown], string(sc), now.UnixNano(),
+			now.Add(accessTTL).Unix(), g.ClientID, TokenHash(p.Refresh), now.Add(refreshTTL).Unix())
 		return err
 	})
 	return p, err
@@ -499,8 +502,8 @@ func (a *Accounts) CreateGrant(g Grant, accessTTL, refreshTTL time.Duration, now
 // replayed by someone who isn't the client, so the whole grant is revoked.
 // A grant whose user left its org or changed password is revoked too.
 func (a *Accounts) RefreshGrant(refresh, clientID string, accessTTL, refreshTTL time.Duration, now time.Time) (TokenPair, error) {
-	old := hashToken(refresh)
-	p := TokenPair{Access: prefixAccess + newToken(), Refresh: prefixRefresh + newToken()}
+	old := TokenHash(refresh)
+	p := TokenPair{Access: prefixAccess + rand.Text(), Refresh: prefixRefresh + rand.Text()}
 	invalid := false // set with the revocation, which must commit
 	err := inTx(a.db, func(tx *sql.Tx) error {
 		var id, created, changed int64
@@ -531,7 +534,7 @@ func (a *Accounts) RefreshGrant(refresh, clientID string, accessTTL, refreshTTL 
 		_ = json.Unmarshal([]byte(scopes), &p.Scopes)
 		_, err = tx.Exec(`UPDATE tokens SET token_hash = ?, token_prefix = ?, expires_at = ?, refresh_hash = ?,
 			refresh_expires_at = ?, previous_refresh_hash = refresh_hash WHERE id = ?`,
-			hashToken(p.Access), p.Access[:prefixShown], now.Add(accessTTL).Unix(), hashToken(p.Refresh), now.Add(refreshTTL).Unix(), id)
+			TokenHash(p.Access), p.Access[:prefixShown], now.Add(accessTTL).Unix(), TokenHash(p.Refresh), now.Add(refreshTTL).Unix(), id)
 		return err
 	})
 	if err == nil && invalid {
@@ -599,12 +602,12 @@ func (a *Accounts) ImportGrant(clientID string, uid int64, refreshHash string, i
 		if err := tx.QueryRow("SELECT name FROM organizations WHERE id = ?", org).Scan(&orgName); err != nil {
 			return err
 		}
-		placeholder := prefixAccess + newToken() // never handed out
+		placeholder := prefixAccess + rand.Text() // never handed out
 		sc, _ := json.Marshal(UserScopes)
 		_, err = tx.Exec(`INSERT INTO tokens (kind, user_id, org_id, name, token_hash, token_prefix, scopes, created_at, expires_at,
 				oauth_client_id, refresh_hash, refresh_expires_at)
 			VALUES ('oauth', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (refresh_hash) DO NOTHING`,
-			uid, org, client+" · "+orgName, hashToken(placeholder), placeholder[:prefixShown], string(sc), issued.UnixNano(),
+			uid, org, client+" · "+orgName, TokenHash(placeholder), placeholder[:prefixShown], string(sc), issued.UnixNano(),
 			now.Unix(), clientID, refreshHash, refreshExpires.Unix())
 		return err
 	})

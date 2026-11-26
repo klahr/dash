@@ -238,14 +238,6 @@ func (o *OrgStore) RewindProjectChat(projectID string, user int64, n, keep int) 
 	return o.s.RewindProjectChat(projectID, user, n, keep)
 }
 
-// ClearProjectChat deletes user's own chat about a project in the org.
-func (o *OrgStore) ClearProjectChat(projectID string, user int64) error {
-	if !o.ownsProject(projectID) {
-		return ErrNotFound
-	}
-	return o.s.ClearProjectChat(projectID, user)
-}
-
 // ownsChat reports whether user's general chat (project "") or their chat
 // about project is in the org.
 func (o *OrgStore) ownsChat(user int64, project string) bool {

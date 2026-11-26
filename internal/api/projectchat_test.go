@@ -180,8 +180,8 @@ func TestProjectChatStaleCopyKeepsNewerMessages(t *testing.T) {
 		return send(h, "GET", "/api/projects/"+p.ID+"/chat", "").Header().Get("X-Chat-Busy") == ""
 	})
 
-	// Cleared on another device: the old copy is stale too.
-	if err := raw(s).ClearProjectChat(p.ID, owner.User); err != nil {
+	// A new conversation on another device: the old copy is stale too.
+	if err := raw(s).PutChatAside(p.OrgID, owner.User, p.ID); err != nil {
 		t.Fatal(err)
 	}
 	if k := turn(nil, append(saved(), cmdMsg("after clearing"))...); k[len(k)-1] != "done" {

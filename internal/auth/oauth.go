@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -319,10 +320,10 @@ func (o *OAuth) register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secret := ""
-	c := store.OAuthClient{ID: randomString(32), Name: req.ClientName, RedirectURIs: req.RedirectURIs, AuthMethod: req.AuthMethod, Created: o.a.now()}
+	c := store.OAuthClient{ID: rand.Text(), Name: req.ClientName, RedirectURIs: req.RedirectURIs, AuthMethod: req.AuthMethod, Created: o.a.now()}
 	if req.AuthMethod != "none" {
-		secret = randomString(32)
-		c.SecretHash = sessionKey(secret)
+		secret = rand.Text()
+		c.SecretHash = store.TokenHash(secret)
 	}
 	if err := o.a.acc.CreateOAuthClient(c, maxClients, o.a.now()); errors.Is(err, store.ErrTooManyClients) {
 		oauthErr(w, http.StatusServiceUnavailable, "temporarily_unavailable", "too many registered clients")
@@ -596,7 +597,7 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code := randomString(32)
+	code := rand.Text()
 	o.mu.Lock()
 	now := o.a.now()
 	for k, c := range o.codes {
@@ -604,7 +605,7 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 			delete(o.codes, k)
 		}
 	}
-	o.codes[sessionKey(code)] = authCode{client: q.ClientID, redirectURI: q.RedirectURI, challenge: q.Challenge,
+	o.codes[store.TokenHash(code)] = authCode{client: q.ClientID, redirectURI: q.RedirectURI, challenge: q.Challenge,
 		user: uid, org: org.ID, scopes: scopes, expires: now.Add(codeTTL)}
 	o.mu.Unlock()
 	reply(url.Values{"code": {code}})
@@ -612,7 +613,7 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 
 // newTicket makes the ticket for uid's second step of q.
 func (o *OAuth) newTicket(uid int64, q authRequest) string {
-	t := randomString(32)
+	t := rand.Text()
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	now := o.a.now()
@@ -621,7 +622,7 @@ func (o *OAuth) newTicket(uid int64, q authRequest) string {
 			delete(o.tickets, k)
 		}
 	}
-	o.tickets[sessionKey(t)] = consentTicket{client: q.ClientID, redirectURI: q.RedirectURI, challenge: q.Challenge,
+	o.tickets[store.TokenHash(t)] = consentTicket{client: q.ClientID, redirectURI: q.RedirectURI, challenge: q.Challenge,
 		user: uid, expires: now.Add(consentTicketTTL)}
 	return t
 }
@@ -633,7 +634,7 @@ func (o *OAuth) takeTicket(t string, q authRequest) (consentTicket, bool) {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	k := sessionKey(t)
+	k := store.TokenHash(t)
 	c, ok := o.tickets[k]
 	delete(o.tickets, k)
 	ok = ok && o.a.now().Before(c.expires) && c.client == q.ClientID && c.redirectURI == q.RedirectURI && c.challenge == q.Challenge
@@ -703,7 +704,7 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 		id, secret = f.Get("client_id"), f.Get("client_secret")
 	}
 	c := o.client(id)
-	if c == nil || c.SecretHash != "" && subtle.ConstantTimeCompare([]byte(sessionKey(secret)), []byte(c.SecretHash)) != 1 {
+	if c == nil || c.SecretHash != "" && subtle.ConstantTimeCompare([]byte(store.TokenHash(secret)), []byte(c.SecretHash)) != 1 {
 		oauthErr(w, http.StatusUnauthorized, "invalid_client", "unknown client or wrong secret")
 		return
 	}
@@ -717,7 +718,7 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch f.Get("grant_type") {
 	case "authorization_code":
-		k := sessionKey(f.Get("code"))
+		k := store.TokenHash(f.Get("code"))
 		o.mu.Lock()
 		code, ok := o.codes[k]
 		delete(o.codes, k) // single use, whatever happens next

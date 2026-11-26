@@ -63,7 +63,7 @@ func replaceCodes(tx *sql.Tx, uid int64, codes []string) error {
 		return err
 	}
 	for _, c := range codes {
-		if _, err := tx.Exec("INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)", uid, hashToken(c)); err != nil {
+		if _, err := tx.Exec("INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)", uid, TokenHash(c)); err != nil {
 			return err
 		}
 	}
@@ -90,7 +90,7 @@ func (a *Accounts) UseTOTPStep(uid, step int64) (bool, error) {
 // was one.
 func (a *Accounts) UseRecoveryCode(uid int64, code string) (bool, error) {
 	return execClaim(a.db, `DELETE FROM recovery_codes WHERE user_id = ? AND code_hash = ?
-		AND EXISTS (SELECT 1 FROM users WHERE id = ? AND totp_secret IS NOT NULL)`, uid, hashToken(code), uid)
+		AND EXISTS (SELECT 1 FROM users WHERE id = ? AND totp_secret IS NOT NULL)`, uid, TokenHash(code), uid)
 }
 
 // RecoveryCodesLeft counts uid's unused recovery codes.

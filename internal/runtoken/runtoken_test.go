@@ -6,8 +6,8 @@ func TestMap(t *testing.T) {
 	var m Map[string]
 	a, releaseA := m.Register("a")
 	b, releaseB := m.Register("b")
-	if len(a) != 48 || a == b {
-		t.Fatalf("tokens %q, %q: want two distinct 48-char hex tokens", a, b)
+	if a == "" || a == b {
+		t.Fatalf("tokens %q, %q: want two distinct tokens", a, b)
 	}
 	if v, ok := m.Lookup(a); !ok || v != "a" {
 		t.Fatalf("Lookup(a) = %q, %v", v, ok)

@@ -310,7 +310,7 @@ func TestTwoFactorLockout(t *testing.T) {
 		ticket := passwordStep(t, h, "10.2.0.1", "admin", "s3cret")
 		a.mu.Lock()
 		a.failed = map[string]*failures{} // only the ticket's own count is left
-		a.tickets[sessionKey(ticket)].tries = maxFailures - 1
+		a.tickets[store.TokenHash(ticket)].tries = maxFailures - 1
 		a.mu.Unlock()
 		codeStep(h, "10.2.0.1", ticket, "000000")
 		if w := codeStep(h, "10.2.0.1", ticket, codeAt(t, secret, clk.t)); w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "ticket_expired") {

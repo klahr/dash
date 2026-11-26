@@ -83,15 +83,15 @@ func TestProjectChatsArePerUser(t *testing.T) {
 		t.Fatalf("project chat events went to %v, want [ann bob ann admin]", to)
 	}
 
-	// Clearing ann's leaves bob's.
+	// A new conversation for ann leaves bob's.
 	evs.evs = nil
-	if err := s.ClearProjectChat(p.ID, ann); err != nil {
+	if err := s.PutChatAside(def.ID, ann, p.ID); err != nil {
 		t.Fatal(err)
 	}
 	want(s, ann)
 	want(s, bob, "bob 1")
 	if len(evs.evs) != 1 || evs.evs[0].Type != model.EvProjectChat || evs.evs[0].UserID != ann {
-		t.Fatalf("clearing told %+v", evs.evs)
+		t.Fatalf("a new conversation told %+v", evs.evs)
 	}
 	if err := s.AppendProjectChat(p.ID, ann, q(ann, "ann again")); err != nil {
 		t.Fatal(err)

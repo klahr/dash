@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"html/template"
 	"log/slog"
@@ -460,7 +461,7 @@ var errHandoff = errors.New("invalid or expired handoff token")
 
 // newHandoff makes a token for h, good for HandoffTTL.
 func (a *Auth) newHandoff(h handoff) string {
-	h.Nonce = randomString(16)
+	h.Nonce = rand.Text()
 	h.Expires = a.now().Add(HandoffTTL)
 	payload := strings.Join([]string{"v1", strconv.FormatInt(h.User, 10), strconv.FormatInt(h.Org, 10), h.Slug, h.Family,
 		strconv.FormatInt(h.Expires.Unix(), 10), h.Nonce}, "|")
@@ -501,7 +502,7 @@ func (a *Auth) takeHandoff(tok, slug string) (handoff, error) {
 }
 
 // newFamily is a new session family's id.
-func newFamily() string { return randomString(18) }
+func newFamily() string { return rand.Text() }
 
 // orgHosts is what /api/me says about org subdomains: where the base domain
 // is, and the subdomain of the org the request works in.

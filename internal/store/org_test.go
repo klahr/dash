@@ -94,7 +94,6 @@ func TestForOrgIsolates(t *testing.T) {
 	_, err = b.ProjectChat(pa.ID, u.ID)
 	notFound("ProjectChat", err)
 	notFound("AppendProjectChat", b.AppendProjectChat(pa.ID, u.ID, msgs...))
-	notFound("ClearProjectChat", b.ClearProjectChat(pa.ID, u.ID))
 	_, err = b.ReportFinding(model.Issue{ProjectID: pa.ID, Title: "x"})
 	notFound("ReportFinding", err)
 	_, err = b.Undismiss(pa.ID, gone.Todo.Finding.Issues[0].Fingerprint)

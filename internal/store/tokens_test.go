@@ -305,7 +305,7 @@ func TestImportNeedsSoleOrg(t *testing.T) {
 	acc.Bootstrap("admin", "s3cret-password")
 	u, _ := acc.EnvUser()
 	now := time.Now()
-	if err := acc.ImportRunnerToken("r1", "work", hashToken("dr_old"), now); err != nil {
+	if err := acc.ImportRunnerToken("r1", "work", TokenHash("dr_old"), now); err != nil {
 		t.Fatal(err)
 	}
 	tok, _, err := acc.Authenticate("dr_old", now, TokenRunner)
@@ -318,7 +318,7 @@ func TestImportNeedsSoleOrg(t *testing.T) {
 	if _, err := acc.CreateOrg(u.ID, "Two"); err != nil {
 		t.Fatal(err)
 	}
-	if err := acc.ImportRunnerToken("r2", "home", hashToken("dr_older"), now); !errors.Is(err, ErrNoSoleOrg) {
+	if err := acc.ImportRunnerToken("r2", "home", TokenHash("dr_older"), now); !errors.Is(err, ErrNoSoleOrg) {
 		t.Errorf("runner of a user in two orgs: %v", err)
 	}
 }

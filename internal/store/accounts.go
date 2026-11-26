@@ -3,10 +3,7 @@ package store
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -235,17 +232,6 @@ func slugify(name string) string {
 		return "org"
 	}
 	return b.String()
-}
-
-func hashToken(tok string) string {
-	h := sha256.Sum256([]byte(tok))
-	return hex.EncodeToString(h[:])
-}
-
-func newToken() string {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 func isUnique(err error) bool {
@@ -538,9 +524,7 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 	}
 	s.Needs2FA = !s.User.TOTP && required.Bool
 	s.Family = family.String
-	if authAt > 0 {
-		s.AuthAt = time.Unix(authAt, 0)
-	}
+	s.AuthAt = unixOrZero(authAt)
 	if role.Valid {
 		s.Org = &Membership{Org: Org{ID: orgID.Int64, Name: name.String, Slug: slug.String, Require2FA: require2FA.Bool, Personal: personal.Bool, Folder: folder.String}, Role: Role(role.String)}
 		return s, nil
@@ -832,7 +816,7 @@ func (a *Accounts) InviteWith(actor, orgID int64, email string, role Role, anyEm
 	if !role.Valid() {
 		return "", inv, ErrBadRole
 	}
-	tok := newToken()
+	tok := rand.Text()
 	now := time.Now()
 	err = inTx(a.db, func(tx *sql.Tx) error {
 		mine, err := membership(tx, actor, orgID)
@@ -851,7 +835,7 @@ func (a *Accounts) InviteWith(actor, orgID int64, email string, role Role, anyEm
 			ON CONFLICT (org_id, email) DO UPDATE SET role = excluded.role, token_hash = excluded.token_hash,
 				invited_by = excluded.invited_by, created_at = excluded.created_at, expires_at = excluded.expires_at,
 				any_email = excluded.any_email
-			RETURNING id`, orgID, email, role, hashToken(tok), actor, now.Unix(), now.Add(InvitationTTL).Unix(), anyEmail).Scan(&inv.ID)
+			RETURNING id`, orgID, email, role, TokenHash(tok), actor, now.Unix(), now.Add(InvitationTTL).Unix(), anyEmail).Scan(&inv.ID)
 	})
 	if err != nil {
 		return "", inv, err
@@ -897,7 +881,7 @@ func (a *Accounts) RevokeInvitation(actor, orgID, id int64) error {
 }
 
 func invitationByToken(q querier, tok string, now time.Time) (Invitation, error) {
-	inv, err := scanInvitation(q.QueryRow(invitationCols+" WHERE i.token_hash = ?", hashToken(tok)))
+	inv, err := scanInvitation(q.QueryRow(invitationCols+" WHERE i.token_hash = ?", TokenHash(tok)))
 	if errors.Is(err, sql.ErrNoRows) || err == nil && !now.Before(inv.Expires) {
 		return inv, ErrInvitation
 	}
@@ -995,7 +979,7 @@ func (a *Accounts) RegisterWithInvitation(tok, username, password string) (User,
 
 // DeclineInvitation deletes the invitation a link's token stands for.
 func (a *Accounts) DeclineInvitation(tok string) error {
-	return execOne(a.db, ErrInvitation, "DELETE FROM org_invitations WHERE token_hash = ?", hashToken(tok))
+	return execOne(a.db, ErrInvitation, "DELETE FROM org_invitations WHERE token_hash = ?", TokenHash(tok))
 }
 
 // PlannerContext reports whether org's planners' feature brief interviews

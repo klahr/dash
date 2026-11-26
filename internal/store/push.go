@@ -29,9 +29,7 @@ func scanPush(row scanner) (model.PushSubscription, error) {
 		return p, err
 	}
 	p.CreatedAt = time.Unix(created, 0).UTC()
-	if last.Valid {
-		p.LastAt = time.Unix(last.Int64, 0).UTC()
-	}
+	p.LastAt = nullUnix(last)
 	return p, nil
 }
 

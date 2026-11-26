@@ -164,7 +164,7 @@ func (p *fakeIdP) authorize(authURL string, who person) string {
 			claims[k] = v
 		}
 	}
-	code := randomString(12)
+	code := rand.Text()
 	p.mu.Lock()
 	p.grants[code] = fakeGrant{claims: claims, challenge: q.Get("code_challenge"), client: q.Get("client_id"), badSig: who.badSig}
 	p.mu.Unlock()
@@ -912,7 +912,7 @@ func TestGoogleOrgSubdomainHandoff(t *testing.T) {
 		t.Fatalf("handoff: %d %s", w.Code, w.Header().Get("Location"))
 	}
 	// The handed-off session is a Google one too.
-	s, err := e.a.acc.Session(sessionKey(b.cookies[orgHost][CookieName].Value), time.Now())
+	s, err := e.a.acc.Session(store.TokenHash(b.cookies[orgHost][CookieName].Value), time.Now())
 	if err != nil || s.Method != store.MethodGoogle || s.AuthAt.IsZero() {
 		t.Fatalf("org host session %+v %v", s, err)
 	}
@@ -1139,7 +1139,7 @@ func TestGoogleThenTOTP(t *testing.T) {
 	if w.Code != 200 || !b.session(gHost) {
 		t.Fatalf("totp: %d %s", w.Code, w.Body)
 	}
-	s, err := e.a.acc.Session(sessionKey(b.cookies[gHost][CookieName].Value), time.Now())
+	s, err := e.a.acc.Session(store.TokenHash(b.cookies[gHost][CookieName].Value), time.Now())
 	if err != nil || s.Method != store.MethodGoogle || s.Org == nil || s.Org.ID != e.acme.ID {
 		t.Fatalf("session %+v %v", s, err)
 	}

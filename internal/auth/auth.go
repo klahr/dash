@@ -68,13 +68,6 @@ type Lockout struct {
 // DefaultLockout is the lockout New starts with.
 var DefaultLockout = Lockout{PerIP: maxFailures, Global: globalFailures, Window: failureWindow}
 
-// sessionKey is what's kept for a session or token: a hash, so the database
-// can't be used to sign in.
-func sessionKey(tok string) string {
-	h := sha256.Sum256([]byte(tok))
-	return hex.EncodeToString(h[:])
-}
-
 type failures struct {
 	count  int
 	first  time.Time
@@ -322,7 +315,7 @@ func (a *Auth) session(r *http.Request) (*Identity, bool) {
 	if !ok {
 		return nil, false
 	}
-	key := sessionKey(c.Value)
+	key := store.TokenHash(c.Value)
 	s, err := a.acc.Session(key, a.now())
 	if err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
@@ -374,12 +367,12 @@ func (a *Auth) startSessionIn(w http.ResponseWriter, r *http.Request, uid, org i
 // startSessionVia is startSessionIn for a sign-in made with method
 // (store.MethodPassword, store.MethodGoogle; "": as family's).
 func (a *Auth) startSessionVia(w http.ResponseWriter, r *http.Request, uid, org int64, family, method string) error {
-	tok := randomString(32)
+	tok := rand.Text()
 	now := a.now()
 	_ = a.acc.PruneSessions(now)
 	_ = a.acc.PruneUnverified(now)
 	a.ensurePersonal(uid) // before the session picks the org to start in
-	if err := a.acc.CreateSessionVia(sessionKey(tok), uid, org, family, method, now, now.Add(sessionTTL)); err != nil {
+	if err := a.acc.CreateSessionVia(store.TokenHash(tok), uid, org, family, method, now, now.Add(sessionTTL)); err != nil {
 		return err
 	}
 	// No Domain: the cookie is the host's alone. On the parent domain it
@@ -763,7 +756,7 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 // sign-in page.
 func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 	if c, ok := a.sessionCookie(r); ok {
-		_ = a.acc.DeleteSessionFamily(sessionKey(c.Value))
+		_ = a.acc.DeleteSessionFamily(store.TokenHash(c.Value))
 	}
 	a.clearSessionCookie(w, r)
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {

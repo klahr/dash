@@ -84,7 +84,7 @@ func TestChatSuggestsNextMessage(t *testing.T) {
 	}
 
 	// The same question again, in a new conversation.
-	if err := raw(s).ClearProjectChat(p.ID, ownerSession(t, s).User.ID); err != nil {
+	if err := raw(s).PutChatAside(p.OrgID, ownerSession(t, s).User.ID, p.ID); err != nil {
 		t.Fatal(err)
 	}
 	on := chatSocket(t, s)

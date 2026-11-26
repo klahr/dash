@@ -40,12 +40,16 @@ const orgBillingCols = `SELECT org_id, customer_id, subscription_id, subscriptio
 	period_end, trial_end, cancel_at_period_end, trial_used, unpaid_since, event_at,
 	free_forever, free_until, free_note, free_set_by, free_set_at FROM org_billing`
 
+// unixOrZero is Unix seconds s as a UTC time; 0 is the zero time.
 func unixOrZero(s int64) time.Time {
 	if s <= 0 {
 		return time.Time{}
 	}
 	return time.Unix(s, 0).UTC()
 }
+
+// nullUnix is unixOrZero for a nullable column; NULL is the zero time.
+func nullUnix(s sql.NullInt64) time.Time { return unixOrZero(s.Int64) }
 
 func zeroOrUnix(t time.Time) int64 {
 	if t.IsZero() {

@@ -415,9 +415,7 @@ func (a *Accounts) ExportUser(uid int64, now time.Time) (AccountExport, error) {
 		var c, e, at int64
 		err := r.Scan(&c, &e, &s.Method, &s.OrgID, &at)
 		s.Created, s.Expires = time.Unix(c, 0).UTC(), time.Unix(e, 0).UTC()
-		if at > 0 {
-			s.SignedIn = time.Unix(at, 0).UTC()
-		}
+		s.SignedIn = unixOrZero(at)
 		x.Sessions = append(x.Sessions, s)
 		return err
 	}); err != nil {
@@ -433,9 +431,7 @@ func (a *Accounts) ExportUser(uid int64, now time.Time) (AccountExport, error) {
 		var c, last int64
 		err := r.Scan(&p.OrgID, &p.UserAgent, &c, &last)
 		p.Created = time.Unix(c, 0).UTC()
-		if last > 0 {
-			p.LastAt = time.Unix(last, 0).UTC()
-		}
+		p.LastAt = unixOrZero(last)
 		x.Push = append(x.Push, p)
 		return err
 	}); err != nil {

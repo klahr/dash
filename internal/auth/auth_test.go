@@ -388,7 +388,7 @@ func TestImportLegacySessions(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	key := sessionKey("old-cookie")
+	key := store.TokenHash("old-cookie")
 	write := func(account string) string {
 		p := filepath.Join(dir, "sessions.json")
 		b, _ := json.Marshal(map[string]any{"account": account, "sessions": map[string]any{

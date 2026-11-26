@@ -17,7 +17,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 
@@ -30,6 +29,7 @@ import (
 	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -950,7 +950,7 @@ func (c *chatTools) add(d agent.ChatDelta, pos int) {
 				c.results = map[string]bool{}
 			}
 			c.results[d.ID] = true
-			t.Output, t.IsError = capString(d.Text, maxToolOutput), d.IsError
+			t.Output, t.IsError = textutil.ClipNote(d.Text, maxToolOutput, "\n[…]"), d.IsError
 			t.DurationMS = time.Since(c.at[i]).Milliseconds()
 			break
 		}
@@ -969,18 +969,6 @@ func (c *chatTools) saved() []model.ChatTool {
 	return out
 }
 
-// capString cuts s to at most n bytes, on a character boundary, marking the cut.
-func capString(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	cut := n
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut] + "\n[…]"
-}
-
 // capToolInput is a tool call's input with its long strings cut short
 // (see maxToolString), at any depth.
 func capToolInput(in json.RawMessage) json.RawMessage {
@@ -995,7 +983,7 @@ func capToolInput(in json.RawMessage) json.RawMessage {
 	walk = func(v any) any {
 		switch x := v.(type) {
 		case string:
-			return capString(x, maxToolString)
+			return textutil.ClipNote(x, maxToolString, "\n[…]")
 		case map[string]any:
 			for k, e := range x {
 				x[k] = walk(e)

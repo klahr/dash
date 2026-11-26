@@ -142,23 +142,14 @@ func (s *Store) PastChats(org, user int64, project string) ([]model.PastChat, er
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(`SELECT id, at, COALESCE(json_extract(data, '$.title'), ''), COALESCE(json_extract(data, '$.count'), 0)
-		FROM past_chats WHERE kind = ? AND owner_id = ? AND deleted_at IS NULL ORDER BY at DESC, rowid DESC`, pl.kind, pl.owner)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []model.PastChat{}
-	for rows.Next() {
+	return queryAll(s.db, func(sc scanner) (model.PastChat, error) {
 		var pc model.PastChat
 		var at int64
-		if err := rows.Scan(&pc.ID, &at, &pc.Title, &pc.Count); err != nil {
-			return nil, err
-		}
+		err := sc.Scan(&pc.ID, &at, &pc.Title, &pc.Count)
 		pc.At = time.UnixMilli(at).UTC()
-		out = append(out, pc)
-	}
-	return out, rows.Err()
+		return pc, err
+	}, `SELECT id, at, COALESCE(json_extract(data, '$.title'), ''), COALESCE(json_extract(data, '$.count'), 0)
+		FROM past_chats WHERE kind = ? AND owner_id = ? AND deleted_at IS NULL ORDER BY at DESC, rowid DESC`, pl.kind, pl.owner)
 }
 
 // OpenPastChat makes past chat id the current conversation of user's

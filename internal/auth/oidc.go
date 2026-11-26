@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/klahr/dash/internal/store"
 	"golang.org/x/oauth2"
 )
 
@@ -226,17 +226,9 @@ func failFlow(code string, format string, args ...any) *flowError {
 	return &flowError{Code: code, Err: fmt.Errorf(format, args...)}
 }
 
-// randomString is n random bytes, base64url-encoded: the package's tokens,
-// codes, nonces and session families.
-func randomString(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
-}
-
 // newFlow keeps a new flow, and drops the expired ones.
 func (a *Auth) newFlow(f *oidcFlow) *oidcFlow {
-	f.State, f.Nonce, f.Verifier, f.Binding = randomString(24), randomString(24), oauth2.GenerateVerifier(), randomString(24)
+	f.State, f.Nonce, f.Verifier, f.Binding = rand.Text(), rand.Text(), oauth2.GenerateVerifier(), rand.Text()
 	now := a.now()
 	f.Expires = now.Add(flowTTL)
 	a.mu.Lock()
@@ -246,7 +238,7 @@ func (a *Auth) newFlow(f *oidcFlow) *oidcFlow {
 			delete(a.flows, k)
 		}
 	}
-	a.flows[sessionKey(f.State)] = f
+	a.flows[store.TokenHash(f.State)] = f
 	return f
 }
 
@@ -257,7 +249,7 @@ func (a *Auth) takeFlow(state string) (*oidcFlow, bool) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	k := sessionKey(state)
+	k := store.TokenHash(state)
 	f, ok := a.flows[k]
 	delete(a.flows, k)
 	if !ok || a.now().After(f.Expires) {

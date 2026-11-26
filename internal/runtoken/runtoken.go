@@ -4,7 +4,6 @@ package runtoken
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"sync"
 )
 
@@ -15,12 +14,8 @@ type Map[V any] struct {
 	m  map[string]V
 }
 
-// New returns a random token: 24 bytes, hex-encoded.
-func New() string {
-	buf := make([]byte, 24)
-	_, _ = rand.Read(buf)
-	return hex.EncodeToString(buf)
-}
+// New returns a random token.
+func New() string { return rand.Text() }
 
 // Register issues a new token for v. Call release when the run ends; the
 // token is unknown after that.

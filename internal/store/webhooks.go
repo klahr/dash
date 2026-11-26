@@ -42,9 +42,7 @@ func scanWebhook(row scanner) (model.Webhook, error) {
 	w.UserID, w.OrgID = user.Int64, org.Int64
 	w.HasToken = w.Token != ""
 	w.CreatedAt = time.Unix(created, 0).UTC()
-	if last.Valid {
-		w.LastAt = time.Unix(last.Int64, 0).UTC()
-	}
+	w.LastAt = nullUnix(last)
 	return w, nil
 }
 

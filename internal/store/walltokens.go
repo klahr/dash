@@ -1,6 +1,7 @@
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"time"
@@ -38,10 +39,7 @@ func scanWallToken(sc scanner) (WallToken, error) {
 	if err != nil {
 		return t, err
 	}
-	t.Created = time.Unix(created, 0)
-	if used.Valid {
-		t.LastUsed = time.Unix(used.Int64, 0)
-	}
+	t.Created, t.LastUsed = unixOrZero(created), nullUnix(used)
 	return t, nil
 }
 
@@ -55,13 +53,13 @@ func (a *Accounts) CreateWallToken(org, uid int64, name string, public bool, now
 	if err != nil {
 		return "", WallToken{}, err
 	}
-	secret := prefixWall + newToken()
+	secret := prefixWall + rand.Text()
 	var by any
 	if uid != 0 {
 		by = uid
 	}
 	res, err := a.db.Exec(`INSERT INTO wall_tokens (org_id, created_by, name, token_hash, token_prefix, public, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		org, by, name, hashToken(secret), secret[:prefixShown], public, now.Unix())
+		org, by, name, TokenHash(secret), secret[:prefixShown], public, now.Unix())
 	if err != nil {
 		return "", WallToken{}, err
 	}
@@ -86,7 +84,7 @@ func (a *Accounts) AuthenticateWall(secret string, now time.Time) (WallToken, er
 	if secret == "" {
 		return WallToken{}, ErrTokenInvalid
 	}
-	t, err := scanWallToken(a.db.QueryRow(wallCols+" WHERE token_hash = ?", hashToken(secret)))
+	t, err := scanWallToken(a.db.QueryRow(wallCols+" WHERE token_hash = ?", TokenHash(secret)))
 	if errors.Is(err, ErrNotFound) {
 		return t, ErrTokenInvalid
 	}

@@ -3,9 +3,7 @@ package store
 import (
 	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
-	"strconv"
 	"strings"
 	"time"
 
@@ -50,9 +48,7 @@ func scanIdentity(sc scanner) (Identity, error) {
 		return id, ErrNotFound
 	}
 	id.Created = time.Unix(created, 0).UTC()
-	if last > 0 {
-		id.LastLogin = time.Unix(last, 0).UTC()
-	}
+	id.LastLogin = unixOrZero(last)
 	return id, err
 }
 
@@ -166,7 +162,7 @@ func (a *Accounts) CreateIdentityUser(email string, id Identity, join Join, now 
 	if err != nil {
 		return User{}, nil, err
 	}
-	hash, err := passhash.Hash(newToken())
+	hash, err := passhash.Hash(rand.Text())
 	if err != nil {
 		return User{}, nil, err
 	}
@@ -211,20 +207,8 @@ func (a *Accounts) CreateIdentityUser(email string, id Identity, join Join, now 
 }
 
 func createIdentityUser(tx *sql.Tx, email, hash string, now time.Time) (int64, error) {
-	base := usernameFrom(email)
-	name := base
-	for i := 2; ; i++ {
-		res, err := tx.Exec(`INSERT INTO users (username, email, password_hash, has_password, password_changed_at, created_at)
-			VALUES (?, ?, ?, 0, ?, ?)`, name, email, hash, now.UnixNano(), now.Unix())
-		if isUnique(err) && !strings.Contains(err.Error(), "users.email") && i < 10000 {
-			name = base + strconv.Itoa(i)
-			continue
-		}
-		if err != nil {
-			return 0, err
-		}
-		return res.LastInsertId()
-	}
+	id, _, err := insertUserWithFreeName(tx, email, hash, "has_password", 0, now)
+	return id, err
 }
 
 // JoinOrg makes uid a member of what join says (see Join), keeping the role
@@ -305,12 +289,6 @@ const DomainTXTPrefix = "dash-domain-verification="
 // TXTRecord is the TXT record d's domain publishes to prove the claim.
 func (d SSODomain) TXTRecord() string { return DomainTXTPrefix + d.Token }
 
-func newDomainToken() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
 // VerifiedDomain reports whether d is one of the verified domains.
 func (s OrgSSO) VerifiedDomain(d string) bool {
 	for _, x := range s.Domains {
@@ -355,9 +333,7 @@ func (a *Accounts) domains(where string, args ...any) ([]SSODomain, error) {
 		var created, verified int64
 		err = sc.Scan(&d.OrgID, &d.OrgName, &d.Domain, &d.Verified, &d.How, &created, &verified, &d.Token)
 		d.Created = time.Unix(created, 0).UTC()
-		if verified > 0 {
-			d.VerifiedAt = time.Unix(verified, 0).UTC()
-		}
+		d.VerifiedAt = unixOrZero(verified)
 		return d, err
 	}, `SELECT d.org_id, o.name, d.domain, d.verified, d.how, d.created_at, COALESCE(d.verified_at, 0), d.token
 		FROM org_sso_domains d JOIN organizations o ON o.id = d.org_id `+where+` ORDER BY d.domain`, args...)
@@ -396,7 +372,7 @@ func (a *Accounts) AddSSODomain(orgID int64, domain, how string, by int64, now t
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO org_sso_domains (org_id, domain, created_at, token) VALUES (?, ?, ?, ?)
-			ON CONFLICT (org_id, domain) DO NOTHING`, orgID, domain, now.Unix(), newDomainToken()); err != nil {
+			ON CONFLICT (org_id, domain) DO NOTHING`, orgID, domain, now.Unix(), rand.Text()); err != nil {
 			return err
 		}
 		if how == "" {

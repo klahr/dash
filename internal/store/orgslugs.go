@@ -281,7 +281,7 @@ func (a *Accounts) SlugRedirects(orgID int64, now time.Time) (map[string]time.Ti
 	return queryMap(a.db, func(sc scanner) (slug string, until time.Time, err error) {
 		var exp int64
 		err = sc.Scan(&slug, &exp)
-		return slug, time.Unix(exp, 0), err
+		return slug, unixOrZero(exp), err
 	}, "SELECT slug, expires_at FROM org_slug_redirects WHERE org_id = ? AND expires_at > ? ORDER BY slug", orgID, now.Unix())
 }
 
