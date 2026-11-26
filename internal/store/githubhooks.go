@@ -56,7 +56,10 @@ func (s *Store) GitHubHooks() ([]model.GitHubHook, error) {
 	return queryAll(s.db, scanGitHubHook, "SELECT "+githubHookCols+" FROM github_hooks ORDER BY org_id, repo")
 }
 
-// PutGitHubHook saves h, replacing what was saved for its org and repository.
+// PutGitHubHook saves h, replacing what was saved for its org and repository,
+// except that the saved last delivery never goes back: a delivery noted
+// (GitHubHookDelivered) after h was read, such as the answer to a ping still
+// on its way, stays.
 func (s *Store) PutGitHubHook(h model.GitHubHook) error {
 	if h.Repo == "" {
 		return errors.New("a GitHub hook needs a repository")
@@ -67,7 +70,7 @@ func (s *Store) PutGitHubHook(h model.GitHubHook) error {
 	_, err := s.db.Exec(`INSERT INTO github_hooks (`+githubHookCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (org_id, repo) DO UPDATE SET hook_id = excluded.hook_id, secret = excluded.secret, url = excluded.url,
 		state = excluded.state, reason = excluded.reason, registered = excluded.registered,
-		last_delivery = excluded.last_delivery, last_ping = excluded.last_ping, checked = excluded.checked`,
+		last_delivery = MAX(github_hooks.last_delivery, excluded.last_delivery), last_ping = excluded.last_ping, checked = excluded.checked`,
 		h.OrgID, strings.ToLower(h.Repo), h.HookID, h.Secret, h.URL, h.State, h.Reason,
 		millis(h.Registered), millis(h.LastDelivery), millis(h.LastPing), millis(h.Checked))
 	return err
