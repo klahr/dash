@@ -2,6 +2,8 @@
 .github
 .env
 **/.env
+.env.*
+**/.env.*
 bin/
 dist/
 deploy/
