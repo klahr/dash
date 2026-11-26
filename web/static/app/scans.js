@@ -414,7 +414,8 @@ function scanActions(s) {
 }
 
 // scanEditing is the scan the editor changes; null: it makes a new one.
-let scanEditing = null;
+// scanProject is the project the editor was opened for: it saves there.
+let scanEditing = null, scanProject = null;
 
 // openScanEditor opens the scan editor: empty for a new scan, on a Dash
 // scan to edit it (edit=true), or on any scan to start a copy of it.
@@ -422,6 +423,7 @@ function openScanEditor(s = null, edit = false) {
   const f = $("#scan-form");
   f.reset();
   scanEditing = edit ? s : null;
+  scanProject = state.project;
   const taken = new Set(scans.list.map((x) => x.name));
   let name = "";
   if (s && !edit) {
@@ -472,14 +474,19 @@ $("#scan-form").addEventListener("submit", attempt(async (e) => {
     path: f.path.value.trim(), model: f.model.value, effort: f.effort.value, schedule: f.schedule.value.trim(),
     tools: f.tools.value.split("\n").map((x) => x.trim()).filter(Boolean), prompt: f.prompt.value,
   };
-  const pid = state.project.id;
+  const p = scanProject;
+  if (!p || projectKey(p) !== projectKey(state.project)) {
+    $("#scan-sheet").close();
+    throw new Error("The project changed while this was open. Nothing was saved.");
+  }
+  const pid = p.id;
   const replaces = !scanEditing && scans.list.find((x) => x.name === body.name && x.source !== "dash" && !x.shadowed_by);
   if (replaces && !await ask({
     title: `Replace ${replaces.title}?`, ok: "Replace",
     body: `The ${replaces.builtin ? "built-in scan" : `repository scan ${replaces.file}`} is called “${body.name}” too. The new scan runs instead of it until you delete the new one.`,
   })) return;
-  if (scanEditing) await api("PUT", `/api/projects/${pid}/scans/${encodeURIComponent(scanEditing.name)}`, body);
-  else await api("POST", `/api/projects/${pid}/scans`, body);
+  if (scanEditing) await api("PUT", `/api/projects/${pid}/scans/${encodeURIComponent(scanEditing.name)}`, body, p.prefix);
+  else await api("POST", `/api/projects/${pid}/scans`, body, p.prefix);
   const what = scanEditing ? "Saved" : "Created";
   $("#scan-sheet").close();
   await loadScans();

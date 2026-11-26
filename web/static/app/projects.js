@@ -92,6 +92,11 @@ export async function loadProjects() {
 // restore is false (the first pick: the page's link or saved view stays) or
 // Planning, which is across projects, is shown.
 export async function selectProject(p, { follow = true, restore = follow } = {}) {
+  // Sheets opened for the last project (Back/Forward can switch while one is
+  // open) close, so they can't act on this one.
+  if (projectKey(p) !== projectKey(state.project)) {
+    for (const id of ["#delete-project-sheet", "#scan-sheet"]) if ($(id)?.open) $(id).close();
+  }
   state.project = p;
   state.todos = new Map();
   state.goals = new Map();
@@ -965,10 +970,13 @@ export function cleanupText(r) {
 }
 
 // Delete project: from Dash only, with its folder, and/or its GitHub
-// repository, after the password is typed again.
+// repository, after the password is typed again. deleteTarget is the
+// project the sheet was opened for: it deletes that one, never another.
+let deleteTarget = null;
 export function openDeleteProject() {
   const p = state.project;
   if (!p) throw new Error(projectFirst(" (p)"));
+  deleteTarget = p;
   const f = $("#delete-project");
   f.reset();
   $("#delete-project-title").textContent = `Delete ${p.name}`;
@@ -993,12 +1001,16 @@ function syncDeleteProject() {
   setLabel($("#delete-project-ok"), "trash", what.length ? `Delete project and ${what.join(" and ")}` : "Delete project");
 }
 $("#delete-project").addEventListener("change", syncDeleteProject);
-$("#delete-project-sheet").addEventListener("close", () => { $("#delete-project").password.value = ""; });
+$("#delete-project-sheet").addEventListener("close", () => { $("#delete-project").password.value = ""; deleteTarget = null; });
 $("#delete-project").addEventListener("submit", attempt(async (e) => {
   if (e.submitter?.value !== "ok") return;
   e.preventDefault();
   const f = e.target;
-  const p = state.project;
+  const p = deleteTarget;
+  if (!p || projectKey(p) !== projectKey(state.project)) {
+    $("#delete-project-sheet").close();
+    throw new Error("The project changed while this was open. Nothing was deleted.");
+  }
   await busy($("#delete-project-ok"), async () => {
     try {
       await api("DELETE", `/api/projects/${p.id}`, { password: f.password.value, delete_files: f.files.value === "delete", delete_github: !$("#delete-github-row").hidden && f.github.checked }, p.prefix);
