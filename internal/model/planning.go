@@ -161,6 +161,8 @@ type CardComment struct {
 	AuthorName string    `json:"author_name"`
 	Text       string    `json:"text"`
 	CreatedAt  time.Time `json:"created_at"`
+	// Dash: a note of Dash's own (why it moved the card), not a person's.
+	Dash bool `json:"dash,omitempty"`
 }
 
 // What a card links to (CardLink.Kind).

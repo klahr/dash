@@ -79,10 +79,10 @@ type cardStatus struct {
 	Done    int `json:"done"`
 	Total   int `json:"total"`
 	Removed int `json:"removed,omitempty"`
-	// SuggestDone: everything linked that still exists is done, at least
-	// one piece of it, but the card isn't in Done.
-	// Dash suggests the move; it never makes it.
-	SuggestDone bool `json:"suggest_done,omitempty"`
+	// ready: everything linked that still exists is done, at least one
+	// piece of it, but the card isn't in Done: Dash moves it there
+	// (service.autoDone).
+	ready bool
 	// Live is where all of it is live, once it is, and since when
 	// (deploylive.go): Text says "Live in production since 19 Nov 2026".
 	Live *liveIn `json:"live,omitempty"`
@@ -525,7 +525,7 @@ func status(c model.Card, links []linkView) cardStatus {
 	default:
 		st.Text, st.Tone = "Not started", "idle"
 	}
-	st.SuggestDone = allDone && c.Column != model.CardDone
+	st.ready = allDone && c.Column != model.CardDone
 	return st
 }
 
@@ -601,7 +601,66 @@ func (s *Server) releaseOf(ctx context.Context, p model.Project, sha string) (re
 // ---- handlers ----
 
 // cardViews are views of the cards, with their links and comment counts.
+// A card whose linked work is all done moves to Done first (autoDone), so
+// a card never waits there for someone to move it.
 func (sv *service) cardViews(ctx context.Context, cards []model.Card) ([]cardView, error) {
+	vs, err := sv.viewsOf(ctx, cards)
+	if err != nil {
+		return nil, err
+	}
+	var moved []string
+	for _, v := range vs {
+		if v.Status.ready && sv.autoDone(v) {
+			moved = append(moved, v.ID)
+		}
+	}
+	if len(moved) == 0 {
+		return vs, nil
+	}
+	// Read again: the cards moved, and the Done cards under them.
+	again := make([]model.Card, 0, len(cards))
+	for _, c := range cards {
+		if c.Column == model.CardDone || slices.Contains(moved, c.ID) {
+			if fresh, err := sv.data.GetCard(c.ID); err == nil {
+				c = fresh
+			}
+		}
+		again = append(again, c)
+	}
+	return sv.viewsOf(ctx, again)
+}
+
+// autoDone moves card v, whose linked work is all done, to the top of Done,
+// and notes on the card why, unless someone moved it out of Done since its
+// work was last linked (store.OrgStore.AutoDoneHeld). It reports whether it
+// moved it.
+func (sv *service) autoDone(v cardView) bool {
+	if sv.writable() != nil {
+		return false
+	}
+	if held, err := sv.data.AutoDoneHeld(v.ID); err != nil || held {
+		return false
+	}
+	if _, err := sv.data.MoveCard(v.ID, model.CardDone, 0); err != nil {
+		return false
+	}
+	what := "its linked work is done"
+	if v.Status.Total > 1 {
+		what = fmt.Sprintf("all %d pieces of its linked work are done", v.Status.Total)
+	}
+	_, _ = sv.data.AddDashNote(v.ID, "Moved to Done: "+what+".")
+	return true
+}
+
+// autoDoneCard moves card id to Done if its linked work is all done.
+func (sv *service) autoDoneCard(ctx context.Context, id string) {
+	if c, err := sv.data.GetCard(id); err == nil && c.Column != model.CardDone {
+		_, _ = sv.cardViews(ctx, []model.Card{c})
+	}
+}
+
+// viewsOf are views of the cards, as they are.
+func (sv *service) viewsOf(ctx context.Context, cards []model.Card) ([]cardView, error) {
 	ids := make([]string, len(cards))
 	for i, c := range cards {
 		ids[i] = c.ID
@@ -949,7 +1008,19 @@ func (sv *service) moveCard(id, column string, position *int) error {
 	if position != nil {
 		pos = *position
 	}
-	_, err := sv.data.MoveCard(id, col, pos)
+	c, err := sv.data.GetCard(id)
+	if err != nil {
+		return err
+	}
+	// Moved out of Done by someone: Dash doesn't move it back on its own
+	// until new work is linked to it. (Held first, so work finishing
+	// meanwhile doesn't move it straight back.)
+	if c.Column == model.CardDone && col != model.CardDone {
+		if err := sv.data.HoldAutoDone(id); err != nil {
+			return err
+		}
+	}
+	_, err = sv.data.MoveCard(id, col, pos)
 	return err
 }
 
@@ -1473,8 +1544,8 @@ func (sv *service) cardAttachments(c model.Card) []model.Attachment {
 }
 
 // cardStarted moves a card whose work has started to In progress, if it
-// was still in Ideas or Planned. (Done is never automatic: the card only
-// suggests it.)
+// was still in Ideas or Planned. (Done follows from the work being done:
+// autoDone.)
 func (sv *service) cardStarted(c model.Card) {
 	if c.Column == model.CardIdeas || c.Column == model.CardPlanned {
 		_, _ = sv.data.MoveCard(c.ID, model.CardInProgress, 1<<30)
@@ -1484,17 +1555,29 @@ func (sv *service) cardStarted(c model.Card) {
 // ObservePlanning is fed every store event: a linked task that is queued
 // (a draft started later, or work sent back) moves its cards still in
 // Ideas or Planned to In progress, as starting or linking started work
-// does. The store publishes holding its lock, so the moves are made from
-// another goroutine.
+// does. A linked task merged, or a linked goal finished, moves the cards
+// whose work is then all done to Done (autoDone). The store publishes
+// holding its lock, so the moves are made from another goroutine.
 func (s *Server) ObservePlanning(ev model.Event) {
-	if ev.Type != model.EvTodoUpdated {
+	var linked map[int64][]string
+	started := false
+	switch ev.Type {
+	case model.EvTodoUpdated:
+		t, ok := ev.Data.(model.Todo)
+		if !ok || (t.Status != model.StatusQueued && t.Status != model.StatusMerged) {
+			return
+		}
+		started = t.Status == model.StatusQueued
+		linked = s.Store.LinkedCards(model.LinkTask, t.ID)
+	case model.EvGoalUpdated:
+		g, ok := ev.Data.(model.Goal)
+		if !ok || g.Status != model.GoalDone {
+			return
+		}
+		linked = s.Store.LinkedCards(model.LinkGoal, g.ID)
+	default:
 		return
 	}
-	t, ok := ev.Data.(model.Todo)
-	if !ok || t.Status != model.StatusQueued {
-		return
-	}
-	linked := s.Store.LinkedCards(model.LinkTask, t.ID)
 	if len(linked) == 0 {
 		return
 	}
@@ -1502,7 +1585,9 @@ func (s *Server) ObservePlanning(ev model.Event) {
 		for org, cards := range linked {
 			sv := &service{s: s, c: Caller{Org: org}, data: s.Store.ForOrg(org)}
 			for _, id := range cards {
-				if c, err := sv.data.GetCard(id); err == nil {
+				if !started {
+					sv.autoDoneCard(context.Background(), id)
+				} else if c, err := sv.data.GetCard(id); err == nil {
 					sv.cardStarted(c)
 				}
 			}

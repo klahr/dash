@@ -1,4 +1,4 @@
-import { $$, h, ib } from "./dom.js";
+import { $$, h, ico } from "./dom.js";
 import { attempt } from "./dialogs.js";
 
 // ------------------------------------------------------------------ pop-up menu
@@ -7,8 +7,10 @@ import { attempt } from "./dialogs.js";
 
 // popMenu drops a menu down from anchor (a button), looking like the project
 // menu (.foot-menu-list). groups are lists of choices, separated by a line
-// (empty ones are skipped). A choice is [icon, label, fn] or
-// [icon, label, fn, { disabled, note, danger, title, keys, tone }]: a disabled one shows why
+// (empty ones are skipped); a group with a heading property shows it above
+// its choices. A choice is [icon, label, fn] or
+// [icon, label, fn, { disabled, note, danger, title, keys, tone, checked }]: icon is an
+// icon's name or an element; checked makes it a menuitemcheckbox, ticked or not; a disabled one shows why
 // (note, or title as its tooltip); keys is its keyboard shortcut, shown at the end;
 // tone ("running", "ok" or "bad") colors its icon and note with how it last went. Arrow keys move, Enter picks, Esc or a click outside closes it and
 // focus returns to anchor. Resolves once the picked choice has run.
@@ -22,11 +24,14 @@ export function popMenu(anchor, groups, { heading = "" } = {}) {
   let picked = null, done;
   const rows = groups.flatMap((g, i) => [
     i ? h("hr", { class: "menu-sep", role: "separator" }) : null,
-    ...g.map(([icon, label, fn, { disabled = false, note = "", danger = false, title = "", keys = "", tone = "" } = {}]) => ib({
-      type: "button", role: "menuitem", class: [danger && "danger", tone && `tone-${tone}`].filter(Boolean).join(" ") || null,
+    g.heading ? h("div", { class: "pop-menu-head", role: "presentation" }, g.heading) : null,
+    ...g.map(([icon, label, fn, { disabled = false, note = "", danger = false, title = "", keys = "", tone = "", checked } = {}]) => h("button", {
+      type: "button", role: checked === undefined ? "menuitem" : "menuitemcheckbox", "aria-checked": checked === undefined ? null : String(!!checked),
+      class: [danger && "danger", tone && `tone-${tone}`].filter(Boolean).join(" ") || null,
       disabled, title: title || note || null, tabindex: -1,
       onclick: () => { picked = fn; close(true); },
-    }, icon, h("span", { class: "menu-label" }, label), note ? h("em", { class: "menu-note" }, note) : null,
+    }, typeof icon === "string" ? ico(icon) : icon, h("span", { class: "menu-label" }, label), note ? h("em", { class: "menu-note" }, note) : null,
+    checked ? ico("check") : null,
     keys ? h("kbd", { class: "menu-key", "aria-hidden": "true" }, keys) : null)),
   ]);
   const el = h("div", { class: "foot-menu-list pop-menu", role: "menu", popover: "manual", "aria-label": heading || anchor.getAttribute("aria-label") || "Actions" },

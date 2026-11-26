@@ -154,7 +154,7 @@ func TestPlanningRemovedWorkIsNotDone(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+c.ID, ""))
-	if st := got.Status; st.Text != "Work was deleted" || st.SuggestDone || st.Done != 0 || st.Total != 0 || st.Removed != 1 {
+	if st := got.Status; st.Text != "Work was deleted" || got.Column == model.CardDone || st.Done != 0 || st.Total != 0 || st.Removed != 1 {
 		t.Errorf("only work deleted: %+v", st)
 	}
 	if len(got.Links) != 1 || !got.Links[0].Removed || got.Links[0].State != "Removed (work was deleted)" {
@@ -171,15 +171,14 @@ func TestPlanningRemovedWorkIsNotDone(t *testing.T) {
 		t.Fatalf("link: %d %s", w.Code, w.Body)
 	}
 	got = decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+c.ID, ""))
-	if st := got.Status; st.Text != "All done" || !st.SuggestDone || st.Done != 1 || st.Total != 1 || st.Removed != 1 || st.Progress != "" {
-		t.Errorf("merged and deleted: %+v", st)
+	if st := got.Status; st.Text != "All done" || got.Column != model.CardDone || st.Done != 1 || st.Total != 1 || st.Removed != 1 || st.Progress != "" {
+		t.Errorf("merged and deleted: %s %+v", got.Column, st)
 	}
 }
 
 // A card started as a task is linked to it and moves to In progress; its
-// status follows the task in an owner's words, and suggests Done (without
-// making the move) once the work is merged. A planner sees the same card
-// without the task's id.
+// status follows the task in an owner's words, and it moves to Done once
+// the work is merged. A planner sees the same card without the task's id.
 func TestPlanningCardFollowsItsWork(t *testing.T) {
 	s, _, p := boardServer(t)
 	h := s.Routes()
@@ -227,21 +226,21 @@ func TestPlanningCardFollowsItsWork(t *testing.T) {
 	}
 
 	for _, step := range []struct {
-		to      model.TodoStatus
-		text    string
-		suggest bool
+		to     model.TodoStatus
+		text   string
+		column model.CardColumn
 	}{
-		{model.StatusInProgress, "In progress", false},
-		{model.StatusReview, "Waiting for review", false},
-		{model.StatusFailed, "Failed, needs a developer", false},
-		{model.StatusMerged, "All done", true},
+		{model.StatusInProgress, "In progress", model.CardInProgress},
+		{model.StatusReview, "Waiting for review", model.CardInProgress},
+		{model.StatusFailed, "Failed, needs a developer", model.CardInProgress},
+		{model.StatusMerged, "All done", model.CardDone},
 	} {
 		if _, err := raw(s).UpdateTodo(td.ID, func(x *model.Todo) error { x.Status = step.to; return nil }); err != nil {
 			t.Fatal(err)
 		}
 		got := decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+c.ID, ""))
-		if got.Status.Text != step.text || got.Status.SuggestDone != step.suggest || got.Column != model.CardInProgress {
-			t.Errorf("task %s: card %+v", step.to, got.Status)
+		if got.Status.Text != step.text || got.Column != step.column {
+			t.Errorf("task %s: card %s %+v", step.to, got.Column, got.Status)
 		}
 	}
 
@@ -254,7 +253,7 @@ func TestPlanningCardFollowsItsWork(t *testing.T) {
 	if err := json.Unmarshal(do(t, ph, "GET", "/api/planning/cards", "").Body.Bytes(), &list); err != nil || len(list) != 1 {
 		t.Fatalf("list: %+v %v", list, err)
 	}
-	if st := list[0].Status; st.Progress != "1 of 2 done" || st.SuggestDone {
+	if st := list[0].Status; st.Progress != "1 of 2 done" {
 		t.Errorf("two tasks: %+v", st)
 	}
 
@@ -269,8 +268,10 @@ func TestPlanningCardFollowsItsWork(t *testing.T) {
 		t.Fatalf("comment: %d %s", w.Code, w.Body)
 	}
 	got := decodeCard(t, do(t, a, "GET", "/api/planning/cards/"+c.ID, ""))
-	// The first is the note pat's Start left: who made the task, for whom.
-	if len(got.Discussion) != 2 || !strings.HasPrefix(got.Discussion[0].Text, "Started a task for u") || got.Discussion[1].AuthorName != "pat" || got.Comments != 2 {
+	// The first is the note pat's Start left: who made the task, for whom;
+	// then Dash's, on why it moved the card to Done (not counted).
+	if len(got.Discussion) != 3 || !strings.HasPrefix(got.Discussion[0].Text, "Started a task for u") || !got.Discussion[1].Dash ||
+		got.Discussion[2].AuthorName != "pat" || got.Comments != 2 {
 		t.Errorf("discussion %+v", got.Discussion)
 	}
 	// Only its author (or an admin) deletes a comment; pat is neither for u's.
@@ -757,9 +758,9 @@ func TestPlanningCardStatusWords(t *testing.T) {
 	c = card("Faster search")
 	link(c, model.LinkGoal, g.ID)
 	for _, step := range []struct {
-		set     func(*model.Goal)
-		text    string
-		suggest bool
+		set  func(*model.Goal)
+		text string
+		done bool
 	}{
 		{func(x *model.Goal) { x.Status = model.GoalOutOfBudget }, "Out of budget, needs its owner", false},
 		{func(x *model.Goal) { x.Status, x.Note, x.Stopped = model.GoalDone, model.GoalStoppedNote, true }, "Stopped", false},
@@ -769,8 +770,8 @@ func TestPlanningCardStatusWords(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := get(c)
-		if got.Status.Text != step.text || got.Status.SuggestDone != step.suggest {
-			t.Errorf("want %q: %+v %+v", step.text, got.Status, got.Links)
+		if got.Status.Text != step.text || (got.Column == model.CardDone) != step.done {
+			t.Errorf("want %q: %s %+v %+v", step.text, got.Column, got.Status, got.Links)
 		}
 	}
 }
@@ -806,5 +807,116 @@ func TestPlanningCardRequestsAreStrict(t *testing.T) {
 	}
 	if w := do(t, ph, "POST", "/api/planning/cards/"+c.ID+"/move", `{"column":"In_Progress"}`); w.Code != http.StatusOK || decodeCard(t, w).Column != model.CardInProgress {
 		t.Errorf("move in any case: %d %s", w.Code, w.Body)
+	}
+}
+
+// A card moves to Done by itself once all its linked work is done, from the
+// event of the work finishing, and says why in its comments. Moved back out
+// of Done, it stays where it is put until new work is linked; once that is
+// done too, it moves to Done again.
+func TestPlanningCardAutoDone(t *testing.T) {
+	s, _, p := boardServer(t)
+	h := s.Routes()
+	a := loggedIn(t, h)
+	get := func(id string) cardView {
+		t.Helper()
+		return decodeCard(t, do(t, a, "GET", "/api/planning/cards/"+id, ""))
+	}
+	link := func(id, kind, work string) {
+		t.Helper()
+		if w := do(t, a, "POST", "/api/planning/cards/"+id+"/links", `{"kind":"`+kind+`","id":"`+work+`"}`); w.Code != http.StatusOK {
+			t.Fatalf("link: %d %s", w.Code, w.Body)
+		}
+	}
+	// waitDone waits for the card to be in Done, without reading it through
+	// the API (which would move it too).
+	waitDone := func(id string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			c, err := s.Store.ForOrg(ownerSession(t, s).Org.ID).GetCard(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.Column == model.CardDone {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("card still in %s", c.Column)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	setTask := func(id string, to model.TodoStatus) model.Todo {
+		t.Helper()
+		td, err := raw(s).UpdateTodo(id, func(x *model.Todo) error { x.Status = to; return nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return td
+	}
+
+	c := decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Invoices","column":"planned"}`))
+	one, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Invoice PDF", Prompt: "pdf"})
+	two, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Invoice email", Prompt: "email"})
+	link(c.ID, model.LinkTask, one.ID)
+	link(c.ID, model.LinkTask, two.ID)
+	for _, td := range []model.Todo{one, two} {
+		for _, to := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress, model.StatusReview} {
+			setTask(td.ID, to)
+		}
+	}
+	// One of two merged: not yet.
+	s.ObservePlanning(model.Event{Type: model.EvTodoUpdated, TodoID: one.ID, Data: setTask(one.ID, model.StatusMerged)})
+	if got := get(c.ID); got.Column == model.CardDone {
+		t.Fatalf("half done, in Done: %+v", got.Status)
+	}
+	// Both merged: the event moves it.
+	s.ObservePlanning(model.Event{Type: model.EvTodoUpdated, TodoID: two.ID, Data: setTask(two.ID, model.StatusMerged)})
+	waitDone(c.ID)
+	got := get(c.ID)
+	if len(got.Discussion) != 1 || !got.Discussion[0].Dash || got.Discussion[0].Author != 0 ||
+		got.Discussion[0].Text != "Moved to Done: all 2 pieces of its linked work are done." || got.Comments != 0 {
+		t.Errorf("Dash's note: %+v (comments %d)", got.Discussion, got.Comments)
+	}
+
+	// Moved back out by someone: it stays, read or observed.
+	if w := do(t, a, "POST", "/api/planning/cards/"+c.ID+"/move", `{"column":"in_progress"}`); w.Code != http.StatusOK || decodeCard(t, w).Column != model.CardInProgress {
+		t.Fatalf("move back: %d %s", w.Code, w.Body)
+	}
+	s.ObservePlanning(model.Event{Type: model.EvTodoUpdated, TodoID: two.ID, Data: setTask(two.ID, model.StatusMerged)})
+	time.Sleep(50 * time.Millisecond)
+	if got := get(c.ID); got.Column != model.CardInProgress {
+		t.Fatalf("moved back, then: %s", got.Column)
+	}
+	// Linking work that is linked already is nothing new.
+	link(c.ID, model.LinkTask, one.ID)
+	if got := get(c.ID); got.Column != model.CardInProgress {
+		t.Fatalf("linked again: %s", got.Column)
+	}
+
+	// New work linked: once it is done, the card moves to Done again.
+	g, err := raw(s).CreateGoal(model.Goal{ProjectID: p.ID, Owner: testOwner(t, s).User, Title: "Invoice reminders", Mode: model.GoalQueue, Status: model.GoalWorking})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link(c.ID, model.LinkGoal, g.ID)
+	if got := get(c.ID); got.Column != model.CardInProgress {
+		t.Fatalf("new work linked: %s", got.Column)
+	}
+	g, err = raw(s).UpdateGoal(g.ID, func(x *model.Goal) error { x.Status = model.GoalDone; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ObservePlanning(model.Event{Type: model.EvGoalUpdated, Data: g})
+	waitDone(c.ID)
+	if got := get(c.ID); len(got.Discussion) != 2 || got.Discussion[1].Text != "Moved to Done: all 3 pieces of its linked work are done." {
+		t.Errorf("second note: %+v", got.Discussion)
+	}
+
+	// A card with nothing linked never moves on its own.
+	empty := decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Someday"}`))
+	if got := get(empty.ID); got.Column != model.CardIdeas {
+		t.Errorf("nothing linked: %s", got.Column)
 	}
 }

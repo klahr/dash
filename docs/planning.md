@@ -10,20 +10,36 @@ project's sections (or `gp`). On a phone it is a tab in the bottom bar. A
 [planner](users.md#planners) lands on it when they sign in. Their sidebar has **Planning**,
 **Chat** and their account.
 
+## The top of the page
+
+One row, from the left:
+
+- The boards' tabs. Click one to show its cards.
+- **+**: add a board.
+- The magnifier: search the cards.
+- The filters that are on, each with **×** to take it off.
+- **Mine**, **Filter** and **New card**.
+
+On a phone the row has the tabs, search, **Filter** and **⋯**. **⋯** has **New card**,
+**Add board** and **Mine**. **Filter** shows how many filters are on.
+
 ## Boards
 
 An org can have several boards, for example one for each product or team. Every org has a
 default board; the cards made before there were boards are on it.
 
-- With more than one board, their names show above the columns. Click one to show its cards.
-  On a phone they are a strip across the top.
-- **Boards…** at the top adds, renames, reorders and deletes boards. Type a name and press
-  `Enter` (or **Add board**). Edit a name in its box. The arrows move a board up or down.
+- **All boards**, the first tab when there is more than one board, shows every board's cards.
+  Each card then names its board.
+- To add a board, click **+** after the tabs, type its name and press `Enter`. `Esc` cancels.
+- Double-click a tab to rename its board, or press `F2` on it.
+- Right-click a tab for its menu: **Rename**, **Default**, **Move left**, **Move right** and
+  **Delete…**. The tab shown has **⋯**, which opens the same menu.
+- **Default** makes the board the default one: a card given no board goes there.
 - Deleting a board moves its cards to the end of the default board's columns. Dash asks first.
-  The default board can't be deleted; it can be renamed and moved.
+  The default board can't be deleted.
 - The board shown is in the page's address, so a link opens the same board. A card's link
   opens its board.
-- The filters (project, **Mine**, tags, target) work within the board shown.
+- The filters and the search work within the board shown.
 
 Anyone in the org, planners too, can manage the boards.
 
@@ -37,17 +53,24 @@ It looks like a project's **Board**: on a phone, tap a column's name at the top 
   lines after it the description. `Enter` adds it and starts the next one, `Shift+Enter`
   starts a new line, `Esc` cancels. Clicking elsewhere adds it, if you typed something.
 - Drag a card to another column, or up and down its own. A gap opens where it would land,
-  and the cards around it move aside. Hold it near the top or bottom of the screen to scroll. With the keyboard, focus a card
-  and press `Alt` with an arrow key. On a phone, drag it onto a column's name at the top, or pick the column in the open card's head.
-- The project filter at the top shows one project's cards. A card may name a project, or
-  none yet. Picking a project in the sidebar picks it here too; opening the page keeps the
-  filter you had.
+  and the cards around it move aside. Hold it near the top or bottom of the screen to scroll.
+  On a phone, press and hold a card, then drag it onto a column's name at the top. An open
+  card's **⋯** has **Move to** each other column too.
+- Point at a card and click the empty circle after its faces to join it.
+- The magnifier at the top searches the cards' titles and descriptions as you type. `Esc`
+  clears it.
+- **Filter** at the top has three lists: **Project**, **Tags** and **Targets**.
+  - A project shows only that project's cards. Picking a project in the sidebar picks it here
+    too; opening the page keeps the filter you had.
+  - Pick more tags to narrow it: a card must have all of them. Clicking a tag in an open card
+    picks it too.
+  - One target at a time, such as `1.4`, so a target works as a milestone.
+  - Pick a ticked one again to take it off, or **Clear filters**.
 - **Mine** at the top shows only the cards you are a member of: your cards. Click it again to
   show everyone's.
-- **Filter…** at the top shows only the cards with a tag, or with a target. Pick more tags to
-  narrow it: a card must have all of them. One target at a time, such as `1.4`, so a target
-  works as a milestone. Clicking a tag in an open card picks it too. Click **×** on a filter
-  at the top to take it off.
+- A card names its project with the project's icon, unless the board shows one project only.
+- The four columns' names fit across a phone's screen. A column's count shows when it has
+  cards.
 - A card added while filters are on gets their tags and target, and you as a member with
   **Mine** on, so it shows.
 - The filters stay as you left them, and are in the page's address, so a link shows the same
@@ -63,7 +86,7 @@ The card's head has:
 - the status of its work, and when it was added.
 - **Start…**: start a task or a goal for the card (see [Start](#start)).
 - **Write a feature brief** (see [Write a feature brief](#write-a-feature-brief)).
-- **⋯**: **Link existing…** and **Ask in chat**.
+- **⋯**: **Link existing…**, **Ask in chat**, and **Move to** each other column.
 - the link icon: copy the card's link.
 
 Below the head:
@@ -78,11 +101,11 @@ Below the head:
 - **Priority** (high, medium, low or none) and **Target**: free text, such as a version
   (`1.4`), a milestone or a date. Give cards of one milestone the same target, and filter by it.
 - **Project**: the project the card is for, or none yet.
-- **Members**: the people in the org on the card, any number. Pick one from the list to add
-  them, and click **×** on a member to take them off. Their pictures show on the card on the
-  board; someone without a picture shows as their initials on a colour of their own. Anyone in the org, planners too, can be a member and can add members. On
-  the board, point at a card and press `Space` to put yourself on it; press it again to take
-  yourself off. Someone you add gets a [notification](notifications.md#planning-cards).
+- **Members**: the people in the org on the card, any number. **Join** puts you on it. Pick
+  someone from the list to add them, and click **×** on a member to take them off. Their
+  pictures show on the card on the board; someone without a picture shows as their initials on
+  a colour of their own. Anyone in the org, planners too, can be a member and can add members.
+  Someone you add gets a [notification](notifications.md#planning-cards).
   The star on a member makes them the card's one owner, who answers for it; click the owner's
   star again for no owner. The owner is marked **Owner**, and their face comes first on the
   board, ringed. Taking the owner off the card
@@ -102,7 +125,8 @@ Below the head:
   description or a comment, or drop files on the open card, or on a card on the board. Anyone in
   the org, planners too, can attach and remove files. A card with a picture shows the first one
   across its top on the board, and how many files it has by a paper clip.
-- **Comments**: anyone in the org can comment, in markdown. Each shows how long ago it was
+- **Comments**: anyone in the org can comment, in markdown. Dash adds a note of its own when it
+  moves the card to **Done** (see [Done](#done)). Each shows how long ago it was
   written; point at the time for the date. Point at your own comment to delete it. A card with
   comments shows how many on the board, by a speech bubble. Write `@` and
   someone's username, such as `@pia`, to mention them: they get a
@@ -183,8 +207,17 @@ worktrees, diffs or runners.
 
 Linking work that has started moves the card to **In progress** if it was in **Ideas** or
 **Planned**. So does a linked draft task that is queued later. Dash never moves a card back:
-a task moved back to drafts leaves its card in **In progress**. When everything linked is done, the card offers **Move to Done**. Dash never
-moves a card to **Done** on its own.
+a task moved back to drafts leaves its card in **In progress**.
+
+## Done
+
+When all of a card's linked work is done (every task merged, every goal finished), Dash moves
+the card to the top of **Done**. Its comments get a note from Dash that says why, for
+example "Moved to Done: all 2 pieces of its linked work are done."
+
+- A card with nothing linked, or whose linked work was all deleted, stays where it is.
+- Move a card out of **Done** and Dash leaves it there. It moves to **Done** again only after
+  new work is linked to it and that work is done too.
 
 ## Write a feature brief
 
@@ -263,6 +296,13 @@ Members can link work that is already on a board:
 The **×** beside a linked task or goal unlinks it. Planners can't link or unlink work: they
 see it only through the card.
 
+## Keyboard
+
+The keys are in the app's **Keyboard** sheet (`?`), under **Planning**:
+
+- `Space` over a card joins it, or takes you off it.
+- `Alt` with an arrow key moves the focused card to the column beside, or up and down.
+
 ## Live updates
 
 The board and an open card update by themselves when anyone changes a card, comments, or
@@ -294,11 +334,11 @@ A `board` is a board's id or its name, in any case. Left out, it is the default 
 
 | Call                                                  | What it does                                     |
 |-------------------------------------------------------|--------------------------------------------------|
-| `GET /api/planning/cards?board=<board>&project=<id>`  | a board's cards (`board=all`: every board's), with status and linked work |
+| `GET /api/planning/cards?board=<board>&project=<id>`  | a board's cards (`board=all`: every board's), with status and linked work. A card whose linked work is all done moves to Done first |
 | `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `board`, `column`, `priority` (`high`, `medium`, `low`, or `none`), `target`, `members` (user ids; `[]` is nobody), `owner` (a user id, who joins the members if they aren't one; `0` is nobody), `depends_on` (card ids; `[]` is none), `tags` (up to 20; `[]` is none) |
 | `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments). A card has `deps` and `needed_by` (id, title, column, done), `waiting`: its dependencies not done yet, and `version`. Send `version` with `PATCH` to get `409` instead of overwriting a change someone made since; a move or a file doesn't change it. `PATCH` takes the fields `POST` takes but `column`: move a card with `…/move`. A new `board` moves it to the end of its column there. A card has `board_id` and `board_name`; `deps` and `needed_by` name each card's `board` |
 | `POST /api/planning/cards/{id}/move`                  | `column` and `position` (0 is the top)           |
-| `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
+| `GET`, `POST /api/planning/cards/{id}/comments`       | its comments (Dash's own notes have `dash: true`); add one: `text` |
 | `DELETE /api/planning/cards/{id}/comments/{comment}`  | delete a comment                                 |
 | `POST /api/planning/cards/{id}/files?name=<name>`     | attach a file: the request's body                |
 | `GET /api/planning/cards/{id}/files/{file}/{name}`    | a card's file                                    |
@@ -312,7 +352,7 @@ A `board` is a board's id or its name, in any case. Left out, it is the default 
 | `GET /api/planning/work?project=<id>`                 | tasks and goals to link (members)                |
 | `GET /api/planning/linked/{kind}/{work}`              | the cards a task or goal is linked to (members)  |
 | `GET`, `POST /api/planning/boards`                    | the org's boards in their order, each with `id`, `name`, `position`, `default` and `cards` (how many); add one: `name` |
-| `PATCH /api/planning/boards/{board}`                  | `name` renames it; `position` moves it (0 is the first) |
+| `PATCH /api/planning/boards/{board}`                  | `name` renames it; `position` moves it (0 is the first); `default: true` makes it the default board |
 | `DELETE /api/planning/boards/{board}`                 | delete it; its cards move to the default board, which can't be deleted |
 
 ## Not yet

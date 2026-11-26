@@ -750,17 +750,18 @@ func (o *OrgStore) CardComments(cardID string) ([]model.CardComment, error) {
 	}
 	return queryAll(o.s.db, func(sc scanner) (m model.CardComment, err error) {
 		var at int64
-		err = sc.Scan(&m.ID, &m.CardID, &m.Author, &m.AuthorName, &m.Text, &at)
+		err = sc.Scan(&m.ID, &m.CardID, &m.Author, &m.AuthorName, &m.Text, &at, &m.Dash)
 		m.CreatedAt = time.Unix(at, 0).UTC()
 		return m, err
-	}, `SELECT m.id, m.card_id, COALESCE(m.author, 0), COALESCE(u.username, ''), m.text, m.created_at
+	}, `SELECT m.id, m.card_id, COALESCE(m.author, 0), COALESCE(u.username, ''), m.text, m.created_at, EXISTS (SELECT 1 FROM planning_dash_notes d WHERE d.comment_id = m.id)
 		FROM planning_comments m LEFT JOIN users u ON u.id = m.author WHERE m.card_id = ? ORDER BY m.id`, cardID)
 }
 
-// CommentCounts is how many comments each of the org's cards has.
+// CommentCounts is how many comments each of the org's cards has (people's:
+// not Dash's own notes).
 func (o *OrgStore) CommentCounts() (map[string]int, error) {
 	return queryMap(o.s.db, scanCount, `SELECT m.card_id, count(*) FROM planning_comments m JOIN planning_cards c ON c.id = m.card_id
-		WHERE c.org_id = ? GROUP BY m.card_id`, o.org)
+		WHERE c.org_id = ? AND m.id NOT IN (SELECT comment_id FROM planning_dash_notes) GROUP BY m.card_id`, o.org)
 }
 
 // scanCount reads a row of an id and a count.
@@ -842,16 +843,65 @@ func (o *OrgStore) ownsWork(kind, id string) bool {
 }
 
 // LinkCard links a card to one of the org's tasks or goals. Linking again
-// is no change.
+// is no change. New work lets Dash move the card to Done again once it is
+// all done (AutoDoneHeld).
 func (o *OrgStore) LinkCard(cardID, kind, workID string) error {
 	if !o.ownsWork(kind, workID) {
 		return ErrNotFound
 	}
 	return o.cardTxThen(cardID, func(tx *sql.Tx, _ model.Card) error {
-		_, err := tx.Exec(`INSERT INTO planning_links (card_id, kind, work_id, created_by, created_at) VALUES (?, ?, ?, NULLIF(?, 0), ?)
+		res, err := tx.Exec(`INSERT INTO planning_links (card_id, kind, work_id, created_by, created_at) VALUES (?, ?, ?, NULLIF(?, 0), ?)
 			ON CONFLICT (card_id, kind, work_id) DO NOTHING`, cardID, kind, workID, o.user, time.Now().Unix())
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			_, err = tx.Exec("DELETE FROM planning_auto_done_held WHERE card_id = ?", cardID)
+		}
 		return err
 	}, func() { o.s.indexLink(kind, workID, cardID, o.org, true) })
+}
+
+// AutoDoneHeld reports whether Dash leaves the card out of Done for now:
+// someone moved it out of Done, and no new work was linked to it since.
+func (o *OrgStore) AutoDoneHeld(cardID string) (bool, error) {
+	var held bool
+	err := o.s.db.QueryRow("SELECT EXISTS (SELECT 1 FROM planning_auto_done_held WHERE card_id = c.id) FROM planning_cards c WHERE c.id = ? AND c.org_id = ?", cardID, o.org).Scan(&held)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	return held, err
+}
+
+// HoldAutoDone keeps Dash from moving the card to Done on its own until new
+// work is linked to it (LinkCard): someone moved it out of Done.
+func (o *OrgStore) HoldAutoDone(cardID string) error {
+	if _, err := o.GetCard(cardID); err != nil {
+		return err
+	}
+	o.s.mu.Lock()
+	defer o.s.mu.Unlock()
+	_, err := o.s.db.Exec("INSERT OR IGNORE INTO planning_auto_done_held (card_id) VALUES (?)", cardID)
+	return err
+}
+
+// AddDashNote adds a note of Dash's own to a card's comments, such as why
+// Dash moved it: it has no author, and isn't counted as a comment.
+func (o *OrgStore) AddDashNote(cardID, text string) (model.CardComment, error) {
+	m := model.CardComment{CardID: cardID, Text: text, Dash: true, CreatedAt: time.Now().UTC().Truncate(time.Second)}
+	err := o.cardTx(cardID, func(tx *sql.Tx, _ model.Card) error {
+		res, err := tx.Exec("INSERT INTO planning_comments (card_id, author, text, created_at) VALUES (?, NULL, ?, ?)",
+			cardID, text, m.CreatedAt.Unix())
+		if err != nil {
+			return err
+		}
+		if m.ID, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		_, err = tx.Exec("INSERT INTO planning_dash_notes (comment_id) VALUES (?)", m.ID)
+		return err
+	})
+	return m, err
 }
 
 // UnlinkCard removes a card's link to a task or goal.

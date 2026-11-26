@@ -20,9 +20,11 @@ import { dictation } from "./dictation.js";
 // A card opens in a pane beside the board (full screen with Back on a
 // phone; Esc closes), as History's commit pane does.
 //
-// An org has several boards of cards (one per product or team, say): the
-// board shown is picked above the columns when there is more than one, and
-// added, renamed, reordered and deleted in the Boards sheet (boardsSheet).
+// An org has several boards of cards: their tabs head the page, with All
+// boards (every board's cards) when there is more than one. A board is added
+// with + after the tabs, and renamed, reordered, made the default or deleted
+// from its tab's menu (right click, or ⋯ on the tab shown); a double click
+// renames it.
 //
 // One module for both places Planning shows: the app's Planning view
 // (members, admins, owners; index.html) and planning.html, the page a
@@ -33,10 +35,10 @@ import { dictation } from "./dictation.js";
 
 // s: the task board's lane colour a column takes (style.css: .s-*).
 export const COLUMNS = [
-  { key: "ideas", title: "Ideas", s: "draft", empty: "No ideas yet." },
-  { key: "planned", title: "Planned", s: "queued", empty: "Nothing planned yet." },
-  { key: "in_progress", title: "In progress", s: "in_progress", empty: "Nothing in progress." },
-  { key: "done", title: "Done", s: "merged", empty: "Nothing done yet." },
+  { key: "ideas", title: "Ideas", s: "draft" },
+  { key: "planned", title: "Planned", s: "queued" },
+  { key: "in_progress", title: "In progress", s: "in_progress" },
+  { key: "done", title: "Done", s: "merged" },
 ];
 const COLUMN_TITLE = Object.fromEntries(COLUMNS.map((c) => [c.key, c.title]));
 const PRIORITY = { high: "High", medium: "Medium", low: "Low" };
@@ -45,6 +47,9 @@ const cardAPI = (id = "", rest = "") => `/api/planning/cards${id ? `/${encodeURI
 const boardAPI = (id = "") => `/api/planning/boards${id ? `/${encodeURIComponent(id)}` : ""}`;
 // fileURL is a card's file, through the card (a planner can't read uploads).
 const fileURL = (c, f) => cardAPI(c.id, `/files/${encodeURIComponent(f.id)}/${encodeURIComponent(f.name)}`);
+
+// BOARDS_ALL, as the board shown, is every board's cards.
+const BOARDS_ALL = "all";
 
 const pl = {
   root: null,
@@ -61,6 +66,9 @@ const pl = {
   tags: savedTags(),
   target: store.get("dash.planning.target", ""),
   mine: store.flag("dash.planning.mine"),
+  q: "", // the search: only the cards with each of its words in their title or description
+  searching: false, // the search field is open
+  boardEdit: null, // a board's name being typed in its tab: { id ("": a new board), input }
   loaded: false,
   open: null, // the open card's id
   detail: null, // its view, with its discussion
@@ -85,8 +93,12 @@ function savedTags() {
 
 const byId = (id) => pl.cards.find((c) => c.id === id);
 const defaultBoard = () => pl.boards.find((b) => b.default);
-// boardShown is the id of the board shown ("" until the boards are in).
+// boardShown is the id of the board shown ("" until the boards are in;
+// BOARDS_ALL for every board's cards).
 const boardShown = () => pl.board || defaultBoard()?.id || "";
+const allBoards = () => pl.board === BOARDS_ALL;
+// boardOrder is where card c's board is among the boards (All boards sorts by it).
+const boardOrder = (c) => pl.boards.findIndex((b) => b.id === c.board_id);
 // saveBoard makes id the board shown, for next time too ("": the default).
 function saveBoard(id) {
   pl.board = id && id !== defaultBoard()?.id ? id : "";
@@ -96,11 +108,20 @@ const sameTag = (a, b) => a.toLowerCase() === b.toLowerCase();
 const tagged = (c, tag) => (c.tags || []).some((t) => sameTag(t, tag));
 const tagPicked = (tag) => pl.tags.some((t) => sameTag(t, tag));
 const meId = () => pl.hooks.me?.()?.id || 0;
-// filtered: whether a filter other than the project's hides cards.
-const filtered = () => pl.tags.length > 0 || !!pl.target || (pl.mine && !!meId());
+// filtered: whether a filter other than the project's (or the search) hides cards.
+const filtered = () => pl.tags.length > 0 || !!pl.target || (pl.mine && !!meId()) || !!pl.q.trim();
+// matches: whether each word of the search is in card c's title or description.
+function matches(c) {
+  const words = pl.q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const text = `${c.title || ""}\n${c.description || ""}`.toLowerCase();
+  return words.every((w) => text.includes(w));
+}
 // shows: whether the board shows card c: it has every tag picked, the
-// target picked, and the user among its members, as far as those are picked.
+// target picked, the user among its members, and the search's words, as far
+// as those are picked.
 function shows(c) {
+  if (!matches(c)) return false;
   if (!pl.tags.every((t) => tagged(c, t))) return false;
   if (pl.target && !sameTag(c.target || "", pl.target)) return false;
   const me = meId();
@@ -141,21 +162,34 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
   pl.hooks = hooks;
   fill(root,
     h("div", { class: "page planning" },
-      h("header", { class: "cl-head pl-head" },
-        h("h2", { class: "cl-title page-title" }, "Planning"),
-        filterPicker(),
-        ib({ type: "button", class: "btn small pl-mine", id: "pl-mine", "aria-pressed": "false", hidden: true,
-          title: "Show only the cards you are a member of", onclick: () => pickMine(!pl.mine) }, "user", "Mine"),
-        h("select", { class: "pl-more-filter", id: "pl-more-filter", "aria-label": "Show only the cards with a tag or a target", hidden: true,
-          onchange: (e) => { const [kind, v] = [e.target.value.slice(0, 1), e.target.value.slice(2)]; e.target.value = ""; if (kind === "t") pickTag(v, true); else if (kind === "m") pickTarget(v); } }),
+      // One row: the boards' tabs (the page's title), + to add one; search,
+      // the filters picked, Mine, Filter and New card. On a phone, Mine, New
+      // card and + are under ⋯, and the open search takes the tabs' place.
+      h("header", { class: "pl-head", id: "pl-head" },
+        h("h2", { class: "sr-only" }, "Planning"),
+        h("div", { class: "pl-boards", id: "pl-boards", role: "tablist", "aria-label": "Boards", onkeydown: boardTabsKey }),
+        ib({ type: "button", class: "icon-btn pl-board-add", id: "pl-board-add", "aria-label": "Add board", title: "Add board", onclick: () => editBoard("") }, "plus"),
+        h("div", { class: "pl-search", id: "pl-search", role: "search" },
+          ib({ type: "button", class: "icon-btn", id: "pl-search-open", "aria-label": "Search cards", title: "Search cards", "aria-controls": "pl-search-input", "aria-expanded": "false",
+            onclick: () => (pl.searching || pl.q ? closeSearch() : openSearch()) }, "search"),
+          h("input", { type: "search", id: "pl-search-input", "aria-label": "Search cards", autocomplete: "off", spellcheck: "false", enterkeyhint: "search", hidden: true,
+            oninput: (e) => setSearch(e.target.value),
+            onkeydown: (e) => {
+              if (e.key !== "Escape" || e.isComposing) return;
+              e.preventDefault();
+              e.stopPropagation(); // not the card's pane
+              closeSearch();
+              $("#pl-search-open").focus();
+            },
+            onblur: () => { if (!pl.q && pl.searching) { pl.searching = false; renderSearch(); } } })),
         h("span", { class: "pl-tag-filter", id: "pl-tag-filter", hidden: true }),
-        h("span", { class: "cl-state", id: "pl-state", "aria-live": "polite" }),
-        ib({ type: "button", class: "btn small pl-boards-btn", id: "pl-boards-btn", title: "Add, rename, reorder and delete boards", onclick: attempt(boardsSheet) }, "plan", "Boards…"),
-        ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to Planning", onclick: () => openComposer("ideas") }, "plus", "New card")),
-      // The boards, when there is more than one: a click shows one.
-      h("div", { class: "pl-boards", id: "pl-boards", role: "tablist", "aria-label": "Boards", hidden: true, onkeydown: boardTabsKey }),
-      h("p", { class: "hint pl-intro", id: "pl-intro", hidden: true },
-        "The plan: cards move from Ideas to Done. Start a card to make a task or a goal for a developer's project; its status follows the work."),
+        ib({ type: "button", class: "btn small pl-mine", id: "pl-mine", "aria-pressed": "false", hidden: true, onclick: () => pickMine(!pl.mine) }, "user", "Mine"),
+        h("button", { type: "button", class: "btn small pl-filter-btn", id: "pl-filter", "aria-haspopup": "menu", "aria-expanded": "false", hidden: true,
+          onclick: (e) => filterMenu(e.currentTarget) },
+        ico("filter"), h("span", { class: "pl-filter-label" }, "Filter"), h("span", { class: "n", id: "pl-filter-n" })),
+        ib({ type: "button", class: "btn small primary pl-new", onclick: () => openComposer("ideas") }, "plus", "New card"),
+        ib({ type: "button", class: "icon-btn pl-head-more", id: "pl-head-more", "aria-label": "More", title: "More", "aria-haspopup": "menu", "aria-expanded": "false",
+          onclick: (e) => headMenu(e.currentTarget) }, "more")),
       // The task board's layout (style.css: .lanes, .board, .col): on a
       // phone a strip of lanes and one column at a time, on a desktop the
       // columns side by side. A column is a list of bordered cards (no rail
@@ -163,15 +197,14 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
       // opens a new card to type on at the end of the column (openComposer).
       h("div", { class: "lanes pl-lanes", role: "tablist", "aria-label": "Columns" },
         ...COLUMNS.map((col) => h("button", { type: "button", role: "tab", class: `lane-tab s-${col.s}`, "data-col": col.key,
-          onclick: () => { pl.lane = col.key; renderBoard(); } }, col.title, h("span", { class: "n", id: `pl-tab-n-${col.key}` })))),
+          onclick: () => { pl.lane = col.key; renderBoard(); } }, h("span", { class: "lane-label" }, col.title), h("span", { class: "n", id: `pl-tab-n-${col.key}` })))),
       h("div", { class: "board pl-board", id: "pl-board" },
         ...COLUMNS.map((col) => h("section", { class: `col pl-col s-${col.s}`, "data-col": col.key, "aria-labelledby": `pl-col-${col.key}` },
           h("header", { class: "col-head" },
             h("span", { class: "col-label", id: `pl-col-${col.key}` }, col.title), h("span", { class: "n", id: `pl-count-${col.key}` })),
           h("div", { class: "col-body" },
             h("ol", { class: "pl-cards", "data-col": col.key, "aria-labelledby": `pl-col-${col.key}` }),
-            h("p", { class: "col-empty", id: `pl-empty-${col.key}` }, col.empty),
-            ib({ type: "button", class: "pl-add", "data-col": col.key, title: `Add a card to ${col.title}`, onclick: () => openComposer(col.key) }, "plus", "Add card")))))));
+            ib({ type: "button", class: "pl-add", "data-col": col.key, "aria-label": `Add card to ${col.title}`, onclick: () => openComposer(col.key) }, "plus", "Add card")))))));
   paneParent.append(
     h("aside", { class: "detail card-detail", id: "card-detail", hidden: true, "aria-labelledby": "pd-title" },
       h("header", { class: "detail-head" },
@@ -190,6 +223,7 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
   wireSwipe($("#pl-board", root));
   wireFileDrop(paneEl(), () => pl.open);
   wireFileDrop(root, (e) => e.target.closest?.(".pl-card:not(.pl-composer)")?.dataset.id);
+  desktop.addEventListener?.("change", () => renderTagFilter());
   renderFilter();
 }
 
@@ -272,9 +306,9 @@ export function followProject(id) {
   if (!pl.hooks.visible || pl.hooks.visible()) loadPlanning().catch(fail);
 }
 
-// ---- the project filter
-// A button that opens a list of the projects, each with its icon (a select
-// can't show pictures). Arrows move in the list, Enter picks, Esc closes.
+// ---- the filters: a menu of the projects, the tags and the targets
+// (Filter), the ones picked beside it with × to take them off (on a desktop),
+// and Mine. On a phone, Mine is in the menu too, and Filter counts them all.
 
 // planningIcon is a project's icon, or its initial on its color, as the
 // sidebar shows it (style.css: .side-project-icon).
@@ -285,28 +319,7 @@ function planningIcon(p) {
   return el;
 }
 
-function filterPicker() {
-  const list = h("ul", { class: "pl-filter-list", id: "pl-filter-list", role: "listbox", "aria-label": "Project", hidden: true, onkeydown: filterListKey,
-    onclick: (e) => { const o = e.target.closest("[role=option]"); if (o) pickFilter(o.dataset.value); } });
-  const btn = h("button", { type: "button", class: "btn small pl-filter-btn", id: "pl-filter", "aria-haspopup": "listbox", "aria-controls": "pl-filter-list", "aria-expanded": "false",
-    onclick: () => toggleFilter(list.hidden),
-    onkeydown: (e) => { if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); toggleFilter(true); } } });
-  return h("div", { class: "pl-filter", id: "pl-filter-wrap",
-    onfocusout: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) toggleFilter(false, false); } }, btn, list);
-}
-
-function toggleFilter(open, focus = true) {
-  const btn = $("#pl-filter"), list = $("#pl-filter-list");
-  if (!btn || list.hidden === !open) return;
-  list.hidden = !open;
-  btn.setAttribute("aria-expanded", String(open));
-  if (!focus) return;
-  if (open) ($("[aria-selected=true]", list) || $("[role=option]", list))?.focus();
-  else btn.focus();
-}
-
 function pickFilter(id) {
-  toggleFilter(false);
   if (id === pl.filter) return;
   pl.filter = id;
   store.set("dash.planning.project", pl.filter);
@@ -315,57 +328,107 @@ function pickFilter(id) {
   loadPlanning().catch(fail);
 }
 
-function filterListKey(e) {
-  const opts = $$("[role=option]", e.currentTarget);
-  const i = opts.indexOf(document.activeElement);
-  const to = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: opts.length - 1 }[e.key];
-  if (to !== undefined) opts[Math.max(0, Math.min(opts.length - 1, to))]?.focus();
-  else if (e.key === "Enter" || e.key === " ") pickFilter(document.activeElement?.dataset.value ?? pl.filter);
-  else if (e.key === "Escape") toggleFilter(false);
-  else if (e.key === "Tab") { toggleFilter(false, false); return; }
-  else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    // Typing a letter goes to the next project starting with it.
-    const k = e.key.toLowerCase();
-    const next = [...opts.slice(i + 1), ...opts.slice(0, i + 1)].find((o) => o.textContent.trim().toLowerCase().startsWith(k));
-    next?.focus();
-  } else return;
-  e.preventDefault();
-  e.stopPropagation();
+// filterMenu lists what the cards can be filtered by, in groups: projects,
+// tags, targets (Mine too, on a phone); a pick puts a filter on or off.
+function filterMenu(anchor) {
+  const group = (heading, items) => Object.assign(items, { heading });
+  const projects = pl.projects.length > 1 || pl.filter ? group("Project", [
+    ["repo", "All projects", () => pickFilter(""), { checked: !pl.filter }],
+    ...pl.projects.map((p) => [planningIcon(p), p.name, () => pickFilter(p.id === pl.filter ? "" : p.id), { checked: p.id === pl.filter }])]) : [];
+  const tags = group("Tags", allTags().map((t) => ["tag", t, () => pickTag(t, !tagPicked(t)), { checked: tagPicked(t) }]));
+  const targets = group("Targets", allTargets().map((t) => ["flag", t, () => pickTarget(sameTag(t, pl.target) ? "" : t), { checked: sameTag(t, pl.target) }]));
+  const mine = !desktop.matches && meId() ? [["user", "Mine", () => pickMine(!pl.mine), { checked: pl.mine }]] : [];
+  const any = pl.filter || pl.tags.length || pl.target || (pl.mine && mine.length);
+  return popMenu(anchor, [mine, projects, tags, targets, any ? [["x", "Clear filters", clearFilters]] : []], { heading: "Filter" });
+}
+
+function clearFilters() {
+  pl.tags = [];
+  pl.target = "";
+  if (!desktop.matches) pl.mine = false;
+  saveFilters();
+  pickFilter("");
+}
+
+// headMenu is a phone's ⋯: New card, Add board, and Mine.
+function headMenu(anchor) {
+  return popMenu(anchor, [[
+    ["plus", "New card", () => openComposer("ideas")],
+    ["plan", "Add board", () => editBoard("")],
+  ], meId() ? [["user", "Mine", () => pickMine(!pl.mine), { checked: pl.mine }]] : []]);
 }
 
 function renderFilter() {
-  const btn = $("#pl-filter"), list = $("#pl-filter-list");
-  if (!btn) return;
-  const chosen = pl.projects.find((p) => p.id === pl.filter);
-  const label = chosen ? chosen.name : "All projects";
-  fill(btn, chosen ? planningIcon(chosen) : ico("repo"), h("span", { class: "pl-filter-name" }, label), ico("down"));
-  btn.setAttribute("aria-label", `Project: ${label}`);
-  btn.title = "Show the cards of one project";
-  const option = (id, icon, name) => h("li", { role: "option", tabindex: "-1", "data-value": id, "aria-selected": String(id === pl.filter) },
-    icon, h("span", { class: "pl-filter-name" }, name), id === pl.filter ? ico("check") : null);
-  fill(list, option("", ico("repo"), "All projects"), ...pl.projects.map((p) => option(p.id, planningIcon(p), p.name)));
-  $("#pl-filter-wrap").hidden = pl.projects.length < 2 && !pl.filter;
+  renderTagFilter();
 }
 
-// ---- the boards: a tab for each above the columns, when there is more
-// than one. Arrows, Home and End move between them, as between tabs.
+// ---- search: the magnifier opens a field that shows only the cards with
+// each of its words in their title or description, as you type. Esc clears
+// it; left empty, it folds back to the magnifier.
+
+function renderSearch() {
+  const input = $("#pl-search-input");
+  if (!input) return;
+  if (document.activeElement !== input && input.value !== pl.q) input.value = pl.q;
+  const open = pl.searching || !!pl.q;
+  input.hidden = !open;
+  $("#pl-head").classList.toggle("searching", open);
+  $("#pl-search-open").setAttribute("aria-expanded", String(open));
+}
+
+function openSearch() {
+  pl.searching = true;
+  renderSearch();
+  $("#pl-search-input").focus();
+}
+
+function closeSearch() {
+  pl.searching = false;
+  setSearch("");
+}
+
+function setSearch(q) {
+  if (q === pl.q) { renderSearch(); return; }
+  pl.q = q;
+  renderSearch();
+  renderBoard();
+}
+
+// ---- the boards: a tab each at the head of the page (All boards first,
+// when there is more than one). Arrows, Home and End move between them, as
+// between tabs; F2 renames the one focused. A tab's menu (right click, or ⋯
+// on the tab shown) renames, moves, makes default or deletes its board.
 
 function renderBoards() {
   const el = $("#pl-boards");
   if (!el) return;
-  const many = pl.boards.length > 1;
-  el.hidden = !many;
-  const on = boardShown();
-  fill(el, ...(!many ? [] : pl.boards.map((b) => h("button", {
-    type: "button", role: "tab", class: "pl-board-tab", "data-board": b.id, "aria-selected": String(b.id === on), tabindex: b.id === on ? "0" : "-1",
-    title: `Show the cards of ${b.name}`, onclick: () => pickBoard(b.id),
-  }, h("span", { class: "pl-board-name" }, b.name), h("span", { class: "n", "aria-label": `${b.cards} card${b.cards === 1 ? "" : "s"}` }, String(b.cards))))));
+  const on = allBoards() ? BOARDS_ALL : boardShown();
+  const tab = (id, name, props = {}) => h("button", {
+    type: "button", role: "tab", class: "pl-board-tab", "data-board": id, "aria-selected": String(id === on), tabindex: id === on ? "0" : "-1",
+    onclick: () => pickBoard(id), ...props,
+  }, h("span", { class: "pl-board-name" }, name));
+  const kids = pl.boards.map((b) => {
+    if (pl.boardEdit?.id === b.id) return pl.boardEdit.input;
+    const t = tab(b.id, b.name, { ondblclick: () => editBoard(b.id), oncontextmenu: (e) => { e.preventDefault(); boardMenu(b, e.currentTarget); } });
+    if (b.id !== on) return t;
+    return h("span", { class: "pl-board-on", role: "none" }, t,
+      ib({ type: "button", class: "icon-btn pl-board-more", "aria-label": `${b.name}: board menu`, title: "Board menu", "aria-haspopup": "menu", "aria-expanded": "false",
+        onclick: (e) => boardMenu(b, e.currentTarget) }, "more"));
+  });
+  if (pl.boards.length > 1) kids.unshift(tab(BOARDS_ALL, "All boards"));
+  if (pl.boardEdit?.id === "") kids.push(pl.boardEdit.input);
+  // Keep the box being typed in where it is, with its text and focus.
+  const focused = document.activeElement === pl.boardEdit?.input;
+  fill(el, ...kids);
+  if (focused) pl.boardEdit.input.focus();
 }
 
 function boardTabsKey(e) {
+  if (e.target.matches?.(".pl-board-input")) return;
   const tabs = $$(".pl-board-tab", e.currentTarget);
   const i = tabs.indexOf(document.activeElement);
   if (i < 0) return;
+  if (e.key === "F2" && tabs[i].dataset.board !== BOARDS_ALL) { e.preventDefault(); editBoard(tabs[i].dataset.board); return; }
   const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
   if (to === undefined) return;
   e.preventDefault();
@@ -374,82 +437,88 @@ function boardTabsKey(e) {
   pickBoard(t.dataset.board);
 }
 
-// pickBoard shows board id (its cards; the filters stay). A card of another
-// board that is open closes.
+// pickBoard shows board id (its cards; the filters stay; BOARDS_ALL: every
+// board's). A card of another board that is open closes.
 export function pickBoard(id) {
-  const was = boardShown();
+  const was = pl.board || boardShown();
   saveBoard(id);
-  if (boardShown() === was) return;
-  if (pl.open && pl.detail?.board_id && pl.detail.board_id !== boardShown()) closeCard();
+  if ((pl.board || boardShown()) === was) return;
+  if (pl.open && !allBoards() && pl.detail?.board_id && pl.detail.board_id !== boardShown()) closeCard();
   changed("replace");
   renderBoards();
   loadPlanning().catch(fail);
 }
 
-// boardsSheet adds, renames, reorders and deletes the org's boards. Deleting
-// one moves its cards to the default board, after a confirm.
-// noSubmit keeps Enter in a field of the Boards sheet from submitting the
-// sheet's form, which closes it: Enter's keypress can come on its own,
-// unstopped by the keydown's preventDefault.
-const noSubmit = (e) => { if (e.key === "Enter") e.preventDefault(); };
+// boardMenu is board b's menu, under anchor.
+function boardMenu(b, anchor) {
+  const i = pl.boards.findIndex((x) => x.id === b.id);
+  const patch = (body) => () => boardChange(() => call("PATCH", boardAPI(b.id), body));
+  return popMenu(anchor, [[
+    ["edit", "Rename", () => editBoard(b.id)],
+    ["star", "Default", patch({ default: true }), { checked: !!b.default, disabled: !!b.default }],
+    i > 0 ? ["left", "Move left", patch({ position: i - 1 })] : null,
+    i < pl.boards.length - 1 ? ["right", "Move right", patch({ position: i + 1 })] : null,
+  ].filter(Boolean), b.default ? [] : [["trash", "Delete…", () => deleteBoard(b), { danger: true }]]], { heading: b.name });
+}
 
-async function boardsSheet() {
-  if (!pl.boards.length) await loadPlanning();
-  const list = h("ol", { class: "pl-board-list", "aria-label": "Boards" });
-  const name = h("input", { class: "pl-board-new", maxlength: 60, autocomplete: "off", placeholder: "A product or a team", "aria-label": "New board's name",
-    onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }, onkeypress: noSubmit });
-  // act runs a change, then shows the boards as they are now, with the focus
-  // back on what had it (focus: [board id, control]).
-  const act = async (fn, focus) => {
-    try { await fn(); } catch (e) { fail(e); }
-    await loadPlanning().catch(fail);
-    render(focus);
+// boardChange runs a change to the boards, then shows them as they are now.
+async function boardChange(fn) {
+  try { await fn(); } finally { await loadPlanning().catch(fail); }
+}
+
+async function deleteBoard(b) {
+  const n = b.cards || 0;
+  const ok = await ask({ title: `Delete the board ${b.name}?`, ok: "Delete", danger: true,
+    body: n ? `Its ${n} card${n === 1 ? "" : "s"} move${n === 1 ? "s" : ""} to ${defaultBoard()?.name || "the default board"}.` : "It has no cards." });
+  if (!ok) return;
+  if (b.id === boardShown() && !allBoards()) pickBoard("");
+  await boardChange(() => call("DELETE", boardAPI(b.id)));
+  toast(`Board “${b.name}” deleted`);
+}
+
+// editBoard turns board id's tab into a box with its name ("": a new
+// board's, after the tabs). Enter or leaving it saves, Esc cancels.
+function editBoard(id) {
+  if (pl.boardEdit) return;
+  const b = pl.boards.find((x) => x.id === id);
+  if (id && !b) return;
+  const input = h("input", { class: "pl-board-input", value: b?.name || "", maxlength: 60, autocomplete: "off", size: Math.max(8, (b?.name || "").length + 2),
+    "aria-label": b ? `Name of the board ${b.name}` : "New board" });
+  let done = false;
+  const end = (focus) => {
+    pl.boardEdit = null;
+    renderBoards();
+    if (focus) ($(`#pl-boards .pl-board-tab[data-board="${focus}"]`) || $("#pl-board-add"))?.focus();
   };
-  const add = () => {
-    const n = name.value.trim();
-    if (!n) { name.focus(); return; }
-    act(async () => {
-      const b = await call("POST", boardAPI(), { name: n });
-      name.value = "";
-      toast(`Board “${b.name}” added`);
-    }, null).then(() => name.focus());
+  const save = async () => {
+    if (done) return;
+    done = true;
+    const name = input.value.trim();
+    if (!name || name === b?.name) { end(id || ""); return; }
+    input.readOnly = true;
+    try {
+      const v = b ? await call("PATCH", boardAPI(b.id), { name }) : await call("POST", boardAPI(), { name });
+      pl.boardEdit = null;
+      if (!b) { toast(`Board “${v.name}” added`); saveBoard(v.id); changed("replace"); }
+      await loadPlanning();
+      $(`#pl-boards .pl-board-tab[data-board="${v.id}"]`)?.focus();
+    } catch (e) {
+      fail(e);
+      end(id || "");
+    }
   };
-  const render = (focus) => {
-    const def = defaultBoard();
-    fill(list, ...pl.boards.map((b, i) => h("li", { class: "pl-board-row", "data-board": b.id },
-      h("input", { class: "pl-board-name-edit", value: b.name, maxlength: 60, autocomplete: "off", "aria-label": `Name of the board ${b.name}`, "data-act": "name",
-        onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }, onkeypress: noSubmit,
-        onchange: (e) => { const v = e.target.value.trim(); if (v && v !== b.name) act(() => call("PATCH", boardAPI(b.id), { name: v }), null); else e.target.value = b.name; } }),
-      h("span", { class: "pl-board-meta" },
-        b.default ? h("span", { class: "pl-chip pl-board-default", title: "Cards given no board go here, and a deleted board's cards move here" }, "Default") : null,
-        h("span", { class: "hint" }, `${b.cards} card${b.cards === 1 ? "" : "s"}`)),
-      ib({ type: "button", class: "icon-btn small", "aria-label": `Move ${b.name} up`, title: "Move up", disabled: i === 0, "data-act": "up",
-        onclick: () => act(() => call("PATCH", boardAPI(b.id), { position: i - 1 }), [b.id, i - 1 === 0 ? "down" : "up"]) }, "up"),
-      ib({ type: "button", class: "icon-btn small", "aria-label": `Move ${b.name} down`, title: "Move down", disabled: i === pl.boards.length - 1, "data-act": "down",
-        onclick: () => act(() => call("PATCH", boardAPI(b.id), { position: i + 1 }), [b.id, i + 1 === pl.boards.length - 1 ? "up" : "down"]) }, "down"),
-      b.default ? h("span", { class: "pl-board-keep", "aria-hidden": "true" }) : ib({ type: "button", class: "icon-btn small", "aria-label": `Delete ${b.name}`, title: "Delete…", "data-act": "delete",
-        onclick: async () => {
-          const n = b.cards;
-          const ok = await ask({ title: `Delete the board ${b.name}?`, ok: "Delete", danger: true,
-            body: n ? `Its ${n} card${n === 1 ? "" : "s"} move${n === 1 ? "s" : ""} to ${def?.name || "the default board"}.` : "It has no cards." });
-          if (!ok) return;
-          if (b.id === boardShown()) pickBoard("");
-          await act(() => call("DELETE", boardAPI(b.id)), null);
-          toast(`Board “${b.name}” deleted`);
-          name.focus();
-        } }, "trash"))));
-    if (focus) $(`.pl-board-row[data-board="${focus[0]}"] [data-act="${focus[1]}"]`, list)?.focus();
-  };
-  render(null);
-  const { closed } = openSheet({ title: "Boards", cls: "pl-sheet pl-boards-sheet",
-    body: [
-      h("p", { class: "hint" }, "One board for each product or team, say. Their names show above the columns when there is more than one."),
-      list,
-      h("div", { class: "pl-board-add" }, name, ib({ type: "button", class: "btn small", onclick: add }, "plus", "Add board")),
-    ],
-    footer: ib({ class: "btn primary", value: "cancel" }, "check", "Done") });
-  name.focus();
-  await closed;
+  input.addEventListener("input", () => { input.size = Math.max(8, input.value.length + 2); });
+  input.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
+    if (e.key === "Enter") { e.preventDefault(); save(); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done = true; end(id || ""); }
+  });
+  input.addEventListener("blur", () => { if (document.hasFocus() && !done) save(); });
+  pl.boardEdit = { id, input };
+  renderBoards();
+  input.focus();
+  input.select();
+  input.scrollIntoView?.({ block: "nearest", inline: "nearest" });
 }
 
 // ---- the board
@@ -504,13 +573,17 @@ function pickMine(on) {
   saveFilters();
 }
 
-// renderTagFilter shows the filters picked, each with × to take it off;
-// Mine; and a list of the tags and targets to filter by.
+// renderTagFilter shows the filters picked, each with × to take it off (a
+// desktop); Mine; and Filter, with how many are on.
 function renderTagFilter() {
-  const off = (label, run) => ib({ type: "button", class: "icon-btn small", "aria-label": label, title: label, onclick: run }, "x");
+  const off = (label, run) => ib({ type: "button", class: "icon-btn small", "aria-label": label, title: "Remove", onclick: run }, "x");
   const el = $("#pl-tag-filter");
-  el.hidden = !pl.tags.length && !pl.target;
+  if (!el) return;
+  const project = pl.projects.find((p) => p.id === pl.filter);
+  el.hidden = !pl.tags.length && !pl.target && !project;
   fill(el,
+    project ? h("span", { class: "pl-chip pl-tag pl-project-on pl-tag-on" }, planningIcon(project), h("span", { class: "pl-tag-name" }, project.name),
+      off(`Remove the filter ${project.name}`, () => pickFilter(""))) : null,
     ...pl.tags.map((t) => tagChip(t, "span", { class: "pl-tag-on" }, ico("tag"), h("span", { class: "pl-tag-name" }, t), off(`Remove the filter ${t}`, () => pickTag(t, false)))),
     pl.target ? h("span", { class: "pl-chip pl-tag pl-target-on pl-tag-on" }, ico("flag"), h("span", { class: "pl-tag-name" }, pl.target),
       off(`Remove the filter ${pl.target}`, () => pickTarget(""))) : null);
@@ -518,21 +591,14 @@ function renderTagFilter() {
   mine.hidden = !meId();
   mine.setAttribute("aria-pressed", String(pl.mine));
   mine.classList.toggle("on", pl.mine);
-  const tags = allTags().filter((t) => !tagPicked(t));
-  const targets = allTargets().filter((t) => !sameTag(t, pl.target));
-  const more = $("#pl-more-filter");
-  more.hidden = !tags.length && !targets.length;
-  fill(more, h("option", { value: "" }, "Filter…"),
-    tags.length ? h("optgroup", { label: "Tag" }, ...tags.map((t) => h("option", { value: `t:${t}` }, t))) : null,
-    targets.length ? h("optgroup", { label: "Target" }, ...targets.map((t) => h("option", { value: `m:${t}` }, t))) : null);
+  // Filter shows while there is something to filter by, or a filter is on.
+  const n = (pl.filter ? 1 : 0) + pl.tags.length + (pl.target ? 1 : 0) + (!desktop.matches && pl.mine && meId() ? 1 : 0);
+  const btn = $("#pl-filter");
+  btn.hidden = !n && pl.projects.length < 2 && !allTags().length && !allTargets().length && (desktop.matches || !meId());
+  btn.classList.toggle("on", n > 0);
+  $("#pl-filter-n").textContent = n ? String(n) : "";
+  btn.setAttribute("aria-label", n ? `Filter: ${n} on` : "Filter");
   fill($("#pl-tag-options"), ...allTags().map((t) => h("option", { value: t })));
-}
-
-// emptyText is what an empty column says.
-function emptyText(col) {
-  if (!filtered()) return col.empty;
-  const what = [pl.mine && meId() ? "of yours" : "", pl.tags.length ? `tagged ${pl.tags.join(" and ")}` : "", pl.target ? `for ${pl.target}` : ""].filter(Boolean);
-  return `Nothing ${what.join(", ")}.`;
 }
 
 function renderColumns() {
@@ -542,7 +608,7 @@ function renderColumns() {
   if (!pl.lane) pl.lane = (pl.cards.length && COLUMNS.find((col) => counts[col.key])?.key) || "ideas";
   for (const col of COLUMNS) {
     const ol = $(`.pl-cards[data-col="${col.key}"]`, pl.root);
-    const cards = shown().filter((c) => c.column === col.key).sort((a, b) => a.position - b.position);
+    const cards = shown().filter((c) => c.column === col.key).sort((a, b) => boardOrder(a) - boardOrder(b) || a.position - b.position);
     const focused = document.activeElement?.closest?.(".pl-card")?.dataset.id;
     // A card being typed stays where it is, last, with its text and focus.
     const comp = pl.composer?.col === col.key ? pl.composer.li : null;
@@ -552,16 +618,14 @@ function renderColumns() {
       comp.before(...cards.map(cardEl));
     } else fill(ol, ...cards.map(cardEl));
     ol.hidden = !cards.length && !comp;
-    $(`#pl-empty-${col.key}`).hidden = cards.length > 0 || !!comp;
-    $(`#pl-empty-${col.key}`).textContent = emptyText(col);
     if (focused && ol.querySelector(`[data-id="${focused}"]`)) $(`[data-id="${focused}"] .pl-open`, ol)?.focus({ preventScroll: true });
     $(`#pl-count-${col.key}`).textContent = String(cards.length);
-    $(`#pl-tab-n-${col.key}`).textContent = String(cards.length);
+    // A lane's count shows only when it has cards, so the four lanes fit a phone.
+    $(`#pl-tab-n-${col.key}`).textContent = cards.length ? String(cards.length) : "";
     $(`.pl-col[data-col="${col.key}"]`, pl.root).classList.toggle("active", pl.lane === col.key);
     $(`.pl-lanes [data-col="${col.key}"]`, pl.root).setAttribute("aria-selected", String(pl.lane === col.key));
   }
-  $("#pl-intro").hidden = pl.cards.length > 0;
-  $("#pl-state").textContent = "";
+  renderSearch();
   markSelected();
 }
 
@@ -624,20 +688,42 @@ function tagChip(t, tag, props, ...kids) {
   return h(tag, { ...props, class: `pl-chip pl-tag hued${props.class ? ` ${props.class}` : ""}`, style: `--tag-h: ${nameHue(t.toLowerCase())}` }, ...kids);
 }
 
+// projectChip names card c's project, with its icon (or its initial on its
+// colour), unless the board shows one project's cards only.
+function projectChip(c) {
+  if (pl.filter || !c.project_id) return null;
+  const p = pl.projects.find((x) => x.id === c.project_id);
+  const name = p?.name || c.project_name;
+  if (!name) return null;
+  return h("span", { class: "pl-chip pl-project", "aria-label": `Project: ${name}` }, p ? planningIcon(p) : ico("repo"), h("span", { class: "pl-project-name" }, name));
+}
+
+// peopleEl is the card's members' faces and, while you aren't one of them,
+// a Join slot after them (shown on hover, or focus).
+function peopleEl(c) {
+  const me = meId();
+  const join = me && !(c.members || []).includes(me) ? h("button", { type: "button", class: "avatar pl-join", "aria-label": `Join ${c.title}`, title: "Join",
+    onclick: (e) => { e.stopPropagation(); toggleMine(c).catch(fail); } }, ico("plus")) : null;
+  const faces = membersEl(c);
+  return faces || join ? h("span", { class: "pl-people" }, faces, join) : null;
+}
+
 function cardEl(c) {
   const meta = [
-    // Each kind of chip has a look of its own (style.css): a priority is a
-    // square label, a target has a flag, a tag is a pill in its own colour.
-    c.priority ? h("span", { class: `pl-chip pl-prio p-${c.priority}`, "aria-label": `Priority: ${PRIORITY[c.priority]}` }, PRIORITY[c.priority]) : null,
+    // Each kind of chip has a look of its own (style.css): a priority is the
+    // task board's quiet label (High with an up arrow), a target has a flag,
+    // a tag is a pill in its own colour, a project has its icon.
+    c.priority ? h("span", { class: `meta-chip prio-chip pl-prio p-${c.priority}${c.priority === "high" ? " prio-high" : ""}`, "aria-label": `Priority: ${PRIORITY[c.priority]}` },
+      c.priority === "high" ? ico("up") : c.priority === "low" ? ico("down") : null, PRIORITY[c.priority]) : null,
     waitsEl(c),
     c.target ? h("span", { class: "pl-chip pl-target", "aria-label": `Target: ${c.target}` }, ico("flag"), c.target) : null,
     ...(c.tags || []).map((t) => tagChip(t, "span", { "aria-label": `Tag: ${t}` }, t)),
-    !pl.filter && c.project_name ? h("span", { class: "pl-project" }, c.project_name) : null,
-    c.comments ? h("span", { class: "pl-comments", title: `${c.comments} comment${c.comments === 1 ? "" : "s"}` }, ico("comment"), String(c.comments)) : null,
-    c.files?.length ? h("span", { class: "pl-comments pl-file-count", title: `${c.files.length} file${c.files.length === 1 ? "" : "s"}` }, clip(), String(c.files.length)) : null,
-    membersEl(c),
+    allBoards() && c.board_name ? h("span", { class: "pl-chip pl-board-chip", "aria-label": `Board: ${c.board_name}` }, ico("plan"), c.board_name) : null,
+    projectChip(c),
+    c.comments ? h("span", { class: "pl-comments", "aria-label": `${c.comments} comment${c.comments === 1 ? "" : "s"}` }, ico("comment"), String(c.comments)) : null,
+    c.files?.length ? h("span", { class: "pl-comments pl-file-count", "aria-label": `${c.files.length} file${c.files.length === 1 ? "" : "s"}` }, clip(), String(c.files.length)) : null,
+    peopleEl(c),
   ].filter(Boolean);
-  if (c.status?.suggest_done) meta.push(h("span", { class: "pl-suggest" }, "Ready for Done"));
   // Under the title: the status of the linked work, or else the start of the description.
   const about = previewText(c.description);
   const sub = c.status?.total || c.status?.removed ? h("span", { class: "todo-sub" }, statusEl(c.status))
@@ -648,7 +734,7 @@ function cardEl(c) {
   // title is the button that opens the card; a press anywhere on it does too.
   // The card's first picture, across its top.
   const cover = (c.files || []).find(isImage);
-  return h("li", { class: "pl-card", "data-id": c.id },
+  return h("li", { class: "pl-card", "data-id": c.id, title: c.title },
     h("div", { class: `todo t-${c.status?.tone || "none"}${c.column === "done" ? " pushed" : ""}${c.id === pl.open ? " selected" : ""}`,
       onclick: () => openCard(c.id).catch(fail) },
       cover ? h("img", { class: "pl-cover", src: fileURL(c, cover), alt: "", loading: "lazy", draggable: false }) : null,
@@ -745,7 +831,10 @@ function endDrag(x, y, drop) {
   const ol = drop ? dropTarget(x, y) : null;
   const onTab = ol && document.elementFromPoint(x, y)?.closest?.(".pl-lanes .lane-tab");
   // Where the gap is: the cards before it in its column.
-  const index = !ol ? 0 : onTab || d.slot.parentNode !== ol ? 1 << 20 : cardsOf(ol).filter((li) => li.compareDocumentPosition(d.slot) & Node.DOCUMENT_POSITION_FOLLOWING).length;
+  // (In All boards, among the cards of the dragged card's board.)
+  const board = byId(d.id)?.board_id;
+  const index = !ol ? 0 : onTab || d.slot.parentNode !== ol ? 1 << 20
+    : cardsOf(ol).filter((li) => byId(li.dataset.id)?.board_id === board && li.compareDocumentPosition(d.slot) & Node.DOCUMENT_POSITION_FOLLOWING).length;
   // The card takes the gap's place, so the board drawn after the drop glides
   // it and its neighbours on from where they are.
   if (ol && d.slot.parentNode === ol) d.slot.replaceWith(d.li); else d.slot.remove();
@@ -834,7 +923,7 @@ function wireSwipe(board) {
 function cardKeys(e, c) {
   if (!e.altKey || e.ctrlKey || e.metaKey) return;
   const cols = COLUMNS.map((x) => x.key);
-  const same = shown().filter((x) => x.column === c.column).sort((a, b) => a.position - b.position);
+  const same = shown().filter((x) => x.column === c.column && x.board_id === c.board_id).sort((a, b) => a.position - b.position);
   const at = same.findIndex((x) => x.id === c.id);
   let to = null;
   if (e.key === "ArrowLeft" && cols.indexOf(c.column) > 0) to = [cols[cols.indexOf(c.column) - 1], 1 << 20];
@@ -879,27 +968,28 @@ async function toggleMine(c) {
 }
 
 // moveCard puts a card in column col at index (among the column's other
-// cards the board shows: with a tag picked, it goes just before the one
-// shown there, or after the last shown), on the board at once and then on
-// the server. The board is drawn
+// cards of its board the board shows: with a tag picked, it goes just before
+// the one shown there, or after the last shown), on the board at once and
+// then on the server. The board is drawn
 // even when that is where it is: a drop leaves the card where it fell, and
 // what changed during the drag waits for it.
 async function moveCard(id, col, index) {
   const c = byId(id);
   if (!c) { renderBoard(); return; }
-  const others = pl.cards.filter((x) => x.column === col && x.id !== id).sort((a, b) => a.position - b.position);
+  const mates = pl.cards.filter((x) => x.board_id === c.board_id);
+  const others = mates.filter((x) => x.column === col && x.id !== id).sort((a, b) => a.position - b.position);
   const seen = others.filter((x) => shown().includes(x));
   const pos = index < seen.length ? others.indexOf(seen[index])
     : seen.length ? others.indexOf(seen.at(-1)) + 1 : Math.max(0, Math.min(index, others.length));
   if (c.column === col) {
-    const now = pl.cards.filter((x) => x.column === col).sort((a, b) => a.position - b.position).findIndex((x) => x.id === id);
+    const now = mates.filter((x) => x.column === col).sort((a, b) => a.position - b.position).findIndex((x) => x.id === id);
     if (now === pos) { renderBoard(); return; }
   }
   const from = c.column;
   others.splice(pos, 0, c);
   others.forEach((x, i) => { x.position = i; });
   c.column = col;
-  pl.cards.filter((x) => x.column === from && x.id !== id).sort((a, b) => a.position - b.position).forEach((x, i) => { x.position = i; });
+  mates.filter((x) => x.column === from && x.id !== id).sort((a, b) => a.position - b.position).forEach((x, i) => { x.position = i; });
   renderBoard();
   try {
     const v = await call("POST", cardAPI(id, "/move"), { column: col, position: pos });
@@ -935,13 +1025,13 @@ async function openComposer(col) {
     } else closeComposer(false);
   }
   if (!pl.composer) {
-    const ta = h("textarea", { class: "pl-compose-text", rows: 1, placeholder: "What should be built?",
+    const ta = h("textarea", { class: "pl-compose-text", rows: 1,
       "aria-label": `New card in ${COLUMN_TITLE[col]}`, "aria-describedby": "pl-compose-help" });
     const c = { col, ta, busy: null };
     // Write a feature brief: what was typed is the idea, and the guide
     // makes the card (in Ideas) when it saves it. Pressing it keeps the
     // focus in the text, so leaving the composer doesn't add the card first.
-    const brief = pl.hooks.claudeNeeded?.() || (pl.hooks.featureBrief ? ib({ type: "button", class: "link pl-compose-brief", title: "Claude interviews you about it and writes a brief onto the card",
+    const brief = pl.hooks.claudeNeeded?.() || (pl.hooks.featureBrief ? ib({ type: "button", class: "link pl-compose-brief",
       onmousedown: (e) => e.preventDefault(),
       onclick: () => {
         if (c.busy) return;
@@ -1011,7 +1101,7 @@ function saveComposer(next) {
   c.li.setAttribute("aria-busy", "true");
   c.busy = (async () => {
     try {
-      const card = await call("POST", cardAPI(), { title, description, column: c.col, project: pl.filter || undefined, board: boardShown() || undefined, ...newCardFilters() });
+      const card = await call("POST", cardAPI(), { title, description, column: c.col, project: pl.filter || undefined, board: allBoards() ? undefined : boardShown() || undefined, ...newCardFilters() });
       if (!byId(card.id)) pl.cards.push(card);
       if (next && pl.composer === c) {
         c.ta.value = "";
@@ -1071,7 +1161,7 @@ async function loadCard(id) {
     // A card opens on its board (a link to it, a card it depends on).
     if (c.board_id && !pl.boards.length) pl.boards = await call("GET", boardAPI());
     if (pl.open !== id) return;
-    if (c.board_id && c.board_id !== boardShown()) {
+    if (c.board_id && !allBoards() && c.board_id !== boardShown()) {
       saveBoard(c.board_id);
       changed("replace");
       renderBoards();
@@ -1117,7 +1207,7 @@ export function setPlanningFilters(project, tags = [], target = "", mine = false
     tags.length === pl.tags.length && tags.every((t, i) => t === pl.tags[i]);
   if (same) return;
   const reload = project !== pl.filter || board !== pl.board;
-  if (board !== pl.board && pl.open && pl.detail?.board_id && pl.detail.board_id !== (board || defaultBoard()?.id)) closeCard();
+  if (board !== pl.board && board !== BOARDS_ALL && pl.open && pl.detail?.board_id && pl.detail.board_id !== (board || defaultBoard()?.id)) closeCard();
   saveBoard(board);
   pl.filter = project;
   pl.tags = tags;
@@ -1208,7 +1298,7 @@ async function moveToBoard(c, board) {
   const v = await call("PATCH", cardAPI(c.id), { board });
   if (pl.open === c.id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }
   pl.cards = pl.cards.filter((x) => x.id !== c.id);
-  if (v.board_id === boardShown()) pl.cards.push(v);
+  if (allBoards() || v.board_id === boardShown()) pl.cards.push(v);
   renderBoard();
   toast(`Moved to ${v.board_name || "another board"}`);
   loadPlanning().catch(() => {});
@@ -1325,9 +1415,11 @@ function membersField(c) {
       ib({ type: "button", class: "icon-btn small", "aria-label": `Take ${p.username} off the card`, title: "Remove",
         disabled: p.id === c.owner && !mayOwn,
         onclick: () => set(ids.filter((id) => id !== p.id)) }, "x"))),
-    others.length ? h("select", { "aria-label": "Add a member", onchange: (e) => e.target.value && set([...ids, Number(e.target.value)]) },
+    me?.id && !ids.includes(me.id) ? h("button", { type: "button", class: "pl-join-member", onclick: () => set([...ids, me.id]) },
+      h("span", { class: "avatar pl-join", "aria-hidden": "true" }, ico("plus")), h("span", { class: "pl-member-name" }, "Join")) : null,
+    others.filter((u) => u.id !== me?.id).length ? h("select", { "aria-label": "Add a member", onchange: (e) => e.target.value && set([...ids, Number(e.target.value)]) },
       h("option", { value: "" }, "Add…"),
-      ...others.map((u) => h("option", { value: String(u.id) }, u.username))) : null), "pd-members");
+      ...others.filter((u) => u.id !== me?.id).map((u) => h("option", { value: String(u.id) }, u.username))) : null), "pd-members");
 }
 
 // tagsField is the card's tags, each a button that shows only the cards
@@ -1516,12 +1608,13 @@ function actionsEl(c) {
     pl.planner ? null : ["link", "Link existing…", () => linkExistingSheet(c)],
     !needed && pl.hooks.askChat ? ["comment", "Ask in chat", () => pl.hooks.askChat(c)] : null,
   ].filter(Boolean);
+  const moves = COLUMNS.filter((x) => x.key !== c.column).map((x) => ["right", `Move to ${x.title}`, () => moveCard(c.id, x.key, 1 << 20)]);
   return [
     ib({ type: "button", class: "btn small primary", id: "pd-start", onclick: attempt(() => startSheet(c)) }, "play", "Start…"),
     needed || (pl.hooks.featureBrief ? ib({ type: "button", class: "btn small", id: "pd-brief",
       onclick: () => pl.hooks.featureBrief({ card: c, project: pl.filter }) }, "spark", "Write a feature brief") : null),
-    more.length ? ib({ type: "button", class: "icon-btn pl-more-btn", id: "pd-more", "aria-label": "More actions", title: "More", "aria-haspopup": "menu", "aria-expanded": "false",
-      onclick: (e) => popMenu(e.currentTarget, [more]) }, "more") : null,
+    ib({ type: "button", class: "icon-btn pl-more-btn", id: "pd-more", "aria-label": "More actions", title: "More", "aria-haspopup": "menu", "aria-expanded": "false",
+      onclick: (e) => popMenu(e.currentTarget, [more, moves]) }, "more"),
   ];
 }
 
@@ -1544,7 +1637,7 @@ function renderCard() {
   const body = $("#pd-body");
   if (pl.error) { fill(body, h("p", { class: "error-note" }, pl.error)); return; }
   const keep = body.scrollTop;
-  fill(body, suggestEl(c), descSection(c), propsEl(c), workSection(c), depsSection(c), filesSection(c), addRow(c),
+  fill(body, descSection(c), propsEl(c), workSection(c), depsSection(c), filesSection(c), addRow(c),
     commentsSection(c), dangerEl(c));
   body.scrollTop = keep;
 }
@@ -1562,14 +1655,6 @@ function propsEl(c) {
       (e) => patchCard({ project: e.target.value })().catch(fail))),
     membersField(c),
     tagsField(c));
-}
-
-// suggestEl offers to move the card to Done once everything linked is done.
-function suggestEl(c) {
-  if (!c.status?.suggest_done) return null;
-  return h("div", { class: "pl-suggest-box" },
-    h("p", {}, "Everything linked is done."),
-    ib({ type: "button", class: "btn small primary", onclick: attempt((e) => busy(e.currentTarget, () => moveCard(c.id, "done", 0))) }, "check", "Move to Done"));
 }
 
 // workSection lists the tasks and goals started for the card, when there are some.
@@ -1599,9 +1684,9 @@ function commentsSection(c) {
   const box = h("textarea", { rows: 3, placeholder: "Add a comment", "aria-label": "Comment", maxlength: 10000, onpaste: pasteFiles });
   return h("section", { class: "pl-section", "aria-labelledby": "pd-comments" },
     h("h3", { id: "pd-comments" }, "Comments"),
-    comments.length ? h("ol", { class: "pl-comments-list" }, ...comments.map((m) => h("li", { class: "pl-comment" },
+    comments.length ? h("ol", { class: "pl-comments-list" }, ...comments.map((m) => h("li", { class: `pl-comment${m.dash ? " pl-comment-dash" : ""}` },
       h("div", { class: "pl-comment-head" },
-        h("strong", {}, m.author_name || "Someone"),
+        h("strong", {}, m.dash ? "Dash" : m.author_name || "Someone"),
         h("time", { datetime: m.created_at, title: dateTimeText(m.created_at) }, agoText(m.created_at)),
         me && m.author === me.id ? ib({ type: "button", class: "icon-btn small pl-comment-del", "aria-label": "Delete comment", title: "Delete",
           onclick: attempt(async () => { if (await ask({ title: "Delete this comment?", ok: "Delete", danger: true })) await call("DELETE", cardAPI(c.id, `/comments/${m.id}`)); await loadCard(c.id); }) }, "trash") : null),
@@ -1853,11 +1938,11 @@ export async function linkToCard(kind, id) {
         ico(on.has(c.id) ? "check" : "plan"),
         h("span", { class: "pl-link-main" }, h("span", { class: "pl-link-title" }, c.title),
           h("span", { class: "pl-link-sub" }, [many ? c.board_name : "", COLUMN_TITLE[c.column], c.project_name, on.has(c.id) ? "linked" : ""].filter(Boolean).join(" · "))))))
-      : [h("li", { class: "hint" }, cards.length ? "No card matches." : "There are no cards yet: add them on the Planning page.")]));
+      : [h("li", { class: "hint" }, cards.length ? "No card matches." : "No cards yet.")]));
   };
   q.addEventListener("input", render);
   render();
-  const done = sheet(`Link this ${kind} to a card`, [h("p", { class: "hint" }, "The card on the Planning page then shows this work's status."), q, list], null);
+  const done = sheet(`Link this ${kind} to a card`, [q, list], null);
   q.focus();
   await done;
   if (!picked) return;

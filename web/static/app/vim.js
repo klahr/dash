@@ -246,9 +246,9 @@ export async function runCommand(line) {
 }
 
 // openKeys opens the Keyboard sheet at the keys of what is shown: the open
-// task, else the page (the Shell at a commit is the Shell; Files and Planning
-// have no keys of their own, so they start at Everywhere).
-const KEY_AREA = { board: "board", run: "shell", try: "shell", history: "history", goals: "goals", deploys: "deploys" };
+// task, else the page (the Shell at a commit is the Shell; Files has no keys
+// of its own, so it starts at Everywhere).
+const KEY_AREA = { board: "board", run: "shell", try: "shell", history: "history", goals: "goals", deploys: "deploys", planning: "planning" };
 export function openKeys() {
   const d = $("#keys-sheet");
   d.showModal();

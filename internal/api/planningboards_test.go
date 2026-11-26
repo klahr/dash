@@ -185,3 +185,37 @@ func TestPlanningToolsBoards(t *testing.T) {
 		t.Error("create_card on every board")
 	}
 }
+
+// Any board can be made the default one: a card given no board goes there,
+// and the default board can't be deleted while another one can.
+func TestPlanningBoardSetDefault(t *testing.T) {
+	s, _, _ := boardServer(t)
+	h := s.Routes()
+	ph, _ := plannerOf(t, s, h)
+
+	main := decodeBoards(t, do(t, ph, "GET", "/api/planning/boards", ""))[0]
+	var mobile boardView
+	_ = json.Unmarshal(do(t, ph, "POST", "/api/planning/boards", `{"name":"Mobile"}`).Body.Bytes(), &mobile)
+	if w := do(t, ph, "PATCH", "/api/planning/boards/"+mobile.ID, `{"default":false}`); w.Code != http.StatusBadRequest {
+		t.Errorf("default false: %d %s", w.Code, w.Body)
+	}
+	w := do(t, ph, "PATCH", "/api/planning/boards/"+mobile.ID, `{"default":true}`)
+	var got boardView
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	if w.Code != http.StatusOK || !got.Default {
+		t.Fatalf("make default: %d %s", w.Code, w.Body)
+	}
+	bs := decodeBoards(t, do(t, ph, "GET", "/api/planning/boards", ""))
+	if len(bs) != 2 || bs[0].ID != main.ID || bs[0].Default || !bs[1].Default {
+		t.Fatalf("boards after: %+v", bs)
+	}
+	if c := decodeCard(t, do(t, ph, "POST", "/api/planning/cards", `{"title":"Anywhere"}`)); c.BoardID != mobile.ID {
+		t.Errorf("a card given no board went to %s", c.BoardName)
+	}
+	if w := do(t, ph, "DELETE", "/api/planning/boards/"+mobile.ID, ""); w.Code != http.StatusBadRequest {
+		t.Errorf("deleted the default board: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, ph, "DELETE", "/api/planning/boards/"+main.ID, ""); w.Code != http.StatusNoContent {
+		t.Errorf("delete the old default: %d %s", w.Code, w.Body)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
@@ -40,30 +41,57 @@ func TestBrowserPlanningBoard(t *testing.T) {
 	b.waitJS("no rail line and no node", `!document.querySelector("#view-planning .rail, #view-planning .pl-card .node") && getComputedStyle(document.querySelector("#view-planning .pl-card .todo")).borderTopStyle === "solid"`)
 	b.waitJS("Add card at the bottom of each column", `[...document.querySelectorAll("#view-planning .col")].every((c) => c.querySelector(".col-body").lastElementChild.matches(".pl-add"))`)
 
-	// The project filter lists the projects with their icons; picking one
-	// shows its cards.
-	b.until("open the project filter", `!document.querySelector("#pl-filter-list").hidden`,
-		chromedp.Click(chromedp.CSS(`#pl-filter`)))
-	b.waitJS("each project with its icon", `(() => { const o = [...document.querySelectorAll("#pl-filter-list [role=option]")]; return o.length >= 3 && o.slice(1).every((li) => li.querySelector(".side-project-icon")?.offsetWidth > 0); })()`)
-	b.until("pick wiki", `document.querySelector("#pl-filter .pl-filter-name")?.textContent === "wiki" && document.querySelector("#pl-filter .side-project-icon")?.textContent === "W"`,
-		chromedp.Click(chromedp.CSS(`#pl-filter-list [role=option]:last-child`)))
-	b.waitJS("only wiki's cards", `!document.querySelector("#view-planning .pl-card")`)
-	b.do("open the project filter", chromedp.Click(chromedp.CSS(`#pl-filter`)))
-	b.until("all projects again", `document.querySelector("#view-planning .pl-card")`,
-		chromedp.Click(chromedp.CSS(`#pl-filter-list [role=option][data-value=""]`)))
+	// The head is one row: the board's tab, +, search, Filter and New card;
+	// no sentence explains the page, and an empty column says nothing.
+	b.waitJS("the head in one row", `(() => { const h = document.querySelector("#pl-head"); const kids = [...h.children].filter((x) => x.offsetWidth);
+		const tops = new Set(kids.map((x) => Math.round(x.getBoundingClientRect().top + x.offsetHeight / 2)));
+		return h.offsetHeight < 64 && tops.size === 1 && ["#pl-boards", "#pl-board-add", "#pl-search", "#pl-filter", ".pl-new"].every((q) => h.querySelector(q)?.offsetWidth > 0); })()`)
+	b.waitJS("no help texts", `!document.querySelector("#view-planning .hint, #view-planning .col-empty") && !document.querySelector("#view-planning [placeholder]")`)
+	// The priority is the task board's quiet label, not the failed colour.
+	b.waitJS("a calm priority", fmt.Sprintf(`(() => { const p = document.querySelector('#view-planning .pl-card[data-id=%q] .pl-prio');
+		const red = getComputedStyle(document.documentElement).getPropertyValue("--failed").trim();
+		return p.classList.contains("meta-chip") && !!p.querySelector(".ico") && getComputedStyle(p).backgroundColor === "rgba(0, 0, 0, 0)" && getComputedStyle(p).color !== red; })()`, c.ID))
+
+	// Filter lists the projects (each with its icon), the tags and the
+	// targets, in groups; picking a project shows its cards.
+	b.menuPick("#pl-filter", "wiki", `document.querySelector("#pl-tag-filter .pl-project-on .pl-tag-name")?.textContent === "wiki" && !document.querySelector("#view-planning .pl-card")`,
+		`(() => { const m = document.querySelector(".pop-menu"); const heads = [...m.querySelectorAll(".pop-menu-head")].map((x) => x.textContent);
+			return heads.join() === "Filter,Project,Tags,Targets" && [...m.querySelectorAll("[role=menuitemcheckbox]")].filter((x) => x.querySelector(".side-project-icon")).length >= 2; })()`)
+	b.until("all projects again", `document.querySelector("#view-planning .pl-card") && document.querySelector("#pl-tag-filter").hidden`,
+		chromedp.Click(chromedp.CSS(`#pl-tag-filter .pl-project-on .icon-btn`)))
 
 	// Switching project in the sidebar shows that project's cards here too;
 	// loading the page (above) left the filter on all projects.
-	b.clickTextUntil(`#side-project-list .side-project`, "shop", `document.querySelector("#pl-filter .pl-filter-name")?.textContent === "shop" && !document.querySelector("#view-planning .pl-card")`)
-	b.do("open the project filter", chromedp.Click(chromedp.CSS(`#pl-filter`)))
-	b.until("all projects again", `document.querySelector("#view-planning .pl-card")`,
-		chromedp.Click(chromedp.CSS(`#pl-filter-list [role=option][data-value=""]`)))
+	b.clickTextUntil(`#side-project-list .side-project`, "shop", `document.querySelector("#pl-tag-filter .pl-project-on .pl-tag-name")?.textContent === "shop" && !document.querySelector("#view-planning .pl-card")`)
+	b.menuPick("#pl-filter", "All projects", `document.querySelector("#view-planning .pl-card") && document.querySelector("#pl-tag-filter").hidden`, "")
+
+	// Search: the cards whose title or description has each word; Esc clears it.
+	b.until("open search", `document.activeElement === document.querySelector("#pl-search-input")`,
+		chromedp.Click(chromedp.CSS(`#pl-search-open`)))
+	b.do("search finance", chromedp.SendKeys(`#pl-search-input`, "finance"))
+	b.waitJS("only the card that says finance", fmt.Sprintf(`document.querySelectorAll("#view-planning .pl-card").length === 1 && !!document.querySelector('#view-planning .pl-card[data-id=%q]')`, c.ID))
+	b.do("Esc clears it", chromedp.KeyEvent(kb.Escape))
+	b.waitJS("every card again", `document.querySelectorAll("#view-planning .pl-card").length === 2 && document.querySelector("#pl-search-input").hidden`)
+
+	// Pointer ways for what keys do: Join on the card, Move to in its ⋯.
+	b.run("join the card", fmt.Sprintf(`(() => { document.querySelector('#view-planning .pl-card[data-id=%q] .pl-join').click(); return true; })()`, c.ID))
+	b.waitJS("on the card", fmt.Sprintf(`(() => { const card = document.querySelector('#view-planning .pl-card[data-id=%q]'); return !!card.querySelector(".pl-members .avatar") && !card.querySelector(".pl-join"); })()`, c.ID))
+	b.until("open the card", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-more")`,
+		chromedp.Click(chromedp.CSS(fmt.Sprintf(`#view-planning .pl-card[data-id=%q] .pl-open`, c.ID))))
+	b.menuPick("#pd-more", "Move to Done", fmt.Sprintf(`!!document.querySelector('#view-planning .col[data-col=done] .pl-card[data-id=%q]')`, c.ID), "")
+	b.do("close the card", chromedp.KeyEvent(kb.Escape))
 
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("one column at a time", `[...document.querySelectorAll("#view-planning .board .col")].filter((c) => c.offsetWidth).length === 1`)
 	b.waitJS("Ideas first", `document.querySelector("#view-planning .col.active")?.dataset.col === "ideas"`)
-	b.until("the Planned lane", `document.querySelector("#view-planning .col.active")?.dataset.col === "planned"`,
-		chromedp.Click(chromedp.CSS(`#view-planning .lane-tab[data-col=planned]`)))
+	// The head is one row, and the four lanes fit the strip below it.
+	b.waitJS("one row of head", `document.querySelector("#pl-head").offsetHeight <= 56 && document.querySelector("#pl-head-more").offsetWidth > 0 && !document.querySelector(".pl-new").offsetWidth`)
+	b.waitJS("all four lanes in sight", `(() => { const s = document.querySelector("#view-planning .pl-lanes").getBoundingClientRect();
+		const tabs = [...document.querySelectorAll("#view-planning .pl-lanes .lane-tab")];
+		return tabs.length === 4 && tabs.every((t) => { const r = t.getBoundingClientRect(); return r.width > 30 && r.left >= s.left && r.right <= s.right + 1; }) &&
+			[...document.querySelectorAll("#view-planning .pl-lanes .n")].every((n) => n.textContent !== "0"); })()`)
+	b.until("the Done lane", `document.querySelector("#view-planning .col.active")?.dataset.col === "done"`,
+		chromedp.Click(chromedp.CSS(`#view-planning .lane-tab[data-col=done]`)))
 	b.waitJS("its card", fmt.Sprintf(`document.querySelector('#view-planning .col.active .pl-card[data-id=%q]')?.offsetWidth > 0`, c.ID))
 	// The board reaches down to the nav, so a swipe to the next column works
 	// on the empty space below a short column's cards too.
@@ -119,10 +147,10 @@ func TestBrowserPlanningAddCard(t *testing.T) {
 	b.do("Esc", chromedp.KeyEvent(kb.Escape))
 
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
-	b.until("the Planned lane", `document.querySelector("#view-planning .col.active")?.dataset.col === "planned"`,
-		chromedp.Click(chromedp.CSS(`#view-planning .lane-tab[data-col=planned]`)))
-	b.until("New card shows Ideas, with the new card in it", fmt.Sprintf(`document.querySelector("#view-planning .col.active")?.dataset.col === "ideas" && document.querySelector(%q)?.offsetWidth > 0`, ideasBox),
-		chromedp.Click(chromedp.CSS(`#view-planning .pl-new`)))
+	b.until("the Done lane", `document.querySelector("#view-planning .col.active")?.dataset.col === "done"`,
+		chromedp.Click(chromedp.CSS(`#view-planning .lane-tab[data-col=done]`)))
+	// On a phone New card is under ⋯.
+	b.menuPick("#pl-head-more", "New card", fmt.Sprintf(`document.querySelector("#view-planning .col.active")?.dataset.col === "ideas" && document.querySelector(%q)?.offsetWidth > 0`, ideasBox), "")
 }
 
 // A planner's Planning page has the app's shell: on a desktop the sidebar,
@@ -322,18 +350,11 @@ func TestBrowserPlanningTags(t *testing.T) {
 	b.until("all cards again", `document.querySelectorAll("#view-planning .pl-card").length === 2 && document.querySelector("#pl-tag-filter").hidden`,
 		chromedp.Click(chromedp.CSS(`#pl-tag-filter .icon-btn`)))
 
-	// Filter… picks tags, more than one: the cards with all of them show.
-	pick := func(v string) {
-		t.Helper()
-		js := fmt.Sprintf(`(() => { const s = document.querySelector("#pl-more-filter"); s.value = %q; s.dispatchEvent(new Event("change")); return true; })()`, v)
-		if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](js)); err != nil {
-			t.Fatalf("pick %s: %v", v, err)
-		}
-	}
-	pick("t:Q3")
-	b.waitJS("tagged Q3", `document.querySelectorAll("#view-planning .pl-card").length === 1 && document.querySelectorAll("#pl-tag-filter .pl-tag").length === 1`)
-	pick("t:ux")
-	b.waitJS("tagged Q3 and ux", `document.querySelectorAll("#view-planning .pl-card").length === 1 && [...document.querySelectorAll("#pl-tag-filter .pl-tag-name")].map((e) => e.textContent).join() === "Q3,ux" && location.search.includes("tag=Q3&tag=ux")`)
+	// Filter picks tags, more than one: the cards with all of them show.
+	// Filter counts them.
+	b.menuPick("#pl-filter", "Q3", `document.querySelectorAll("#view-planning .pl-card").length === 1 && document.querySelectorAll("#pl-tag-filter .pl-tag").length === 1`, "")
+	b.menuPick("#pl-filter", "ux", `document.querySelectorAll("#view-planning .pl-card").length === 1 && [...document.querySelectorAll("#pl-tag-filter .pl-tag-name")].map((e) => e.textContent).join() === "Q3,ux" && location.search.includes("tag=Q3&tag=ux") && document.querySelector("#pl-filter-n").textContent === "2"`,
+		`document.querySelector('.pop-menu [aria-checked=true]')?.textContent.includes("Q3")`)
 	// Mine shows only the cards you are on: none yet.
 	b.until("Mine", `document.querySelector("#pl-mine").getAttribute("aria-pressed") === "true" && document.querySelectorAll("#view-planning .pl-card").length === 0 && location.search.includes("mine=1")`,
 		chromedp.Click(chromedp.CSS(`#pl-mine`)))
@@ -353,12 +374,13 @@ func TestBrowserPlanningTags(t *testing.T) {
 		return r && i && r.width > 0 && r.right <= innerWidth && i.right <= innerWidth && i.width > 60; })()`)
 }
 
-// An org's boards show above the columns when there is more than one; a
-// click shows one, and the board shown is in the address. A new card goes on
-// it; an open card moves to another board; a card's link opens its board.
-// The Boards sheet adds, renames, reorders and deletes boards (a deleted
-// board's cards move to the default one, after a confirm). On a phone the
-// boards are a strip across the top.
+// An org's boards are tabs at the head of the page, with All boards first
+// when there is more than one; a click shows one, and the board shown is in
+// the address. A new card goes on it; an open card moves to another board; a
+// card's link opens its board. + after the tabs adds a board; a double click
+// renames one; a tab's menu moves, makes default and deletes its board (a
+// deleted board's cards move to the default one, after a confirm). On a phone
+// the boards are a strip across the top.
 func TestBrowserPlanningBoards(t *testing.T) {
 	endToEnd(t)
 	chrome := needChrome(t)
@@ -383,7 +405,8 @@ func TestBrowserPlanningBoards(t *testing.T) {
 	b.signIn(h)
 	b.until("open Planning", `document.querySelector("#view-planning.active")`,
 		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
-	b.waitJS("a tab for each board, the default one shown", `(() => { const t = [...document.querySelectorAll("#pl-boards .pl-board-tab")]; return !document.querySelector("#pl-boards").hidden && t.length === 2 && t[0].getAttribute("aria-selected") === "true" && t[0].querySelector(".pl-board-name").textContent === "Main"; })()`)
+	b.waitJS("a tab for each board, the default one shown", `(() => { const t = [...document.querySelectorAll("#pl-boards .pl-board-tab")];
+		return t.map((x) => x.textContent).join() === "All boards,Main,Mobile" && t[1].getAttribute("aria-selected") === "true" && !document.querySelector("#pl-boards .n") && !!document.querySelector("#pl-boards .pl-board-on .pl-board-more"); })()`)
 	b.waitJS("only the default board's cards", fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardOf(onMain.ID), cardOf(onMobile.ID)))
 	b.until("show Mobile", fmt.Sprintf(`!!document.querySelector(%q) && !document.querySelector(%q)`, cardOf(onMobile.ID), cardOf(onMain.ID)),
 		chromedp.Click(chromedp.CSS(fmt.Sprintf(`#pl-boards .pl-board-tab[data-board=%q]`, mobile.ID))))
@@ -415,24 +438,48 @@ func TestBrowserPlanningBoards(t *testing.T) {
 	b.waitJS("its board in the address", `!new URLSearchParams(location.search).get("board")`)
 	b.do("close the card", chromedp.KeyEvent(kb.Escape))
 
-	// The Boards sheet.
-	b.until("open Boards", `!!document.querySelector("dialog.pl-boards-sheet[open] .pl-board-row")`,
-		chromedp.Click(chromedp.CSS(`#pl-boards-btn`)))
-	b.do("add Web", chromedp.SendKeys(`dialog.pl-boards-sheet .pl-board-new`, "Web"), chromedp.KeyEvent(kb.Enter))
-	b.waitJS("Web added, last", `[...document.querySelectorAll("dialog.pl-boards-sheet .pl-board-name-edit")].map((x) => x.value).join() === "Main,Mobile,Web" && document.querySelectorAll("#pl-boards .pl-board-tab").length === 3`)
-	b.run("rename Web", `(() => { const i = document.querySelectorAll("dialog.pl-boards-sheet .pl-board-name-edit")[2]; i.value = "Website"; i.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`)
-	b.waitJS("renamed", `[...document.querySelectorAll("#pl-boards .pl-board-name")].map((x) => x.textContent).join() === "Main,Mobile,Website"`)
-	b.until("move Website up", `[...document.querySelectorAll("dialog.pl-boards-sheet .pl-board-name-edit")].map((x) => x.value).join() === "Main,Website,Mobile"`,
-		chromedp.Click(chromedp.CSS(`dialog.pl-boards-sheet .pl-board-row:last-child [data-act=up]`)))
-	b.waitJS("the default board has no Delete", `!document.querySelector("dialog.pl-boards-sheet .pl-board-row:first-child [data-act=delete]")`)
-	b.until("delete Mobile asks first", `document.querySelector("#ask-sheet")?.open && document.querySelector("#ask-body").textContent.includes("to Main")`,
-		chromedp.Click(chromedp.CSS(fmt.Sprintf(`dialog.pl-boards-sheet .pl-board-row[data-board=%q] [data-act=delete]`, mobile.ID))))
-	b.until("deleted", `[...document.querySelectorAll("dialog.pl-boards-sheet .pl-board-name-edit")].map((x) => x.value).join() === "Main,Website"`,
-		chromedp.Click(chromedp.CSS(`#ask-ok`)))
+	// All boards: every board's cards, each naming its board.
+	b.until("All boards", fmt.Sprintf(`!!document.querySelector(%q) && !!document.querySelector(%q) && new URLSearchParams(location.search).get("board") === "all"`, cardOf(onMain.ID), cardOf(onMobile.ID)),
+		chromedp.Click(chromedp.CSS(`#pl-boards .pl-board-tab[data-board=all]`)))
+	b.waitJS("each card names its board", fmt.Sprintf(`document.querySelector('%s .pl-board-chip')?.textContent === "Main"`, cardOf(onMain.ID)))
+
+	tabs := `[...document.querySelectorAll("#pl-boards .pl-board-tab:not([data-board=all])")].map((x) => x.textContent).join()`
+	// + adds a board, which is then shown.
+	b.until("+", `document.activeElement?.matches(".pl-board-input")`, chromedp.Click(chromedp.CSS(`#pl-board-add`)))
+	b.do("add Web", chromedp.SendKeys(`#pl-boards .pl-board-input`, "Web"), chromedp.KeyEvent(kb.Enter))
+	b.waitJS("Web added, last, and shown", tabs+` === "Main,Mobile,Web" && document.querySelector("#pl-boards [aria-selected=true]")?.textContent === "Web"`)
+	// A double click renames it.
+	b.run("double-click Web", `(() => { document.querySelector("#pl-boards .pl-board-on .pl-board-tab").dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); return true; })()`)
+	b.waitJS("its name in a box", `document.activeElement?.matches(".pl-board-input") && document.activeElement.value === "Web"`)
+	b.do("rename it", chromedp.KeyEvent(kb.End), chromedp.SendKeys(`#pl-boards .pl-board-input`, "site"), chromedp.KeyEvent(kb.Enter))
+	b.waitJS("renamed", tabs+` === "Main,Mobile,Website"`)
+	// Its menu (⋯ on the tab shown, or a right click) moves it.
+	b.menuPick("#pl-boards .pl-board-more", "Move left", tabs+` === "Main,Website,Mobile"`, "")
+	b.waitJS("the default board has no Delete", `(() => { document.querySelector("#pl-boards .pl-board-tab[data-board]:not([data-board=all])").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+		const m = document.querySelector(".pop-menu"); return !!m && m.textContent.includes("Rename") && !m.textContent.includes("Delete"); })()`)
+	b.do("close the menu", chromedp.KeyEvent(kb.Escape))
+	b.run("Mobile's menu", fmt.Sprintf(`(() => { document.querySelector('#pl-boards .pl-board-tab[data-board=%q]').dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })); return true; })()`, mobile.ID))
+	b.clickText(`.pop-menu [role^=menuitem]`, "Delete")
+	b.waitJS("delete Mobile asks first", `document.querySelector("#ask-sheet")?.open && document.querySelector("#ask-body").textContent.includes("to Main")`)
+	b.until("deleted", tabs+` === "Main,Website"`, chromedp.Click(chromedp.CSS(`#ask-ok`)))
 	if got := titles(""); len(got) != 3 || got[2] != "Offline mode" {
 		t.Fatalf("Main's cards after deleting Mobile: %v", got)
 	}
-	b.do("close Boards", chromedp.KeyEvent(kb.Escape))
+	// Default makes another board the default one.
+	b.menuPick("#pl-boards .pl-board-more", "Default", `!!document.querySelector("#pl-boards .pl-board-on")`, "")
+	var boards []struct {
+		Name    string
+		Default bool
+	}
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		h.api.must("GET", "/api/planning/boards", nil, http.StatusOK, &boards)
+		if len(boards) == 2 && boards[1].Name == "Website" && boards[1].Default && !boards[0].Default {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("boards after Default: %+v", boards)
+		}
+	}
 
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the boards across the top, above the lanes", `(() => { const s = document.querySelector("#pl-boards"), l = document.querySelector("#view-planning .pl-lanes"); return s.offsetWidth > 0 && s.getBoundingClientRect().bottom <= l.getBoundingClientRect().top + 1 && s.scrollWidth >= s.clientWidth; })()`)
@@ -579,4 +626,17 @@ func TestBrowserPlanningOpenCard(t *testing.T) {
 		const a = [...document.querySelectorAll("#pd-actions > *")].map((x) => x.getBoundingClientRect().top);
 		return pane.offsetWidth >= innerWidth - 1 && d.top > 0 && d.top < innerHeight * 0.6 && a.every((t) => Math.abs(t - a[0]) < 2); })()`)
 	shot(b, "planning-card-phone")
+}
+
+// menuPick opens the menu under anchor (until ready, an expression, is true
+// of it, when given), picks the item labelled label, and waits for expr.
+func (b *browser) menuPick(anchor, label, expr, ready string) {
+	b.t.Helper()
+	open := `!!document.querySelector(".pop-menu")`
+	if ready != "" {
+		open += " && " + ready
+	}
+	b.until("open "+anchor, open, chromedp.Click(chromedp.CSS(anchor)))
+	b.clickText(`.pop-menu [role^=menuitem]`, label)
+	b.waitJS("picked "+label, expr)
 }

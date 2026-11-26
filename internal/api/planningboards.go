@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/klahr/dash/internal/model"
@@ -77,6 +78,9 @@ func (s *Server) updatePlanningBoard(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name     *string `json:"name"`
 		Position *int    `json:"position"`
+		// Default true makes it the org's default board (false is refused:
+		// make another board the default instead).
+		Default *bool `json:"default"`
 	}
 	if err := decodeStrict(r, &req); err != nil {
 		writeErr(w, err)
@@ -99,6 +103,16 @@ func (s *Server) updatePlanningBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Position != nil {
 		if b, err = sv.data.MovePlanningBoard(b.ID, *req.Position); err != nil {
+			writeErr(w, err)
+			return
+		}
+	}
+	if req.Default != nil {
+		if !*req.Default {
+			writeErr(w, fmt.Errorf("%w: make another board the default instead", errBadRequest))
+			return
+		}
+		if b, err = sv.data.SetDefaultPlanningBoard(b.ID); err != nil {
 			writeErr(w, err)
 			return
 		}

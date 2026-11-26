@@ -87,7 +87,7 @@ func TestBrowserFeatureBrief(t *testing.T) {
 	// Planning's New card: what was typed is the idea, and no card is
 	// added until the guide saves it; its draft is listed as a feature's.
 	b.run("to Planning", `document.querySelector(".nav > button[data-view=planning]").click(); true`)
-	b.until("New card", `document.querySelector(".pl-composer .pl-compose-text")`, chromedp.Click(chromedp.CSS(`.pl-new`)))
+	b.menuPick("#pl-head-more", "New card", `document.querySelector(".pl-composer .pl-compose-text")`, "") // a phone's: under ⋯
 	b.do("type a card", chromedp.SendKeys(chromedp.CSS(".pl-compose-text"), "Dark mode"))
 	b.until("write a feature brief instead", `document.querySelector("#feature-sheet").open && !document.querySelector(".pl-composer")`,
 		chromedp.Click(chromedp.CSS(".pl-compose-brief")))

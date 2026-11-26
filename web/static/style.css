@@ -3891,50 +3891,68 @@ button.goal-task-open:hover { background: var(--raised); }
    tone of its status (t-*). A card's pane lies beside the board (full screen
    on a phone). */
 .page.planning { max-width: none; padding: 0; display: flex; flex-direction: column; }
-.pl-head { flex-wrap: wrap; margin: 0; padding: var(--sp-3) var(--pad-x) 10px; }
-.pl-head .pl-new { margin-left: auto; }
-/* The project filter: a button with the chosen project's icon, opening a
-   list of the projects with theirs. */
-.pl-filter { position: relative; --project: var(--faint); }
-.pl-filter-btn { min-height: 32px; max-width: 240px; gap: 8px; }
-.pl-filter-btn .side-project-icon, .pl-filter-list .side-project-icon { width: 20px; height: 20px; font-size: var(--fs-2xs); }
-.pl-filter-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pl-filter-list {
-  position: absolute; left: 0; top: calc(100% + 4px); z-index: 20; min-width: 100%; width: max-content; max-width: min(320px, calc(100vw - 2 * var(--pad-x)));
-  max-height: min(360px, 60vh); overflow-y: auto; margin: 0; padding: 4px; list-style: none;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); box-shadow: var(--shadow-2);
-}
-.pl-filter-list [role=option] { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; border-radius: var(--r-s); color: var(--text); cursor: pointer; }
-.pl-filter-list [role=option]:hover { background: var(--raised); }
-.pl-filter-list [role=option]:focus { outline: none; }
-.pl-filter-list [role=option]:focus-visible { background: var(--raised); box-shadow: inset 0 0 0 2px var(--accent); }
-.pl-filter-list [role=option] .pl-filter-name { flex: 1; }
-.pl-filter-list [role=option] > .ico:last-child:not(:first-child) { color: var(--accent); }
-.pl-intro { margin: 0; padding: 0 var(--pad-x) 12px; }
-/* The boards, above the columns when there is more than one: a tab each,
-   with its count; a strip that scrolls sideways on a phone. */
-.pl-boards { display: flex; gap: 4px; padding: 0 var(--pad-x) 10px; overflow-x: auto; scrollbar-width: none; }
-.pl-boards[hidden] { display: none; }
+/* The head (app/planning.js: mountPlanning), one row: the boards' tabs, the
+   page's title, then + (add a board); search, the filters picked, Mine,
+   Filter and New card at the right. On a phone: the tabs, search, Filter (its
+   icon and count) and ⋯ (New card, Add board, Mine); the open search takes
+   the tabs' place. */
+.pl-head { display: flex; align-items: center; gap: 6px; min-height: 52px; margin: 0; padding: 8px var(--pad-x); }
+.pl-head > * { flex: none; }
+.pl-head [hidden] { display: none !important; }
+.pl-board-add { margin-right: auto; width: 34px; height: 34px; color: var(--muted); }
+.pl-board-add:hover { color: var(--text); }
+/* The boards' tabs: the one shown in the title's weight, with ⋯ (its menu). */
+.pl-boards { flex: 0 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.pl-boards::-webkit-scrollbar { display: none; }
 .pl-board-tab {
-  display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 34px; padding: 0 12px;
-  border: 1px solid transparent; border-radius: var(--r-s); color: var(--muted); font-weight: 600; white-space: nowrap;
+  display: inline-flex; align-items: center; flex: none; min-height: 36px; padding: 0 10px;
+  border: 1px solid transparent; border-radius: var(--r-s); color: var(--muted); font-size: var(--fs-l); font-weight: 600; white-space: nowrap;
 }
 .pl-board-tab:hover { color: var(--text); background: var(--raised); }
-.pl-board-tab[aria-selected="true"] { color: var(--text); background: var(--surface); border-color: var(--line); }
-.pl-board-tab .n { color: var(--faint); font-weight: 500; font-size: var(--fs-s); }
+.pl-board-tab[aria-selected="true"] { color: var(--text); }
+.pl-board-tab[data-board=all][aria-selected="true"] { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.pl-board-on { display: inline-flex; align-items: center; flex: none; border-radius: var(--r-s); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.pl-board-on .pl-board-tab { padding-right: 4px; }
+.pl-board-on .pl-board-tab:hover { background: none; }
+.pl-board-more { width: 28px; height: 28px; min-height: 0; margin-right: 4px; color: var(--faint); }
+.pl-board-more:hover, .pl-board-more[aria-expanded="true"] { color: var(--text); }
 .pl-board-name { max-width: 16em; overflow: hidden; text-overflow: ellipsis; }
-.pl-boards-btn { min-height: 32px; }
-/* The Boards sheet: a row for each board (its name to edit, up, down,
-   delete), and a box to add one. */
-.pl-board-list { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 6px; }
-.pl-board-row { display: flex; align-items: center; gap: 4px; }
-.pl-board-row .pl-board-name-edit { flex: 1; min-width: 0; }
-.pl-board-meta { display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; white-space: nowrap; }
-.pl-board-meta .hint { margin: 0; }
-.pl-board-keep { flex: none; width: 44px; }
-.pl-board-add { display: flex; gap: 6px; margin-bottom: 4px; }
-.pl-board-add input { flex: 1; min-width: 0; }
-@media (max-width: 600px) { .pl-board-meta .hint { display: none; } }
+input.pl-board-input { flex: none; width: auto; min-width: 8em; height: 36px; padding: 0 10px; font-size: var(--fs-l); font-weight: 600; }
+/* Search: the magnifier; open (or holding text), the field beside it. */
+.pl-search { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.pl-search .icon-btn { width: 34px; height: 34px; }
+.pl-search input { width: 220px; min-width: 0; height: 34px; padding: 0 10px; font-size: var(--fs-in); }
+.pl-search:has(input:not(:placeholder-shown)) .icon-btn { color: var(--accent); }
+/* Filter: a menu of projects, tags and targets; how many are on, as a badge. */
+.pl-filter-btn { min-height: 32px; gap: 6px; }
+.pl-filter-btn .n { min-width: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--accent); color: var(--on-accent, #fff); font-size: var(--fs-2xs); font-weight: 700; line-height: 18px; text-align: center; }
+.pl-filter-btn .n:empty { display: none; }
+.pl-filter-btn.on { border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--text); }
+.pl-head-more { display: none; width: 34px; height: 34px; }
+.pop-menu [role=menuitemcheckbox] > .ico:last-child:not(:first-child) { margin-left: auto; padding-left: 8px; color: var(--accent); width: 16px; }
+.pop-menu .side-project-icon { flex: none; width: 18px; height: 18px; font-size: var(--fs-3xs); }
+@media (max-width: 1023px) {
+  .pl-head { gap: 2px; min-height: 0; padding: 6px 8px 6px var(--pad-x); }
+  .pl-boards { flex: 1; }
+  .pl-board-tab { font-size: var(--fs-m); min-height: 34px; }
+  .pl-board-add, .pl-mine, .pl-new, .pl-tag-filter { display: none !important; }
+  .pl-head-more { display: inline-grid; place-items: center; }
+  .pl-filter-btn { width: 34px; height: 34px; min-height: 0; padding: 0; justify-content: center; position: relative; border-color: transparent; background: none; }
+  .pl-filter-btn .pl-filter-label { display: none; }
+  .pl-filter-btn .n { position: absolute; top: 0; right: -2px; min-width: 16px; line-height: 16px; padding: 0 4px; }
+  .pl-head.searching .pl-boards { display: none; }
+  .pl-head.searching .pl-search { flex: 1; }
+  .pl-head.searching .pl-search input { flex: 1; width: auto; }
+  /* The lanes: all four fit the strip. A lane's count shows only when it has cards, and an
+     inactive lane's name gives way (…) before the one shown does. */
+  .pl-lanes { gap: 2px; padding: 8px 10px; overflow: hidden; }
+  .pl-lanes .lane-tab { flex: 0 1 auto; min-width: 0; gap: 5px; padding: 0 8px; font-size: var(--fs-s); }
+  .pl-lanes .lane-tab::before { width: 7px; height: 7px; }
+  .pl-lanes .lane-tab[aria-selected="true"] { flex-shrink: 0; }
+  .pl-lanes .lane-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .pl-lanes .lane-tab .n:empty { display: none; }
+  .pl-lanes .lane-tab::before { flex: none; }
+}
 .pl-board { padding-bottom: 24px; }
 .pl-board .col-body { padding-bottom: 24px; }
 /* On a phone the board fills the screen down to the nav, as the task
@@ -3971,17 +3989,33 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-chip .ico { width: 12px; height: 12px; }
 /* Each kind of chip looks its own (app/planning.js: cardEl): a priority is a square,
    bold label; a target a flag and its text, no box; a tag a pill in its own colour. */
-.pl-chip.pl-prio { border-radius: var(--r-xs); padding: 1px 6px; font-size: var(--fs-3xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+/* A priority is the task board's quiet label (.meta-chip.prio-chip): High in the running colour. */
+.pl-prio.p-low { color: var(--faint); }
 .pl-chip.pl-target { padding: 1px 2px; background: none; color: var(--muted); }
 .pl-tag.hued { color: var(--tag); border-color: color-mix(in srgb, var(--tag) 45%, transparent); background: color-mix(in srgb, var(--tag) 10%, transparent); }
 .pl-tag.hued.pl-tag-on { border-color: var(--tag); background: color-mix(in srgb, var(--tag) 22%, transparent); }
 .pl-comments .ico { width: 14px; height: 14px; }
-.pl-chip.p-high { color: var(--failed); background: color-mix(in srgb, var(--failed) 14%, transparent); }
-.pl-chip.p-medium { color: var(--review); background: color-mix(in srgb, var(--review) 14%, transparent); }
 .pl-comments { display: inline-flex; align-items: center; gap: 3px; }
 /* A card waiting for cards it depends on. */
 .pl-chip.pl-waits { color: var(--review); background: color-mix(in srgb, var(--review) 14%, transparent); }
-.pl-project { color: var(--faint); }
+/* The card's project, with its icon (or initial on its colour); its board, in All boards. */
+.pl-chip.pl-project, .pl-chip.pl-board-chip { padding: 1px 2px; background: none; color: var(--muted); max-width: 14em; }
+.pl-project-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-project .side-project-icon { flex: none; width: 16px; height: 16px; border-radius: 4px; font-size: var(--fs-3xs); }
+/* The card's people: its members' faces, then Join (while you aren't one), on hover or focus. */
+.pl-people { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.pl-people .pl-members { margin-left: 0; }
+.pl-join {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%;
+  border: 1.5px dashed var(--faint); background: transparent; color: var(--muted); cursor: pointer;
+}
+.pl-join .ico { width: 12px; height: 12px; }
+.pl-card .pl-join { opacity: 0; }
+.pl-card .todo:hover .pl-join, .pl-card .pl-join:focus-visible { opacity: 1; }
+.pl-join:hover, .pl-join-member:hover .pl-join { border-color: var(--accent); color: var(--accent); }
+@media (hover: none) { .pl-card .pl-join { display: none; } }
+.pl-join-member { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 4px; border: 1px dashed var(--line); border-radius: var(--r-pill); background: none; color: var(--muted); font: inherit; font-size: var(--fs-s); cursor: pointer; }
+.pl-join-member:hover { color: var(--text); }
 /* The assignee's face, at the end of the card's meta row. */
 /* The card's members: their faces, overlapping, at its right; past three, a count. */
 .pl-members { display: inline-flex; margin-left: auto; }
@@ -4002,7 +4036,6 @@ button.goal-task-open:hover { background: var(--raised); }
 .t-waiting { --c: var(--review); }
 .t-failed { --c: var(--failed); }
 .t-done, .t-shipped, .t-live { --c: var(--merged); }
-.pl-suggest { font-size: var(--fs-xs); font-weight: 600; color: var(--merged); }
 /* A card's first picture across its top, and its files in its pane (app/planning.js). */
 .pl-cover {
   grid-column: 1 / -1; display: block; width: calc(100% + 28px); max-height: 140px; margin: -12px -14px 2px;
@@ -4092,15 +4125,16 @@ button.pl-tag-name { border: 0; padding: 0; background: none; color: inherit; fo
 button.pl-tag-name:hover { text-decoration: underline; }
 .pl-tag .icon-btn { width: 24px; height: 24px; min-height: 0; }
 .pl-props input.pl-tag-input { width: auto; min-width: 6em; flex: 1; max-width: 12em; }
-/* The board's other filters, beside the project filter: Mine, a list of
-   the tags and targets to filter by, and the tags and target picked, each
-   with × to take it off. */
-.pl-tag-filter { display: inline-flex; flex-wrap: wrap; gap: 6px; }
-.pl-tag-filter[hidden], .pl-mine[hidden], .pl-more-filter[hidden] { display: none; }
-.pl-tag-filter .pl-tag { padding: 0 0 0 8px; min-height: 32px; font-size: var(--fs-s); }
+/* The filters picked (a desktop), in the head: each with × to take it off; Mine. */
+.pl-tag-filter { display: inline-flex; gap: 6px; flex: 0 1 auto !important; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.pl-tag-filter::-webkit-scrollbar { display: none; }
+.pl-tag-filter .pl-tag { flex: none; padding: 0 0 0 8px; min-height: 32px; font-size: var(--fs-s); }
+.pl-tag-filter .side-project-icon { width: 16px; height: 16px; border-radius: 4px; font-size: var(--fs-3xs); }
 .pl-mine { min-height: 32px; }
 .pl-mine.on { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text); }
-select.pl-more-filter { width: auto; min-height: 32px; max-width: 12em; font-size: var(--fs-s); }
+/* Dash's own notes in the comments (why it moved the card): quieter than people's. */
+.pl-comment-dash { color: var(--muted); }
+.pl-comment-dash .pl-comment-text { font-size: var(--fs-s); }
 .pl-section { margin: 0 0 22px; }
 .pl-section h3 { margin: 0 0 8px; font-size: var(--fs-m); color: var(--muted); }
 .pl-section-head { display: flex; align-items: center; gap: 6px; min-height: 28px; }
@@ -4114,8 +4148,6 @@ select.pl-more-filter { width: auto; min-height: 32px; max-width: 12em; font-siz
 .pl-add-row { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 22px; }
 .pl-add-row .btn { min-height: 30px; color: var(--muted); }
 .pl-add-row .btn:hover { color: var(--text); }
-.pl-suggest-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 18px; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--merged) 45%, var(--line)); border-radius: var(--r-m); background: color-mix(in srgb, var(--merged) 10%, var(--surface)); }
-.pl-suggest-box p { margin: 0; flex: 1; }
 .pl-links, .pl-pick, .pl-comments-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .pl-link { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); box-shadow: inset 3px 0 0 var(--c, var(--line)); }
 .pl-link-kind { color: var(--muted); display: inline-flex; }

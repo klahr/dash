@@ -192,6 +192,36 @@ func (o *OrgStore) RenamePlanningBoard(id, name string) (model.CardBoard, error)
 	return b, nil
 }
 
+// SetDefaultPlanningBoard makes one of the org's boards its default one: the
+// board a card given no board goes on, and a deleted board's cards move to.
+// The board that was the default stays, as an ordinary board.
+func (o *OrgStore) SetDefaultPlanningBoard(id string) (model.CardBoard, error) {
+	var b model.CardBoard
+	o.s.mu.Lock()
+	err := inTx(o.s.db, func(tx *sql.Tx) error {
+		var err error
+		if b, err = o.planningBoardByID(tx, id); err != nil {
+			return err
+		}
+		if b.Default {
+			return nil
+		}
+		// One default an org (planning_boards_default): the old one first.
+		if _, err := tx.Exec("UPDATE planning_boards SET is_default = 0 WHERE org_id = ? AND is_default = 1", o.org); err != nil {
+			return err
+		}
+		b.Default = true
+		_, err = tx.Exec("UPDATE planning_boards SET is_default = 1 WHERE id = ?", b.ID)
+		return err
+	})
+	o.s.mu.Unlock()
+	if err != nil {
+		return model.CardBoard{}, err
+	}
+	o.emitPlanningBoards()
+	return b, nil
+}
+
 // planningBoardByID is one of the org's boards, by its id only.
 func (o *OrgStore) planningBoardByID(q querier, id string) (model.CardBoard, error) {
 	b, err := scanPlanningBoard(q.QueryRow("SELECT "+planningBoardColumns+" FROM planning_boards WHERE org_id = ? AND id = ?", o.org, id))
