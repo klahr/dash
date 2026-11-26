@@ -1427,9 +1427,11 @@ function descBox(d) {
       if (document.activeElement !== el) afterPress(redrawDesc);
     });
   };
-  el.addEventListener("change", finish);
   // Not when the window, rather than the box, loses focus.
-  // Nor when a redraw moves the box (descSection gives it its focus back).
+  // Nor when a redraw moves the box (descSection gives it its focus back):
+  // Chrome fires both change and blur on a moved box that was typed in, and a
+  // save started then would make the Esc that follows do nothing.
+  el.addEventListener("change", () => { if (!pl.desc?.moving) finish(); });
   el.addEventListener("blur", () => { if (document.hasFocus() && !pl.desc?.moving) finish(); });
   el.addEventListener("paste", pasteFiles);
   el.addEventListener("keydown", (e) => {
