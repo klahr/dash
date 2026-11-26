@@ -2,7 +2,7 @@
 // `node --test web/`; groups_test.go runs them as part of `go test ./...`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { graphLayout, graphTips, reachable } from "./static/graphlayout.js";
+import { graphLayout, graphTips, newestCommit, reachable } from "./static/graphlayout.js";
 
 const c = (hash, ...parents) => ({ hash, parents });
 
@@ -78,4 +78,16 @@ test("graphTips and reachable tell origin's commits from local ones", () => {
   assert.deepEqual(rows.map((r) => r.col), [0, 1, 0, 0]);
   // Not checked out: the branch's ref has no HEAD.
   assert.equal(graphTips([{ hash: "x", parents: [], refs: ["main", "origin/main"] }], "main").local.hash, "x");
+});
+
+test("newestCommit is origin's tip, else the local one, else the first", () => {
+  const commits = [
+    { hash: "l", parents: ["o"], refs: ["HEAD -> main"] },
+    { hash: "o", parents: ["r"], refs: ["origin/main"] },
+    { hash: "r", parents: [], refs: [] },
+  ];
+  assert.equal(newestCommit(commits, "main").hash, "o"); // the runner fetches origin's
+  assert.equal(newestCommit(commits.map((c) => ({ ...c, refs: c.refs.filter((r) => !r.startsWith("origin/")) })), "main").hash, "l");
+  assert.equal(newestCommit([{ hash: "x", parents: [], refs: [] }], "main").hash, "x");
+  assert.equal(newestCommit([], "main"), null);
 });

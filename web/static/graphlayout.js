@@ -20,6 +20,13 @@ export function graphTips(commits, branch) {
   return { local, origin };
 }
 
+// newestCommit is the branch's newest commit as a runner fetches it: origin's
+// tip, else the local branch's, else the first listed (null with no commits).
+export function newestCommit(commits, branch) {
+  const { local, origin } = graphTips(commits, branch);
+  return origin || local || commits[0] || null;
+}
+
 // graphLayout gives each commit (newest first, children before parents, as
 // `git log --topo-order` lists them) a lane and the lines to draw above and
 // below its dot.

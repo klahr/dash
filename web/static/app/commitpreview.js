@@ -1,10 +1,10 @@
 import { $ } from "./dom.js";
 import { api } from "./api.js";
 import { ask, fail, toast } from "./dialogs.js";
-import { state, tryState } from "./state.js";
+import { hist, state, tryState } from "./state.js";
 import { hidePreview, paneIn, pv, renderLog, renderPreview, setCommitSource } from "./preview.js";
 import { chooseRunner, loadTry, rememberRunner, renderTryButton } from "./try.js";
-import { selectCommit, showCommitAt } from "./history.js";
+import { latestCommit, selectCommit, showCommitAt } from "./history.js";
 
 // ------------------------------------------------------------------ commit preview
 // History's Preview: a web project's app as it was at a commit of the default
@@ -117,6 +117,10 @@ async function warned(p) {
   return ok;
 }
 
+// isLatest says whether sha is the newest commit of p's default branch, as
+// History's graph has it (today's code: no warning about old commits).
+const isLatest = (p, sha) => !!sha && hist.branch === (p.default_branch || "main") && sha === latestCommit();
+
 // previewOnRunner is a web project's Run (ref "": the latest commit of the
 // default branch, as the runner fetches it) and its ▾ → Pick a commit… (any
 // ref): it opens History on that commit and starts its preview on runner, in
@@ -127,11 +131,16 @@ export async function previewOnRunner(ref, runner) {
   if (!p) return;
   const why = runPreviewWhy(p);
   if (why) throw new Error(why);
-  if (ref && !await warned(p)) return; // the latest commit is today's code: no warning
   const sha = await showCommitAt(ref);
   if (!sha || state.project?.id !== p.id) return;
+  const branch = p.default_branch || "main";
   const exact = !!ref && sha.startsWith(ref.toLowerCase());
-  open(p, sha, !ref ? `the latest ${p.default_branch || "main"}` : exact ? shortSHA(sha) : ref);
+  // The latest commit is today's code: no warning. Another ref (a tag, say)
+  // may name an old one: the graph's newest stands in for it until the runner
+  // says which it checked out, so it warns.
+  const latest = !ref || ref === branch || ref === `origin/${branch}` || (exact && isLatest(p, sha));
+  if (!latest && !await warned(p)) return;
+  open(p, sha, !ref ? `the latest ${branch}` : exact ? shortSHA(sha) : ref);
   await start(p, runner, ref);
 }
 
@@ -140,7 +149,7 @@ export async function previewOnRunner(ref, runner) {
 export async function startCommitPreview(anchor = $("#pv-status")) {
   const p = state.project;
   if (!p || !pv.commit) return;
-  if (!await warned(p)) return closeCommitPreview();
+  if (!isLatest(p, cpv.sha) && !await warned(p)) return closeCommitPreview();
   const s = tryState.session;
   if (s && s.commit !== cpv.sha && s.state === "live" &&
     !await ask({ title: `Preview ${cpv.short} instead?`, body: `${s.kind === "web" ? "A preview" : "A Try terminal"} runs at ${shortSHA(s.commit)} on ${s.runner}. One runs per project: it stops, and its worktree is removed.`, ok: "Replace it" })) {

@@ -1,4 +1,4 @@
-import { graphLayout, graphTips, reachable } from "../graphlayout.js";
+import { graphLayout, graphTips, newestCommit, reachable } from "../graphlayout.js";
 import { latestOnly } from "../commitnav.js";
 import { $, $$, dateTimeText, debounce, fill, h, ib, ico, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
@@ -248,6 +248,10 @@ export async function selectCommit(sha, { wait = 0 } = {}) {
   renderCommit();
 }
 
+// latestCommit is the hash of the graph's branch's newest commit, as a
+// runner fetches it ("" while the graph has none).
+export const latestCommit = () => newestCommit(hist.commits, hist.branch)?.hash || "";
+
 // showCommitAt opens History on the commit a preview runs (commitpreview.js)
 // and returns its hash: ref "" is the newest commit of the default branch as
 // the graph has it, a hash its commit; any other ref, or a hash the graph
@@ -258,9 +262,8 @@ export async function showCommitAt(ref) {
   await loadGraph();
   if (projectKey(state.project) !== projectKey(p)) return "";
   const want = /^[0-9a-f]{7,40}$/i.test(ref || "") ? ref.toLowerCase() : "";
-  const { origin, local } = graphTips(hist.commits, hist.branch);
   const sha = (want && hist.commits.find((c) => c.hash.startsWith(want))?.hash) || (want.length === 40 ? want : "") ||
-    (origin || local || hist.commits[0])?.hash || "";
+    latestCommit() || "";
   if (!sha) throw new Error(`${hist.branch || "main"} has no commits yet.`);
   selectCommit(sha).catch(fail);
   return sha;
