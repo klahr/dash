@@ -601,7 +601,8 @@
       </div>
     </aside>
     <!-- A goal: beside the Goals list on desktop, full screen with Back on a phone (like a
-         History commit). Plan, Log and Budget, and what you can do with it. -->
+         History commit). What it is for, its tasks, its budget and its log; its main action
+         and the rest in a menu (app/goals.js). -->
     <aside class="detail goal-detail" id="goal-detail" hidden aria-labelledby="gd-title">
       <header class="detail-head">
         <button class="icon-btn" id="gd-close" type="button" aria-label="Back" title="Close (Esc)">
@@ -612,20 +613,22 @@
           <h2 id="gd-title"></h2>
           <div class="detail-meta" id="gd-meta"></div>
           <div class="commit-actions goal-actions" id="gd-actions"></div>
+          <form class="goal-resume" id="gd-resume" hidden></form>
         </div>
+        <button class="icon-btn" id="gd-copy" type="button" aria-label="Copy link" title="Copy link" data-icon="link"></button>
       </header>
       <div class="detail-body" id="gd-body">
         <p class="error-note" id="gd-error" hidden></p>
+        <div class="goal-desc-wrap" id="gd-desc-wrap" hidden>
+          <div class="md goal-desc" id="gd-desc"></div>
+          <button class="link goal-desc-more" id="gd-desc-more" type="button" aria-controls="gd-desc" hidden></button>
+        </div>
         <div class="goal-note" id="gd-note" hidden></div>
-        <details class="prompt" id="gd-desc-wrap">
-          <summary>What to get done</summary>
-          <div class="prompt-text md" id="gd-desc"></div>
-        </details>
-        <section class="goal-section" aria-labelledby="gd-plan-head">
-          <h3 class="commit-files-head" id="gd-plan-head">Plan</h3>
+        <section class="goal-section" id="gd-plan-wrap" aria-labelledby="gd-plan-head" hidden>
+          <h3 class="commit-files-head" id="gd-plan-head">Tasks</h3>
           <ol class="goal-plan" id="gd-plan"></ol>
         </section>
-        <section class="goal-section" aria-labelledby="gd-budget-head">
+        <section class="goal-section" id="gd-budget-wrap" aria-labelledby="gd-budget-head" hidden>
           <h3 class="commit-files-head" id="gd-budget-head">Budget</h3>
           <div class="goal-budget" id="gd-budget"></div>
         </section>

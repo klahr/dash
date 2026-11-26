@@ -10,8 +10,9 @@ Each goal belongs to one project and has:
 - a **mode**: **ask before queuing** (the default) or **queue on its own**
 - a **budget** (both optional): the most tasks it may create, and the share of the weekly usage
   window its tasks may use
-- a **status**: planning, working, waiting for you, paused, done or out of budget; a goal whose
-  coordinator can't run shows **Can't run** instead, with the reason
+- a **status**: planning, working, waiting for you (shown as what it waits for: **Plan to
+  accept**, **Question for you** or **Drafts to queue**), paused, done, stopped or out of budget;
+  a goal whose coordinator can't run shows **Can't run** instead, with the reason
 - a **log** of what the coordinator did, and why
 - the coordinator's **conversation**: its session, which every wake-up and every message you
   send it continues
@@ -36,7 +37,7 @@ instead.
 3. Pick **Ask me before queuing** (the default) or **Queue on its own**, then **Start goal**.
 
 The goal opens on the **Goals** page, *planning*. In ask mode its plan shows in the goal once the
-coordinator has one: each task under **Plan**, marked *Proposed*. Click a task to read its
+coordinator has one: each task under **Tasks**, marked *Proposed*. Click a task to read its
 instructions.
 
 - **Accept plan** makes the plan's tasks and queues them.
@@ -48,30 +49,51 @@ instructions.
 ## The Goals page
 
 **Goals** is in the sidebar, next to **Board** and **History** (a tab in the bottom bar on a phone;
-`go` on the keyboard). Each goal shows how many of its tasks are merged ("4 of 7 merged") and
-its status. Goals waiting for you, and goals that can't run, come first.
+`go` on the keyboard). Each goal shows its status and how many of its tasks are merged ("4 of 7
+merged", a waiting plan's tasks counted). Goals waiting for you, and goals that can't run, come
+first.
 
 Pick a goal to open it beside the list (full screen with **Back** on a phone). The list narrows
 and the goal you picked stays marked in it. `Esc` closes it; `j` and `k` open the next and
-previous goal. It shows:
+previous goal. Its head shows the status, the mode, when it started and what its tasks spent
+(tokens and cost). Below it:
 
-- **Plan**: the goal's tasks in dependency order, with their status. Pick one to open it. A plan
-  waiting for you is listed below them as *Proposed*.
-- **Budget**: the tasks made of **Max tasks**, the weekly share used, and the tokens and cost
-  of its tasks so far.
-- **Log**: what the coordinator did and why, newest first.
+- **What to get done**: the description, rendered. A long one shows its start; **Show all**
+  shows the rest.
+- The coordinator's question or its summary, when it has one, or why it can't run.
+- **Tasks**: the goal's tasks in dependency order, each with its state (proposed, draft, queued,
+  running, review, merged…). Pick one to open it. A plan waiting for you is listed last, as
+  *Proposed*.
+- **Budget**, only when the goal has a limit: each limit as a meter of what is used of it, and
+  what its tasks spent.
+- **Log**: what happened, newest first. Each entry says who did it: **You**, the
+  **Coordinator** or **Dash**. A task event (a task entered review, failed or was merged) is a
+  plain line, and a run of them folds into one line; click it to see them all. A task shows by
+  its title: click it to open the task.
 
-Its buttons: **Accept plan** and **Edit plan…** (a plan waits), **Queue drafts** (its drafts
-wait), **Talk to coordinator**, **Pause**, **Resume**, **Try again** (it can't run), **Edit goal**,
-**Copy link**, **Stop** and **Delete**.
+The goal's main action is the one that fits where it stands:
 
-**Talk to coordinator** opens the goal's chat in the chat pane, with the coordinator's question,
-plan and notes as its messages; answer there. On the **Goals** page the chat sits beside the goal
-and the list, never over them. It has one goal tab, which follows the goal you open, and it closes
-when you close the goal or leave **Goals**, unless the chat is pinned. On a phone the chat is a
-page of its own: its **Goal** button leads back to the goal.
-**Copy link** copies the goal's address, which opens it for anyone in the project (see
+| The goal | Main action |
+| --- | --- |
+| a plan waits | **Accept plan**, with **Edit plan…** beside it |
+| a question waits | **Answer**: opens the goal's chat |
+| its drafts wait | **Queue drafts** |
+| paused | **Resume** |
+| out of budget | **Resume…** |
+| can't run | **Try again** |
+| planning or working | **Talk to coordinator**, with **Pause** beside it |
+| done or stopped | **Talk to coordinator** |
+
+The rest are in **⋯**: **Talk to coordinator**, **Pause**, **Edit goal…**, **Link to card…**, and
+**Stop goal** (or **Delete goal** once the goal is done or stopped). The link button beside the
+close button copies the goal's address, which opens it for anyone in the project (see
 [Links](links.md)).
+
+**Talk to coordinator** (and **Answer**) opens the goal's chat in the chat pane, with the
+coordinator's question, plan and notes as its messages; answer there. On the **Goals** page the
+chat sits beside the goal and the list, never over them. It has one goal tab, which follows the
+goal you open, and it closes when you close the goal or leave **Goals**, unless the chat is
+pinned. On a phone the chat is a page of its own: its **Goal** button leads back to the goal.
 
 On a goal task's **Changes** tab, the coordinator's review note shows above the diff. It only
 advises: **Approve** and **Merge** stay yours.
@@ -125,14 +147,19 @@ note. Answer in the goal's chat, or with `message_goal` from Claude (see below).
 - **Pause** holds the goal: task events wait, and a coordinator turn running now stops. Its
   tasks carry on. **Resume** goes on where it was and wakes the coordinator for what came
   meanwhile.
-- **Edit** changes the title, description, mode or budget. To go on with a goal that ran out of
-  budget, raise its budget, then resume it.
-- **Stop** ends the goal for good: it is done, and its tasks stay on the board as they are.
-  The goal stays in the list.
-- **Delete** removes the goal from the list, with its plan, log and the coordinator's
-  conversation. A coordinator turn running now stops first. Its tasks stay on the board as they
-  are, without a goal (and without its chip). A Planning card linked to the goal shows it as
-  removed. This can't be undone.
+- **Resume…** on a goal out of budget shows its limits under the actions. Raise them and click
+  **Resume**: the budget is saved and the goal resumes in one step.
+- **Edit goal…** changes the title, description, mode or budget.
+- **Stop goal** ends the goal for good: it is *stopped*, and its tasks stay on the board as they
+  are. The goal stays in the list. **Undo** in the toast takes it back; the goal is stopped when
+  the toast goes.
+- **Delete goal** (only for a goal that is done or stopped) removes the goal from the list, with
+  its plan, log and the coordinator's conversation. Its tasks stay on the board as they are,
+  without a goal (and without its chip). A Planning card linked to the goal shows it as removed.
+  **Undo** in the toast brings it back; the goal is deleted when the toast goes.
+
+`DELETE /api/goals/{id}` and `delete_goal` delete a goal in any state. A coordinator turn running
+then stops first.
 
 ## Budget
 

@@ -2713,8 +2713,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .card-detail { width: var(--detail-beside-w); box-shadow: none; }
   .card-open > .page.planning { margin-right: var(--detail-beside-w); width: auto; }
   .card-detail .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
-  #card-detail .detail-head { flex-direction: row; }
-  #pd-close { order: 2; }
+  :is(#card-detail, #goal-detail) .detail-head { flex-direction: row; }
+  :is(#pd-close, #gd-close) { order: 2; }
   .card-detail .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
   :is(.commit-detail, .goal-detail, .deploy-detail, .card-detail) .detail-head { flex-direction: row-reverse; padding: 8px 8px 0 24px; border-bottom: 0; }
   :is(#cd-close, #gd-close, #dd-close, #pd-close) .cd-back { display: none; }
@@ -3720,7 +3720,7 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .goal-row { display: flex; align-items: baseline; gap: 10px; }
 .goal-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .goal-progress { margin: 0; }
-.goal-wait { font-size: var(--fs-s); color: var(--review); }
+.goal-wait { font-size: var(--fs-s); color: var(--muted); overflow-wrap: anywhere; }
 .goal-status { flex: none; font-size: var(--fs-s); }
 .goal-status .act-spin { margin-right: -2px; }
 .g-planning { --c: var(--accent); }
@@ -3847,7 +3847,25 @@ a.tag-build:hover, a.tag-build:focus-visible { text-decoration: underline; }
   .env-freeze { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }
   .env-freeze .env-freeze-note { grid-column: 1 / -2; grid-row: 2; }
 }
+/* The goal's head (app/goals.js: renderGoalActions): its main action, at most one beside it,
+   and ⋯; Copy link sits beside the close button. Resume… on a goal out of budget opens its
+   limits under them, to raise and resume in one step. */
+.goal-detail .goal-actions { flex-basis: 100%; gap: 8px; }
 .goal-actions .btn { min-height: 32px; }
+.goal-actions .goal-more-btn { width: 34px; height: 34px; }
+#gd-copy { flex: none; }
+.goal-resume { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }
+.goal-resume[hidden] { display: none; }
+.goal-resume .field.inline { margin: 0; }
+.goal-resume input { width: 7em; }
+.goal-spend { font-variant-numeric: tabular-nums; }
+/* What the goal is for, first in the pane; a long one shows its start until Show all. */
+.goal-desc-wrap { margin: 0 0 18px; }
+.goal-desc { overflow-wrap: anywhere; }
+.goal-desc :is(p, ul, ol):last-child { margin-bottom: 0; }
+.goal-desc-wrap.clamped .goal-desc { max-height: 12em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+.goal-desc-more { display: inline-flex; min-height: 28px; font-size: var(--fs-s); }
+@media (max-width: 479px) { .goal-actions .btn .ico { display: none; } .goal-actions { gap: 6px; } }
 .goal-section { margin: 0 0 20px; }
 .goal-section .commit-files-head { margin-bottom: 8px; }
 /* The note and the review note speak for the coordinator: a chat reply's look, in a card. */
@@ -3886,15 +3904,27 @@ button.goal-task-open:hover { background: var(--raised); }
 
 .goal-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
 .goal-log-entry { display: flex; flex-direction: column; gap: 2px; padding: 8px 0 8px 12px; border-left: 2px solid var(--line); font-size: var(--fs-s); }
+/* The log (app/goals.js: renderLog): who speaks, by colour (you, the coordinator, Dash); a task
+   event is a plain line; a finished goal is good news (green), a failure bad (red). A run of
+   routine entries folds into its newest one. */
 .goal-log-entry.k-user { border-left-color: var(--accent); }
-.goal-log-entry.k-plan { border-left-color: var(--review); }
-.goal-log-entry.k-action { border-left-color: var(--running); }
-.goal-log-entry.k-status { border-left-color: var(--failed); }
+.goal-log-entry:is(.k-plan, .k-action, .k-note) { border-left-color: var(--review); }
+.goal-log-entry.k-status { border-left-color: var(--faint); }
+.goal-log-entry.event { color: var(--muted); }
+.goal-log-entry.tone-ok { border-left-color: var(--merged); }
+.goal-log-entry.tone-bad { border-left-color: var(--failed); }
 .goal-log-head { display: flex; align-items: center; gap: 8px; color: var(--faint); font-size: var(--fs-xs); }
 .goal-log-kind { font-weight: 600; color: var(--muted); }
-.goal-log-head .link { min-height: 0; font-size: var(--fs-xs); font-family: var(--mono); }
-.goal-log-text { overflow-wrap: anywhere; }
-.goal-log-why { color: var(--muted); overflow-wrap: anywhere; }
+.goal-log-text, .goal-log-why { overflow-wrap: anywhere; }
+.goal-log-why { color: var(--muted); }
+:is(.goal-log-text, .goal-log-why) :is(p, ul, ol) { margin: 0 0 4px; }
+:is(.goal-log-text, .goal-log-why) :is(p, ul, ol):last-child { margin-bottom: 0; }
+.goal-log-task { display: inline; text-align: left; vertical-align: baseline; }
+.goal-log-run > details > summary { display: block; cursor: pointer; list-style: none; }
+.goal-log-run > details > summary::-webkit-details-marker { display: none; }
+.goal-log-more { display: inline-block; margin: 0 0 6px 14px; font-size: var(--fs-xs); color: var(--accent); }
+.goal-log-run > details > summary:hover .goal-log-more { text-decoration: underline; }
+.goal-log-run > details[open] .goal-log-more { display: none; }
 
 /* The plan sheet (#split-sheet): which earlier tasks a task waits for, a toggle each. */
 .split-tools { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }

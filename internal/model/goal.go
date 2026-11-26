@@ -166,7 +166,7 @@ const (
 	GoalLogAction = "action" // it created, edited, queued, sent back or dropped a task
 	GoalLogNote   = "note"   // what it concluded, and why
 	GoalLogUser   = "user"   // the user accepted, paused, resumed, edited or stopped the goal
-	GoalLogStatus = "status" // Dash changed the goal's status (budget used up, …)
+	GoalLogStatus = "status" // Dash made the goal or changed its status (budget used up, …)
 )
 
 // GoalLogEntry is one thing a coordinator did, and why.

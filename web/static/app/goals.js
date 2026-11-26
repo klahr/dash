@@ -1,8 +1,9 @@
 import { renderMarkdown } from "../editor.js";
 import { $, $$, dateTimeText, fill, h, ib, ico, nameHue, plural } from "./dom.js";
 import { chatBeside } from "./viewport.js";
-import { api } from "./api.js";
-import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
+import { api, on } from "./api.js";
+import { attempt, busy, copy, fail, toast } from "./dialogs.js";
+import { popMenu } from "./popmenu.js";
 import { detailPane } from "./detailpane.js";
 import { statusLabel, projectFirst, state } from "./state.js";
 import { eventFor, latest, projectKey, projectName } from "./events.js";
@@ -55,7 +56,17 @@ export const gp = {
   detail: null,    // that goal in full (with its log)
   error: "",
   editing: null,   // the goal the sheet edits (null: a new one)
+  resuming: null,  // the goal out of budget whose Resume asks for its new limits
+  descOpen: false, // the open goal's long description shown in full
 };
+
+// Stop and Delete wait while their toast shows Undo (endWithUndo): the
+// goals they end, by id → { verb, send }.
+const ending = new Map();
+
+// shown is goal g as the page shows it: stopped already while its Stop waits.
+const shown = (g) => (g && ending.get(g.id)?.verb === "stop"
+  ? { ...g, status: "done", stopped: true, waiting_for: "", plan: null, blocked: "", running: false } : g);
 
 const goalAPI = (id) => `/api/goals/${id}`;
 const prefix = () => gp.project?.prefix || "";
@@ -127,18 +138,35 @@ export function goalTasks(g) {
 
 const merged = (ts) => ts.filter((t) => t.status === "merged").length;
 
-// progress is a .cl-progress bar: "4 of 7 merged".
+// planWaits is the plan g's coordinator proposed, waiting for you to accept it.
+const planWaits = (g) => (g.waiting_for === "plan" ? g.plan || [] : []);
+
+// progress is a .cl-progress bar: "4 of 7 merged", a waiting plan's tasks
+// counted too. Nothing while the goal has no tasks: its status says why.
 function progress(g) {
-  const ts = goalTasks(g), n = ts.length, m = merged(ts);
-  const bar = h("span", { style: `width:${n ? Math.round(100 * m / n) : 0}%` });
-  return h("div", { class: `cl-progress goal-progress${n && m === n ? " complete" : ""}` },
+  const ts = goalTasks(g), n = ts.length + planWaits(g).length, m = merged(ts);
+  if (!n) return null;
+  const bar = h("span", { style: `width:${Math.round(100 * m / n)}%` });
+  return h("div", { class: `cl-progress goal-progress${m === n ? " complete" : ""}` },
     h("div", { class: "cl-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(n), "aria-valuenow": String(m), "aria-label": "Tasks merged" }, bar),
-    h("span", { class: "cl-count" }, n ? `${m} of ${n} merged` : shownStatus(g) === "planning" ? "Planning…" : "No tasks yet"));
+    h("span", { class: "cl-count" }, `${m} of ${n} merged`));
 }
 
-const statusTag = (g) => h("span", { class: `status goal-status g-${shownStatus(g)}` },
+// stopped reports whether g is done because you stopped it.
+const stopped = (g) => g.status === "done" && (g.stopped || g.note === "Stopped by you.");
+
+// What a waiting goal waits for, as its status.
+const WAIT_STATUS = { plan: "Plan to accept", question: "Question for you", drafts: "Drafts to queue" };
+export function statusName(g) {
+  const s = shownStatus(g);
+  if (s === "waiting_for_you") return WAIT_STATUS[g.waiting_for] || GOAL_STATUS[s];
+  if (stopped(g)) return "Stopped";
+  return GOAL_STATUS[s] || g.status;
+}
+
+const statusTag = (g) => h("span", { class: `status goal-status g-${stopped(g) ? "paused" : shownStatus(g)}` },
   g.running ? h("span", { class: "act-spin", "aria-hidden": "true" }) : null,
-  GOAL_STATUS[shownStatus(g)] || g.status);
+  statusName(g));
 
 // What a waiting goal waits for, or why it can't run, in a few words.
 function waitText(g) {
@@ -153,7 +181,7 @@ function waitText(g) {
 export function renderGoals() {
   const list = $("#goal-list");
   if (!list) return;
-  const goals = [...gp.list].sort((a, b) => (STATUS_ORDER.indexOf(shownStatus(a)) - STATUS_ORDER.indexOf(shownStatus(b))) || b.updated_at.localeCompare(a.updated_at));
+  const goals = gp.list.filter((g) => ending.get(g.id)?.verb !== "delete").sort((a, b) => (STATUS_ORDER.indexOf(shownStatus(a)) - STATUS_ORDER.indexOf(shownStatus(b))) || b.updated_at.localeCompare(a.updated_at));
   $("#goal-empty").hidden = goals.length > 0;
   const on = goalsOn(state.project);
   $("#goal-empty-title").textContent = !state.project ? "No project" : on ? "No goals yet" : "No goals here";
@@ -162,11 +190,11 @@ export function renderGoals() {
       : NO_GOALS;
   $("#goal-new").hidden = !on;
   const focused = document.activeElement?.closest?.("#goal-list li")?.dataset.id;
-  list.replaceChildren(...goals.map((g) => h("li", { class: `goal${g.id === gp.open ? " selected" : ""}`, "data-id": g.id },
+  list.replaceChildren(...goals.map(shown).map((g) => h("li", { class: `goal${g.id === gp.open ? " selected" : ""}`, "data-id": g.id },
     h("button", { type: "button", class: "goal-open", "aria-controls": "goal-detail", "aria-current": g.id === gp.open ? "true" : null, onclick: () => openGoal(g.id).catch(fail) },
       h("span", { class: "goal-row" }, h("span", { class: "goal-title" }, g.title), statusTag(g)),
       progress(g),
-      waitText(g) ? h("span", { class: "goal-wait" }, waitText(g)) : null))));
+      goalBlocked(g) ? h("span", { class: "goal-wait" }, g.blocked) : null))));
   if (focused) $(`#goal-list li[data-id="${focused}"] .goal-open`)?.focus({ preventScroll: true });
   renderGoalBadges();
 }
@@ -281,6 +309,8 @@ export async function openGoal(id) {
   gp.open = id;
   gp.detail = state.goals.get(id) || null;
   gp.error = "";
+  gp.resuming = null;
+  gp.descOpen = false;
   goalPane.open();
   $(".app").classList.add("goal-open"); // the list narrows (style.css)
   markSelected();
@@ -344,62 +374,169 @@ export function stepGoal(n) {
   }
 }
 
+// renderGoal draws the open goal: its head (status once, what it has spent,
+// the action that fits where it stands and the rest in a menu), then what
+// it is for, the coordinator's word if it has one, its tasks, its budget
+// (only with a limit) and its log.
 function renderGoal() {
-  const g = gp.detail;
+  const g = shown(gp.detail);
   if (!g || $("#goal-detail").hidden) return;
   $("#gd-title").textContent = g.title;
-  const mode = g.mode === "queue" ? "Queues on its own" : "Asks before queuing";
-  fill($("#gd-meta"), statusTag(g), h("span", {}, mode), g.created_at ? h("span", { title: dateTimeText(g.created_at) }, `started ${agoText(g.created_at)}`) : null);
+  const spent = spend(g);
+  fill($("#gd-meta"), statusTag(g),
+    h("span", {}, g.mode === "queue" ? "Queues on its own" : "Asks before queuing"),
+    g.created_at ? h("span", { title: dateTimeText(g.created_at) }, `started ${agoText(g.created_at)}`) : null,
+    spent && !hasLimit(g) ? h("span", { class: "goal-spend" }, spent) : null);
   renderGoalActions(g);
+  renderResume(g);
   $("#gd-error").hidden = !gp.error;
   $("#gd-error").textContent = gp.error;
+  renderDesc(g);
   renderNote(g);
-  $("#gd-desc-wrap").hidden = !g.description;
-  $("#gd-desc").innerHTML = renderMarkdown(g.description || "");
   renderPlan(g);
   renderBudget(g);
   renderLog(g);
 }
 
-// The buttons: what fits where the goal stands. Approve and Merge are never
-// here: a goal's tasks are approved and merged on the board, by you.
+// The actions: the one that fits where the goal stands is the main button
+// (Accept plan, Answer, Queue drafts, Resume, Try again), with at most one
+// beside it; the rest are in ⋯. Pause holds the goal, Stop ends it (both in
+// ⋯ while it runs), and only an ended goal can be deleted. Approve and
+// Merge are never here: a goal's tasks are approved and merged on the
+// board, by you.
 function renderGoalActions(g) {
-  const btn = (icon, label, run, cls = "btn small") => ib({ type: "button", class: cls, onclick: attempt((e) => busy(e.currentTarget, run)) }, icon, label);
-  const active = ACTIVE.includes(g.status);
-  const resumable = g.status === "paused" || g.status === "out_of_budget";
-  const plan = g.waiting_for === "plan" && g.plan?.length;
-  fill($("#gd-actions"),
-    plan ? btn("check", "Accept plan", () => acceptPlan(g), "btn small primary") : null,
-    plan ? btn("edit", "Edit plan…", () => reviewPlan(g)) : null,
-    g.waiting_for === "drafts" ? btn("queue", "Queue drafts", () => queueDrafts(g), "btn small primary") : null,
-    btn("comment", "Talk to coordinator", () => talk(g), g.waiting_for === "question" ? "btn small primary" : "btn small"),
-    active ? btn("pause", "Pause", () => goalAction(g, "pause")) : null,
-    goalBlocked(g) ? btn("redo", "Try again", () => goalAction(g, "resume"), "btn small primary") : null,
-    resumable ? btn("play", "Resume", () => goalAction(g, "resume")) : null,
-    g.status !== "done" ? btn("edit", "Edit goal", () => openGoalSheet({ goal: g })) : null,
-    prefix() ? null : btn("plan", "Link to card", () => linkToCard("goal", g.id)),
-    btn("link", "Copy link", () => copy(linkTo({ view: "goals", goal: g.id }, state.project), "Link copied")),
-    g.status !== "done" ? btn("stop", "Stop", () => stopGoal(g), "btn small danger") : null,
-    btn("trash", "Delete", () => deleteGoal(g), "btn small danger"));
+  const btn = ([icon, label, run], primary) => ib({ type: "button", class: `btn small${primary ? " primary" : ""}`, onclick: attempt((e) => busy(e.currentTarget, run)) }, icon, label);
+  const active = ACTIVE.includes(g.status), waits = g.status === "waiting_for_you";
+  const talkTo = ["comment", "Talk to coordinator", () => talk(g)];
+  const pause = ["pause", "Pause", () => goalAction(g, "pause")];
+  let main = null, beside = null, primary = true;
+  if (goalBlocked(g)) main = ["redo", "Try again", () => goalAction(g, "resume")];
+  else if (waits && g.waiting_for === "plan" && g.plan?.length) {
+    main = ["check", "Accept plan", () => acceptPlan(g)];
+    beside = ["edit", "Edit plan…", () => reviewPlan(g)];
+  } else if (waits && g.waiting_for === "question") main = ["comment", "Answer", () => talk(g)];
+  else if (waits && g.waiting_for === "drafts") main = ["queue", "Queue drafts", () => queueDrafts(g)];
+  else if (g.status === "paused") main = ["play", "Resume", () => goalAction(g, "resume")];
+  else if (g.status === "out_of_budget") main = ["play", "Resume…", () => openResume(g)];
+  else {
+    main = talkTo;
+    primary = false;
+    beside = active ? pause : null;
+  }
+  const used = [main, beside].map((x) => x?.[1]);
+  const more = [
+    main === talkTo || main[1] === "Answer" ? null : talkTo,
+    active && !used.includes("Pause") ? pause : null,
+    g.status !== "done" ? ["edit", "Edit goal…", () => openGoalSheet({ goal: g })] : null,
+    prefix() ? null : ["plan", "Link to card…", () => linkToCard("goal", g.id)],
+  ].filter(Boolean);
+  const end = [
+    g.status !== "done" ? ["stop", "Stop goal", () => endWithUndo(g, "stop"), { danger: true }] : null,
+    g.status === "done" ? ["trash", "Delete goal", () => endWithUndo(g, "delete"), { danger: true }] : null,
+  ].filter(Boolean);
+  fill($("#gd-actions"), btn(main, primary), beside ? btn(beside) : null,
+    ib({ type: "button", class: "icon-btn goal-more-btn", id: "gd-more", "aria-label": "More actions", title: "More", "aria-haspopup": "menu", "aria-expanded": "false",
+      onclick: (e) => popMenu(e.currentTarget, [more, end]) }, "more"));
 }
 
-// The note says why the goal waits, ended or can't go on: the
-// coordinator's question, its summary, the budget used up, why the
-// coordinator can't run. Styled like a chat reply: it is the coordinator
-// speaking.
+$("#gd-copy").addEventListener("click", () => gp.open && copy(linkTo({ view: "goals", goal: gp.open }, state.project), "Link copied"));
+
+// ---- Resume a goal out of budget: its limits, to raise, and Resume, in one step.
+const hasLimit = (g) => !!(g.budget?.max_tasks || g.budget?.weekly_share);
+
+function openResume(g) {
+  if (!hasLimit(g)) return goalAction(g, "resume");
+  gp.resuming = g.id;
+  renderGoal();
+  const input = $("#gd-resume input");
+  input?.focus();
+  input?.select();
+}
+
+function closeResume() {
+  gp.resuming = null;
+  renderGoal();
+  $("#gd-actions .btn")?.focus();
+}
+
+function renderResume(g) {
+  const f = $("#gd-resume");
+  const on = gp.resuming === g.id && g.status === "out_of_budget" && hasLimit(g);
+  f.hidden = !on;
+  if (!on) {
+    f.replaceChildren();
+    delete f.dataset.goal;
+    return;
+  }
+  if (f.dataset.goal === g.id) return; // keep what is typed
+  f.dataset.goal = g.id;
+  const b = g.budget;
+  const field = (name, label, value, max) => h("label", { class: "field inline" }, h("span", {}, label),
+    h("input", { type: "number", name, min: "1", max, step: "1", inputmode: "numeric", value: String(value), required: true }));
+  const go = ib({ type: "submit", class: "btn small primary" }, "play", "Resume");
+  fill(f,
+    b.max_tasks ? field("max_tasks", "Max tasks", b.max_tasks, "1000") : null,
+    b.weekly_share ? field("weekly_share", "Weekly share %", b.weekly_share, "100") : null,
+    go,
+    h("button", { type: "button", class: "btn small", onclick: closeResume }, "Cancel"));
+  f.onsubmit = (e) => {
+    e.preventDefault();
+    attempt(() => busy(go, async () => {
+      const budget = {
+        max_tasks: f.max_tasks ? whole(f.max_tasks.value, 1000, "Max tasks") : b.max_tasks || 0,
+        weekly_share: f.weekly_share ? whole(f.weekly_share.value, 100, "The weekly share") : b.weekly_share || 0,
+      };
+      await api("PATCH", goalAPI(g.id), { budget }, prefix());
+      await goalAction(g, "resume");
+      gp.resuming = null;
+      renderGoal();
+    }))();
+  };
+  f.onkeydown = (e) => {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeResume();
+  };
+}
+
+// ---- What the goal is for: first, rendered; a long one shows its start until Show all.
+const LONG_DESC = 700;
+function renderDesc(g) {
+  const wrap = $("#gd-desc-wrap"), more = $("#gd-desc-more"), d = (g.description || "").trim();
+  wrap.hidden = !d || d === g.title;
+  $("#gd-desc").innerHTML = renderMarkdown(d);
+  const long = d.length > LONG_DESC || d.split("\n").length > 12;
+  more.hidden = !long;
+  wrap.classList.toggle("clamped", long && !gp.descOpen);
+  more.textContent = gp.descOpen ? "Show less" : "Show all";
+  more.setAttribute("aria-expanded", String(!!gp.descOpen));
+}
+$("#gd-desc-more").addEventListener("click", () => {
+  gp.descOpen = !gp.descOpen;
+  if (gp.detail) renderDesc(shown(gp.detail));
+});
+
+// The note is what the status alone doesn't say: the coordinator's question
+// or its summary, or why the coordinator can't run. Styled like a chat
+// reply, from whoever speaks.
+function noteOf(g) {
+  if (goalBlocked(g)) return { from: "Dash", text: g.blocked };
+  if (g.status === "waiting_for_you" && g.waiting_for === "question" && g.note) return { from: "Coordinator", text: g.note };
+  if (g.status === "done" && !stopped(g) && g.note) return { from: "Coordinator", text: g.note };
+  return null;
+}
 function renderNote(g) {
-  const el = $("#gd-note");
-  const blocked = goalBlocked(g);
-  const text = blocked ? `The coordinator couldn't run: ${g.blocked}` : g.note || waitText(g);
-  el.hidden = !text;
-  if (!text) return;
+  const el = $("#gd-note"), n = noteOf(g);
+  el.hidden = !n;
+  if (!n) return;
   el.className = `goal-note msg assistant g-${shownStatus(g)}`;
-  fill(el, h("div", { class: "msg-from" }, blocked ? GOAL_STATUS.blocked : g.status === "waiting_for_you" ? "Waiting for you" : GOAL_STATUS[g.status] || "Coordinator"),
-    h("div", { class: "reply", innerHTML: renderMarkdown(text) }));
+  fill(el, h("div", { class: "msg-from" }, n.from), h("div", { class: "reply", innerHTML: renderMarkdown(n.text) }));
 }
 
-// Plan: the goal's tasks in dependency order, each linked to its task. A
-// plan waiting to be accepted shows below them.
+// Tasks: the plan's tasks in dependency order, each with its state and
+// linked to its task; a plan waiting to be accepted follows as Proposed,
+// each opening to its instructions.
 function renderPlan(g) {
   const ts = goalTasks(g);
   const num = new Map(ts.map((t, i) => [t.id, i + 1]));
@@ -407,15 +544,13 @@ function renderPlan(g) {
     const after = (t.depends_on || []).map((d) => num.get(d)).filter(Boolean).sort((a, b) => a - b);
     return h("li", { class: `goal-task s-${t.status}` },
       h("span", { class: "split-num", "aria-hidden": "true" }, String(i + 1)),
-      h("button", { type: "button", class: "goal-task-open", title: "Open the task", onclick: () => openDetail(t.id).catch(fail) },
+      h("button", { type: "button", class: "goal-task-open", onclick: () => openDetail(t.id).catch(fail) },
         h("span", { class: "goal-task-title" }, title({ title: t.title, prompt: t.prompt || t.title || t.id })),
         h("span", { class: "goal-task-sub" },
           h("span", { class: "status" }, t.paused ? "Paused" : statusLabel(t)),
           after.length ? h("span", {}, `after ${after.join(", ")}`) : null)));
   });
-  // A plan waiting to be accepted: each task with its instructions, to read before Accept plan.
-  const waiting = g.waiting_for === "plan" ? (g.plan || []) : [];
-  const proposed = waiting.map((it, i) => h("li", { class: "goal-task proposed s-draft" },
+  const proposed = planWaits(g).map((it, i) => h("li", { class: "goal-task proposed s-draft" },
     h("span", { class: "split-num", "aria-hidden": "true" }, String(ts.length + i + 1)),
     h("details", { class: "goal-task-open goal-proposal" },
       h("summary", {},
@@ -423,45 +558,120 @@ function renderPlan(g) {
         h("span", { class: "goal-task-sub" }, h("span", { class: "status" }, "Proposed"),
           it.after?.length ? h("span", {}, `after ${it.after.map((a) => ts.length + a + 1).join(", ")}`) : null)),
       h("div", { class: "goal-proposal-prompt md", innerHTML: renderMarkdown(it.prompt || "") }))));
-  const empty = !rows.length && !proposed.length
-    ? [h("li", { class: "pane-empty" }, shownStatus(g) === "planning" ? "The coordinator reads the code and plans the tasks…" : "No tasks yet.")]
-    : [];
-  $("#gd-plan").replaceChildren(...rows, ...proposed, ...empty);
+  $("#gd-plan-wrap").hidden = !rows.length && !proposed.length;
+  $("#gd-plan").replaceChildren(...rows, ...proposed);
 }
 
-// Budget: tasks made of the most it may make, the weekly share used, and
-// the tokens its tasks took.
-function renderBudget(g) {
-  const ts = goalTasks(g);
-  const b = g.budget || {};
-  const runs = ts.flatMap((t) => t.run_stats || []);
+// spend is what the goal's tasks took, "48k tokens · $0.42", once they took any.
+function spend(g) {
+  const runs = goalTasks(g).flatMap((t) => t.run_stats || []);
+  if (!runs.length) return "";
   const tokens = runs.reduce((n, r) => n + (r.input_tokens || 0) + (r.output_tokens || 0) + (r.cache_read_tokens || 0) + (r.cache_creation_tokens || 0), 0);
   const cost = runs.reduce((n, r) => n + (r.cost_usd || 0), 0);
-  const meter = (label, used, max, text) => h("div", { class: "goal-meter" },
-    h("span", { class: "goal-meter-label" }, label),
-    max ? h("div", { class: `cl-progress${used >= max ? " over" : ""}` },
-      h("div", { class: "cl-bar", role: "progressbar", "aria-label": label, "aria-valuemin": "0", "aria-valuemax": String(max), "aria-valuenow": String(Math.min(used, max)) },
-        h("span", { style: `width:${Math.min(100, Math.round(100 * used / max))}%` })),
-      h("span", { class: "cl-count" }, text)) : h("span", { class: "cl-count" }, text));
-  fill($("#gd-budget"),
-    meter("Tasks", ts.length, b.max_tasks || 0, b.max_tasks ? `${ts.length} of ${b.max_tasks}` : `${ts.length} · no limit`),
-    meter("Weekly share", g.weekly_used ?? 0, b.weekly_share || 0,
-      b.weekly_share ? (g.weekly_used != null ? `${g.weekly_used.toFixed(1)}% of ${b.weekly_share}%` : `${b.weekly_share}%; use not known yet`) : "no limit"),
-    meter("Tokens", 0, 0, runs.length ? `${fmtTokens(tokens)} · $${cost.toFixed(2)}` : "none yet"));
+  return `${fmtTokens(tokens)} tokens · $${cost.toFixed(2)}`;
 }
 
-const LOG_KIND = { plan: "Plan", wake: "Woken", action: "Did", note: "Note", user: "You", status: "Dash" };
+// Budget, only with a limit: each limit as a meter of what is used of it,
+// and what the tasks spent. Without a limit, the spend is in the head.
+function renderBudget(g) {
+  const wrap = $("#gd-budget-wrap");
+  wrap.hidden = !hasLimit(g);
+  if (wrap.hidden) return;
+  const b = g.budget, made = goalTasks(g).length, spent = spend(g);
+  const meter = (label, used, max, text) => h("div", { class: "goal-meter" },
+    h("span", { class: "goal-meter-label" }, label),
+    h("div", { class: `cl-progress${used >= max ? " over" : ""}` },
+      h("div", { class: "cl-bar", role: "progressbar", "aria-label": label, "aria-valuemin": "0", "aria-valuemax": String(max), "aria-valuenow": String(Math.min(used, max)) },
+        h("span", { style: `width:${Math.min(100, Math.round(100 * used / max))}%` })),
+      h("span", { class: "cl-count" }, text)));
+  const row = (label, text) => h("div", { class: "goal-meter" }, h("span", { class: "goal-meter-label" }, label), h("span", { class: "cl-count" }, text));
+  const weekly = !b.weekly_share ? null
+    : g.weekly_used != null ? meter("Weekly share", g.weekly_used, b.weekly_share, `${g.weekly_used.toFixed(1)}% of ${b.weekly_share}%`)
+      : row("Weekly share", `${b.weekly_share}%`);
+  fill($("#gd-budget"),
+    b.max_tasks ? meter("Tasks", made, b.max_tasks, `${made} of ${b.max_tasks}`) : null,
+    weekly,
+    spent ? row("Spent", spent) : null);
+}
+
+// ---- The log, newest first, read as a story: who speaks (the coordinator,
+// you, or Dash), markdown rendered, a task by its title (a link to it), never
+// its id. Task events that woke the coordinator are plain lines, and a run of
+// them, with the routine steps that follow them, folds into one.
+const finishedPrefix = "Finished the goal: ";
+const isCreated = (e) => e.kind === "user" && /^Goal created\b/.test(e.text || "");
+function speaker(e) {
+  if (e.kind === "wake") return "";
+  if (e.kind === "user") return isCreated(e) ? "Dash" : "You";
+  if (e.kind === "status") return "Dash";
+  return "Coordinator";
+}
+// tone: a goal finished is good news; a failure, a goal that can't run or
+// out of budget is bad; the rest is neither.
+function tone(e) {
+  const text = e.text || "";
+  if (e.kind === "status") return text.startsWith(finishedPrefix) ? "ok" : /^Goal created\b/.test(text) ? "" : "bad";
+  if (e.kind === "wake" && /\bfailed\b/.test(text)) return "bad";
+  return "";
+}
+const routine = (e) => e.kind === "wake" || (e.kind === "action" && !e.why && /^(Created|Queued|Edited|Re-queued) task\b/.test(e.text || ""));
+
+const TASK_MARK = "";
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// logHTML is entry e's text as HTML: markdown, with the task it names as a
+// link that shows its title.
+function logHTML(e, g) {
+  let text = e.text || "";
+  if (!e.todo) return renderMarkdown(text);
+  let quoted = "";
+  const re = new RegExp(`\\b[Tt]ask #?${escRe(e.todo)}(?: \\("((?:[^"\\\\]|\\\\.)*)"\\))?`);
+  if (!re.test(text)) return renderMarkdown(text);
+  text = text.replace(re, (_, q) => { quoted = (q || "").replace(/\\(.)/g, "$1"); return TASK_MARK; });
+  const t = goalTasks(g).find((x) => x.id === e.todo) || state.todos.get(e.todo);
+  const name = t ? title({ title: t.title, prompt: t.prompt || t.title || "" }) : quoted;
+  // "Queued task X: <its title>": the title is the link already.
+  const tail = text.match(/: ([^\n]*)$/);
+  if (tail && name && tail[1].replace(/…$/, "") && name.startsWith(tail[1].replace(/…$/, ""))) text = text.slice(0, tail.index);
+  const link = h("button", { type: "button", class: "link inline goal-log-task", "data-todo": e.todo }, name || "a task").outerHTML;
+  return renderMarkdown(text).replace(TASK_MARK, link);
+}
+
+function logEntry(e, g, tag = "li") {
+  const who = speaker(e), t = tone(e);
+  return h(tag, { class: `goal-log-entry k-${e.kind}${who ? "" : " event"}${t ? ` tone-${t}` : ""}` },
+    h("span", { class: "goal-log-head" },
+      who ? h("span", { class: "goal-log-kind" }, who) : null,
+      h("time", { datetime: e.at, title: dateTimeText(e.at) }, agoText(e.at))),
+    h("div", { class: "goal-log-text md", innerHTML: logHTML(e, g) }),
+    e.why ? h("div", { class: "goal-log-why md", innerHTML: renderMarkdown(e.why) }) : null);
+}
+
 function renderLog(g) {
   const log = [...(g.log || [])].reverse(); // newest first
-  $("#gd-log").replaceChildren(...(log.length ? log.map((e) => h("li", { class: `goal-log-entry k-${e.kind}` },
-    h("span", { class: "goal-log-head" },
-      h("span", { class: "goal-log-kind" }, LOG_KIND[e.kind] || e.kind),
-      h("time", { datetime: e.at, title: dateTimeText(e.at) }, agoText(e.at)),
-      e.todo ? h("button", { type: "button", class: "link", onclick: () => openDetail(e.todo).catch(fail) }, `#${e.todo}`) : null),
-    h("span", { class: "goal-log-text" }, e.text),
-    e.why ? h("span", { class: "goal-log-why" }, e.why) : null))
-    : [h("li", { class: "pane-empty" }, gp.detail?.log ? "Nothing yet." : "Loading…")]));
+  const items = [];
+  for (let i = 0; i < log.length;) {
+    let j = i;
+    while (j < log.length && routine(log[j])) j++;
+    if (j - i >= 3) {
+      const run = log.slice(i, j);
+      items.push(h("li", { class: "goal-log-run" },
+        h("details", {},
+          h("summary", {}, logEntry(run[0], g, "div"), h("span", { class: "goal-log-more" }, `${run.length - 1} more`)),
+          h("ol", { class: "goal-log" }, ...run.slice(1).map((e) => logEntry(e, g))))));
+      i = j;
+    } else {
+      items.push(logEntry(log[i], g));
+      i++;
+    }
+  }
+  $("#gd-log").replaceChildren(...(items.length ? items : [h("li", { class: "pane-empty" }, gp.detail?.log ? "Nothing yet." : "Loading…")]));
 }
+$("#gd-log").addEventListener("click", (e) => {
+  const b = e.target.closest(".goal-log-task");
+  if (!b) return;
+  e.preventDefault(); // not the fold's toggle
+  openDetail(b.dataset.todo).catch(fail);
+});
 
 // ------------------------------------------------------------------ what you do with a goal
 async function goalAction(g, action) {
@@ -471,20 +681,45 @@ async function goalAction(g, action) {
   toast(retry ? "Trying again" : { pause: "Goal paused", resume: "Goal resumed" }[action] || "Done");
 }
 
-async function stopGoal(g) {
-  if (!await ask({ title: "Stop the goal?", body: "The coordinator stops for good and the goal is done. Its tasks stay on the board as they are.", ok: "Stop goal", danger: true })) return;
-  const saved = await api("POST", `${goalAPI(g.id)}/stop`, {}, prefix());
-  if (gp.open === g.id) { gp.detail = saved; renderGoal(); }
-  toast("Goal stopped");
+// endWithUndo stops or deletes goal g once its toast has gone without Undo
+// (or at once when the page is left). Meanwhile the goal shows stopped, or
+// is gone from the list.
+export const GOAL_UNDO_MS = 6000;
+function endWithUndo(g, verb) {
+  if (ending.has(g.id)) return;
+  const p = prefix(), del = verb === "delete";
+  const path = del ? goalAPI(g.id) : `${goalAPI(g.id)}/stop`, method = del ? "DELETE" : "POST";
+  const m = { verb, send: () => fetch(on(p, path), { method, keepalive: true }) };
+  ending.set(g.id, m);
+  if (del && gp.open === g.id) closeGoal();
+  renderGoals();
+  renderGoal();
+  toast(g.title, {
+    head: del ? "Goal deleted" : "Goal stopped", icon: del ? "trash" : "stop", ms: GOAL_UNDO_MS, action: { label: "Undo", run: () => {} },
+    onClose: attempt(async (undone) => {
+      if (ending.get(g.id) !== m) return; // sent already: the page was left
+      try {
+        if (undone) return;
+        if (del) {
+          await api(method, path, null, p);
+          onGoalDeleted(g.id);
+        } else {
+          const saved = await api(method, path, {}, p);
+          state.goals.set(g.id, { ...state.goals.get(g.id), ...saved, log: undefined });
+          if (gp.open === g.id) gp.detail = saved;
+        }
+      } finally {
+        ending.delete(g.id);
+        renderGoals();
+        renderGoal();
+      }
+    }),
+  });
 }
-
-async function deleteGoal(g) {
-  const body = `“${g.title}” goes, with its plan, log and the coordinator's conversation. Its tasks stay on the board as they are, without a goal.`;
-  if (!await ask({ title: "Delete the goal?", body, ok: "Delete goal", danger: true })) return;
-  await api("DELETE", goalAPI(g.id), null, prefix());
-  onGoalDeleted(g.id);
-  toast("Goal deleted");
-}
+addEventListener("pagehide", () => {
+  for (const m of ending.values()) m.send();
+  ending.clear();
+});
 
 async function queueDrafts(g) {
   const drafts = goalTasks(g).filter((t) => t.status === "draft");

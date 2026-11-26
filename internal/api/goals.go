@@ -200,7 +200,7 @@ func (sv *service) createGoal(req goalRequest) (model.Goal, error) {
 		created = fmt.Sprintf("Goal created by %s from a Planning card, for %s. It is paused: nothing runs until %s reads it and presses Resume; then the coordinator reads the code and proposes a plan.",
 			cmp.Or(sv.s.username(sv.c.User), "a planner"), cmp.Or(sv.s.username(owner), "its owner"), cmp.Or(sv.s.username(owner), "its owner"))
 	}
-	g.Log = []model.GoalLogEntry{{At: now(), Kind: model.GoalLogUser, Text: created}}
+	g.Log = []model.GoalLogEntry{{At: now(), Kind: model.GoalLogStatus, Text: created}}
 	g, err = sv.data.CreateGoal(g)
 	if err != nil {
 		return g, err

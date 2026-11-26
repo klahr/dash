@@ -233,6 +233,10 @@ func TestGoalAskMode(t *testing.T) {
 	if g.Status != model.GoalWaiting || g.WaitingFor != model.GoalWaitPlan || len(g.Plan) != 2 || !hasLog(g.Goal, "Proposed a plan of 2 tasks") {
 		t.Fatalf("after planning %+v", g.Goal)
 	}
+	// Dash made the goal, not you: its first entry is Dash's.
+	if first := g.Log[0]; first.Kind != model.GoalLogStatus || !strings.HasPrefix(first.Text, "Goal created") {
+		t.Fatalf("first log entry %+v", first)
+	}
 	if fc.dirs[0] != p.Path || !strings.Contains(fc.turns[0], "Search under 100 ms") {
 		t.Fatalf("first turn in %q: %s", fc.dirs[0], fc.turns[0])
 	}
