@@ -105,8 +105,8 @@ above. Start it from any of these:
   long description is the brief Claude starts from.
 - In **Planning**: **New card**, type the idea, then **Write a feature brief**. The guide adds
   the card when you start the interview.
-- In **New task** or the full task form: **Write a feature brief**. What you typed is the idea,
-  and the guide adds a card for it.
+- In **New task** or the full task form: **Something bigger? → Write a feature brief**. What you
+  typed is the idea, and the guide adds a card for it.
 
 The steps are **Idea**, **Interview**, **Brief** and **Start**. On **Idea**, pick the project if
 it isn't set. The topics are: the problem and who it's for, behaviour and scope, where it shows

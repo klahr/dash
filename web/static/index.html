@@ -720,17 +720,23 @@
       <p class="hint warn runner-note" id="quick-runner-note" hidden></p>
       <div class="quick-rows" id="quick-rows"></div>
       <div class="quick-tags" id="quick-tags" aria-live="polite" hidden></div>
-      <p class="hint quick-hint"><kbd>Enter</kbd> save draft · <kbd><span data-mod>Ctrl</span>-Enter</kbd> queue · <kbd>Shift-Enter</kbd> new line · <kbd><span data-alt>Alt</span>-Enter</kbd> another task · <kbd>#tag</kbd> tags it</p>
-      <div class="quick-tools">
+      <ul class="hint key-hints" aria-label="Shortcuts">
+        <li><kbd>Enter</kbd> save draft</li>
+        <li><kbd><span data-mod>Ctrl</span>-Enter</kbd> queue</li>
+        <li><kbd>Shift-Enter</kbd> new line</li>
+        <li><kbd><span data-alt>Alt</span>-Enter</kbd> another task</li>
+        <li><kbd>#tag</kbd> tags it</li>
+      </ul>
+      <div class="task-links">
         <button class="link" type="button" id="quick-another" data-icon="plus" aria-keyshortcuts="Alt+Enter">Another task</button>
-        <button class="link" type="button" id="quick-goal" data-icon="target">New goal…</button>
-        <button class="link" type="button" id="quick-brief" data-icon="spark" title="Claude interviews you about it and writes a brief onto a Planning card">Write a feature brief</button>
         <button class="link" type="button" id="quick-more" data-icon="edit">More options…</button>
+        <button class="link task-bigger" type="button" id="quick-bigger" data-icon="target" aria-haspopup="menu" aria-expanded="false" title="Make a goal or write a feature brief instead">Something bigger?</button>
       </div>
       <footer class="sheet-actions">
-        <!-- Save draft is the primary button here because Enter saves a draft (Ctrl/⌘-Enter queues). -->
-        <button class="btn primary" value="draft" data-icon="draft">Save draft</button>
+        <!-- Both task dialogs end the same way: Queue, and Save draft as the primary button
+             (Enter saves a draft here; Ctrl/⌘-Enter queues in both). -->
         <button class="btn" value="queue" data-icon="queue">Queue</button>
+        <button class="btn primary" value="draft" data-icon="draft">Save draft</button>
       </footer>
     </form>
   </dialog>
@@ -741,28 +747,39 @@
       <header class="sheet-head"><h2 id="todo-sheet-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint warn runner-note" id="todo-runner-note" hidden></p>
       <label class="field" id="todo-project-field" hidden><span>Project</span><select name="project"></select></label>
-      <label class="field"><span>Title <em>Claude names it if empty</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
-      <div class="field"><span id="todo-prompt-label">Instructions for Claude <em>optional, Markdown</em></span><textarea name="prompt" rows="8" aria-labelledby="todo-prompt-label" placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></div>
+      <!-- Instructions first: they are what Claude works from. The title comes after, as Claude names the task when it is empty. -->
+      <div class="field"><span id="todo-prompt-label">Instructions for Claude <em>Markdown</em></span><textarea name="prompt" rows="8" aria-labelledby="todo-prompt-label" placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></div>
       <div class="prompt-tools">
         <div class="draft-status" id="todo-draft" aria-live="polite"></div>
         <button class="btn small attach-btn" type="button" id="todo-refine" data-icon="wand" title="Rewrite the instructions without the chatter, e.g. after pasting a chat answer">Clean up</button>
         <button class="btn small attach-btn" type="button" id="todo-split" data-icon="split" title="Claude proposes smaller tasks to do this in; you edit and confirm them">Split…</button>
-        <button class="btn small attach-btn" type="button" id="todo-goal" data-icon="target">New goal…</button>
-        <button class="btn small attach-btn" type="button" id="todo-brief" data-icon="spark" title="Claude interviews you about it and writes a brief onto a Planning card">Write a feature brief</button>
       </div>
       <div class="attach" id="todo-attach" data-attach></div>
+      <label class="field"><span>Title <em>optional, Claude fills it in</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
       <div class="field-row">
         <label class="field inline"><span>Priority</span><select name="priority"><option value="">None</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
-        <label class="field inline" title="The Claude model the task runs on, from its next run"><span>Model</span><select name="model"><option value="">Default</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></label>
       </div>
       <div class="field"><span id="todo-tags-label">Tags <em>Enter or a comma adds one</em></span><div class="tag-field" id="todo-tags" role="group" aria-labelledby="todo-tags-label"></div></div>
       <div class="field" id="todo-deps-field" hidden><span id="todo-deps-label">Depends on <em>starts once these are merged</em></span><div class="dep-picker" id="todo-deps" role="group" aria-labelledby="todo-deps-label"></div></div>
       <label class="field" id="todo-buildon-field" hidden title="The first run continues that task's Claude session, so Claude doesn't explore the code again"><span>Build on <em>continues a finished task's Claude session</em></span><select name="builds_on"></select></label>
       <label class="field" id="todo-runon-field" hidden title="The task runs only on this runner, and waits queued while it is offline or busy"><span>Runner <em>which of the project's runners runs it</em></span><select name="run_on"></select></label>
+      <!-- Few change the model: it waits under Advanced, open when the task has one set (app/todoform.js). -->
+      <details class="np-advanced todo-advanced" id="todo-advanced">
+        <summary>Advanced</summary>
+        <label class="field inline" title="The Claude model the task runs on, from its next run"><span>Model</span><select name="model"><option value="">Default</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></label>
+      </details>
+      <ul class="hint key-hints" aria-label="Shortcuts">
+        <li><kbd><span data-mod>Ctrl</span>-S</kbd> save draft</li>
+        <li><kbd><span data-mod>Ctrl</span>-Enter</kbd> queue</li>
+      </ul>
+      <div class="task-links">
+        <button class="link task-bigger" type="button" id="todo-bigger" data-icon="target" aria-haspopup="menu" aria-expanded="false" title="Make a goal or write a feature brief instead">Something bigger?</button>
+      </div>
       <footer class="sheet-actions">
-        <button class="btn shrink" type="button" id="todo-clear" data-icon="trash">Clear</button>
-        <button class="btn" value="draft" data-icon="draft">Save draft</button>
-        <button class="btn primary" value="queue" data-icon="queue">Queue</button>
+        <!-- Clear stands apart from the save buttons; its toast has Undo. -->
+        <button class="btn shrink todo-clear" type="button" id="todo-clear" data-icon="trash" title="Clear the form; Undo brings it back"><span class="todo-clear-label">Clear</span></button>
+        <button class="btn" value="queue" data-icon="queue">Queue</button>
+        <button class="btn primary" value="draft" data-icon="draft">Save draft</button>
       </footer>
     </form>
   </dialog>

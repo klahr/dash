@@ -36,12 +36,17 @@ Commands → Test time limit**. On runners, the hub's setting applies.
 ## Add a task
 
 Click **New task** (or press <kbd>n</kbd>) and write what Claude should do, as you would in a
-chat; Claude names the task. <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line in the task.
+chat; Claude names the task. The sheet's title names the project it goes into, e.g. "New task in
+**dash**". <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line in the task.
 <kbd>Alt</kbd>+<kbd>Enter</kbd> (<kbd>Option</kbd>+<kbd>Enter</kbd> on a Mac) or **Another task** adds a
 field for another task.
 
 Closing the sheet keeps what you typed on this device, and it is back the next time you open it.
 Saving the tasks clears it.
+
+Too big for a task? **Something bigger?** has **New goal…** (see [Goals](goals.md)) and **Write a
+feature brief** (see [Write a feature brief](plan-project.md#write-a-feature-brief)). What you
+typed is carried over.
 
 Type `#tag` to tag the task. Dash takes the tag out of the text and shows it below the field:
 
@@ -54,9 +59,12 @@ and `_` make up a tag, with `.`, `/` or `:` allowed inside it (`#v1.2`, `#scan:d
 `issue #123`, `C#`, `page#top` and `# heading` stay as you typed them, and so does a `#` in
 `code`.
 
-**More options…** (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form, with a title, priority,
-model, tags, dependencies, the task it builds on and attachments.
+**More options…** (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form: the instructions first,
+then attachments, a title (empty: Claude names the task), priority, tags, dependencies and the task
+it builds on. The model is under **Advanced**. **Something bigger?** is there too.
 
+- **Clear** empties the form and deletes its draft. Click **Undo** in the message that follows to
+  get it all back, attachments and tags included.
 - **Priority** is **None**, **High** or **Urgent**: urgent tasks start first, then high ones, then
   the rest, oldest first. The API takes the same levels; see [Task priority](mcp.md#task-priority).
   The card shows a priority and a model as chips beside its tags.
@@ -113,10 +121,11 @@ See [Scans](scans.md#findings-on-the-board) for how Dash spots the same problem 
 
 ## Queue it
 
-Every way of making tasks ends with the same two buttons: **Save draft** keeps it in the
-*Drafts* column to queue later, **Queue** queues it. In the **New task** sheet, <kbd>Enter</kbd>
-saves a draft and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac)
-queues.
+Every way of making tasks ends with the same two buttons: **Save draft** (the highlighted one)
+keeps it in the *Drafts* column to queue later, **Queue** queues it. In the **New task** sheet,
+<kbd>Enter</kbd> saves a draft. In both the sheet and the full form,
+<kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac) queues; in the full
+form <kbd>Ctrl</kbd>+<kbd>S</kbd> saves a draft.
 
 To queue a draft from the board, point at its card and click **Queue**. To queue several, tick
 the box beside **Queue** on each, or click **Select** at the foot of *Drafts* (on a phone, that is

@@ -64,7 +64,10 @@ export function popMenu(anchor, groups, { heading = "" } = {}) {
   }
   close.anchor = anchor;
   popOpen = close;
-  document.body.append(el);
+  // Inside the anchor's modal dialog, if it is in one: everything outside an
+  // open modal is inert, so a menu in <body> would let clicks through to the sheet.
+  const modal = anchor.closest("dialog");
+  (modal?.matches(":modal") ? modal : document.body).append(el);
   el.showPopover?.(); // the top layer: above the task sheet, the preview and open dialogs
   // Under the button, right-aligned to it; above it when there's more room there.
   const r = anchor.getBoundingClientRect(), vh = window.innerHeight, vw = document.documentElement.clientWidth, gap = 4, edge = 8;

@@ -70,8 +70,8 @@ func TestBrowserFeatureBrief(t *testing.T) {
 	b.waitJS("the board", `document.querySelector("#view-board.active") && !document.querySelector("#new-todo").hidden`)
 	b.until("open New task", `document.querySelector("#quick-sheet").open`, chromedp.Click(chromedp.ID("new-todo")))
 	b.do("type a task", chromedp.SendKeys(chromedp.CSS(".quick-row"), "Let people export the board as CSV"))
-	b.until("write a feature brief instead", `document.querySelector("#feature-sheet").open && !document.querySelector("#quick-sheet").open`,
-		chromedp.Click(chromedp.ID("quick-brief")))
+	b.until("open Something bigger?", `!!document.querySelector(".pop-menu")`, chromedp.Click(chromedp.ID("quick-bigger")))
+	b.clickTextUntil(".pop-menu button", "Write a feature brief", `document.querySelector("#feature-sheet").open && !document.querySelector("#quick-sheet").open`)
 	b.waitJS("the text as the idea, for a new card, the compact steps", `document.querySelector("#plan-idea").value === "Let people export the board as CSV" &&
 		document.querySelector("#plan-card").textContent.includes("a new card") && document.querySelector("#plan-stepper-compact").textContent === "Step 1 of 4 · Idea" &&
 		document.querySelector("#feature-sheet").offsetWidth >= innerWidth - 1`)

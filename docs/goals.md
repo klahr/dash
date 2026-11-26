@@ -32,8 +32,8 @@ On the **Goals** page, click **New goal…**. Or start from a task:
 To start a new project and its first goal from an idea, use [Write a project brief](plan-project.md)
 instead.
 
-1. Open **New task** (the **+** button) or the full task form, and pick **New goal…** (next to
-   **Split…** in the form). What you typed is carried over.
+1. Open **New task** (the **+** button) or the full task form, and pick **Something bigger? →
+   New goal…**. What you typed is carried over.
 2. Say what to get done. The goal is named from it.
 3. Under **Tasks**, keep **Ask me before starting tasks** (the default) or pick **Start tasks on
    its own**, then click **Start goal**.

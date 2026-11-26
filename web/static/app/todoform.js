@@ -7,7 +7,7 @@ import { statusLabel, state } from "./state.js";
 import { projectKey } from "./events.js";
 import { byPriority, title } from "./branches.js";
 import { agoText } from "../time.js";
-import { editing, pickProject, showNewTasks } from "./todos.js";
+import { editing, openTodoForm, pickProject, showNewTasks } from "./todos.js";
 import { PRIORITY_LEVELS, levelPriority, priorityLevel } from "./dnd.js";
 import { servesProject } from "../groups.js";
 import { agentCan, cantSay } from "./agents.js";
@@ -148,25 +148,34 @@ export const tagPicker = (() => {
 // The todo form autosaves to this browser while you type; reopening the
 // form (even after a reload or a crash) brings the draft back.
 export const draftKey = (t) => `${projectKey(state.project)}/${t?.id || "new"}`;
+// The form's fields as a draft holds them, and back.
+function readForm() {
+  const f = $("#todo-form");
+  return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, model: f.model.value, attachments: todoAttach.items(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value(), tags: tagPicker.list() };
+}
+function writeForm(d) {
+  const f = $("#todo-form");
+  f.title.value = d.title ?? "";
+  f.prompt.value = d.prompt ?? "";
+  const prio = d.priority ?? priorityLevel(editing?.priority);
+  f.priority.value = prio in PRIORITY_LEVELS ? prio : priorityLevel(prio); // drafts from before the levels hold a number
+  setFormModel(d.model ?? editing?.model ?? "");
+  todoAttach.reset(d.attachments || []);
+  depPicker.reset(editing, d.depends_on ?? editing?.depends_on ?? []); // drafts from before dependencies have none
+  buildOnPicker.reset(editing, d.builds_on ?? editing?.builds_on ?? "");
+  runOnPicker.reset(editing, d.run_on ?? editing?.run_on ?? "");
+  tagPicker.reset(d.tags ?? editing?.tags ?? []); // drafts from before tags have none
+  promptEditor.render();
+}
+// setFormModel sets the form's Model, under Advanced: open when one is set,
+// so a task's model is never out of sight.
+export function setFormModel(m) {
+  setModelField($("#todo-form"), m);
+  $("#todo-advanced").open = !!m;
+}
 export const draft = drafts({
-  read() {
-    const f = $("#todo-form");
-    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, model: f.model.value, attachments: todoAttach.items(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value(), tags: tagPicker.list() };
-  },
-  write(d) {
-    const f = $("#todo-form");
-    f.title.value = d.title ?? "";
-    f.prompt.value = d.prompt ?? "";
-    const prio = d.priority ?? priorityLevel(editing?.priority);
-    f.priority.value = prio in PRIORITY_LEVELS ? prio : priorityLevel(prio); // drafts from before the levels hold a number
-    setModelField(f, d.model ?? editing?.model ?? "");
-    todoAttach.reset(d.attachments || []);
-    depPicker.reset(editing, d.depends_on ?? editing?.depends_on ?? []); // drafts from before dependencies have none
-    buildOnPicker.reset(editing, d.builds_on ?? editing?.builds_on ?? "");
-    runOnPicker.reset(editing, d.run_on ?? editing?.run_on ?? "");
-    tagPicker.reset(d.tags ?? editing?.tags ?? []); // drafts from before tags have none
-    promptEditor.render();
-  },
+  read: readForm,
+  write: writeForm,
   onStatus(st, at) {
     const el = $("#todo-draft");
     if (st === "typing") return;
@@ -188,7 +197,7 @@ function discardDraft() {
   f.reset();
   f.project.value = project;
   if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.priority.value = priorityLevel(t.priority); }
-  setModelField(f, t?.model || "");
+  setFormModel(t?.model || "");
   todoAttach.reset(t?.attachments || []);
   depPicker.reset(t, t?.depends_on || []);
   buildOnPicker.reset(t, t?.builds_on || "");
@@ -198,22 +207,36 @@ function discardDraft() {
   draft.open(draftKey(t));
   toast("Draft discarded");
 }
+// Clear empties a new task's form and deletes its draft; Undo in the toast
+// brings it all back, files and tags too (the files stay uploaded), into the
+// form, opened again if it was closed meanwhile.
 $("#todo-clear").addEventListener("click", () => {
   const f = $("#todo-form");
   const project = f.project.value;
+  const before = readForm(), key = draftKey(null);
   draft.discard();
   f.reset();
   f.project.value = project;
+  setFormModel("");
   todoAttach.reset([]);
   depPicker.reset(null, []);
   buildOnPicker.reset(null, "");
   runOnPicker.reset(null, "");
   tagPicker.reset([]);
   promptEditor.render();
-  draft.open(draftKey(null));
-  f.title.focus();
-  toast("Cleared");
+  draft.open(key);
+  f.prompt.focus();
+  toast("Cleared", { action: { label: "Undo", run: () => undoClear(before, key) } });
 });
+function undoClear(before, key) {
+  if (draftKey(null) !== key) throw new Error("The cleared task was of another project.");
+  if ($("#todo-sheet").open && editing) throw new Error("Close the task you are editing first.");
+  if (!$("#todo-sheet").open) openTodoForm();
+  writeForm(before);
+  draft.changed();
+  $("#todo-form").prompt.focus();
+  toast("Draft restored", { tone: "ok" });
+}
 // Clean up rewrites the instructions without the chatter around them (a pasted
 // chat answer, say); Undo in the toast brings the original back.
 $("#todo-refine").addEventListener("click", attempt(async () => {

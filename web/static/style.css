@@ -1476,8 +1476,26 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 /* One line per task; a multi-line paste grows the field (app/todos.js sizes it). */
 .quick-row { resize: none; overflow-y: auto; min-height: 0; max-height: 40dvh; font-size: var(--fs-in); line-height: 1.45; }
 .quick-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 0; font-size: var(--fs-xs); }
-.quick-tools { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin: 4px -4px 0; }
-@media (hover: none) { .quick-hint { display: none; } }
+/* Both task dialogs (quick add and the full form): their side links, with
+   "Something bigger?" (a menu: New goal…, Write a feature brief) at the end,
+   and their keyboard shortcuts, one per item so they wrap whole. */
+.task-links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 4px -4px 0; }
+.task-links .task-bigger { margin-left: auto; }
+.task-links:not(:has(> :not([hidden]))) { display: none; }
+.key-hints { display: flex; flex-wrap: wrap; gap: 2px 14px; list-style: none; margin: 8px 0 0; padding: 0; }
+.key-hints li { white-space: nowrap; }
+@media (hover: none) { .key-hints { display: none; } }
+/* The full form: Model under Advanced; Clear set apart from the save buttons. */
+.todo-advanced { margin-top: 10px; }
+.todo-advanced > .field { margin-top: 6px; }
+.sheet-actions .todo-clear { margin-right: var(--sp-3); }
+/* On a phone Clear is its icon only, so Queue and Save draft keep one line each. */
+@media (max-width: 480px) {
+  .sheet-actions .todo-clear { margin-right: 0; }
+  .todo-clear-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+/* "New task in <project>": the project stands out in the dialogs' titles. */
+.sheet h2 .sheet-project { color: var(--brand); }
 
 /* ---------- settings: connector guide, board sync, lists of rows ---------- */
 .connector-status { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; padding: 10px 12px; border-radius: var(--r-m); background: var(--raised); font-size: var(--fs-m); }

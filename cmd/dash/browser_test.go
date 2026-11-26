@@ -58,8 +58,9 @@ func TestBrowserMainFlows(t *testing.T) {
 	b.waitJS("the task's row focused", `document.activeElement?.matches("#quick-rows .quick-row")`)
 	b.do("write the task", chromedp.SendKeys(chromedp.CSS(`#quick-rows .quick-row`), "Add a done file"))
 	b.waitJS("the task written", `document.querySelector("#quick-rows .quick-row").value === "Add a done file"`)
-	// It ends as the full form does: Save draft or Queue.
-	b.waitJS("Save draft and Queue", `[...document.querySelectorAll("#quick-form .sheet-actions .btn")].map((e) => e.textContent.trim()).join() === "Save draft,Queue"`)
+	// It ends as the full form does: Queue, or Save draft as the primary button.
+	b.waitJS("Queue and Save draft", `[...document.querySelectorAll("#quick-form .sheet-actions .btn")].map((e) => e.textContent.trim()).join() === "Queue,Save draft" &&
+		document.querySelector("#quick-form .sheet-actions .btn.primary").value === "draft"`)
 	// The sheet closes as the task is sent; a failed send opens it again with
 	// the text kept, so a repeated click sends the task again.
 	b.until("queue the task and the sheet to close", `!document.querySelector("#quick-sheet").open`,

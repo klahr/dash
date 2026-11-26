@@ -1,7 +1,7 @@
 import { $, $$, h } from "./dom.js";
 import { api, here } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
-import { buildOnPicker, depPicker, runOnPicker, tagPicker, draft, draftKey, promptEditor, setModelField, split, todoAttach } from "./todoform.js";
+import { buildOnPicker, depPicker, runOnPicker, tagPicker, draft, draftKey, promptEditor, setFormModel, split, todoAttach } from "./todoform.js";
 import { projectFirst, state } from "./state.js";
 import { projectKey } from "./events.js";
 import { grouped, projectWhere } from "./projects.js";
@@ -12,6 +12,7 @@ import { goalsOn, openGoalSheet } from "./goals.js";
 import { confirmRunAs } from "./people.js";
 import { openFeatureBrief } from "./planner.js";
 import { tagChips } from "./tags.js";
+import { popMenu } from "./popmenu.js";
 import { addTag, quickTags } from "../tagtext.js";
 import { drafts } from "../editor.js";
 
@@ -52,18 +53,18 @@ export function openTodoForm(t = null, { pick = false } = {}) {
       h("option", { value: projectKey(p) }, grouped() ? `${p.name} · ${projectWhere(p)}` : p.name)));
     f.project.value = projectKey(state.project);
   }
-  $("#todo-sheet-title").textContent = t ? "Edit task" : "New task";
+  // A form that picks the project shows it in its Project field instead.
+  sheetTitle($("#todo-sheet-title"), t ? "Edit task" : "New task", pickProject ? null : state.project);
   showRunnerNeeded($("#todo-runner-note"), state.project);
   $("#todo-clear").hidden = !!t;
   $("#todo-split").hidden = !split.splittable(t);
-  $("#todo-goal").hidden = !!t || !goalsOn(state.project); // a goal is new work, not an edit of a task
-  $("#todo-brief").hidden = !!t || !briefsOn(state.project);
+  $("#todo-bigger").hidden = !!t || !biggerChoices(state.project).length; // a goal is new work, not an edit of a task
   if (t) {
     f.title.value = t.title;
     f.prompt.value = t.prompt;
     f.priority.value = priorityLevel(t.priority);
   }
-  setModelField(f, t?.model || "");
+  setFormModel(t?.model || "");
   todoAttach.reset(t?.attachments || []);
   depPicker.reset(t, t?.depends_on || []);
   buildOnPicker.reset(t, t?.builds_on || "");
@@ -73,7 +74,13 @@ export function openTodoForm(t = null, { pick = false } = {}) {
   draft.open(draftKey(t));
   $("#todo-sheet").returnValue = ""; // Esc keeps the previous close's value
   $("#todo-sheet").showModal();
-  (t ? f.prompt : f.title).focus();
+  f.prompt.focus(); // the instructions are the form's main field, and its first
+}
+
+// sheetTitle names a task dialog: "New task in <project>", so it's plain
+// which project the task is filed into (p null: no project named).
+function sheetTitle(el, text, p) {
+  el.replaceChildren(text, ...(p ? [" in ", h("strong", { class: "sheet-project" }, p.name)] : []));
 }
 $("#new-todo").addEventListener("click", () => openQuickAdd());
 // New task floats on a phone (on a desktop it is in the board's header): toasts sit to
@@ -143,8 +150,8 @@ export function openQuickAdd(texts = []) {
   if (!state.project) return toast(projectFirst(), true);
   quick.rows.replaceChildren();
   showRunnerNeeded($("#quick-runner-note"), state.project);
-  $("#quick-goal").hidden = !goalsOn(state.project);
-  $("#quick-brief").hidden = !briefsOn(state.project);
+  sheetTitle($("#quick-title"), "New task", state.project);
+  $("#quick-bigger").hidden = !biggerChoices(state.project).length;
   quick.sheet.returnValue = "";
   quick.sheet.showModal();
   quickDraft.open(quickDraftKey()); // with no rows yet, the base is "nothing typed"
@@ -259,43 +266,47 @@ $("#quick-form").addEventListener("submit", (e) => {
 });
 $("#quick-another").addEventListener("click", () => quickAddRow(quickFields().at(-1)));
 $("#quick-more").addEventListener("click", quickMore);
-// New goal…: what was typed becomes what the goal is to get done.
-$("#quick-goal").addEventListener("click", attempt(() => {
-  const text = quickTexts().join("\n\n");
-  quick.sheet.close("goal");
-  openGoalSheet({ description: text });
-}));
-$("#todo-goal").addEventListener("click", attempt(() => {
-  const f = $("#todo-form");
-  const title = f.title.value.trim(), description = f.prompt.value.trim();
-  $("#todo-sheet").close("goal");
-  openGoalSheet({ title, description });
-}));
-
-// Write a feature brief: what was typed is the idea; the brief goes onto a
-// new Planning card for the project. Its projects are the hub's own (a
-// runner's own project isn't on Planning).
+// Something bigger? A menu in both task dialogs, of what isn't a task: New
+// goal… (what was typed becomes what the goal is to get done) and Write a
+// feature brief (what was typed is the idea; the brief goes onto a new
+// Planning card for the project). Each closes the dialog and opens its own.
+// Briefs are of the hub's own projects (a runner's own project isn't on Planning).
 const briefsOn = (p) => !!p && !p.prefix;
 function featureBrief(idea) {
   openFeatureBrief({ project: state.project.id, idea }).catch((e) => toast(e.message || String(e), true));
 }
-$("#quick-brief").addEventListener("click", () => {
-  const text = quickTexts().join("\n\n");
-  quick.sheet.close("brief");
-  featureBrief(text);
-});
-$("#todo-brief").addEventListener("click", () => {
+// biggerChoices lists the menu's choices for project p; typed() gives what
+// was typed ({ title, text }) and close(why) closes the dialog.
+function biggerChoices(p, typed = () => ({}), close = () => {}) {
+  return [
+    goalsOn(p) && ["target", "New goal…", () => {
+      const { title = "", text = "" } = typed();
+      close("goal");
+      openGoalSheet({ title, description: text });
+    }, { note: "Claude plans tasks toward it" }],
+    briefsOn(p) && ["spark", "Write a feature brief", () => {
+      const { title = "", text = "" } = typed();
+      close("brief");
+      featureBrief([title, text].filter(Boolean).join("\n\n"));
+    }, { note: "Claude interviews you", title: "Claude interviews you about it and writes a brief onto a Planning card" }],
+  ].filter(Boolean);
+}
+$("#quick-bigger").addEventListener("click", (e) => popMenu(e.currentTarget,
+  [biggerChoices(state.project, () => ({ text: quickTexts().join("\n\n") }), (why) => quick.sheet.close(why))],
+  { heading: "Something bigger?" }));
+$("#todo-bigger").addEventListener("click", (e) => {
   const f = $("#todo-form");
-  const text = [f.title.value.trim(), f.prompt.value.trim()].filter(Boolean).join("\n\n");
-  $("#todo-sheet").close("brief");
-  featureBrief(text);
+  popMenu(e.currentTarget,
+    [biggerChoices(state.project, () => ({ title: f.title.value.trim(), text: f.prompt.value.trim() }), (why) => $("#todo-sheet").close(why))],
+    { heading: "Something bigger?" });
 });
 
-// Enter in Title goes on to the instructions (Ctrl/⌘-Enter queues, palette.js).
+// Enter in Title doesn't submit the form (its first button is Close): it goes
+// on to Priority, the next field (Ctrl/⌘-Enter queues, palette.js).
 $("#todo-form").title.addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.isComposing || e.ctrlKey || e.metaKey) return;
   e.preventDefault();
-  $("#todo-form").prompt.focus();
+  $("#todo-form").priority.focus();
 });
 
 $("#todo-sheet").addEventListener("close", attempt(async () => {
