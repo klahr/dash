@@ -979,7 +979,7 @@ func BuildPrompt(t Template, tools []string, tg target, known []Known) string {
 }
 
 // gitToolsNote points a scan at the git MCP tools for history.
-const gitToolsNote = "For git history use the git_diff, git_log, git_show and git_blame tools, if you have them.\n"
+const gitToolsNote = "For git history use the git_diff, git_log, git_show, git_blame and git_grep tools, if you have them.\n"
 
 // toolRules says what a scan may do with its tools. Without Bash it is
 // read-only. With Bash (or Bash(...) rules) it may run the commands its

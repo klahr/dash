@@ -202,7 +202,7 @@ func TestBuiltins(t *testing.T) {
 			t.Errorf("%s: builtin %v schedule %q", b.Name, b.Builtin, b.Schedule)
 		}
 	}
-	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility", "breaking-changes", "maintainability"} {
+	for _, n := range []string{"security", "secrets", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility", "breaking-changes", "maintainability"} {
 		if _, ok := names[n]; !ok {
 			t.Errorf("no built-in %s (have %v)", n, names)
 		}
@@ -272,6 +272,33 @@ func TestBuiltins(t *testing.T) {
 	for _, want := range []string{"whole", "reflection", "templates", "as a string", "exported API of a library", "git_blame", "90 days", "FIXME", "Do not change any files"} {
 		if !strings.Contains(dead, want) {
 			t.Errorf("dead code prompt lacks %q", want)
+		}
+	}
+	// The secrets scan reads the whole history on its first run and the new
+	// commits after, with the read-only default tools (no shell, no
+	// network), and never quotes a secret.
+	sec := names["secrets"]
+	if sec.Kind != KindSecurity || sec.Scope != model.ScopeSinceLastScan || sec.Schedule != "0 5 * * *" ||
+		len(sec.Tools) != 0 || sec.FindingType() != model.IssueVuln {
+		t.Errorf("secrets: %+v", sec)
+	}
+	if tools, approved := Tools(sec, model.ScanSetting{}, false); !approved || !slices.Equal(tools, DefaultTools) ||
+		!slices.Contains(tools, "mcp__dash_git__git_grep") {
+		t.Errorf("secrets tools: %q %v", tools, approved)
+	}
+	sp := sec.Render("", "")
+	for _, want := range []string{
+		"Never write a secret's value", "redacted", "(redacted, 14 chars)",
+		"git_grep", "all set to true", "diff_filter `D`", "<commit>^:<path>", "skip",
+		".env", ".gitignore", "CI files", "Dockerfile", "test fixtures", "Authorization",
+		"AKIAIOSFODNN7EXAMPLE", "changeme", "example.com", "${VAR}", "public keys",
+		"rotating", "filter-repo", `"critical": a live-looking credential in HEAD`,
+		`"high": a live-looking credential only in history`,
+		"secret:<kind>:<commit>", "first added it", "gitignore:<missing pattern>", "logs-secret:",
+		"Do not change any files",
+	} {
+		if !strings.Contains(sp, want) {
+			t.Errorf("secrets prompt lacks %q", want)
 		}
 	}
 	// The maintainability scan runs monthly on another day than dead code and

@@ -14,7 +14,7 @@ Scans add their findings to the **Board**:
 
 Scans come from three places, marked on each card:
 
-- **Built-in:** Dash's security scan (`security`), code review (`code-review`), dependency
+- **Built-in:** Dash's security scan (`security`), secrets scan (`secrets`), code review (`code-review`), dependency
   audit (`dependencies`), test gaps (`test-gaps`: changed code with no test covering it, and
   tests that can't fail), docs drift (`docs-drift`: README, `docs/`, CLAUDE.md, AGENTS.md,
   CONTRIBUTING, the CHANGELOG, OpenAPI and Swagger specs, `--help` text and `.env.example`
@@ -80,6 +80,17 @@ Scans come from three places, marked on each card:
   [Shell commands](#shell-commands). A scan with `Bash` may run the commands its prompt
   asks for (and the network they use) and write to a temp directory, but not change the
   checkout's files; a scan without it is read-only.
+  The secrets scan (suggested daily at 05:00, scope `since_last_scan`) looks for API keys,
+  tokens, private keys and passwords. Its first run reads the files and the whole git history,
+  every branch and tag, deleted files included: a secret removed from the code is still leaked
+  and must be rotated. Later runs read only the commits since the last run. It also reports
+  committed `.env` and other credential files, `.gitignore` missing entries for them, and code
+  or CI steps that log secrets or auth headers. It tells placeholders, documented example keys
+  and test values apart from real ones. A finding never shows the secret: only the file, the
+  line, the commit and a redacted prefix (`ghp_Ab12… (40 chars)`). A live-looking secret in the
+  current code is critical; one only in history is high. Its fingerprint is the file, the kind
+  of secret and the commit that added it, so a leak stays one task after it is removed. It
+  runs with the read-only default tools: no shell and no network.
 - **Repository:** markdown files in `.dash/scans/<name>.md`, versioned and shared with your team.
   Only a runner's own projects read them: on the hub, a project has the built-in scans and the
   Dash scans, since the hub has no checkout.
@@ -111,7 +122,7 @@ model: opus
 effort: high
 # schedule: optional cron expression (this computer's time zone)
 schedule: 0 6 * * *
-# tools: optional, needs approval in Dash; default: read-only tools and Dash's git diff/log/show/blame tools
+# tools: optional, needs approval in Dash; default: read-only tools and Dash's git diff/log/show/blame/grep tools
 tools: Read, Grep, Glob
 # requires_files: optional, only run if the repository has such a file
 requires_files: *.html, src/**/*.{ts,tsx}

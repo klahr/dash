@@ -29,7 +29,7 @@ import (
 const GitServerName = "dash_git"
 
 // GitToolNames are the git tools a scan gets.
-var GitToolNames = []string{"git_diff", "git_log", "git_show", "git_blame"}
+var GitToolNames = []string{"git_diff", "git_log", "git_show", "git_blame", "git_grep"}
 
 // gitAllowed are GitToolNames as Claude Code permission rules.
 func gitAllowed() []string {
@@ -81,7 +81,7 @@ func (g *GitMCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	srv := &mcptools.Server{
 		Name:         GitServerName,
-		Instructions: "Read-only git for the scan's checkout: diffs, history, commits and blame.",
+		Instructions: "Read-only git for the scan's checkout: diffs, history, commits, blame and search.",
 		Tools:        gitTools(dir, env),
 	}
 	srv.ServeHTTP(w, r)
@@ -97,7 +97,7 @@ func GitServerConfig(url, token string) map[string]any {
 	}
 }
 
-// gitTools are git_diff, git_log, git_show and git_blame on the repository
+// gitTools are git_diff, git_log, git_show, git_blame and git_grep on the repository
 // checked out in dir, with env added to git's environment.
 func gitTools(dir string, env []string) []mcptools.Tool {
 	pathsParam := mcptools.Param{Name: "paths", Type: "array", Desc: "Limit to these files or directories (relative to the repository root)."}
@@ -137,6 +137,10 @@ func gitTools(dir string, env []string) []mcptools.Tool {
 				{Name: "revision", Type: "string", Desc: "Commit or range to list, e.g. HEAD or abc123..HEAD (default HEAD)."},
 				pathsParam,
 				{Name: "max_count", Type: "integer", Desc: "How many commits (default 20, at most 500)."},
+				{Name: "skip", Type: "integer", Desc: "Skip this many commits first (--skip), to page through long histories."},
+				{Name: "all", Type: "boolean", Desc: "Every branch and tag, not only revision (--all)."},
+				{Name: "search", Type: "string", Desc: "Only commits whose diff adds or removes a line matching this extended regular expression (-G)."},
+				{Name: "diff_filter", Type: "string", Desc: "Only these kinds of change (--diff-filter), e.g. D for deleted files, A for added."},
 				{Name: "oneline", Type: "boolean", Desc: "One line per commit (--oneline)."},
 				{Name: "patch", Type: "boolean", Desc: "Include each commit's diff (-p)."},
 				{Name: "stat", Type: "boolean", Desc: "Include each commit's changed files (--stat)."},
@@ -152,6 +156,25 @@ func gitTools(dir string, env []string) []mcptools.Tool {
 				}
 				n := min(max(a.Num("max_count", 20), 1), 500)
 				args := []string{"log", "--no-ext-diff", "--no-textconv", "--max-count=" + strconv.Itoa(n)}
+				if skip := a.Num("skip", 0); skip > 0 {
+					args = append(args, "--skip="+strconv.Itoa(skip))
+				}
+				if a.Flag("all") {
+					args = append(args, "--all")
+				}
+				if re := a.Str("search"); re != "" {
+					if err := checkPattern(re); err != nil {
+						return nil, err
+					}
+					// One argument: the pattern is -G's value, never an option.
+					args = append(args, "--extended-regexp", "-G"+re)
+				}
+				if f := a.Str("diff_filter"); f != "" {
+					if !diffFilterRE.MatchString(f) {
+						return nil, fmt.Errorf("not a diff filter: %q (letters of ACDMRTUXB)", f)
+					}
+					args = append(args, "--diff-filter="+f)
+				}
 				if a.Flag("oneline") {
 					args = append(args, "--oneline")
 				}
@@ -230,7 +253,61 @@ func gitTools(dir string, env []string) []mcptools.Tool {
 				return gitOutput(dir, env, args)
 			},
 		},
+		{
+			Name: "git_grep",
+			Desc: "Search tracked files for an extended regular expression (git grep -E -n), in the checkout or at a commit.",
+			Params: []mcptools.Param{
+				{Name: "pattern", Type: "string", Desc: "Extended regular expression, e.g. AKIA[0-9A-Z]{16}.", Required: true},
+				{Name: "revision", Type: "string", Desc: "Search the files as of this commit or tree (default: the checkout)."},
+				pathsParam,
+				{Name: "ignore_case", Type: "boolean", Desc: "Ignore case (-i)."},
+				{Name: "files_only", Type: "boolean", Desc: "Only list the files that match (-l)."},
+			},
+			Run: func(a mcptools.Args) (any, error) {
+				pattern := a.Str("pattern")
+				if pattern == "" {
+					return nil, fmt.Errorf("pattern is required")
+				}
+				if err := checkPattern(pattern); err != nil {
+					return nil, err
+				}
+				revs, err := revisions(a.Str("revision"))
+				if err != nil {
+					return nil, err
+				}
+				paths, err := pathspecs(a.List("paths"))
+				if err != nil {
+					return nil, err
+				}
+				args := []string{"grep", "--no-color", "--no-textconv", "-I", "-n", "-E"}
+				if a.Flag("ignore_case") {
+					args = append(args, "-i")
+				}
+				if a.Flag("files_only") {
+					args = append(args, "-l")
+				}
+				// -e takes the next argument as the pattern, even one starting with '-'.
+				args = append(args, "-e", pattern)
+				out, err := runGit(dir, env, args, revs, paths)
+				if err != nil && strings.HasSuffix(err.Error(), "git grep: exit status 1") {
+					return "(no matches)", nil // grep's exit status for no match
+				}
+				return out, err
+			},
+		},
 	}
+}
+
+// diffFilterRE is a --diff-filter value: change letters, upper case to
+// select, lower case to exclude.
+var diffFilterRE = regexp.MustCompile(`^[ACDMRTUXBacdmrtuxb]{1,9}$`)
+
+// checkPattern checks a search pattern is one line of reasonable length.
+func checkPattern(p string) error {
+	if len(p) > 1000 || strings.ContainsAny(p, "\x00\n\r") {
+		return fmt.Errorf("the pattern must be one line of at most 1000 bytes")
+	}
+	return nil
 }
 
 // revRE is a revision: a ref, hash, range (a..b, a...b), ancestry (~ ^),
