@@ -230,7 +230,9 @@ $("#webhook-sheet").addEventListener("close", attempt(async () => {
       toast("Webhook added: try Send test", { tone: "ok" });
     }
   } catch (e) {
-    $("#webhook-sheet").showModal(); // keep what was typed
+    // Keep what was typed; only Save saves again (not Esc).
+    $("#webhook-sheet").returnValue = "";
+    $("#webhook-sheet").showModal();
     throw e;
   }
   renderWebhooks(sc);

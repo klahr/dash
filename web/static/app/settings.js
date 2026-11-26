@@ -1,6 +1,6 @@
 import { $, $$, dateText, docsLink, fill, h, ib } from "./dom.js";
 import { api } from "./api.js";
-import { ask, attempt, fail } from "./dialogs.js";
+import { ask, attempt, fail, toast } from "./dialogs.js";
 import { checked, fieldError, saveField, saveQueue } from "./autosave.js";
 import { uploadFile } from "./attachments.js";
 import { state } from "./state.js";
@@ -171,10 +171,18 @@ const TRIGGER_OPTS = [["manual", "No, only when someone deploys"], ["merge", "On
 const ROLE_OPTS = [["member", "Members"], ["admin", "Admins"], ["owner", "Owners"]];
 const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; } };
 
+// envDrafts keeps, per project, environments left unfinished when the sheet
+// closed, to open with again.
+const envDrafts = new Map();
+const ENV_INCOMPLETE = "Give each environment a name and a deploy command to save it.";
+
 function renderEnvEditor(p) {
+  const kept = envDrafts.get(projectKey(p));
+  envDrafts.delete(projectKey(p));
   envDraft = cleanEnvs(p.environments || []);
   shownEnvs = JSON.stringify(envDraft);
-  fieldError($("#settings-envs"), "");
+  if (kept) envDraft = kept;
+  fieldError($("#settings-envs"), kept ? ENV_INCOMPLETE : "");
   drawEnvs();
   $("#settings-env-history").replaceChildren();
   loadEnvHistory().catch(() => {});
@@ -346,21 +354,28 @@ async function removeEnv(i) {
   saveEnvs();
 }
 
+// saveEnvs saves the environments as they are now, to the project they are of.
 function saveEnvs() {
+  const p = state.project, el = $("#settings-envs"), draft = envDraft, shownThen = shownEnvs;
+  const v = cleanEnvs(draft), json = JSON.stringify(v), closing = !$("#settings-sheet").open;
   return queueSave(async () => {
-    const el = $("#settings-envs");
-    const v = cleanEnvs(envDraft), json = JSON.stringify(v);
-    if (json === shownEnvs) { fieldError(el, ""); return; }
+    const here = isOpenProject(p);
+    if (json === (here ? shownEnvs : shownThen)) { if (here) fieldError(el, ""); return; }
     if (v.some((e) => !e.name || !e.deploy_command)) {
-      fieldError(el, "Give each environment a name and a deploy command to save it.");
+      if (!closing) { fieldError(el, ENV_INCOMPLETE); return; }
+      // Closed unfinished: kept for the next open, and said so now.
+      envDrafts.set(projectKey(p), draft);
+      toast(ENV_INCOMPLETE, { tone: "error", head: `${p.name}: environments not saved`, action: { label: "Finish", run: () => {
+        if (!isOpenProject(p) || $("#settings-sheet").open) return;
+        openSettings();
+        $('#settings-sheet .rail-item[data-rail="deploy"]')?.click();
+      } } });
       return;
     }
     await saveField(el, async () => {
-      const saved = await api("PATCH", `/api/projects/${state.project.id}`, { environments: v });
+      const saved = await api("PATCH", `/api/projects/${p.id}`, { environments: v }, p.prefix || "");
+      if (!savedProject(p, saved)) return;
       shownEnvs = JSON.stringify(cleanEnvs(saved.environments || []));
-      const cur = state.project;
-      state.project = { ...saved, machine: cur.machine, prefix: cur.prefix };
-      state.projects = state.projects.map((x) => (x === cur ? state.project : x));
       renderProjectHeader();
       renderApprove();
       loadEnvHistory().catch(() => {});
@@ -457,7 +472,7 @@ labelPicker({ input: $("#settings-runs-on"), any: true, label: "Runs on", onChan
 // The tag format is checked as it is typed: placeholders, a valid git tag,
 // and whether the repository's release workflows run for its tags.
 let tagFormatTimer = 0, tagFormatSeq = 0;
-const tagFormatCheck = (format) => api("GET", `/api/projects/${state.project.id}/tag-format?format=${encodeURIComponent(format)}`);
+const tagFormatCheck = (format, p = state.project) => api("GET", `/api/projects/${p.id}/tag-format?format=${encodeURIComponent(format)}`, null, p.prefix || "");
 function checkTagFormat() {
   clearTimeout(tagFormatTimer);
   tagFormatTimer = setTimeout(attempt(async () => {
@@ -537,8 +552,8 @@ const FIELDS = {
   merge_method: { read: (f) => f.merge_method.value },
   merge_batch: { read: (f) => Math.min(10, Math.max(1, Math.round(Number(f.merge_batch.value) || 1))) },
   investigate_ci: { read: (f) => f.investigate_ci.checked },
-  tag_format: { read: (f) => f.tag_format.value.trim() || "X.Y.Z", check: async (v) => {
-    const res = await tagFormatCheck(v);
+  tag_format: { read: (f) => f.tag_format.value.trim() || "X.Y.Z", check: async (v, p) => {
+    const res = await tagFormatCheck(v, p);
     if (!res.valid) throw new Error(res.error);
   } },
   max_run_minutes: { read: (f) => Number(f.max_run_minutes.value) || 0 },
@@ -565,24 +580,39 @@ export function markSettingSaved(key) { shown[key] = JSON.stringify(FIELDS[key].
 const dirty = (f, key) => !FIELDS[key].skip?.() && JSON.stringify(FIELDS[key].read(f)) !== shown[key];
 
 const queueSave = saveQueue();
+const isOpenProject = (p) => projectKey(state.project) === projectKey(p);
+// savedProject takes saved, the answer to a PATCH of p, as p's state (with
+// the client-only fields kept), and as the open project's only while p still
+// is it. Returns whether it is.
+function savedProject(p, saved) {
+  const next = { ...saved, machine: p.machine, prefix: p.prefix };
+  state.projects = state.projects.map((x) => (projectKey(x) === projectKey(p) ? next : x));
+  if (!isOpenProject(p)) return false;
+  state.project = next;
+  return true;
+}
+
+// saveSetting saves the field key as it is now, to the project it is of,
+// even when the save waits in the queue until another project is open.
 function saveSetting(key) {
+  const f = $("#settings-form"), field = FIELDS[key], el = fieldEl(f, key), p = state.project;
+  if (field.skip?.()) return Promise.resolve();
+  const v = field.read(f), json = JSON.stringify(v), shownThen = shown[key];
+  let invalid = null;
+  try { checked(el); } catch (e) { invalid = e; }
   return queueSave(async () => {
-    const f = $("#settings-form"), field = FIELDS[key], el = fieldEl(f, key);
-    if (field.skip?.()) return;
-    const v = field.read(f), json = JSON.stringify(v);
-    if (json === shown[key]) { fieldError(el, ""); return; }
+    const here = isOpenProject(p);
+    if (json === (here ? shown[key] : shownThen)) { if (here) fieldError(el, ""); return; }
     await saveField(el, async () => {
-      await field.check?.(v);
-      checked(el);
-      const saved = await api("PATCH", `/api/projects/${state.project.id}`, { [key]: v });
+      await field.check?.(v, p);
+      if (invalid) throw invalid;
+      const saved = await api("PATCH", `/api/projects/${p.id}`, { [key]: v }, p.prefix || "");
+      const still = savedProject(p, saved);
+      renderProjectList(); // the list entry in step for its name, color and icon
+      if (!still) return;
       shown[key] = json;
       if (key === "runs_on") shownRunsOn = labelKey(saved.runs_on);
-      // Keep the client-only fields, and the list entry in step for its name, color and icon.
-      const cur = state.project;
-      state.project = { ...saved, machine: cur.machine, prefix: cur.prefix };
-      state.projects = state.projects.map((x) => (x === cur ? state.project : x));
       renderProjectHeader();
-      renderProjectList();
       renderApprove();
       if (key === "auto_approve") renderBoard(); // auto approve shows or hides Review
       if (key === "agent") { renderRunsOnPreview(); syncMergeHint(); }
@@ -630,11 +660,8 @@ $("#settings-approve-commands").addEventListener("click", (e) => queueSave(() =>
   const p = state.project;
   // Saved again unchanged: the deploy command is the environments.
   const body = Object.fromEntries(unapproved().map(([k]) => [COMMAND_FIELDS[k], p[COMMAND_FIELDS[k]] || (k === "deploy" ? [] : "")]).filter(([k]) => k));
-  const saved = await api("PATCH", `/api/projects/${p.id}`, body);
-  const cur = state.project;
-  state.project = { ...saved, machine: cur.machine, prefix: cur.prefix };
-  state.projects = state.projects.map((x) => (x === cur ? state.project : x));
-  renderApprove();
+  const saved = await api("PATCH", `/api/projects/${p.id}`, body, p.prefix || "");
+  if (savedProject(p, saved)) renderApprove();
 })));
 
 // ------------------------------------------------------------------ repository

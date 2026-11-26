@@ -13,8 +13,9 @@ import { WEBHOOK_EVENTS, WEBHOOK_FORMATS } from "./webhooks.js";
 // whose tasks they hear about and which events push to their browsers.
 // Beside them: this browser's push switch (a preference, prefs.js) and
 // their personal webhooks, which get each event as it happens
-// (webhooks.js). Each change saves at once (the time on blur), unless the
-// summary isn't complete yet: then what's missing shows under its field.
+// (webhooks.js). Each change saves at once (the time on blur); while the
+// summary isn't complete, what's missing shows under its field and the
+// summary's when and where wait for it.
 const PUSH_LABELS = {
   "task.review": "A task is ready for review",
   "task.failed": "A task failed",
@@ -141,16 +142,23 @@ function problems(body) {
   return body.summary === "off" ? out.map(([el]) => [el, ""]) : out;
 }
 
-// save saves the form as it is; with something missing, it saves nothing
-// and says what, under its field (and throws, given strict).
-async function save({ strict = false } = {}) {
+// SUMMARY_FIELDS are the controls of when and where the summary goes, and
+// of what it covers: the ones that can leave it incomplete.
+const SUMMARY_FIELDS = ["summary", "time", "weekday", "time_zone", "all_projects", "projects", "email", "webhooks"];
+const SUMMARY_CONTROLS = ["summary", "time", "weekday", "scope", "project", "email", "dest"];
+
+// save saves the form as it is. With the summary incomplete, it says what is
+// missing under its field and saves the rest without the summary's when and
+// where (nothing, given a change to those; throws, given strict).
+async function save({ strict = false, changed = "" } = {}) {
   const body = collect();
   const bad = problems(body);
   for (const [el, msg] of bad) fieldError(el, msg || "");
   const first = bad.find(([, msg]) => msg);
   if (first) {
     if (strict) throw new Error(first[1]);
-    return false;
+    if (SUMMARY_CONTROLS.includes(changed)) return false;
+    for (const k of SUMMARY_FIELDS) delete body[k]; // the server keeps what it has
   }
   view = await api("PUT", "/api/me/notifications", body);
   // Not redrawn: a box just ticked keeps its focus. Only what follows from it.
@@ -166,7 +174,7 @@ form.addEventListener("change", (e) => {
   syncNotify();
   if (!e.target.name || e.target.form !== form) return; // this browser's push switch is a preference (prefs.js)
   queueSave(() => saveField(e.target, async () => {
-    if (!(await save())) return false;
+    if (!(await save({ changed: e.target.name }))) return false;
   }));
 });
 // Enter in the time field doesn't submit the form: it saves on its own.
