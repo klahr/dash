@@ -7,14 +7,15 @@ import (
 
 // TestJS runs the web client's Node tests (*_test.mjs here), which cover
 // the parts of it kept free of the DOM, such as the PROJECTS list's groups and the
-// History graph's lanes and its commit pane's selection.
-// It is skipped where Node isn't installed.
+// History graph's lanes and its commit pane's selection, and the check that
+// every name a script uses is declared, imported or a global
+// (importcheck_test.mjs). It is skipped where Node isn't installed.
 func TestJS(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not installed")
 	}
-	out, err := exec.Command(node, "--test", "groups_test.mjs", "graphlayout_test.mjs", "commitnav_test.mjs", "activityclear_test.mjs", "runnerversion_test.mjs", "usagetime_test.mjs", "eta_test.mjs", "deployeta_test.mjs", "buildeta_test.mjs", "claudepill_test.mjs", "markdown_test.mjs", "tagtext_test.mjs", "time_test.mjs", "voiceloop_test.mjs", "billingstate_test.mjs").CombinedOutput()
+	out, err := exec.Command(node, "--test", "groups_test.mjs", "graphlayout_test.mjs", "commitnav_test.mjs", "activityclear_test.mjs", "runnerversion_test.mjs", "usagetime_test.mjs", "eta_test.mjs", "deployeta_test.mjs", "buildeta_test.mjs", "claudepill_test.mjs", "markdown_test.mjs", "tagtext_test.mjs", "time_test.mjs", "voiceloop_test.mjs", "billingstate_test.mjs", "importcheck_test.mjs").CombinedOutput()
 	if err != nil {
 		t.Fatalf("node --test: %v\n%s", err, out)
 	}

@@ -1,4 +1,4 @@
-import { $, $$, avatarURL, dateText, dateTimeText, debounce, fill, h, ib, ico, nameHue, plural } from "./dom.js";
+import { $, $$, avatarURL, dateText, dateTimeText, debounce, fill, h, ib, ico, nameHue, plural, sizeText } from "./dom.js";
 import { previewText, renderMarkdown } from "../markdown.js";
 import { agoText } from "../time.js";
 import { popMenu } from "./popmenu.js";

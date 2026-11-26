@@ -52,6 +52,12 @@ for f in web/static/*.js web/static/app/*.js; do node --check "$f"; done
 node --test web/*_test.mjs                  # also run by go test, when node is installed
 ```
 
+`node --check` only checks syntax. [`web/importcheck_test.mjs`](web/importcheck_test.mjs), one of
+the Node tests, checks names: every name a script in `web/static` or `web/static/app` uses must be
+declared in it, imported, or a browser or JavaScript global, and every name it imports must be
+exported by that module. When it flags a real browser global, add the name to `BROWSER_GLOBALS`
+in that file.
+
 [`scripts/check.sh`](scripts/check.sh) runs gofmt, vet, staticcheck, the tests and
 `node --check` in one go. When you develop Dash with Dash, set it as the project's **Test
 command**: Dash then runs it in each task's worktree before merging, and sends a red build back

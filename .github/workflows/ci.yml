@@ -74,6 +74,11 @@ jobs:
       - name: Check JavaScript syntax
         run: for f in web/static/*.js web/static/app/*.js; do node --check "$f"; done
 
+      # Also run by go test, but here they can't skip for want of node.
+      # importcheck_test.mjs fails on a name used but never imported.
+      - name: JavaScript tests
+        run: node --test web/*_test.mjs
+
   # The tests are CPU-bound, so they are split across runners rather than
   # run with more t.Parallel(): the two slowest packages get a job each, and
   # "other" runs every remaining package.
