@@ -720,9 +720,9 @@
       <p class="hint warn runner-note" id="quick-runner-note" hidden></p>
       <div class="quick-rows" id="quick-rows"></div>
       <div class="quick-tags" id="quick-tags" aria-live="polite" hidden></div>
-      <p class="hint quick-hint"><kbd>Enter</kbd> save draft · <kbd><span data-mod>Ctrl</span>-Enter</kbd> queue · <kbd>Shift-Enter</kbd> another task · <kbd>#tag</kbd> tags it</p>
+      <p class="hint quick-hint"><kbd>Enter</kbd> save draft · <kbd><span data-mod>Ctrl</span>-Enter</kbd> queue · <kbd>Shift-Enter</kbd> new line · <kbd><span data-alt>Alt</span>-Enter</kbd> another task · <kbd>#tag</kbd> tags it</p>
       <div class="quick-tools">
-        <button class="link" type="button" id="quick-another" data-icon="plus">Another task</button>
+        <button class="link" type="button" id="quick-another" data-icon="plus" aria-keyshortcuts="Alt+Enter">Another task</button>
         <button class="link" type="button" id="quick-goal" data-icon="target">New goal…</button>
         <button class="link" type="button" id="quick-brief" data-icon="spark" title="Claude interviews you about it and writes a brief onto a Planning card">Write a feature brief</button>
         <button class="link" type="button" id="quick-more" data-icon="edit">More options…</button>
@@ -2047,7 +2047,8 @@
               <caption class="sr-only">Forms</caption>
               <tbody>
                 <tr><th scope="row"><kbd>Enter</kbd></th><td>New task sheet: save a draft</td></tr>
-                <tr><th scope="row"><kbd>Shift-Enter</kbd></th><td>New task sheet: another task</td></tr>
+                <tr><th scope="row"><kbd>Shift-Enter</kbd></th><td>New task sheet: a new line in the task</td></tr>
+                <tr><th scope="row"><kbd><span data-alt>Alt</span>-Enter</kbd></th><td>New task sheet: another task</td></tr>
                 <tr><th scope="row"><kbd>Backspace</kbd></th><td>New task sheet: in an empty field, remove it</td></tr>
                 <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Enter</kbd></th><td>New task sheet and task form: queue</td></tr>
                 <tr><th scope="row"><kbd><span data-mod>Ctrl</span>-Shift-Enter</kbd> <kbd><span data-mod>Ctrl</span>-s</kbd></th><td>Task form: save a draft</td></tr>

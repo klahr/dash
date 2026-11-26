@@ -36,8 +36,12 @@ Commands → Test time limit**. On runners, the hub's setting applies.
 ## Add a task
 
 Click **New task** (or press <kbd>n</kbd>) and write what Claude should do, as you would in a
-chat; Claude names the task. <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a field for another task (a
-pasted multi-line text stays one task).
+chat; Claude names the task. <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line in the task.
+<kbd>Alt</kbd>+<kbd>Enter</kbd> (<kbd>Option</kbd>+<kbd>Enter</kbd> on a Mac) or **Another task** adds a
+field for another task.
+
+Closing the sheet keeps what you typed on this device, and it is back the next time you open it.
+Saving the tasks clears it.
 
 Type `#tag` to tag the task. Dash takes the tag out of the text and shows it below the field:
 

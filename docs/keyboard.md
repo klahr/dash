@@ -127,7 +127,8 @@ A question from Claude has no key for an answer: answer it in its card. `X` decl
 | Key                     | Does                                                  |
 |-------------------------|-------------------------------------------------------|
 | `Enter`                 | new task sheet: save a draft                          |
-| `Shift-Enter`           | new task sheet: another task                          |
+| `Shift-Enter`           | new task sheet: a new line in the task                |
+| `Alt-Enter`             | new task sheet: another task                          |
 | `Backspace`             | new task sheet: in an empty field, remove it          |
 | `Ctrl-Enter`            | new task sheet and task form: queue                   |
 | `Ctrl-Shift-Enter` `Ctrl-s` | task form: save a draft                           |
@@ -135,7 +136,7 @@ A question from Claude has no key for an answer: answer it in its card. `X` decl
 | `Ctrl-Shift-,`          | start or stop [voice commands](dictation.md#voice-commands) |
 | `Esc`                   | close or cancel                                       |
 
-On a Mac, `Ctrl` here is `Cmd`.
+On a Mac, `Ctrl` here is `Cmd` and `Alt` is `Option`.
 
 ## Commands
 

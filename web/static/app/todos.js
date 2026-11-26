@@ -13,6 +13,7 @@ import { confirmRunAs } from "./people.js";
 import { openFeatureBrief } from "./planner.js";
 import { tagChips } from "./tags.js";
 import { addTag, quickTags } from "../tagtext.js";
+import { drafts } from "../editor.js";
 
 // ------------------------------------------------------------------ new / edit todo
 // A task's title, instructions and options can be edited while it is a draft,
@@ -84,7 +85,7 @@ new ResizeObserver(([e]) => {
 
 // ------------------------------------------------------------------ quick add
 // The quick sheet (FAB, n): one field per task, the text is its prompt and
-// Claude names it. A multi-line paste stays one task; the field just grows.
+// Claude names it. Multi-line text (Shift-Enter, a paste) stays one task; the field just grows.
 // "More options…" carries the text over to the full form (Shift+N). It
 // ends like the full form: Save draft (Enter, so it is the primary button) or Queue (Ctrl/⌘+Enter).
 // A #tag in the text tags the task (quickTags in tagtext.js has the rule):
@@ -122,7 +123,23 @@ function quickAddRow(after = null, text = "") {
   ta.focus();
   return ta;
 }
-export function openQuickAdd(texts = [""]) {
+// What is typed in the quick sheet autosaves to this browser, per project, as
+// the full form's draft does: closing it (Esc, ✕, a click outside) keeps the
+// text, and the sheet brings it back the next time it opens. Saving the
+// tasks, or carrying the text on to the full form, forgets it.
+const quickDraftKey = () => `quick/${projectKey(state.project)}`;
+const quickDraft = drafts({
+  read: () => ({ texts: quickFields().map((r) => r.value).filter((v) => v.trim()) }),
+  write(d) {
+    quick.rows.replaceChildren();
+    (d.texts || []).forEach((t) => quickAddRow(null, t));
+  },
+  onStatus() {},
+});
+
+// openQuickAdd opens the quick sheet with its saved draft, if any, and texts
+// (what a failed save gives back) after it.
+export function openQuickAdd(texts = []) {
   if (!state.project) return toast(projectFirst(), true);
   quick.rows.replaceChildren();
   showRunnerNeeded($("#quick-runner-note"), state.project);
@@ -130,9 +147,26 @@ export function openQuickAdd(texts = [""]) {
   $("#quick-brief").hidden = !briefsOn(state.project);
   quick.sheet.returnValue = "";
   quick.sheet.showModal();
-  texts.forEach((t) => quickAddRow(null, t));
+  quickDraft.open(quickDraftKey()); // with no rows yet, the base is "nothing typed"
+  const given = texts.filter((t) => t.trim());
+  given.forEach((t) => quickAddRow(null, t));
+  if (!quickFields().length) quickAddRow();
+  if (given.length) quickDraft.flush();
   showQuickTags(document.activeElement);
 }
+
+// A close other than a save keeps the text as a draft (the full form, the
+// goal and the brief take it with them; goal and brief keep it, in case
+// they are not made, as the full form does).
+quick.sheet.addEventListener("close", () => {
+  if (quick.sheet.open) return; // opened again meanwhile
+  const action = quick.sheet.returnValue;
+  if (action === "add") return; // submitQuick has it
+  if (action === "more") return quickDraft.done();
+  const key = quickDraftKey(), kept = quickDraft.has(key);
+  quickDraft.close();
+  if (quickDraft.has(key) && !kept && action !== "goal" && action !== "brief") toast("Your text is kept; open New task again to continue");
+});
 
 async function submitQuick(enqueue) {
   const texts = quickTexts();
@@ -144,6 +178,10 @@ async function submitQuick(enqueue) {
     throw new Error("Say what Claude should do, not only tags.");
   }
   const p = state.project;
+  // The text is in hand: forget the draft now (so opening the sheet while
+  // this saves doesn't bring it back); a failed save opens the sheet again
+  // with what wasn't saved, which drafts it again.
+  quickDraft.done();
   quick.sheet.close("add");
   let done = 0;
   const ids = [];
@@ -189,13 +227,18 @@ function quickMore() {
 }
 
 quick.rows.addEventListener("input", (e) => {
-  if (e.target.matches(".quick-row")) { fitQuickRow(e.target); showQuickTags(e.target); }
+  if (e.target.matches(".quick-row")) { fitQuickRow(e.target); showQuickTags(e.target); quickDraft.changed(); }
 });
 quick.rows.addEventListener("focusin", (e) => { if (e.target.matches(".quick-row")) showQuickTags(e.target); });
+// Keys in a field: Enter saves a draft, Ctrl/⌘-Enter queues, Shift-Enter is a
+// new line (as in a chat), Alt/⌥-Enter starts another task's field.
 quick.rows.addEventListener("keydown", (e) => {
   const ta = e.target;
-  if (!ta.matches(".quick-row") || e.isComposing) return;
-  if (e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.metaKey) {
+  if (!ta.matches(".quick-row") || e.isComposing || e.key !== "Enter" && e.key !== "Backspace") return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (e.key === "Enter" && e.shiftKey && !mod && !e.altKey) {
+    // The browser types the new line; the input event grows the field.
+  } else if (e.key === "Enter" && e.altKey && !mod && !e.shiftKey) {
     e.preventDefault();
     quickAddRow(ta);
   } else if (e.key === "Enter" && !e.altKey) {
