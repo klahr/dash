@@ -41,6 +41,16 @@ export const dayText = (iso) => {
   const d = new Date(iso);
   return d.toLocaleDateString(timeLocale, { month: "short", day: "numeric", ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }) });
 };
+// whenText is a moment as short as stays clear: the clock today ("14:32"),
+// with the weekday within six days either way ("Mon 14:32"), otherwise with
+// the date ("3 Nov 14:32", the year added when it isn't this year's).
+export const whenText = (iso) => {
+  const d = new Date(iso), now = new Date();
+  if (d.toDateString() === now.toDateString()) return clockTime(d);
+  const day = Math.abs(d - now) < 6 * 864e5 ? { weekday: "short" }
+    : { month: "short", day: "numeric", ...(d.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }) };
+  return d.toLocaleString(timeLocale, { ...day, hour: "2-digit", minute: "2-digit" });
+};
 export const dateTimeText = (iso) => new Date(iso).toLocaleString(timeLocale, { dateStyle: "medium", timeStyle: "short" });
 // plural counts a noun: "1 task", "3 tasks"; many is for nouns that don't just add an s.
 export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

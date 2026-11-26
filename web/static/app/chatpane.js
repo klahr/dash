@@ -703,7 +703,10 @@ resizeHandle($("#pc-resize"), $("#chat-pane"), {
 });
 renderChatPane();
 
+// Every task shares todoChat: each one's draft (with what was queued, and
+// the files) is kept here while another is shown, and put back when it is.
 let todoChatId = null;
+const todoDrafts = new Map();
 export async function loadTodoChat() {
   const id = state.detail;
   // Reopening the todo whose reply is still streaming keeps it on screen.
@@ -713,10 +716,19 @@ export async function loadTodoChat() {
     if (state.detail === id && worker.id === id) events.slice(worker.events.length).forEach((e) => addWorkerEvent(id, e));
     return todoChat.toEnd();
   }
+  const switched = todoChatId !== id;
+  if (switched && todoChatId) {
+    const d = todoChat.takeDraft();
+    d ? todoDrafts.set(todoChatId, d) : todoDrafts.delete(todoChatId);
+  }
   todoChatId = id;
   worker.id = null;
   worker.events = worker.live = [];
   todoChat.reset();
+  if (switched) {
+    todoChat.putDraft(todoDrafts.get(id));
+    todoDrafts.delete(id);
+  }
   const [saved, events] = await Promise.all([api("GET", `/api/todos/${id}/chat`), api("GET", `/api/todos/${id}/events`)]);
   if (state.detail !== id) return;
   // Events that streamed in while loading, unless the load has them already.

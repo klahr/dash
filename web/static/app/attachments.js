@@ -48,15 +48,22 @@ export function attachBox(el, textarea, onChange = () => {}, { zone = el.closest
       input);
   };
   const off = () => !compact && el.hidden;
+  // gen counts resets: uploads started before one land nowhere, and don't count.
+  let gen = 0;
   const add = (files) => {
     files = [...files];
     if (!files.length) return;
+    const g = gen;
     pending += files.length;
     render();
     const at = prefix();
     busy = busy.then(async () => {
       for (const f of files) {
-        try { items.push(await uploadFile(f, at)); onChange(); } catch (e) { fail(e); }
+        if (g !== gen) return;
+        let a = null;
+        try { a = await uploadFile(f, at); } catch (e) { if (g === gen) fail(e); }
+        if (g !== gen) return;
+        if (a) { items.push(a); onChange(); }
         pending--;
         render();
       }
@@ -80,10 +87,14 @@ export function attachBox(el, textarea, onChange = () => {}, { zone = el.closest
   });
   render();
   return {
-    reset(list = []) { items = [...list]; pending = 0; render(); },
+    // reset replaces the files and drops the uploads still under way; set
+    // replaces the files and lets those uploads join them.
+    reset(list = []) { gen++; items = [...list]; pending = 0; render(); },
+    set(list = []) { items = [...list]; render(); },
     ids: () => items.map((a) => a.id),
     items: () => [...items],
-    settled: () => busy,
+    // settled waits for every upload, those started while waiting too.
+    settled: async () => { for (let b; b !== busy;) { b = busy; await b; } },
     pick: () => input.click(),
   };
 }

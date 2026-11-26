@@ -1,4 +1,4 @@
-import { $, clockTime, h, setLabel, timeLocale } from "./dom.js";
+import { $, h, setLabel, whenText } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { saveField } from "./autosave.js";
@@ -15,11 +15,6 @@ export async function loadUsage() {
 
 const windowLabel = (n) => ({ five_hour: "5-hour window", seven_day: "Weekly", seven_day_opus: "Weekly (Opus)" })[n] || n;
 export const shortLabel = (n) => ({ five_hour: "5h", seven_day: "7d", seven_day_opus: "7d Opus" })[n] || n;
-const fmtTime = (iso) => {
-  const d = new Date(iso);
-  const sameDay = d.toDateString() === new Date().toDateString();
-  return sameDay ? clockTime(d) : d.toLocaleString(timeLocale, { weekday: "short", hour: "2-digit", minute: "2-digit" });
-};
 const windowHours = { five_hour: 5, seven_day: 168, seven_day_opus: 168 };
 // Share of the window elapsed since its last reset (0..1), or null for an unknown window length.
 const windowElapsed = (w) => {
@@ -40,7 +35,7 @@ export function renderUsage() {
   const tone = stopped ? "bad" : u.pacing || (top && (top.utilization >= 0.7 || overPace(top))) ? "warn" : "ok";
 
   const reason = u.paused
-    ? `${u.reason}. No new tasks start${u.until && !u.manual_pause ? ` until ${fmtTime(u.until)}` : ""}; running ones finish.`
+    ? `${u.reason}. No new tasks start${u.until && !u.manual_pause ? ` until ${whenText(u.until)}` : ""}; running ones finish.`
     : "Tasks start normally.";
   // What a window's figures say, in words and in exact numbers for tooltips.
   const describe = (w) => {
@@ -53,7 +48,7 @@ export function renderUsage() {
       pct, pace, gap,
       over: gap !== null && aheadOfPace(gap),
       reset: resetText(w.resets_at),
-      resetClock: `Resets ${fmtTime(w.resets_at)}`,
+      resetClock: `Resets ${whenText(w.resets_at)}`,
       exact: `${pct}% used${pace === null ? "" : `, ${pace}% of the window elapsed (${points >= 0 ? "+" : "−"}${Math.abs(points)} points vs pace)`}`,
     };
   };

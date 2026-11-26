@@ -383,7 +383,7 @@ $("#d-more").addEventListener("click", attempt(async (e) => {
   if (settled) organise.push(["copy", "Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
   // Planning is the hub's: its cards link to the tasks it has.
   if (!state.project?.prefix) organise.push(["plan", "Link to a planning card…", () => linkToCard("task", t.id)]);
-  if (todoChat.history.length) organise.push(["x", "Clear this task's chat", () => api("DELETE", `/api/todos/${t.id}/chat`).then(() => { if (state.detail === t.id) todoChat.reset(); })]);
+  if (todoChat.history.length && state.detail === t.id) danger.push(["x", "Clear this task's chat…", () => todoChat.clear(), { danger: true }]);
 
   if (t.status === "merged" && !t.revert && !closedNoChanges(t) && here) danger.push(["undo", "Revert…", () => revertTodo(t), { danger: true }]);
   if (settled) {

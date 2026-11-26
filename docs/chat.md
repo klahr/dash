@@ -50,7 +50,11 @@ Your project chat is the same on each of your devices and browser windows:
   message goes back in the box to send again. A window that is behind never removes messages.
 
 In the composer, <kbd>Enter</kbd> sends, messages written while Claude answers are queued, `/clear`
-starts a new chat (as **New chat** does) and `/help` lists these.
+starts a new chat (as **New chat** does) and `/help` lists these. In a task's chat, `/clear` asks
+first: a task keeps no past chats, so its chat is deleted for everyone who sees the task.
+
+Each task keeps what you were writing in its chat, and its mode (**Ask** or **Rework**), while you
+look at another task.
 
 <kbd>Up</kbd> on the first line of the message box shows the message you sent before it, as a
 shell's history does; <kbd>Down</kbd> on the last line goes forward again, back to what you were

@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../editor.js";
-import { $, chatSuggestOn, entering, h, ib, ico } from "./dom.js";
+import { $, chatSuggestOn, dateTimeText, entering, h, ib, ico, whenText } from "./dom.js";
 import * as store from "./store.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on, request } from "./api.js";
@@ -43,9 +43,7 @@ function msgStats(u, end) {
   }
   const d = end ? new Date(end) : null, when = d && !isNaN(d) ? d : null;
   if (!parts.length && !when) return null;
-  const today = when && when.toDateString() === new Date().toDateString();
-  const clock = when && h("time", { dateTime: when.toISOString(), title: when.toLocaleString() },
-    today ? when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : when.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }));
+  const clock = when && h("time", { dateTime: when.toISOString(), title: dateTimeText(when) }, whenText(when));
   return h("span", { class: "msg-stats" }, parts.length ? h("span", { title }, parts.join(" · ")) : null, parts.length && clock ? " · " : null, clock);
 }
 // savedEnd is when saved answer m ended: its start plus how long it took.
@@ -258,7 +256,8 @@ function chatComposer(c, { form, mode, shell, clear }) {
   // Slash commands run here instead of going to Claude. Anything else starting
   // with "/" (a path, say) is sent as a message.
   const commands = {
-    clear: async () => { await clear(); c.reset(); },
+    // clear() returns false when the conversation stays (the user said no).
+    clear: async () => { if (await clear() !== false) c.reset(); },
     help: () => toast(`/clear starts a new conversation. /help shows this.${shell ? " !command runs a shell command where the chat runs (no terminal); Claude sees it and its output next turn." : ""} Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one; otherwise Up and Down step through the messages sent before. A suggested next message shows grayed out in the empty composer: Enter sends it, Tab puts it there to edit.`, { head: "Chat commands" }),
   };
   commands.new = commands.reset = commands.clear;
@@ -284,6 +283,24 @@ function chatComposer(c, { form, mode, shell, clear }) {
   new ResizeObserver(() => { if (!grown && input.getClientRects().length) autoGrow(); }).observe(input);
   const recall = c.recall = chatRecall(c, input, autoGrow);
   input.addEventListener("input", () => { recall.end(); autoGrow(); if (c.current) c.busyButton(); });
+  // putDraft fills the composer with draft ({q, files}; none empties it).
+  // takeDraft empties it and returns what it had, the queue folded in (null
+  // for nothing): a chat shown for one thing after another (the task chat)
+  // keeps each one's draft, and never sends one's queue to another.
+  const putDraft = ({ q = "", files = [] } = {}) => {
+    recall.end();
+    input.value = q;
+    att.reset(files);
+    autoGrow();
+    c.busyButton();
+  };
+  const takeDraft = () => {
+    c.endEdit(true);
+    queue.restore();
+    const d = { q: input.value, files: att.items() };
+    putDraft();
+    return d.q.trim() || d.files.length ? d : null;
+  };
   c.modeChanged = () => {
     // A message sent elsewhere (Rework) replaces nothing in the chat.
     if (mode()?.send) c.endEdit();
@@ -333,7 +350,7 @@ function chatComposer(c, { form, mode, shell, clear }) {
     if (!files.length && shellOn() && isShell(q)) { c.endEdit(); return c.shell.run(q); }
     c.editing ? c.resend(q, files) : c.send(q, files);
   }));
-  return { input, modeChanged: c.modeChanged, clear: commands.clear };
+  return { input, modeChanged: c.modeChanged, clear: commands.clear, takeDraft, putDraft };
 }
 
 // chatTurns sends turns and settles them: c.send(q, attachments) adds a
@@ -725,7 +742,7 @@ function chatQueue(c) {
     if (!msgs.length) return;
     c.suggest();
     input.value = [...msgs.map((m) => m.q), input.value.trim()].filter(Boolean).join("\n\n");
-    att.reset([...msgs.flatMap((m) => m.files), ...att.items()]);
+    att.set([...msgs.flatMap((m) => m.files), ...att.items()]);
     c.autoGrow();
   };
   function unqueue(m, edit = false) {
@@ -1311,7 +1328,7 @@ const EDITABLE = ["draft", "queued", "failed"];
 
 // The task chat's switch: Ask Claude (the side chat, which the agent doesn't
 // see) or Rework (to the agent, which continues in its worktree). Rework is
-// for a task in review with a worktree; opening another task goes back to Ask.
+// for a task in review with a worktree; each task keeps its own (Ask at first).
 const TODO_MODES = {
   chat: { text: "Ask", label: "Ask Claude in the side chat", title: "Ask Claude in the side chat: the agent doesn't see it",
     placeholder: "Ask Claude about this task", inputLabel: "Ask Claude about this task in the side chat; the agent doesn't see it",
@@ -1320,7 +1337,10 @@ const TODO_MODES = {
   rework: { text: "Rework", label: "Rework: send this to the agent", title: "Rework: the agent continues in its worktree with this",
     placeholder: "Tell the agent what to change", inputLabel: "Rework notes for the agent, which continues in its worktree", send: sendRework },
 };
-let todoMode = "chat", todoModeFor = null;
+// todoModes keeps each task's mode while this page is open, as its draft is
+// kept (see loadTodoChat): rework notes written for one task stay that task's.
+let todoMode = "chat";
+const todoModes = new Map();
 async function sendRework(q, files) {
   const t = state.todos.get(state.detail);
   if (!canRework(t)) { setTodoChatMode("chat"); return false; }
@@ -1332,6 +1352,8 @@ async function sendRework(q, files) {
 }
 export function setTodoChatMode(mode) {
   todoMode = mode === "rework" && canRework(state.todos.get(state.detail)) ? "rework" : "chat";
+  if (todoMode === "rework") todoModes.set(state.detail, todoMode);
+  else todoModes.delete(state.detail);
   for (const b of document.querySelectorAll("#d-chat-mode button")) b.setAttribute("aria-checked", b.dataset.mode === todoMode);
   $("#d-chat-form").classList.toggle("rework-mode", todoMode === "rework");
   todoChat.modeChanged();
@@ -1341,8 +1363,7 @@ export function renderTodoChatMode(t) {
   const rework = $("#d-chat-mode button[data-mode=rework]");
   rework.disabled = !canRework(t);
   rework.title = rework.disabled ? "Rework is for a task in review that has a worktree" : TODO_MODES.rework.title;
-  setTodoChatMode(todoModeFor === t.id ? todoMode : "chat");
-  todoModeFor = t.id;
+  setTodoChatMode(todoModes.get(t.id) || "chat");
 }
 $("#d-chat-mode").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-mode]");
@@ -1366,7 +1387,15 @@ export const todoChat = makeChat({
   merge: (nodes, saved) => timeline(nodes, saved),
   // reviewNext marks the turn the Review button sends, which locks the task until it ends.
   target: () => { const review = takeReviewNext(); return { prefix: here(), todo: state.detail, ...(review && { review }) }; },
-  clear: () => api("DELETE", `/api/todos/${state.detail}/chat`),
+  // The server keeps no past chat for a task, and the chat is everyone's who
+  // sees the task: clearing it asks first.
+  clear: async () => {
+    const id = state.detail;
+    if (!todoChat.history.length) return;
+    if (!await ask({ title: "Clear this task's chat?", body: "It is deleted for everyone who sees this task. This can't be undone.", ok: "Clear", danger: true })) return false;
+    await api("DELETE", `/api/todos/${id}/chat`);
+    if (state.detail !== id) return false;
+  },
   scroller: () => $("#detail .detail-body"),
   shell: true,
   edit: true,

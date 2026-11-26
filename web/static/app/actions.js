@@ -1,4 +1,4 @@
-import { $, clockTime, dateTimeText, h, ib, timeLocale } from "./dom.js";
+import { $, clockTime, dateTimeText, h, ib, whenText } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, busy, toast } from "./dialogs.js";
 import { projectFirst, state } from "./state.js";
@@ -33,15 +33,6 @@ const releaseShown = (rel) => rel && (rel.state === "building" || (rel.state ===
 const ciHistory = () => [...(state.ci?.runs || []), ...(state.ci?.release?.runs || [])]
   .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-// When a build started: "14:32" today, "Mon 14:32" this week, else "3 Nov 14:32".
-// clockTime and timeLocale follow the "Time format" setting.
-function runWhen(iso) {
-  const d = new Date(iso), days = (Date.now() - d) / 864e5;
-  if (d.toDateString() === new Date().toDateString()) return clockTime(iso);
-  const day = days < 6 ? { weekday: "short" } : { day: "numeric", month: "short" };
-  return d.toLocaleString(timeLocale, { ...day, hour: "2-digit", minute: "2-digit" });
-}
-
 function runRow(r) {
   const [cls, label] = runState(r);
   const bar = cls === "running" ? h("span", { class: "run-progress", "data-run": r.id, hidden: true }, h("span", { class: "run-progress-fill" })) : null;
@@ -50,7 +41,7 @@ function runRow(r) {
     h("span", { class: "run-main" }, h("strong", {}, r.workflow), h("span", { class: "run-title" }, r.title), bar),
     h("span", { class: "run-side" }, h("span", { class: "run-label" }, label),
       h("span", { class: "run-sha" }, `${r.sha.slice(0, 7)} · `,
-        h("time", { datetime: r.created_at, title: dateTimeText(r.created_at) }, `${runWhen(r.created_at)} · ${agoText(r.created_at)}`)))));
+        h("time", { datetime: r.created_at, title: dateTimeText(r.created_at) }, `${whenText(r.created_at)} ·${agoText(r.created_at)}`)))));
   if (bar) renderProgress(bar, r);
   return li;
 }
