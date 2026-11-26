@@ -90,8 +90,8 @@ function flush() {
   if (url === here) return;
   const st = history.state;
   if (!push && close && st?.dash && st.back === url) { history.back(); return; }
-  if (!push || place(url) === place(here)) history.replaceState(st, "", url);
-  else history.pushState({ dash: 1, back: here }, "", url);
+  if (!push || place(url) === place(here)) history.replaceState(st ? { ...st, view: state.view } : st, "", url);
+  else history.pushState({ dash: 1, back: here, view: state.view }, "", url);
 }
 
 // start applies the URL the page was opened at, once the first project list
@@ -140,7 +140,8 @@ window.addEventListener("popstate", () => {
   const s = R();
   if (!s.ready) { s.popped = s.starting; return; }
   const r = parse(location);
-  if (r.named) apply(r).catch(fail);
+  // A task's URL doesn't name the view it was open over: its entry keeps it.
+  if (r.named) apply(r, { taskView: history.state?.view }).catch(fail);
 });
 
 // go opens url (a link into the app, as a notification's) in this page,
@@ -158,7 +159,8 @@ const SHEET_ID = (k) => `${k}-sheet`;
 
 // apply makes the page show route r, without adding history entries:
 // the URL is already r (Back, Forward), or the caller writes it (settle false).
-async function apply(r, { startup = false, settle = !startup } = {}) {
+// taskView is the view a task was open over (Back, Forward), if known.
+async function apply(r, { startup = false, settle = !startup, taskView = null } = {}) {
   const s = R();
   s.applying++;
   const missing = [];
@@ -174,9 +176,11 @@ async function apply(r, { startup = false, settle = !startup } = {}) {
       const d = $(`#${SHEET_ID(k)}`);
       if (d?.open && k !== r.sheet) d.close();
     }
-    // A task opens over the view it was opened on; a link to one, over the board.
+    // A task opens over the view it was opened on (Back and Forward return
+    // to that one); a link to one, over the board.
     let view = r.view;
-    if (r.task && !startup && state.view !== "planning") view = state.view;
+    if (r.task && !startup && taskView && taskView !== "planning") view = taskView;
+    else if (r.task && !startup && state.view !== "planning") view = state.view;
     if (view && view !== state.view) showView(view, { now: true });
     if (view === "planning") setPlanningFilters(r.plProject || "", r.plTags || [], r.plTarget || "", !!r.plMine, r.plBoard || "");
 

@@ -70,6 +70,24 @@ func TestBrowserLinks(t *testing.T) {
 	b.until("close it", `document.querySelector("#detail").hidden`, chromedp.Click(chromedp.ID("d-close")))
 	b.waitJS("the task closed, the board's URL", `document.querySelector("#detail").hidden && `+path(board))
 
+	// A task opened on the Board, then History: Back opens it over the Board again.
+	b.openTask(task.ID)
+	b.waitJS("the task's URL again", path(taskURL))
+	b.until("open History over it", `document.querySelector("#view-history.active")`, chromedp.Click(chromedp.CSS(`.nav [data-view=history]`)))
+	b.waitJS("History's URL, the task closed", `document.querySelector("#detail").hidden && `+path("/p/"+pid+"/history"))
+	b.do("go back", chromedp.NavigateBack())
+	b.waitJS("the task over the board", detailOpen+` && document.querySelector("#view-board.active") && document.querySelector(".app").classList.contains("detail-beside") && `+path(taskURL))
+	b.waitJS("its close button says Close on a desktop", `document.querySelector("#d-close").getAttribute("aria-label") === "Close"`)
+
+	// Esc in the composer with text in it only leaves the field; Esc again closes the task.
+	composer := `#d-chat-form textarea[name=q]`
+	b.do("type in the composer", chromedp.Click(chromedp.CSS(composer)), chromedp.SendKeys(chromedp.CSS(composer), "half a thought"))
+	b.do("Esc", chromedp.KeyEvent(kb.Escape))
+	b.waitJS("the field left, the task still open", detailOpen+` && document.querySelector(".todo.selected") && document.activeElement !== document.querySelector(`+fmt.Sprintf("%q", composer)+`)`)
+	b.until("Esc again closes it", `document.querySelector("#detail").hidden`, chromedp.KeyEvent(kb.Escape))
+	b.waitJS("the board's URL once more", path(board))
+	b.do("empty the composer", chromedp.SetValue(chromedp.CSS(composer), ""))
+
 	// A reload opens the same place: the task, over the board; a sheet with its section.
 	b.do("open the task's link", chromedp.Navigate(h.base+taskURL))
 	b.waitJS("the task open", detailOpen+` && document.querySelector("#view-board.active")`)
@@ -104,7 +122,7 @@ func TestBrowserLinks(t *testing.T) {
 	// On a phone, Back closes the full-screen task, as its Back button does.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.do("open the task's link", chromedp.Navigate(h.base+taskURL))
-	b.waitJS("the task full screen", detailOpen)
+	b.waitJS("the task full screen, with Back", detailOpen+` && document.querySelector("#d-close").getAttribute("aria-label") === "Back"`)
 	b.do("go back", chromedp.NavigateBack())
 	b.waitJS("the task closed, in Dash", `document.querySelector("#detail").hidden && `+path(board))
 	b.do("go forward", chromedp.NavigateForward())

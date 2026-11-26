@@ -15,7 +15,7 @@ import { pushDone } from "./board.js";
 import { byPriority, title } from "./branches.js";
 import { openQuickAdd, openTodoForm } from "./todos.js";
 import { closeDetail, openDetail } from "./detail.js";
-import { pv } from "./preview.js";
+import { hidePreview, pv } from "./preview.js";
 import { renderPane, startDraw } from "./drawmode.js";
 import { toggleInvisibles, toggleVim } from "./diffedit.js";
 import { openPrefs } from "./prefs.js";
@@ -258,8 +258,13 @@ document.addEventListener("keydown", (e) => {
   const target = e.target;
 
   // Insert mode: only Esc (leave) is ours; Ctrl-] is handled by the terminal.
+  // The task's composer, focused as the task opens, while still empty: Esc
+  // closes the task, as it would have before you clicked in it.
   if (isTyping(target)) {
-    if (e.key === "Escape" && !target.closest("dialog")) { target.blur(); setMode(); e.preventDefault(); }
+    if (e.key !== "Escape" || target.closest("dialog")) return;
+    const closeTask = !e.defaultPrevented && state.detail && target === todoChat.input && !target.value.trim();
+    target.blur(); setMode(); e.preventDefault();
+    if (closeTask) escTask();
     return;
   }
   if (openDialog()) return; // dialogs handle their own keys (Esc closes)
@@ -362,6 +367,12 @@ function sidebarKey(k, n, hadCount) {
   return false;
 }
 
+// escTask closes the open task: a phone's full-screen preview of it first.
+function escTask() {
+  if (pv.todo && !desktop.matches) hidePreview();
+  else closeDetail();
+}
+
 async function handleNormal(k, n, hadCount) {
   if (sidebarList(document.activeElement) && sidebarKey(k, n, hadCount) !== false) return;
   // An open commit (desktop): n/p step through its files, before n (new
@@ -391,7 +402,7 @@ async function handleNormal(k, n, hadCount) {
     case "Escape": case "q":
       if (menuOpen()) return setMenu(false);
       if (k === "Escape" && pane.open && paneOverlays()) return toggleChatPane(false);
-      if (state.detail) return closeDetail();
+      if (state.detail) return escTask();
       if (cp.sha) return closeCommit();
       if (gp.open) return closeGoal();
       if (dp.open) return closeDeploy();

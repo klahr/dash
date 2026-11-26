@@ -2,7 +2,7 @@ import { renderMarkdown } from "../editor.js";
 import { $, $$, dateText, dateTimeText, h, ib, ico, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
-import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
+import { ask, attempt, busy, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
 import { statusLabel, state } from "./state.js";
 import { approvable, buildsOnMeta, busyTodos, closable, closeTodo, closedNoChanges, canMergePR, whileBusy, doneMeta, conflictMeta, mergePR, depMeta, hasPriority, prChecksEl, prChecksTitle, prReviewTag, prStatus, prTone, waitsOnGitHub } from "./branches.js";
@@ -48,6 +48,8 @@ export function syncDetailMode() {
   $(".app").classList.toggle("detail-beside", beside);
   setDetailModal(open && !beside);
   $("#scrim").hidden = !open || !desktop.matches || beside;
+  // Full screen on a phone it goes back; on a desktop it closes a pane.
+  $("#d-close").setAttribute("aria-label", desktop.matches ? "Close" : "Back");
   if (beside) requestAnimationFrame(showSelectedCard);
 }
 
@@ -113,11 +115,8 @@ $("#d-link").addEventListener("click", () => { if (state.detail) copy(taskLink(s
 $("#scrim").addEventListener("click", closeDetail);
 // Inline editing (desktop) and the phone's task form differ: redraw on crossing the breakpoint.
 desktop.addEventListener("change", () => { if (state.detail) { syncDetailMode(); renderDetail(); } });
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !state.detail || document.querySelector("dialog[open]")) return;
-  if (pv.todo && !desktop.matches) hidePreview(); // a phone's full-screen preview first
-  else closeDetail();
-});
+// Esc closes the panel in palette.js: not in a field (but the empty composer),
+// where it only leaves the field, nor while it cancels an IME composition.
 
 export async function loadDiff() {
   const id = state.detail;
@@ -236,7 +235,8 @@ export function renderDetail() {
 }
 
 export function renderActions(t) {
-  const post = (verb, body, msg) => attempt(async () => { await api("POST", `/api/todos/${t.id}/${verb}`, body); toast(msg); });
+  // Disabled while its request is in flight: a double click sends it once.
+  const post = (verb, body, msg) => attempt((e) => busy(e.currentTarget, async () => { await api("POST", `/api/todos/${t.id}/${verb}`, body); toast(msg); }));
   const b = (icon, label, onclick, cls = "") => ib({ class: `btn ${cls}`, onclick }, icon, label);
   const rework = attempt(() => reworkTodo(t));
   // On a desktop the task is edited in the pane itself (⋯ has the full form).
@@ -351,7 +351,7 @@ export const startNow = (t) => api("POST", `/api/todos/${t.id}/start-now`).then(
 // weekly pace (it is shown only then; ⋯ always has it).
 function startNowButton(t, post) {
   const why = `${state.usage?.pacing && state.usage.reason ? state.usage.reason : t.waiting || "The queue waits for the weekly pace"}. ${startNowHelp}`;
-  return ib({ class: "btn primary grow", title: why, onclick: attempt(() => startNow(t)) }, "play", "Start now");
+  return ib({ class: "btn primary grow", title: why, onclick: attempt((e) => busy(e.currentTarget, () => startNow(t))) }, "play", "Start now");
 }
 
 $("#d-more").addEventListener("click", attempt(async (e) => {

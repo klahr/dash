@@ -10,15 +10,15 @@
 // other modules' constants. In event handlers, anything may be used.
 
 import "./app/store.js";
-import { $ } from "./app/dom.js";
-import { desktop } from "./app/viewport.js";
+import "./app/dom.js";
+import "./app/viewport.js";
 import "./app/api.js";
 import { fail } from "./app/dialogs.js";
 import "./app/lightbox.js";
 import "./app/attachments.js";
 import "./app/autosave.js";
 import "./app/todoform.js";
-import { state } from "./app/state.js";
+import "./app/state.js";
 import "./app/nav.js";
 import { connectAll } from "./app/events.js";
 import "./app/github.js";
@@ -98,8 +98,6 @@ import "./app/routes.js";
 import "./app/router.js";
 
 // ------------------------------------------------------------------ boot
-desktop.addEventListener("change", () => { if (state.detail) $("#scrim").hidden = !desktop.matches; });
-
 renderBoard();
 setMode();
 setInterval(() => { if (!document.hidden) renderBoard(); }, 30000); // keep "4m"/"2h" current
