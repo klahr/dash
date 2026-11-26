@@ -450,7 +450,10 @@ export function openPreviews() {
 }
 
 async function stopAllPreviews() {
-  const prefixes = new Set([...state.previews.values()].map((p) => p.prefix));
+  const all = [...state.previews.values()];
+  const prefixes = new Set(all.map((p) => p.prefix));
+  const where = prefixes.size > 1 ? ` on ${prefixes.size} computers` : "";
+  if (!await ask({ title: `Stop all ${plural(all.length, "preview")}${where}?`, ok: "Stop all", danger: true })) return;
   let n = 0;
   for (const prefix of prefixes) n += (await api("DELETE", "/api/previews", null, prefix)).stopped || 0;
   hidePreview();

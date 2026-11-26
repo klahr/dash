@@ -83,7 +83,7 @@ export async function loadDeploys() {
   if (dp.open && !dp.list.some((d) => d.id === dp.open)) closeDeploy();
 }
 
-function resetDeploys() {
+export function resetDeploys() {
   closeDeploy();
   dp.project = state.project;
   dp.envs = [];
@@ -167,8 +167,29 @@ function envCard(e) {
     e.warning ? h("p", { class: "env-line hint warn" }, e.warning) : null);
 }
 
+// The cards are rebuilt only where their environment changed: a card that
+// keeps its node keeps its focus, and a button busy() disabled stays so.
+// A rebuilt card gets back the focus it had, by the focused control's place.
+const cardKey = (e) => JSON.stringify([e, dp.list.filter((d) => d.environment === e.name && d.status === "waiting_build")]);
 function renderEnvCards() {
-  $("#env-cards").replaceChildren(...dp.envs.map(envCard));
+  const list = $("#env-cards");
+  const had = document.activeElement?.closest?.("#env-cards li.env-card");
+  const at = had ? $$("button, a", had).indexOf(document.activeElement) : -1;
+  const old = new Map($$(":scope > li.env-card", list).map((li) => [li.dataset.env, li]));
+  dp.envs.forEach((e, i) => {
+    const key = cardKey(e);
+    let li = old.get(e.name);
+    if (!li || li.cardKey !== key) {
+      const fresh = envCard(e);
+      fresh.cardKey = key;
+      if (li) li.replaceWith(fresh);
+      li = fresh;
+      if (had && had.dataset.env === e.name && at >= 0) $$("button, a", li)[at]?.focus({ preventScroll: true });
+    }
+    old.delete(e.name);
+    if (list.children[i] !== li) list.insertBefore(li, list.children[i] || null);
+  });
+  for (const li of old.values()) li.remove();
 }
 
 const liveSince = (d) => (d.phases || []).find((ph) => ph.status === "live")?.at || d.finished_at || d.created_at;
@@ -205,7 +226,7 @@ function renderList() {
 // rollbackButton offers "Roll back to <commit>": a rollback of deploy of
 // (live, or deployed and failed) to the last good deploy before it.
 function rollbackButton(env, of, to) {
-  return ib({ type: "button", class: "btn small", title: `Deploy ${short(to.commit)}${to.subject ? ` (${to.subject})` : ""} to ${env} again, with DASH_ROLLBACK=1`,
+  return ib({ type: "button", class: "btn small", "data-act": "rollback", title: `Deploy ${short(to.commit)}${to.subject ? ` (${to.subject})` : ""} to ${env} again, with DASH_ROLLBACK=1`,
     onclick: attempt((ev) => busy(ev.currentTarget, () => rollBack(env, of, to))) }, "undo", `Roll back to ${short(to.commit)}`);
 }
 
@@ -554,14 +575,17 @@ async function promoteTo(from, to, live) {
 function approveButtons(d, pol) {
   if (d.status !== "awaiting_approval" || !pol?.can_approve) return [];
   return [
-    ib({ type: "button", class: "btn small primary", title: "Queue it: it runs when its turn comes", onclick: attempt((ev) => busy(ev.currentTarget, () => decide(d, true))) }, "check", "Approve"),
-    ib({ type: "button", class: "btn small danger", title: "Refuse it: it doesn't run", onclick: attempt((ev) => busy(ev.currentTarget, () => decide(d, false))) }, "x", "Reject"),
+    ib({ type: "button", class: "btn small primary", "data-act": "approve", title: "Queue it: it runs when its turn comes", onclick: attempt((ev) => busy(ev.currentTarget, () => decide(d, true))) }, "check", "Approve"),
+    ib({ type: "button", class: "btn small danger", "data-act": "reject", title: "Refuse it: it doesn't run", onclick: attempt((ev) => busy(ev.currentTarget, () => decide(d, false))) }, "x", "Reject"),
   ];
 }
 
 async function decide(d, approve) {
   let body = null;
-  if (!approve) {
+  if (approve) {
+    const what = commitLabel(d) || "the tip";
+    if (!await ask({ title: `Approve the deploy of ${what} to ${d.environment}?`, body: `${d.subject ? `“${d.subject}”, ` : ""}${startedBy(d) ? `started ${startedBy(d)}, ` : ""}is queued and deploys when its turn comes.`, ok: "Approve" })) return;
+  } else {
     const note = await ask({ title: `Reject the deploy to ${d.environment}?`, body: "It won't run. Say why, if you like:", input: true, placeholder: "e.g. wait for the release notes", ok: "Reject", danger: true });
     if (note == null) return;
     body = { note };
@@ -690,6 +714,7 @@ export function stepDeploy(n) {
   if (next && next !== dp.open) openDeploy(next).catch(fail);
 }
 
+let logShown = null; // the deploy whose log (not a placeholder) #dd-log shows
 function renderDeploy() {
   const d = dp.detail;
   if (!d || $("#deploy-detail").hidden) return;
@@ -729,9 +754,15 @@ function renderDeploy() {
   renderShipped(d);
   const log = $("#dd-log");
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
-  log.textContent = d.log || (d.status === "queued" ? "Waiting for its turn…" : d.status === "awaiting_approval" ? "Waiting for an approval…"
+  const text = d.log || (d.status === "queued" ? "Waiting for its turn…" : d.status === "awaiting_approval" ? "Waiting for an approval…"
     : d.status === "waiting_build" ? `Waiting for the release build of ${d.tag || "its tag"} to pass…`
     : ACTIVE.includes(d.status) ? "Starting…" : "No output.");
+  // A growing log gets only its new tail, so a selection in it stays.
+  const node = log.firstChild;
+  if (d.log && logShown === d.id && node?.nodeType === Node.TEXT_NODE && !log.childNodes[1] && d.log.startsWith(node.data)) {
+    if (d.log.length > node.data.length) node.appendData(d.log.slice(node.data.length));
+  } else if (log.textContent !== text) log.textContent = text;
+  logShown = d.log ? d.id : null;
   if (atEnd) log.scrollTop = log.scrollHeight;
   renderEta(d);
 }
@@ -786,24 +817,58 @@ function renderShipped(d) {
       : h("span", {}, h("span", { class: "scope-tag" }, "card"), " ", x.title || x.id))));
 }
 
+// The actions are rebuilt only when what they offer changes (not on each
+// poll of a running deploy): a focused button keeps its focus, and one
+// busy() disabled stays disabled. A rebuild focuses the same action again.
 function renderDeployActions(d) {
-  const btn = (icon, label, run, cls = "btn small", title = "") => ib({ type: "button", class: cls, title, onclick: attempt((e) => busy(e.currentTarget, run)) }, icon, label);
+  const btn = (act, icon, label, run, cls = "btn small", title = "") => ib({ type: "button", class: cls, title, "data-act": act, onclick: attempt((e) => busy(e.currentTarget, run)) }, icon, label);
   const running = ACTIVE.includes(d.status);
   const pol = dp.envs.find((e) => e.name === d.environment)?.policy;
-  fill($("#dd-actions"),
+  const el = $("#dd-actions");
+  const key = JSON.stringify([d.id, d.status, d.environment, d.commit, d.tag, d.rollback_target, pol?.can_approve, pol?.can_deploy, state.project?.id]);
+  if (el.actionsKey === key) return;
+  el.actionsKey = key;
+  const focused = el.contains(document.activeElement) ? document.activeElement.dataset.act : "";
+  fill(el,
     ...approveButtons(d, pol),
-    PENDING.includes(d.status) ? btn("x", "Cancel", () => stopDeploy(d), "btn small danger", "Take it off the queue") : null,
-    running ? btn("stop", "Stop", () => stopDeploy(d), "btn small danger", "Stop its script on the runner") : null,
+    PENDING.includes(d.status) ? btn("cancel", "x", "Cancel", () => stopDeploy(d), "btn small danger", "Take it off the queue") : null,
+    running ? btn("stop", "stop", "Stop", () => stopDeploy(d), "btn small danger", "Stop its script on the runner") : null,
     d.rollback_target ? rollbackButton(d.environment, d.id, d.rollback_target) : null,
-    !running && !PENDING.includes(d.status) && d.commit && pol?.can_deploy ? btn("redo", "Deploy again", () => deployTo(d.environment, d.commit, { tag: d.tag }), "btn small", `Deploy ${commitLabel(d)} to ${d.environment} again`) : null,
-    btn("link", "Copy link", () => copy(linkTo({ view: "deploys", deploy: d.id }, state.project), "Link copied"), "btn small", "Copy a link that opens this deploy"));
+    !running && !PENDING.includes(d.status) && d.commit && pol?.can_deploy ? btn("again", "redo", "Deploy again", () => deployAgain(d), "btn small", `Deploy ${commitLabel(d)} to ${d.environment} again`) : null,
+    btn("link", "link", "Copy link", () => copy(linkTo({ view: "deploys", deploy: d.id }, state.project), "Link copied"), "btn small", "Copy a link that opens this deploy"));
+  if (focused) $(`[data-act="${focused}"]`, el)?.focus({ preventScroll: true });
+}
+
+// deployAgain deploys d's commit to its environment again, once asked;
+// a commit that failed or was rolled back there is asked about plainly.
+async function deployAgain(d) {
+  const env = d.environment, what = commitLabel(d);
+  const live = dp.envs.find((e) => e.name === env)?.live;
+  const now = !live ? `Nothing is live on ${env} now.` : live.commit === d.commit ? `It is live on ${env} now.` : `It replaces ${commitLabel(live)}, live on ${env} now.`;
+  const subject = d.subject ? `“${d.subject}”. ` : "";
+  const bad = { failed: `${what} failed to deploy to ${env}`, rolled_back: `${what} was rolled back on ${env}` }[d.status];
+  const sure = bad
+    ? await ask({ title: `${bad}; deploy it again anyway?`, body: `${subject}${now}`, ok: "Deploy anyway", danger: true })
+    : await ask({ title: `Deploy ${what} to ${env} again?`, body: `${subject}${now}`, ok: "Deploy again", danger: true });
+  if (sure) await deployTo(env, d.commit, { tag: d.tag });
 }
 
 async function stopDeploy(d) {
   const queued = PENDING.includes(d.status);
-  if (!queued && !await ask({ title: `Stop the deploy to ${d.environment}?`, body: "Its script is stopped where it runs, part way through: the environment may be left half deployed.", ok: "Stop deploy", danger: true })) return;
+  const waiting = { awaiting_approval: "awaits an approval", waiting_build: "waits for its release build" }[d.status];
+  const what = commitLabel(d) || "the tip";
+  const sure = !queued
+    ? await ask({ title: `Stop the deploy to ${d.environment}?`, body: "Its script is stopped where it runs, part way through: the environment may be left half deployed.", ok: "Stop deploy", danger: true })
+    : waiting ? await ask({ title: `Cancel the deploy of ${what} to ${d.environment}?`, body: `It ${waiting}; cancelled, it doesn't run.`, ok: "Cancel deploy", danger: true })
+    : true;
+  if (!sure) return;
   await api("DELETE", `/api/deploys/${d.id}`, null, prefix());
   toast(queued ? "Deploy cancelled" : "Stopping the deploy");
+  if (dp.open === d.id) {
+    await loadDeploy(d.id);
+    if (dp.open === d.id && dp.detail?.id === d.id) mergeDeploy({ ...dp.detail, log: undefined });
+  }
+  loadEnvs().catch(() => {});
 }
 
 $("#deploy-settings").addEventListener("click", () => openDeploySettings());

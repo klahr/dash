@@ -33,6 +33,7 @@ import { loadProcs, loadTry, renderProcs, renderTryButton } from "./try.js";
 import { closeCommit, loadGraph, renderGraph } from "./history.js";
 import { loadFiles, renderFile, renderFileTree } from "./files.js";
 import { loadScans, resetScans } from "./scans.js";
+import { loadDeploys, resetDeploys } from "./deploys.js";
 import { gp, loadGoals, resetGoals, showGoal } from "./goals.js";
 import { planner } from "./planner.js";
 import { followProject } from "./planning.js";
@@ -117,6 +118,7 @@ export async function selectProject(p, { follow = true, restore = follow } = {})
   renderChatPane();
   resetScans();
   resetGoals();
+  resetDeploys(); // closes the old project's deploy pane; its Deploy…, Promote and Roll back act on dp.project
   loadTry().catch(() => {});
   // After the resets: a view shown here loads its own data for p (nav.js),
   // so History and Files aren't loaded twice below. (Goals are: a caller
@@ -129,7 +131,7 @@ export async function selectProject(p, { follow = true, restore = follow } = {})
   // Planning is the hub's: it follows a hub project, not a runner's.
   if (follow && p && !p.prefix) followProject(p.id);
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); return; }
-  await Promise.all([loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), shows("history") && loadGraph(), shows("files") && loadFiles(), loadScans().catch(() => {})]);
+  await Promise.all([loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), shows("history") && loadGraph(), shows("files") && loadFiles(), shows("deploys") && loadDeploys().catch(fail), loadScans().catch(() => {})]);
 }
 
 async function loadPerms() {
