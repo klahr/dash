@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -262,4 +263,50 @@ func TestWatchReleaseTwiceKeepsFirstPush(t *testing.T) {
 	if rel := w.Status(p.ID).Release; rel == nil || rel.SHA != "ddd" || !rel.Pushed.After(first.Pushed) {
 		t.Fatalf("moved tag: %+v, first pushed %v", rel, first.Pushed)
 	}
+}
+
+// A webhook delivery and a poll can arrive in either order: a run already
+// seen in a newer state (done, or changed later) is never taken back to an
+// older one, nor replaced by a lower run of its workflow.
+func TestMergeRunsKeepsNewer(t *testing.T) {
+	at := func(m int) time.Time { return time.Date(2026, 11, 25, 12, m, 0, 0, time.UTC) }
+	done := gitops.Run{ID: 31, Workflow: "Release", Status: "completed", Conclusion: "success", UpdatedAt: at(5)}
+	stale := gitops.Run{ID: 31, Workflow: "Release", Status: "in_progress", UpdatedAt: at(1)}
+	staleNoTime := gitops.Run{ID: 31, Workflow: "Release", Status: "in_progress"}
+	later := gitops.Run{ID: 31, Workflow: "Release", Status: "in_progress", UpdatedAt: at(3)}
+	earlier := gitops.Run{ID: 31, Workflow: "Release", Status: "in_progress", UpdatedAt: at(2)}
+	higher := gitops.Run{ID: 32, Workflow: "Release", Status: "in_progress", UpdatedAt: at(1)}
+	other := gitops.Run{ID: 40, Workflow: "Build", Status: "queued"}
+	for _, c := range []struct {
+		name        string
+		have, fresh []gitops.Run
+		merge, poll []gitops.Run // want from mergeRuns, keepNewer; nil: not asked
+	}{
+		{"completed stays over a stale in_progress", []gitops.Run{done}, []gitops.Run{stale}, []gitops.Run{done}, []gitops.Run{done}},
+		{"completed stays over an in_progress with no time", []gitops.Run{done}, []gitops.Run{staleNoTime}, []gitops.Run{done}, []gitops.Run{done}},
+		{"a newer completed replaces in_progress", []gitops.Run{stale}, []gitops.Run{done}, []gitops.Run{done}, []gitops.Run{done}},
+		{"a lower run doesn't replace a higher one", []gitops.Run{higher}, []gitops.Run{done}, []gitops.Run{higher}, nil},
+		{"a higher run replaces a lower one", []gitops.Run{done}, []gitops.Run{higher}, []gitops.Run{higher}, nil},
+		{"same run, fresh updated earlier: have kept", []gitops.Run{later}, []gitops.Run{earlier}, []gitops.Run{later}, []gitops.Run{later}},
+		{"same run, fresh updated later: fresh taken", []gitops.Run{earlier}, []gitops.Run{later}, []gitops.Run{later}, []gitops.Run{later}},
+		{"same run, same time: fresh taken", []gitops.Run{later}, []gitops.Run{later}, []gitops.Run{later}, []gitops.Run{later}},
+		{"another workflow is added", []gitops.Run{done}, []gitops.Run{other}, []gitops.Run{other, done}, []gitops.Run{other}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := mergeRuns(c.have, c.fresh); !sameRuns(got, c.merge) {
+				t.Errorf("mergeRuns: got %+v, want %+v", got, c.merge)
+			}
+			if c.poll != nil {
+				if got := keepNewer(c.have, slices.Clone(c.fresh)); !sameRuns(got, c.poll) {
+					t.Errorf("keepNewer: got %+v, want %+v", got, c.poll)
+				}
+			}
+		})
+	}
+}
+
+func sameRuns(a, b []gitops.Run) bool {
+	return slices.EqualFunc(a, b, func(x, y gitops.Run) bool {
+		return x.ID == y.ID && x.Status == y.Status && x.Conclusion == y.Conclusion && x.UpdatedAt.Equal(y.UpdatedAt)
+	})
 }

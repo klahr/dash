@@ -36,6 +36,8 @@ type fakeGH struct {
 	onPing func(id int64, secret string)
 	// sent are the secrets each project's runner was given (Create, Update).
 	sent map[string][]string
+	// listed, if set, is what Runs answers: a poll of the tag's runs.
+	listed []gitops.Run
 }
 
 func newFakeGH() *fakeGH {
@@ -43,7 +45,12 @@ func newFakeGH() *fakeGH {
 }
 
 func (f *fakeGH) Runs(context.Context, string, string, string, int) ([]gitops.Run, error) {
-	return nil, errors.New("not in this test")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.listed == nil {
+		return nil, errors.New("not in this test")
+	}
+	return append([]gitops.Run(nil), f.listed...), nil
 }
 func (f *fakeGH) PushRuns(context.Context, string, string, int) ([]gitops.Run, error) {
 	return nil, errors.New("not in this test")
@@ -281,6 +288,68 @@ func TestHookRunMovesRelease(t *testing.T) {
 				t.Fatalf("no release page: %+v", rel)
 			}
 		})
+	}
+}
+
+// A poll that answers after a delivery, with a list GitHub made before the
+// run moved on, doesn't take the run back: neither while the release still
+// builds nor once it is published.
+func TestStalePollAfterHookRun(t *testing.T) {
+	releaseEvery = time.Hour
+	w, h, gh, p, _ := newHookWatcher(t)
+	h.Check(context.Background())
+	secret := secretOf(t, h, "o/r")
+	w.WatchRelease(p.ID, "v1.0.0", "ccc")
+	deliver := func(id int64) {
+		t.Helper()
+		body := runPayload("o/r", id, "v1.0.0")
+		if err := h.Deliver(0, "workflow_run", sign(secret, body), body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tagged := func(id int64, workflow, status, conclusion string) gitops.Run {
+		return gitops.Run{ID: id, Workflow: workflow, Status: status, Conclusion: conclusion, SHA: "ccc", Branch: "v1.0.0", Event: "push"}
+	}
+	gh.runs[31] = tagged(31, "Release", "completed", "success")
+	gh.runs[32] = tagged(32, "Build", "in_progress", "")
+	deliver(32)
+	deliver(31)
+	if rel := w.Status(p.ID).Release; rel.State != ReleaseBuilding || len(rel.Runs) != 2 {
+		t.Fatalf("building: %+v", rel)
+	}
+	// The poll lists 31 as it was before it finished.
+	gh.listed = []gitops.Run{tagged(31, "Release", "in_progress", ""), tagged(32, "Build", "in_progress", "")}
+	if _, err := w.Refresh(context.Background(), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	rel := w.Status(p.ID).Release
+	if rel.State != ReleaseBuilding || len(rel.Runs) != 2 {
+		t.Fatalf("after a stale poll: %+v", rel)
+	}
+	for _, r := range rel.Runs {
+		if r.ID == 31 && (r.Status != "completed" || r.Conclusion != "success") {
+			t.Fatalf("run 31 went back: %+v", r)
+		}
+	}
+	// 32 finishes: published. A stale poll again leaves it so.
+	gh.runs[32] = tagged(32, "Build", "completed", "success")
+	deliver(32)
+	if rel := w.Status(p.ID).Release; rel.State != ReleasePublished {
+		t.Fatalf("want published: %+v", rel)
+	}
+	before, err := w.Store.ReleaseBuild(p.ID, "v1.0.0")
+	if err != nil || before.State != ReleasePublished {
+		t.Fatalf("saved: %+v %v", before, err)
+	}
+	if _, err := w.Refresh(context.Background(), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if rel := w.Status(p.ID).Release; rel.State != ReleasePublished {
+		t.Fatalf("a stale poll moved a published release: %+v", rel)
+	}
+	after, err := w.Store.ReleaseBuild(p.ID, "v1.0.0")
+	if err != nil || after.State != ReleasePublished || !sameRuns(after.Runs, before.Runs) {
+		t.Fatalf("saved changed: %+v, was %+v (%v)", after, before, err)
 	}
 }
 
