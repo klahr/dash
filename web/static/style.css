@@ -2661,8 +2661,11 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-collapsed .foot-dot { left: 28px; }
 
   html { scroll-padding: 0; }
-  main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
-  .view.active { flex: 1; min-height: 0; overflow-y: auto; }
+  /* main and the view scroll on their own, so they hold what is positioned in them (.sr-only
+     text, a row's parts): placed against the page instead, a long History made the whole
+     app scroll, past the end of the graph. */
+  main { grid-area: main; position: relative; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+  .view.active { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
   #view-run.active { height: auto; }
   #view-files.active { height: auto; overflow: hidden; }
   .files { flex-direction: row; }
