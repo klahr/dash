@@ -1,4 +1,5 @@
-import { $, $$, avatar, dateText, dateTimeText, fill, h, ib, ico } from "./dom.js";
+import { $, $$, avatarURL, dateText, dateTimeText, fill, h, ib, ico, nameHue } from "./dom.js";
+import { previewText } from "../markdown.js";
 import { api } from "./api.js";
 import { EASE, ask, attempt, busy, copy, fail, openSheet, reduceMotion, toast } from "./dialogs.js";
 import { detailPane } from "./detailpane.js";
@@ -24,7 +25,7 @@ import { dictation } from "./dictation.js";
 // One module for both places Planning shows: the app's Planning view
 // (members, admins, owners; index.html) and planning.html, the page a
 // planner lands on. It uses only dom, api, dialogs, store, viewport, glide,
-// attachments, lightbox and dictation,
+// attachments, lightbox, dictation and markdown,
 // which load outside the app too, and builds its own markup in the root
 // it is mounted on. Planning is the hub's (api prefix "").
 
@@ -502,13 +503,13 @@ function pickMine(on) {
 // renderTagFilter shows the filters picked, each with × to take it off;
 // Mine; and a list of the tags and targets to filter by.
 function renderTagFilter() {
-  const chip = (cls, icon, name, label, off) => h("span", { class: `pl-chip ${cls} pl-tag-on` }, ico(icon), h("span", { class: "pl-tag-name" }, name),
-    ib({ type: "button", class: "icon-btn small", "aria-label": label, title: "Take this filter off", onclick: off }, "x"));
+  const off = (label, run) => ib({ type: "button", class: "icon-btn small", "aria-label": label, title: label, onclick: run }, "x");
   const el = $("#pl-tag-filter");
   el.hidden = !pl.tags.length && !pl.target;
   fill(el,
-    ...pl.tags.map((t) => chip("pl-tag", "tag", t, `Show the cards not tagged ${t} too`, () => pickTag(t, false))),
-    pl.target ? chip("pl-tag pl-target-on", "flag", pl.target, `Show the cards of any target, not only ${pl.target}`, () => pickTarget("")) : null);
+    ...pl.tags.map((t) => tagChip(t, "span", { class: "pl-tag-on" }, ico("tag"), h("span", { class: "pl-tag-name" }, t), off(`Remove the filter ${t}`, () => pickTag(t, false)))),
+    pl.target ? h("span", { class: "pl-chip pl-tag pl-target-on pl-tag-on" }, ico("flag"), h("span", { class: "pl-tag-name" }, pl.target),
+      off(`Remove the filter ${pl.target}`, () => pickTarget(""))) : null);
   const mine = $("#pl-mine");
   mine.hidden = !meId();
   mine.setAttribute("aria-pressed", String(pl.mine));
@@ -569,18 +570,39 @@ function statusEl(st, cls = "pl-status") {
 // MEMBER_FACES is how many members' faces a card shows; more are a count.
 const MEMBER_FACES = 3;
 
+// initials are a name's two letters: the first of its first two words
+// ("ana.berg": AB), or its first two ("admin": AD, "ana": AN).
+export function initials(name) {
+  const words = (name || "").split(/[\s._@-]+/).filter(Boolean);
+  const chars = words.length > 1 ? [[...words[0]][0], [...words[1]][0]] : [...(words[0] || "?")].slice(0, 2);
+  return chars.join("").toUpperCase();
+}
+
+// face is u's picture, or their initials on a colour of their own (from
+// their id, the same everywhere), in a circle; cls adds classes.
+function face(u, cls = "") {
+  const el = h("span", { class: `avatar pl-face${cls ? ` ${cls}` : ""}`, "aria-hidden": "true", title: u.username, style: `--face-h: ${nameHue(String(u.id))}` });
+  const letters = () => { el.classList.add("pl-initials"); el.replaceChildren(initials(u.username)); };
+  const url = avatarURL(u);
+  if (!url) { letters(); return el; }
+  const img = h("img", { src: url, alt: "", decoding: "async", draggable: false });
+  img.addEventListener("error", letters, { once: true });
+  el.replaceChildren(img);
+  return el;
+}
+
 // membersEl is the card's members' faces, overlapping, with their names for
-// a tooltip and a screen reader.
-// The owner comes first, ringed.
+// a screen reader. The owner comes first, ringed.
 function membersEl(c) {
   const owner = (c.people || []).find((p) => p.id === c.owner);
   const ps = owner ? [owner, ...c.people.filter((p) => p !== owner)] : c.people || [];
   if (!ps.length) return null;
   const names = (owner ? `Owner: ${owner.username}. ` : "") + `Members: ${ps.map((p) => p.username).join(", ")}`;
   const more = ps.length - MEMBER_FACES;
-  return h("span", { class: "pl-members", title: names },
-    ...ps.slice(0, more > 0 ? MEMBER_FACES - 1 : MEMBER_FACES).map((p) => avatar(p, p === owner ? "pl-owner-face" : "")),
-    more > 0 ? h("span", { class: "avatar pl-more", "aria-hidden": "true" }, `+${more + 1}`) : null,
+  const faces = more > 0 ? MEMBER_FACES - 1 : MEMBER_FACES;
+  return h("span", { class: "pl-members" },
+    ...ps.slice(0, faces).map((p) => face(p, p === owner ? "pl-owner-face" : "")),
+    more > 0 ? h("span", { class: "avatar pl-more", "aria-hidden": "true", title: ps.slice(faces).map((p) => p.username).join(", ") }, `+${more + 1}`) : null,
     h("span", { class: "sr-only" }, names));
 }
 
@@ -592,13 +614,20 @@ function waitsEl(c) {
     h("span", { class: "sr-only" }, `: ${titles}`));
 }
 
+// tagChip is a tag t as an element tag (props and kids added), in the
+// tag's own colour, as the task board's tags are (style.css: .hued).
+function tagChip(t, tag, props, ...kids) {
+  return h(tag, { ...props, class: `pl-chip pl-tag hued${props.class ? ` ${props.class}` : ""}`, style: `--tag-h: ${nameHue(t.toLowerCase())}` }, ...kids);
+}
+
 function cardEl(c) {
   const meta = [
-    // Each chip names what it is (data-kind: Priority, Target, Tag) on a desktop, not only by its colour.
-    c.priority ? h("span", { class: `pl-chip p-${c.priority}`, title: "Priority", "data-kind": "Priority" }, PRIORITY[c.priority]) : null,
+    // Each kind of chip has a look of its own (style.css): a priority is a
+    // square label, a target has a flag, a tag is a pill in its own colour.
+    c.priority ? h("span", { class: `pl-chip pl-prio p-${c.priority}`, "aria-label": `Priority: ${PRIORITY[c.priority]}` }, PRIORITY[c.priority]) : null,
     waitsEl(c),
-    c.target ? h("span", { class: "pl-chip pl-target", title: "Target", "data-kind": "Target" }, ico("flag"), c.target) : null,
-    ...(c.tags || []).map((t) => h("span", { class: "pl-chip pl-tag", title: "Tag", "data-kind": "Tag" }, t)),
+    c.target ? h("span", { class: "pl-chip pl-target", "aria-label": `Target: ${c.target}` }, ico("flag"), c.target) : null,
+    ...(c.tags || []).map((t) => tagChip(t, "span", { "aria-label": `Tag: ${t}` }, t)),
     !pl.filter && c.project_name ? h("span", { class: "pl-project" }, c.project_name) : null,
     c.comments ? h("span", { class: "pl-comments", title: `${c.comments} comment${c.comments === 1 ? "" : "s"}` }, ico("comment"), String(c.comments)) : null,
     c.files?.length ? h("span", { class: "pl-comments pl-file-count", title: `${c.files.length} file${c.files.length === 1 ? "" : "s"}` }, clip(), String(c.files.length)) : null,
@@ -606,7 +635,7 @@ function cardEl(c) {
   ].filter(Boolean);
   if (c.status?.suggest_done) meta.push(h("span", { class: "pl-suggest" }, "Ready for Done"));
   // Under the title: the status of the linked work, or else the start of the description.
-  const about = (c.description || "").replace(/[#*_`>]+/g, "").replace(/\s+/g, " ").trim();
+  const about = previewText(c.description);
   const sub = c.status?.total || c.status?.removed ? h("span", { class: "todo-sub" }, statusEl(c.status))
     : about ? h("span", { class: "todo-sub" }, about) : null;
   // A bordered card (style.css: .pl-card), built from the task board's
@@ -621,7 +650,7 @@ function cardEl(c) {
       cover ? h("img", { class: "pl-cover", src: fileURL(c, cover), alt: "", loading: "lazy", draggable: false }) : null,
       h("span", { class: "todo-main" },
         h("button", { type: "button", class: "todo-open pl-open", "aria-controls": "card-detail", "aria-current": c.id === pl.open ? "true" : null,
-          title: "Open (Alt+arrows move it; Space over it adds or takes you off it)", onkeydown: (e) => cardKeys(e, c) },
+          onkeydown: (e) => cardKeys(e, c) },
           h("span", { class: "todo-title" }, c.title)),
         sub),
       meta.length ? h("span", { class: "todo-side" }, ...meta) : null));
@@ -1253,9 +1282,10 @@ function field(label, control) {
   return h("label", { class: "field pl-field" }, h("span", {}, label), control);
 }
 
-// membersField is the card's members, each with × to take them off and
-// Owner to make them the one who owns it (or no longer), and a list of the
-// org's other members to add one.
+// membersField is the card's members, each with × to take them off, the
+// owner marked Owner, and (for who may change the owner) a star on each:
+// filled on the owner, a click makes them the owner (on the owner: none).
+// A list of the org's other members adds one.
 function membersField(c) {
   const ids = c.members || [];
   const set = (members) => patchCard({ members })().catch(fail);
@@ -1266,10 +1296,13 @@ function membersField(c) {
   return h("div", { class: "field pl-field pl-members-field", role: "group", "aria-labelledby": "pd-members" },
     h("span", { id: "pd-members" }, "Members"),
     h("div", { class: "pl-member-list" },
-      ...(c.people || []).map((p) => h("span", { class: `pl-member${p.id === c.owner ? " pl-owner" : ""}` }, avatar(p), h("span", { class: "pl-member-name" }, p.username),
-        h("button", { type: "button", class: "pl-owner-btn", "aria-pressed": String(p.id === c.owner), disabled: !mayOwn,
-          title: !mayOwn ? "Only the card's creator, its owner or an admin can change its owner" : p.id === c.owner ? `${p.username} owns the card: click for no owner` : `Make ${p.username} the card's owner`,
-          onclick: () => patchCard({ owner: p.id === c.owner ? 0 : p.id })().catch(fail) }, "Owner"),
+      ...(c.people || []).map((p) => h("span", { class: `pl-member${p.id === c.owner ? " pl-owner" : ""}` },
+        face(p, p.id === c.owner ? "pl-owner-face" : ""), h("span", { class: "pl-member-name" }, p.username),
+        p.id === c.owner ? h("span", { class: "pl-owner-badge" }, "Owner") : null,
+        mayOwn ? ib({ type: "button", class: "icon-btn small pl-owner-btn", "aria-pressed": String(p.id === c.owner),
+          "aria-label": `Owner: ${p.username}`,
+          title: p.id === c.owner ? "No owner" : "Make owner",
+          onclick: () => patchCard({ owner: p.id === c.owner ? 0 : p.id })().catch(fail) }, "star") : null,
         ib({ type: "button", class: "icon-btn small", "aria-label": `Take ${p.username} off the card`, title: "Take off the card",
           disabled: p.id === c.owner && !mayOwn,
           onclick: () => set(ids.filter((id) => id !== p.id)) }, "x"))),
@@ -1299,9 +1332,9 @@ function tagsField(c) {
   return h("div", { class: "field pl-field pl-tags-field", role: "group", "aria-labelledby": "pd-tags" },
     h("span", { id: "pd-tags" }, "Tags"),
     h("div", { class: "pl-member-list pl-tag-list" },
-      ...tags.map((t) => h("span", { class: `pl-chip pl-tag${tagPicked(t) ? " pl-tag-on" : ""}` },
+      ...tags.map((t) => tagChip(t, "span", { class: tagPicked(t) ? "pl-tag-on" : "" },
         h("button", { type: "button", class: "pl-tag-name", "aria-pressed": String(tagPicked(t)),
-          title: tagPicked(t) ? `Show the cards not tagged ${t} too` : `Show only the cards tagged ${t}`, onclick: () => pickTag(t, !tagPicked(t)) }, t),
+          "aria-label": `Filter by ${t}`, onclick: () => pickTag(t, !tagPicked(t)) }, t),
         ib({ type: "button", class: "icon-btn small", "aria-label": `Remove the tag ${t}`, title: "Remove", onclick: () => set(tags.filter((x) => x !== t)) }, "x"))),
       tags.length < 20 ? input : null));
 }
@@ -1580,11 +1613,13 @@ function sheet(title, kids, ok, icon = "check") {
   return closed.then((v) => (v === "ok" ? new FormData(form) : null));
 }
 
-// startSheet asks for the project and whether to make a task or a goal,
-// then starts it: the card's title and description are what to do. A
-// planner's goal also needs its owner, a developer: its coordinator runs as
-// them and they accept its plan (the card's first developer is suggested).
-// A planner's task runs for a developer too (Runs for), on their runners.
+// startSheet asks for the project, whether to make a task or a goal, and
+// its text (the card's title and description to begin with), then starts
+// it: a member's task as a draft or queued, as they pick. A planner's goal
+// also needs its owner, a developer: its coordinator runs as them and they
+// accept its plan (the card's first developer is suggested). A planner's
+// task runs for a developer too (Runs for), on their runners, as a draft
+// they queue.
 async function startSheet(c) {
   if (!pl.projects.length) await loadPlanning();
   if (!pl.projects.length) throw new Error("There are no projects to start work in yet. Planning starts work in shared projects only, not in a runner's own project. Ask a developer to add a shared one with + Add project, from GitHub or a URL.");
@@ -1597,52 +1632,55 @@ async function startSheet(c) {
   const devs = pl.people.filter((u) => !u.planner);
   const onCard = (c.people || []).map((p) => p.id);
   const suggested = devs.find((u) => onCard.includes(u.id));
-  const owner = pl.planner ? h("label", { class: "field", hidden: true }, h("span", {}, "Owner"),
-    h("select", { name: "owner" },
-      h("option", { value: "", selected: !suggested }, devs.length ? "Choose a developer" : "No developers in the organization"),
-      ...devs.map((u) => h("option", { value: String(u.id), selected: u === suggested }, u.username))),
-    h("small", { class: "hint" }, "The goal is theirs: it starts paused, and its coordinator runs on their runner once they resume it.")) : null;
-  // A planner has no runner: their task runs for a developer, on that
-  // developer's runners (the card's first developer by default). It waits
-  // as a draft until that developer queues it.
+  const devOptions = (selected) => [
+    h("option", { value: "", selected: !selected }, devs.length ? "Choose a developer" : "No developers in the organization"),
+    ...devs.map((u) => h("option", { value: String(u.id), selected: u === selected }, u.username))];
+  const owner = pl.planner ? h("label", { class: "field", hidden: true }, h("span", {}, "Owner"), h("select", { name: "owner" }, ...devOptions(suggested))) : null;
   const runFor = pl.planner ? h("label", { class: "field" }, h("span", {}, "Runs for"),
-    h("select", { name: "run_by", required: true },
-      h("option", { value: "", selected: !devs.length }, devs.length ? "Choose a developer" : "No developers in the organization"),
-      ...devs.map((u) => h("option", { value: String(u.id), selected: u === (suggested || devs[0]) }, u.username))),
-    h("small", { class: "hint" }, "The task waits as a draft until they queue it. They are told.")) : null;
+    h("select", { name: "run_by", required: true }, ...devOptions(suggested || devs[0]))) : null;
+  // The text: a task's prompt is the title and the description; a goal's
+  // description is the card's. Switching kinds swaps it, unless edited.
+  const texts = { task: c.title + (c.description ? `\n\n${c.description}` : ""), goal: c.description || c.title };
+  const text = h("textarea", { name: "prompt", class: "pl-start-text", rows: 8, maxlength: 20000, required: true, id: "pl-start-text" }, texts.task);
+  const textLabel = h("label", { for: "pl-start-text" }, "Prompt");
+  const draftBtn = ib({ class: "btn primary", value: "draft" }, "draft", "Create draft");
+  const queueBtn = pl.planner ? null : ib({ class: "btn", value: "queue" }, "queue", "Queue task");
+  const goalBtn = ib({ class: "btn primary", value: "goal", hidden: true }, "target", pl.planner ? "Create goal" : "Start goal");
   const kindChanged = (e) => {
+    const kind = e.target.value, goal = kind === "goal";
+    if (text.value === texts[goal ? "task" : "goal"]) text.value = texts[kind];
+    textLabel.textContent = goal ? "Description" : "Prompt";
+    draftBtn.hidden = goal;
+    if (queueBtn) queueBtn.hidden = goal;
+    goalBtn.hidden = !goal;
     if (!owner) return;
-    const goal = e.target.value === "goal";
     owner.hidden = !goal;
     owner.querySelector("select").required = goal;
     runFor.hidden = goal;
     runFor.querySelector("select").required = !goal;
   };
-  const data = await sheet("Start this card", [
-    h("p", { class: "hint" }, pl.planner
-      ? "Dash makes the work from the card's title and description and links it to the card. It waits for the developer you choose: the card moves to In progress once they start it."
-      : "Dash makes the work from the card's title and description, links it to the card and moves the card to In progress."),
-    open.length ? h("p", { class: "hint warn" }, ico("alert"),
-      ` This card already has ${open.length} ${noun} in progress. Start makes another one.`) : null,
+  const { form, closed } = openSheet({ title: "Start this card", cls: "pl-sheet pl-start-sheet", body: [
+    open.length ? h("p", { class: "hint warn" }, ico("alert"), ` Already ${open.length} ${noun} in progress.`) : null,
     waits.length ? h("p", { class: "hint warn" }, ico("lock"), ` Waits for: ${waits.join(", ")} (not done).`) : null,
     h("label", { class: "field" }, h("span", {}, "Project"),
       h("select", { name: "project", required: true },
         ...pl.projects.map((p) => h("option", { value: p.id, selected: p.id === (c.project_id || pl.filter) }, p.name)))),
     runFor,
-    h("fieldset", { class: "field choice" },
+    h("fieldset", { class: "field choice pl-start-kind" },
       h("legend", {}, "Make"),
-      h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "task", checked: true, onchange: kindChanged }),
-        h("span", {}, "A task ", h("em", {}, pl.planner ? "one piece of work, for a developer to queue" : "one piece of work, queued for Claude now"))),
-      h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "goal", onchange: kindChanged }),
-        h("span", {}, "A goal ", h("em", {}, "something bigger: a coordinator breaks it into tasks")))),
+      h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "task", checked: true, onchange: kindChanged }), h("span", {}, "Task")),
+      h("label", { class: "radio" }, h("input", { type: "radio", name: "kind", value: "goal", onchange: kindChanged }), h("span", {}, "Goal"))),
     owner,
-  ], "Start", "play");
-  if (!data) return;
-  const body = { project: data.get("project"), kind: data.get("kind") };
+    h("div", { class: "field" }, textLabel, text),
+  ], footer: [queueBtn, draftBtn, goalBtn] });
+  const how = await closed;
+  if (!["draft", "queue", "goal"].includes(how)) return;
+  const data = new FormData(form);
+  const body = { project: data.get("project"), kind: data.get("kind"), prompt: data.get("prompt"), draft: how === "draft" };
   if (body.kind === "goal" && data.get("owner")) body.owner = Number(data.get("owner"));
   if (body.kind !== "goal" && data.get("run_by")) body.run_by = Number(data.get("run_by"));
   const v = await call("POST", cardAPI(c.id, "/start"), body);
-  toast(data.get("kind") === "goal" ? "Goal started and linked" : "Task queued and linked", { tone: "ok" });
+  toast(body.kind === "goal" ? "Goal started and linked" : how === "queue" ? "Task queued and linked" : "Draft created and linked", { tone: "ok" });
   if (pl.open === c.id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }
   await loadPlanning();
 }

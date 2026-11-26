@@ -830,7 +830,7 @@ func (s *Server) launchFeature(w http.ResponseWriter, r *http.Request) {
 	if req.Start == string(model.CardPlanned) {
 		err = sv.planCard(cardID)
 	} else {
-		work, err = startFeatureWork(sv, cardID, p.ProjectID, req.Start, 0, 0)
+		work, err = startFeatureWork(sv, cardID, p.ProjectID, req.Start, startOpts{})
 	}
 	if err != nil && work == "" {
 		// The card has the brief: the plan stays a draft, to start it again.

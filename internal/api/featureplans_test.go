@@ -287,7 +287,7 @@ func TestFeaturePlanLaunchFailsAfterTheCard(t *testing.T) {
 	}
 	start := startFeatureWork
 	t.Cleanup(func() { startFeatureWork = start })
-	startFeatureWork = func(*service, string, string, string, int64, int64) (string, error) {
+	startFeatureWork = func(*service, string, string, string, startOpts) (string, error) {
 		return "", fmt.Errorf("%w: no task today", errBadRequest)
 	}
 

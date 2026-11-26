@@ -17,7 +17,8 @@ func TestBrowserPlanningBoard(t *testing.T) {
 	chrome := needChrome(t)
 	h := startRunnerHub(t)
 	var c struct{ ID string }
-	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Export reports as PDF", "column": "planned", "description": "So **finance** can file them."}, http.StatusCreated, &c)
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Export reports as PDF", "column": "planned", "description": "## Why\nSo **finance** can file them.",
+		"priority": "high", "target": "1.4", "tags": []string{"reports"}}, http.StatusCreated, &c)
 	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Dark mode", "column": "ideas"}, http.StatusCreated, nil)
 	for _, name := range []string{"shop", "wiki"} {
 		h.api.must("POST", "/api/projects", map[string]any{"name": name, "remote_url": "https://example.com/" + name + ".git", "runs_on": []string{"any"}}, http.StatusCreated, nil)
@@ -29,6 +30,13 @@ func TestBrowserPlanningBoard(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
 	b.waitJS("four columns side by side", `[...document.querySelectorAll("#view-planning .board .col")].filter((c) => c.offsetWidth).length === 4`)
 	b.waitJS("the cards as bordered cards", fmt.Sprintf(`document.querySelector('#view-planning .col[data-col=planned] .pl-cards .pl-card[data-id=%q] .todo .todo-title')?.textContent === "Export reports as PDF"`, c.ID))
+	// Its chips say only their values, each kind in a look of its own; the
+	// preview is the description's first sentence, without its heading.
+	b.waitJS("chips without kind words", fmt.Sprintf(`(() => { const card = document.querySelector('#view-planning .pl-card[data-id=%q]');
+		const prio = card.querySelector(".pl-prio"), target = card.querySelector(".pl-target"), tag = card.querySelector(".pl-tag");
+		return prio?.textContent === "High" && target?.textContent === "1.4" && !!target.querySelector(".ico") && tag?.textContent === "reports" && tag.classList.contains("hued") &&
+			[prio, target, tag].every((x) => getComputedStyle(x, "::before").content === "none") &&
+			card.querySelector(".todo-sub")?.textContent === "So finance can file them."; })()`, c.ID))
 	b.waitJS("no rail line and no node", `!document.querySelector("#view-planning .rail, #view-planning .pl-card .node") && getComputedStyle(document.querySelector("#view-planning .pl-card .todo")).borderTopStyle === "solid"`)
 	b.waitJS("Add card at the bottom of each column", `[...document.querySelectorAll("#view-planning .col")].every((c) => c.querySelector(".col-body").lastElementChild.matches(".pl-add"))`)
 
@@ -199,17 +207,25 @@ func TestBrowserPlanningCardPane(t *testing.T) {
 		s.value = [...s.options].find((o) => o.textContent === "ana").value;
 		s.dispatchEvent(new Event("change", { bubbles: true }));
 		true`)
-	b.waitJS("ana on the card and in the pane", fmt.Sprintf(`document.querySelector(".pl-member .pl-member-name")?.textContent === "ana" &&
-		document.querySelector(%q)?.title === "Members: ana"`, card+" .pl-members"))
+	b.waitJS("ana on the card, her initials in a circle, and in the pane", fmt.Sprintf(`document.querySelector(".pl-member .pl-member-name")?.textContent === "ana" &&
+		document.querySelector(%q)?.textContent === "AN" && document.querySelector(%q)?.title === "ana" &&
+		getComputedStyle(document.querySelector(%q)).borderRadius === "50%%" &&
+		document.querySelector(%q)?.textContent === "Members: ana"`, card+" .pl-members .avatar", card+" .pl-members .avatar", card+" .pl-members .avatar", card+" .pl-members .sr-only"))
+	b.waitJS("no one owns it: no Owner badge, and ana's star is off", `!document.querySelector(".pl-owner-badge") &&
+		document.querySelector(".pl-member .pl-owner-btn")?.getAttribute("aria-pressed") === "false"`)
+	b.until("make ana the owner", fmt.Sprintf(`document.querySelector(".pl-member.pl-owner .pl-owner-badge")?.textContent === "Owner" &&
+		document.querySelector(".pl-member .pl-owner-btn")?.getAttribute("aria-pressed") === "true" &&
+		!!document.querySelector(%q)`, card+" .pl-members .avatar.pl-owner-face"),
+		chromedp.Click(chromedp.CSS(`.pl-member .pl-owner-btn`)))
 	b.run("write a description", `const d = document.querySelector("#pd-desc");
 		d.focus();
-		d.value = "So finance can file them.";
+		d.value = "## Why\nSo **finance** can file them.";
 		d.blur();
 		d.dispatchEvent(new Event("change", { bubbles: true }));
 		true`)
 	b.waitJS("saved: the card shows it", fmt.Sprintf(`document.querySelector(%q)?.textContent === "So finance can file them."`, card+" .todo-sub"))
 	b.until("take ana off", `!document.querySelector(".pl-member") && !document.querySelector(".pl-members")`,
-		chromedp.Click(chromedp.CSS(`.pl-member .icon-btn`)))
+		chromedp.Click(chromedp.CSS(`.pl-member [aria-label="Take ana off the card"]`)))
 }
 
 // Ask in chat on a card opens the chat about it: a card of no project in the
@@ -420,4 +436,53 @@ func TestBrowserPlanningBoards(t *testing.T) {
 
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the boards across the top, above the lanes", `(() => { const s = document.querySelector("#pl-boards"), l = document.querySelector("#view-planning .pl-lanes"); return s.offsetWidth > 0 && s.getBoundingClientRect().bottom <= l.getBoundingClientRect().top + 1 && s.scrollWidth >= s.clientWidth; })()`)
+}
+
+// Start shows the text the work starts with, editable, and says what each
+// button does: a member makes a draft (the card stays where it is) or
+// queues the task.
+func TestBrowserPlanningStart(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	var p struct{ ID string }
+	h.api.must("POST", "/api/projects", map[string]any{"name": "shop", "remote_url": "https://example.com/shop.git", "runs_on": []string{"any"}}, http.StatusCreated, &p)
+	var c struct{ ID string }
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Export reports as PDF", "column": "ideas", "project": p.ID, "description": "So finance can file them."}, http.StatusCreated, &c)
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open Planning", `document.querySelector("#view-planning.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
+	b.until("open the card", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-desc")`,
+		chromedp.Click(chromedp.CSS(fmt.Sprintf(`#view-planning .pl-card[data-id=%q] .pl-open`, c.ID))))
+	b.clickTextUntil(`#pd-actions button`, "Start…", `document.querySelector("dialog.pl-start-sheet")?.open`)
+	b.waitJS("the prompt, from the card, and no explanations", `(() => { const d = document.querySelector("dialog.pl-start-sheet");
+		return d.querySelector(".pl-start-text").value === "Export reports as PDF\n\nSo finance can file them." &&
+			!d.querySelector("p.hint:not(.warn), em, small") &&
+			[...d.querySelectorAll(".radio span")].map((x) => x.textContent).join() === "Task,Goal" &&
+			[...d.querySelectorAll(".sheet-actions button")].filter((x) => !x.hidden).map((x) => x.textContent).join() === "Queue task,Create draft"; })()`)
+	b.waitJS("a goal's button", `(() => { const d = document.querySelector("dialog.pl-start-sheet");
+		d.querySelector("input[value=goal]").click();
+		const ok = [...d.querySelectorAll(".sheet-actions button")].filter((x) => !x.hidden).map((x) => x.textContent).join() === "Start goal" &&
+			d.querySelector(".pl-start-text").value === "So finance can file them.";
+		d.querySelector("input[value=task]").click();
+		return ok; })()`)
+	b.run("edit the prompt", `document.querySelector(".pl-start-text").value = "Export the monthly reports as PDF."; true`)
+	b.until("Create draft", `!document.querySelector("dialog.pl-start-sheet") && document.querySelector("#pd-body .pl-link")`,
+		chromedp.Click(chromedp.CSS(`dialog.pl-start-sheet button[value=draft]`)))
+
+	var v struct {
+		Column string
+		Links  []struct{ ID string }
+	}
+	h.api.must("GET", "/api/planning/cards/"+c.ID, nil, http.StatusOK, &v)
+	if v.Column != "ideas" || len(v.Links) != 1 {
+		t.Fatalf("the card: %+v", v)
+	}
+	var td struct{ Status, Prompt string }
+	h.api.must("GET", "/api/todos/"+v.Links[0].ID, nil, http.StatusOK, &td)
+	if td.Status != "draft" || td.Prompt != "Export the monthly reports as PDF." {
+		t.Fatalf("the task: %+v", td)
+	}
 }

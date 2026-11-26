@@ -2,7 +2,7 @@
 // Run with `node --test web/`; groups_test.go runs them as part of `go test ./...`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { plainText, renderMarkdown } from "./static/markdown.js";
+import { plainText, previewText, renderMarkdown } from "./static/markdown.js";
 
 const fence = (lang, body) => "```" + lang + "\n" + body + "\n```";
 const srcOf = (html) => decodeURIComponent(html.match(/<img src="data:image\/svg\+xml;charset=utf-8,([^"]*)"/)[1].replace(/&#39;/g, "'").replace(/&amp;/g, "&"));
@@ -93,4 +93,14 @@ test("plainText strips Markdown for a card's preview", () => {
   assert.equal(plainText("| a | b |\n|---|---|\n| 1 | 2 |"), "a b 1 2");
   assert.equal(plainText("~~old~~ ***both*** __strong__\n\n---\n\nend"), "old both strong end");
   assert.equal(plainText(""), "");
+});
+
+test("previewText reads a planning card's prose, without its headings", () => {
+  assert.equal(previewText("## Why\nSo **finance** can close the month.\n\n## What\n- PDF export\n- *one* click"),
+    "So finance can close the month.");
+  assert.equal(previewText("- PDF export\n- *one* click\n\nMore later."), "PDF export one click");
+  assert.equal(previewText("First line\nsecond line\n\nNext paragraph"), "First line second line");
+  assert.equal(previewText("# Only a heading"), "Only a heading");
+  assert.equal(previewText("#hashtag is not a heading"), "#hashtag is not a heading");
+  assert.equal(previewText(""), "");
 });

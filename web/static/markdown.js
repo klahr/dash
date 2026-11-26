@@ -159,3 +159,15 @@ export function plainText(md) {
     .replace(/(^|[^\w_])_(?=\S)([^_\n]*?\S)_(?!\w)/g, "$1$2") // _em_, not snake_case
     .replace(/\s+/g, " ").trim();
 }
+
+// previewText is Markdown as the plain text of its first paragraph, for a
+// planning card's preview: "## Why\nSo it…\n\n## What\n- …" reads
+// "So it…". Headings are skipped; text that is only headings keeps them.
+export function previewText(md) {
+  const text = (md || "").replace(/\r\n?/g, "\n").replace(/^\s{0,3}#{1,6}(\s.*)?$/gm, "\n");
+  for (const block of text.split(/\n\s*\n/)) {
+    const prose = plainText(block);
+    if (prose) return prose;
+  }
+  return plainText(md);
+}

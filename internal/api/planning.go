@@ -1202,11 +1202,13 @@ func (s *Server) planningPeople(w http.ResponseWriter, r *http.Request) {
 }
 
 // startCard handles POST /api/planning/cards/{cid}/start: {project, kind,
-// owner, run_by}. It makes a task (queued; the card's title and description
-// are its prompt) or a goal (kind "goal") in the project, links it to the
-// card, and moves the card to In progress if it was still in Ideas or
-// Planned. A planner starting a goal names its owner, a developer (see
-// goalOwner); a planner's task runs for a developer (see startsFor).
+// owner, run_by, prompt, draft}. It makes a task (queued, or a draft with
+// draft; its prompt is prompt, else the card's title and description) or a
+// goal (kind "goal"; prompt is its description) in the project, links it
+// to the card, and moves the card to In progress if it was still in Ideas
+// or Planned (a draft's card moves once the draft is queued). A planner
+// starting a goal names its owner, a developer (see goalOwner); a planner's
+// task runs for a developer (see startsFor).
 func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -1219,12 +1221,17 @@ func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
 		// RunBy is the developer a planner has a task run for (0: Dash
 		// picks one; see startsFor).
 		RunBy int64 `json:"run_by"`
+		// Prompt is the work's text, edited in the Start sheet ("": the
+		// card's title and description).
+		Prompt string `json:"prompt"`
+		// Draft makes a member's task a draft they queue later.
+		Draft bool `json:"draft"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	id, err := sv.startCard(r.PathValue("cid"), req.Project, req.Kind, req.Owner, req.RunBy)
+	id, err := sv.startCard(r.PathValue("cid"), req.Project, req.Kind, startOpts{owner: req.Owner, runBy: req.RunBy, prompt: req.Prompt, draft: req.Draft})
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -1249,11 +1256,17 @@ func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
 	}{v, started{kind, id}})
 }
 
+// startOpts are Start's choices beyond the project and the kind.
+type startOpts struct {
+	owner  int64  // the goal's owner (0: the caller); see goalOwner
+	runBy  int64  // the developer a planner has a task run for (0: Dash picks one); see startsFor
+	prompt string // the work's text ("": the card's title and description)
+	draft  bool   // the caller's own task stays a draft
+}
+
 // startCard is what Start does (the REST API's and the start_card tool's):
-// it returns the new task's or goal's id. owner is the goal's owner (0: the
-// caller); see goalOwner. runBy is the developer a planner has a task run
-// for (0: Dash picks one); see startsFor.
-func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (string, error) {
+// it returns the new task's or goal's id.
+func (sv *service) startCard(cardID, project, kind string, o startOpts) (string, error) {
 	c, err := sv.data.GetCard(cardID)
 	if err != nil {
 		return "", err
@@ -1272,21 +1285,28 @@ func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (
 	// forUser is the developer a planner made the work for (0: the
 	// caller's own work). It waits for them: a draft task, a paused goal.
 	var forUser int64
+	// drafted: the task waits as a draft, so the card moves on once it is
+	// queued (ObservePlanning).
+	drafted := false
 	switch kind {
 	case "", model.LinkTask:
 		kind = model.LinkTask
-		run, err := sv.startsFor(c, p, runBy) // whose the task is
+		run, err := sv.startsFor(c, p, o.runBy) // whose the task is
 		if err != nil {
 			return "", err
 		}
-		prompt := c.Title
-		if c.Description != "" {
-			prompt += "\n\n" + c.Description
+		prompt := strings.TrimSpace(o.prompt)
+		if prompt == "" {
+			prompt = c.Title
+			if c.Description != "" {
+				prompt += "\n\n" + c.Description
+			}
 		}
 		// A planner's task is the developer's, so it waits as a draft for
 		// them to read and queue: nothing runs as them, on their runner,
 		// until they agree.
-		t, err := run.addTodo(model.Todo{ProjectID: p.ID, Title: c.Title, Prompt: prompt, Attachments: sv.cardAttachments(c)}, run == sv)
+		queue := run == sv && !o.draft
+		t, err := run.addTodo(model.Todo{ProjectID: p.ID, Title: c.Title, Prompt: prompt, Attachments: sv.cardAttachments(c)}, queue)
 		if err != nil {
 			return "", err
 		}
@@ -1294,12 +1314,18 @@ func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (
 		if run != sv {
 			forUser = run.c.User
 		}
+		if !queue {
+			drafted = true
+		}
 	case model.LinkGoal:
-		title, desc := c.Title, c.Description
+		title, desc := c.Title, strings.TrimSpace(o.prompt)
+		if desc == "" {
+			desc = c.Description
+		}
 		if desc == "" {
 			desc = c.Title
 		}
-		owner, err := sv.goalOwner(owner)
+		owner, err := sv.goalOwner(o.owner)
 		if err != nil {
 			return "", err
 		}
@@ -1325,6 +1351,9 @@ func (sv *service) startCard(cardID, project, kind string, owner, runBy int64) (
 	if forUser != 0 {
 		sv.madeFor(c, kind, forUser)
 		return id, nil // the card moves on once they start it (ObservePlanning)
+	}
+	if drafted {
+		return id, nil
 	}
 	sv.cardStarted(c)
 	return id, nil
@@ -1747,7 +1776,7 @@ func (b board) StartCard(id, project, kind string) (mcptools.CardStarted, error)
 	if kind == "" {
 		kind = model.LinkTask
 	}
-	work, err := b.sv.startCard(id, project, kind, 0, 0)
+	work, err := b.sv.startCard(id, project, kind, startOpts{})
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) && work == "" {
 			return mcptools.CardStarted{}, fmt.Errorf("no card %q or project %q (see list_cards)", id, project)

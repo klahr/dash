@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../editor.js";
-import { $, $$, dateTimeText, fill, h, ib, ico, plural } from "./dom.js";
+import { $, $$, dateTimeText, fill, h, ib, ico, nameHue, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
@@ -564,11 +564,7 @@ export const goalName = (id) => state.goals.get(id)?.title || "Goal";
 
 // goalHue is goal id's colour, as a hue: the same every time, on every
 // computer, and different goals mostly far apart.
-export function goalHue(id) {
-  let x = 2166136261; // FNV-1a
-  for (let i = 0; i < id.length; i++) x = Math.imul(x ^ id.charCodeAt(i), 16777619);
-  return (x >>> 0) % 360;
-}
+export const goalHue = nameHue;
 
 const hue = (id) => `--goal-h: ${goalHue(id)}`;
 

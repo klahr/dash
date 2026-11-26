@@ -210,6 +210,14 @@ export function fillAvatar(el, u) {
   return el;
 }
 
+// nameHue is a name's colour, as a hue: the same every time, on every
+// computer, and different names mostly far apart (goals, tags, faces).
+export function nameHue(name) {
+  let x = 2166136261; // FNV-1a
+  for (let i = 0; i < name.length; i++) x = Math.imul(x ^ name.charCodeAt(i), 16777619);
+  return (x >>> 0) % 360;
+}
+
 // avatar is a small round picture (or initial) of u.
 export const avatar = (u, cls = "") => fillAvatar(h("span", { class: `avatar${cls ? ` ${cls}` : ""}`, "aria-hidden": "true" }), u);
 

@@ -100,6 +100,20 @@ func TestPlannerStartRunsForADeveloper(t *testing.T) {
 	if w, _ := start(a, card(`{"title":"Five"}`), `{`+proj+`,"run_by":`+strconv.FormatInt(dev.ID, 10)+`}`); w.Code != http.StatusBadRequest {
 		t.Errorf("a member picked who runs it: %d %s", w.Code, w.Body)
 	}
+	// A member's draft, with the prompt edited in the Start sheet: the task
+	// waits as a draft and the card stays where it is until it is queued.
+	c = card(`{"title":"Seven","description":"From the card"}`)
+	w, td = start(a, c, `{`+proj+`,"prompt":"  Edited text  ","draft":true}`)
+	if w.Code != http.StatusOK || td.Status != model.StatusDraft || td.Prompt != "Edited text" || td.Title != "Seven" {
+		t.Errorf("a member's draft: %d %s; task %+v", w.Code, w.Body, td)
+	}
+	if got := decodeCard(t, w); got.Column != model.CardIdeas {
+		t.Errorf("a draft's card moved to %s", got.Column)
+	}
+	// No prompt: the card's title and description.
+	if _, td := start(a, card(`{"title":"Eight","description":"Why"}`), `{`+proj+`}`); td.Prompt != "Eight\n\nWhy" {
+		t.Errorf("the card's prompt: %q", td.Prompt)
+	}
 
 	// No runner may take it: the card says what to do, not which runner.
 	c = card(`{"title":"Six"}`)

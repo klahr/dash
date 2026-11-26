@@ -62,20 +62,22 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
 - **Priority** (high, medium, low or none) and **Target**: free text, such as a version
   (`1.4`), a milestone or a date. Give cards of one milestone the same target, and filter by it.
 - **Members**: the people in the org on the card, any number. Pick one from the list to add
-  them, and click **×** on a member to take them off. Their pictures (or initials) show on the
-  card on the board. Anyone in the org, planners too, can be a member and can add members. On
+  them, and click **×** on a member to take them off. Their pictures show on the card on the
+  board; someone without a picture shows as their initials on a colour of their own. Anyone in the org, planners too, can be a member and can add members. On
   the board, point at a card and press `Space` to put yourself on it; press it again to take
   yourself off. Someone you add gets a [notification](notifications.md#planning-cards).
-  **Owner** on a member makes them the card's one owner, who answers for it; click it again for
-  no owner. The owner's face comes first on the board, ringed. Taking the owner off the card
+  The star on a member makes them the card's one owner, who answers for it; click the owner's
+  star again for no owner. The owner is marked **Owner**, and their face comes first on the
+  board, ringed. Taking the owner off the card
   leaves it with no owner. The owner can delete the card, so only the card's creator, its
   owner or an admin can change who owns it, or take the owner off.
 - **Tags**: short labels, such as `backend` or `Q3`, any number up to 20. Type one in the box
   and press `Enter` (or a comma) to add it; the org's other tags are offered as you type.
-  Click **×** on a tag to take it off. Tags show on the card on the board. Case doesn't
-  matter: `Backend` and `backend` are the same tag.
+  Click **×** on a tag to take it off. Tags show on the card on the board, each in a colour of
+  its own. Case doesn't matter: `Backend` and `backend` are the same tag.
 - **Description** (markdown): type in the box. It saves when you click elsewhere, or press
-  `Ctrl+Enter`.
+  `Ctrl+Enter`. The card on the board shows its first paragraph as plain text, without
+  headings.
   If someone else saved the title or description while you were editing it, Dash asks:
   **Reload theirs** drops your text, **Keep mine** replaces theirs.
 - **Files**: pictures (PNG, JPEG, GIF, WebP, SVG), PDFs and text files (`.txt`, `.md`, `.log`,
@@ -181,11 +183,13 @@ their own online (see [Planners](users.md#planners)).
 **Start…** on a card makes the work for it:
 
 1. Choose the project.
-2. Choose **A task** (queued for Claude now; a planner's waits for a developer) or **A goal**
-   (a coordinator plans it into tasks; see [Goals](goals.md)).
+2. Choose **Task** or **Goal** (a coordinator plans it into tasks; see [Goals](goals.md)).
 3. As a planner, choose a developer (a member who isn't a planner): who a task **Runs for**,
    or a goal's **Owner**. The card's first developer is suggested.
-4. Click **Start**.
+4. Read the text the work starts with, and edit it if you like: a task's **Prompt** is the
+   card's title and description, a goal's **Description** is the card's.
+5. Click **Create draft** or **Queue task** for a task, or **Start goal** for a goal. A planner
+   has **Create draft** and **Create goal**.
 
 On a hub, the project list holds the org's shared projects only. A
 [runner's own project](several-computers.md#projects-of-a-runners-own) isn't in it, as the
@@ -194,10 +198,10 @@ remote and add that with **+ Add project** (**From GitHub** or **From URL**). Se
 [Two kinds of projects](several-computers.md#two-kinds-of-projects). With no shared project
 yet, **Start…** says so.
 
-The card's title and description become the task's prompt or the goal's description. A task
-also gets the card's files, for Claude to read. On a hub it doesn't: files can't be sent to
-runners yet. Dash links the new work to the card and moves the card to
-**In progress**.
+A task also gets the card's files, for Claude to read. On a hub it doesn't: files can't be
+sent to runners yet. Dash links the new work to the card. A queued task or a started goal
+moves the card to **In progress**; a draft moves it there once you queue the draft from the
+project's **Board**.
 
 Planners and members can both press **Start**. Work a member starts is theirs and runs on
 their runners. A planner's own runner runs no tasks, so a task a planner starts is made in the name of
