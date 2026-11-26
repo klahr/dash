@@ -22,9 +22,10 @@ export const TERM_OPTS = {
 // (procWS's protocol: binary frames are output; text frames are JSON, such as
 // {type:"exit", code}; it takes {type:"input"} and {type:"resize"}). The terminal
 // refits when observe changes size, while visible() says it shows.
-// connect(url, { onClose }) attaches it to a socket (closing the one before) and
+// connect(url, { onClose, again }) attaches it to a socket (closing the one before) and
 // returns the socket; onClose({ got }) runs when the socket closes by itself
-// (not by close() or another connect), got saying whether anything came.
+// (not by close() or another connect), got saying whether anything came. again:
+// the same process again, whose output stays until the socket opens and replays it.
 export function procTerminal(el, { observe = el, visible = () => true } = {}) {
   const term = new window.Terminal(TERM_OPTS);
   const fitter = new window.FitAddon.FitAddon();
@@ -44,14 +45,14 @@ export function procTerminal(el, { observe = el, visible = () => true } = {}) {
     return true;
   });
   const close = () => { const old = ws; ws = null; old?.close(); };
-  const connect = (url, { onClose } = {}) => {
+  const connect = (url, { onClose, again = false } = {}) => {
     close();
-    term.reset();
+    if (!again) term.reset();
     const sock = new WebSocket(url);
     ws = sock;
     let got = false;
     sock.binaryType = "arraybuffer";
-    sock.onopen = fit;
+    sock.onopen = () => { if (again) term.reset(); fit(); };
     sock.onmessage = (m) => {
       got = true;
       if (typeof m.data !== "string") return term.write(new Uint8Array(m.data));
@@ -76,18 +77,41 @@ export let attached = null;
 let attachedProc = null; // the process attached, as started or listed, and its project
 let attachedIn = null;
 
-export function attach(p) {
+export function attach(p, tries = 0) {
+  clearTimeout(reconnectTimer);
+  const again = attached === p.id && attachedIn === state.project?.id && !!termWS;
   renderShellNote();
   attached = p.id;
   attachedProc = p;
   attachedIn = state.project?.id;
   renderShellHead();
-  termWS = shell.connect(wsURL(on(here(), `/ws/proc/${p.id}`)));
+  const sock = shell.connect(wsURL(on(here(), `/ws/proc/${p.id}`)), { again, onClose: ({ got }) => dropped(p, sock, got ? 0 : tries + 1) });
+  termWS = sock;
   // Piped (non-PTY) output has bare \n with no tty driver to add the \r.
   term.options.convertEol = p.kind !== "pty";
   requestAnimationFrame(fitTerm);
   renderProcs();
   if (p.kind === "pty") term.focus();
+}
+
+// dropped: the shell's socket closed by itself. While the process still runs
+// and stays attached, say so and connect again (it replays the scrollback),
+// waiting longer each time one never attaches.
+let reconnectTimer = 0;
+function dropped(p, sock, tries) {
+  if (termWS !== sock || attached !== p.id) return;
+  const project = state.project?.id;
+  reconnectTimer = setTimeout(async () => {
+    await loadProcs().catch(() => {});
+    if (termWS !== sock || attached !== p.id || state.project?.id !== project) return;
+    const now = state.procs.find((x) => x.id === p.id);
+    if (!now?.running) return;
+    if (tries > 8) { term.write("\r\n\x1b[90mDisconnected\x1b[0m\r\n"); return; } // reviveSockets (events.js) tries again
+    term.write("\r\n\x1b[90mDisconnected, reconnecting…\x1b[0m\r\n");
+    reconnectTimer = setTimeout(() => {
+      if (termWS === sock && attached === p.id && state.project?.id === project) attach(now, tries);
+    }, Math.min(1000 * 2 ** tries, 15000));
+  }, 300);
 }
 
 export async function startProc(req, show = true) {

@@ -1,16 +1,18 @@
 // Dash service worker: makes Dash installable and opens it offline, but
 // always prefers the network, so an online app is never an old cached copy.
 // The page itself compares versions and offers a reload after an update.
-const CACHE = "dash-shell";
+const CACHE = "dash-shell-2"; // -2: drops a shell an older worker cached from another page
 const SHELL = ["/", "/style.css", "/app.js", "/pagekit.js", "/twofactor.js", "/editor.js", "/markdown.js", "/draw.js", "/groups.js", "/graphlayout.js", "/commitnav.js", "/runnerversion.js", "/activityclear.js", "/usagetime.js", "/eta.js", "/deployeta.js", "/buildeta.js", "/claudepill.js", "/tagtext.js", "/time.js", "/voiceloop.js", "/billingstate.js",
   // app.js's modules (web/static/app/)
   "/app/account.js", "/app/accountsheet.js", "/app/admin.js", "/app/actions.js", "/app/activity.js", "/app/agents.js", "/app/api.js", "/app/attachments.js", "/app/autosave.js", "/app/avatar.js", "/app/backend.js", "/app/billing.js", "/app/board.js", "/app/branches.js", "/app/chat.js", "/app/chatpane.js", "/app/chatparts.js", "/app/claudefiles.js", "/app/claudestatus.js", "/app/deploys.js", "/app/detail.js", "/app/detailpane.js", "/app/dialogs.js", "/app/dictation.js", "/app/diffedit.js", "/app/dnd.js", "/app/dom.js", "/app/drawmode.js", "/app/events.js", "/app/files.js", "/app/github.js", "/app/glide.js", "/app/goals.js", "/app/history.js", "/app/hovercard.js", "/app/inlineedit.js", "/app/install.js", "/app/labelpicker.js", "/app/lightbox.js", "/app/myaccount.js", "/app/nav.js", "/app/notifications.js", "/app/notifysettings.js", "/app/origin.js", "/app/palette.js", "/app/people.js", "/app/planner.js", "/app/plannerclaude.js", "/app/planning.js", "/app/planningview.js", "/app/popmenu.js", "/app/prefs.js", "/app/pushsub.js", "/app/preview.js", "/app/projects.js", "/app/releaseform.js", "/app/releases.js", "/app/review.js", "/app/roles.js", "/app/router.js", "/app/routes.js", "/app/runners.js", "/app/runstats.js", "/app/scans.js", "/app/settings.js", "/app/speech.js", "/app/stars.js", "/app/state.js", "/app/status.js", "/app/store.js", "/app/tags.js", "/app/teamsetup.js", "/app/teamusage.js", "/app/terminal.js", "/app/timeline.js", "/app/todoform.js", "/app/todos.js", "/app/tokens.js", "/app/try.js", "/app/updates.js", "/app/usage.js", "/app/viewport.js", "/app/vim.js", "/app/voice.js", "/app/voicemode.js", "/app/wallview.js", "/app/webhooks.js",
   "/vendor/codemirror.js", "/vendor/xterm/xterm.js", "/vendor/xterm/addon-fit.js", "/vendor/xterm/xterm.css", "/vendor/fonts/fonts.css", "/favicon.svg", "/manifest.webmanifest", "/img/icon-192.png"];
+// isShell: res is the app's page (internal/api/static.go marks it).
+const isShell = (res) => res.headers.get("X-Dash-App-Shell") === "1";
 const LIVE = /^\/(api|ws|peer|mcp)\//; // never cache data, sockets or other computers
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => Promise.all(SHELL.map((u) =>
-    fetch(u, { cache: "no-store" }).then((r) => (r.ok && !r.redirected ? c.put(u, r) : null)).catch(() => null)))));
+    fetch(u, { cache: "no-store" }).then((r) => (r.ok && !r.redirected && (u !== "/" || isShell(r)) ? c.put(u, r) : null)).catch(() => null)))));
   self.skipWaiting();
 });
 
@@ -27,9 +29,12 @@ self.addEventListener("fetch", (e) => {
   e.respondWith((async () => {
     try {
       const res = await fetch(req, { cache: "no-cache" });
-      if (res.ok && !res.redirected) {
+      // A page is cached as the shell only if it's the app's own: sign-in,
+      // landing, legal and invite pages would replace it.
+      const nav = req.mode === "navigate";
+      if (res.ok && !res.redirected && (!nav || isShell(res))) {
         const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req.mode === "navigate" ? "/" : req, copy));
+        caches.open(CACHE).then((c) => c.put(nav ? "/" : req, copy));
       }
       return res;
     } catch (err) {
@@ -42,20 +47,25 @@ self.addEventListener("fetch", (e) => {
 
 // Web Push: the hub pushes reviews, failures, approvals and failing builds
 // (internal/notify/webpush.go), so they arrive while Dash is closed. An open,
-// focused Dash shows them itself, so the push is dropped there.
+// focused Dash shows them itself, so there the push shows only briefly and
+// silently: a push must show a notification, or the browser shows its own.
 self.addEventListener("push", (e) => {
   let p = {};
   try { p = e.data ? e.data.json() : {}; } catch { p = { title: e.data ? e.data.text() : "Dash" }; }
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    if (p.type !== "webhook.test" && wins.some((c) => c.visibilityState === "visible" && c.focused)) return;
+    const brief = p.type !== "webhook.test" && wins.some((c) => c.visibilityState === "visible" && c.focused);
+    const tag = p.tag || `dash-push-${Date.now()}`;
     const actions = (p.actions || []).slice(0, 2).map((a) => ({ action: a.action, title: a.title }));
     const icon = await projectIcon(p.icon || "", p.initial || "", p.color || "").catch(() => DASH_ICON);
     await self.registration.showNotification(p.title || "Dash", {
-      body: p.body || "", tag: p.tag || undefined, renotify: !!p.tag, icon, badge: DASH_ICON,
-      requireInteraction: p.type === "permission.needed", actions,
+      body: p.body || "", tag, renotify: !!p.tag && !brief, silent: brief, icon, badge: DASH_ICON,
+      requireInteraction: !brief && p.type === "permission.needed", actions,
       data: { url: p.url || "/", actions: p.actions || [] },
     });
+    if (!brief) return;
+    await new Promise((r) => setTimeout(r, 4000));
+    for (const n of await self.registration.getNotifications({ tag })) n.close();
   })());
 });
 

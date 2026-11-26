@@ -73,6 +73,10 @@ func timeLocale() string {
 	return v
 }
 
+// AppShellHeader marks the app's own page (index.html): sw.js caches only a
+// page with it as the shell it opens offline, not a sign-in or other page.
+const AppShellHeader = "X-Dash-App-Shell"
+
 // pages are the HTML files stamped with the version and branding, by path.
 var pages = map[string]string{
 	"/":            "index.html",
@@ -142,6 +146,10 @@ func (s *Server) static() http.Handler {
 			b = s.Brand.WithDefaults().Page(b)
 			// No ETag: the branding can change without the files changing.
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if name == "index.html" {
+				// The service worker caches only this page as the app's shell.
+				w.Header().Set(AppShellHeader, "1")
+			}
 			http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(b))
 			return
 		}

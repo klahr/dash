@@ -48,7 +48,9 @@ func (a *Auth) createToken(w http.ResponseWriter, r *http.Request, id *Identity)
 	// whichever org the session is working in, or a password (or a personal
 	// Google account) would outlive their removal in Google.
 	if a.googleRefuses(id.User, id.Method, m) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this organization requires signing in with Google to create tokens for it", "code": "google_required"})
+		// org_id: the refusal is about that org's tokens, not this session,
+		// so the page shows it rather than reloading.
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "this organization requires signing in with Google to create tokens for it", "code": "google_required", "org_id": req.OrgID})
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {

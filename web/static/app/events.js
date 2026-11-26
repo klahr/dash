@@ -376,7 +376,7 @@ function elsewhere(ev, m) {
   if (ev.type === "goal.updated") goalElsewhere(ev.data, p, m, where);
   if (ev.type === "permission.updated" && !ev.data.decision) {
     toast(permLine(ev.data), { tone: "approval", where, head: permHead(ev.data), action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
-    notify(permNote(ev.data), { title: where, prompt: "" }, describePerm(ev.data).detail, false, "permission.needed", p || null, where);
+    notify(permNote(ev.data), { id: ev.data.todo_id, title: where, prompt: "" }, describePerm(ev.data).detail, false, "permission.needed", p || null, where);
     speakApproval(ev.data, where);
   }
 }

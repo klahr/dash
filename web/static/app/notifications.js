@@ -24,9 +24,18 @@ export function notify(what, t, detail = "", pushed = false, kind = "", p = stat
   if (!wanted(kind) || othersTask(kind, t)) return;
   if (document.visibilityState === "visible" && document.hasFocus()) return; // the page already shows it
   if (pushed && state.pushOn) return;
-  show(`${what}: ${title(t)}`, where === title(t) ? "" : where, detail, `dash-${t.id}`, p,
-    () => { window.focus(); showView("board"); openDetail(t.id); });
+  // One notification per task (a newer one replaces it); one each for events with none.
+  const tag = t.id ? `dash-${projectKey(p)}-${t.id}` : `dash-${kind || what}-${projectKey(p)}-${++untagged}`;
+  show(`${what}: ${title(t)}`, where === title(t) ? "" : where, detail, tag, p, () => {
+    window.focus();
+    (async () => {
+      if (p && projectKey(p) !== projectKey(state.project)) await selectProject(p);
+      showView("board");
+      if (t.id) await openDetail(t.id);
+    })().catch(fail);
+  });
 }
+let untagged = 0;
 // notifyGoal tells you about a goal (in project p, else the current one,
 // named where) that waits for you, is done or out of budget. The hub pushes
 // these too.

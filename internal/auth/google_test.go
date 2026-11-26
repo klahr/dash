@@ -841,11 +841,14 @@ func TestGoogleRequiredPersonalAccount(t *testing.T) {
 		t.Fatal("personal Google doesn't sign in")
 	}
 	switchTo(g, e.acme.ID)
-	if w := g.get(members); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "google_required") {
+	// The session's own refusal names no org: the page reloads to say how to sign in.
+	if w := g.get(members); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "google_required") || strings.Contains(w.Body.String(), "org_id") {
 		t.Fatalf("personal Google session in Acme: %d %s", w.Code, w.Body)
 	}
 	switchTo(g, side.ID)
-	if w := g.postJSON("https://"+gHost+"/api/tokens", fmt.Sprintf(`{"name":"x","org_id":%d,"scopes":["read"],"password":"password1"}`, e.acme.ID)); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "google_required") {
+	// A token for another org names it: the session is fine, the page shows the error.
+	if w := g.postJSON("https://"+gHost+"/api/tokens", fmt.Sprintf(`{"name":"x","org_id":%d,"scopes":["read"],"password":"password1"}`, e.acme.ID)); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "google_required") ||
+		!strings.Contains(w.Body.String(), fmt.Sprintf(`"org_id":%d`, e.acme.ID)) {
 		t.Fatalf("personal Google session token: %d %s", w.Code, w.Body)
 	}
 }

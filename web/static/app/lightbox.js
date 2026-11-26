@@ -128,10 +128,11 @@ async function textOf(f) {
 
 // csvTable is CSV text as a table: the first row its head, then up to
 // CSV_ROWS rows. Quoted fields may hold commas, quotes ("") and new lines.
+// It parses one row more than it shows, to know there are more.
 function csvTable(text) {
   const rows = [];
   let row = [], cell = "", quoted = false;
-  for (let i = 0; i < text.length && rows.length <= CSV_ROWS; i++) {
+  for (let i = 0; i < text.length && rows.length <= CSV_ROWS + 1; i++) {
     const ch = text[i];
     if (quoted) {
       if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') quoted = false; else cell += ch;

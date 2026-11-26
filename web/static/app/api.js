@@ -42,8 +42,9 @@ export async function request(method, path, { body, raw = false, prefix = here()
     location.replace("/login.html?enrol=1");
     throw new Error(data.error);
   }
-  if (res.status === 403 && data.code === "google_required") {
-    // The org takes only Google sign-ins from this account: the page says how.
+  if (res.status === 403 && data.code === "google_required" && !data.org_id) {
+    // The active org takes only Google sign-ins from this account: the page says how.
+    // With org_id it's about another org (a token for it): the error says so.
     location.reload();
     throw new Error(data.error);
   }

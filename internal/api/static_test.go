@@ -32,6 +32,13 @@ func TestAppPathsServeTheApp(t *testing.T) {
 			!strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
 			t.Errorf("%s: not stamped and revalidated as /: %q %q", p, w.Header().Get("Cache-Control"), w.Header().Get("Content-Type"))
 		}
+		if w.Header().Get(AppShellHeader) != "1" {
+			t.Errorf("%s: not marked as the app's shell", p)
+		}
+	}
+	// The service worker caches only the app's page as its shell.
+	if w := get(t, h, "/login.html"); w.Code != http.StatusOK || w.Header().Get(AppShellHeader) != "" {
+		t.Errorf("/login.html: %d, marked as the shell: %q", w.Code, w.Header().Get(AppShellHeader))
 	}
 	for _, p := range []string{"/p", "/p/", "/p/abc/nope", "/p/abc/tasks", "/p/abc/tasks/t1/more", "/planning/", "/planning/cards/", "/nope", "/app/nope.js"} {
 		if w := get(t, h, p); w.Code != http.StatusNotFound {
