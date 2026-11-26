@@ -10,8 +10,8 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
-// History's Preview on a web project's commit: a warning the first time,
-// then the app at that commit starting on the runner, its start-up log in
+// History's Preview on a web project's older commit: a warning the first
+// time (the newest commit is today's code: none), then the app at that commit starting on the runner, its start-up log in
 // the preview pane beside the commit (full screen on a phone), its Draw
 // waiting for the live page. Esc hides
 // the pane, then the commit; Preview again reattaches to the running one;
@@ -24,23 +24,28 @@ func TestBrowserCommitPreview(t *testing.T) {
 	// It never opens its port: the preview stays starting, its log growing.
 	api.must("PATCH", "/api/projects/"+pid, map[string]any{"setup_command": "echo installing-deps",
 		"run_command": "echo starting-the-app; sleep 120"}, http.StatusOK, nil)
+	// A second commit on main, so the first is an old one.
+	first := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "rev-parse", "main"))
+	next := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "commit-tree", "main^{tree}", "-p", "main", "-m", "second"))
+	run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "update-ref", "refs/heads/main", next)
 	waitFor(t, nil, "the runner's clone", func() bool {
 		api.try("POST", "/api/projects/"+pid+"/remote/pull", nil)
 		code, body := api.try("GET", "/api/projects/"+pid+"/graph", nil)
 		var g struct{ Commits []struct{ Subject string } }
-		return code == http.StatusOK && json.Unmarshal([]byte(body), &g) == nil && len(g.Commits) >= 1
+		return code == http.StatusOK && json.Unmarshal([]byte(body), &g) == nil && len(g.Commits) >= 2
 	})
+	oldCommit := `#graph li[data-hash="` + first + `"] .graph-commit`
 
 	b := newBrowser(t, chrome)
 	b.signIn(h)
 	b.until("open History", `document.querySelector("#view-history.active")`,
 		chromedp.Click(chromedp.CSS(`.nav [data-view=history]`)))
-	b.waitJS("the commit", `document.querySelectorAll("#graph li").length >= 1`)
-	b.until("open the commit", `!document.querySelector("#commit-detail").hidden`, chromedp.Click(chromedp.CSS(`#graph li:first-child .graph-commit`)))
+	b.waitJS("both commits", `document.querySelectorAll("#graph li").length >= 2`)
+	b.until("open the old commit", `!document.querySelector("#commit-detail").hidden`, chromedp.Click(chromedp.CSS(oldCommit)))
 	previewBtn := `[...document.querySelectorAll("#cd-actions button")].find((e) => /preview/i.test(e.textContent))`
 	b.waitJS("Preview in the commit's actions", previewBtn+`?.disabled === false`)
 
-	// The first time, a warning about the shared dev database.
+	// The first time, for an old commit, a warning about the shared dev database.
 	runJS(t, b, previewBtn+`.click(), true`) // click Preview
 	b.waitJS("the warning", `document.querySelector("#ask-sheet").open && /dev database/.test(document.querySelector("#ask-body").textContent)`)
 	b.until("accept it", `!document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.ID("ask-ok")))
@@ -54,10 +59,10 @@ func TestBrowserCommitPreview(t *testing.T) {
 	b.waitJS("Draw, greyed out until the page is live", `(() => { const d = document.querySelector("#pv-draw-btn"); return getComputedStyle(d).display !== "none" && d.disabled && /attach it to a chat/.test(d.title); })()`)
 	b.waitJS("the button says Hide preview", previewBtn+`?.textContent.includes("Hide preview")`)
 	var st struct {
-		Session *struct{ Kind, State, URL, OpenURL string } `json:"session"`
+		Session *struct{ Kind, State, URL, OpenURL, Commit string } `json:"session"`
 	}
 	api.must("GET", "/api/projects/"+pid+"/try", nil, http.StatusOK, &st)
-	if st.Session == nil || st.Session.Kind != "web" || !strings.Contains(st.Session.URL, pid+"--laptop.preview.dash.test") {
+	if st.Session == nil || st.Session.Kind != "web" || !strings.Contains(st.Session.URL, pid+"--laptop.preview.dash.test") || st.Session.Commit != first {
 		t.Fatalf("session: %+v", st.Session)
 	}
 
@@ -70,7 +75,7 @@ func TestBrowserCommitPreview(t *testing.T) {
 
 	// Preview again: the running one, no warning, on a phone full screen.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
-	b.until("open the commit", `!document.querySelector("#commit-detail").hidden`, chromedp.Click(chromedp.CSS(`#graph li:first-child .graph-commit`)))
+	b.until("open the old commit", `!document.querySelector("#commit-detail").hidden`, chromedp.Click(chromedp.CSS(oldCommit)))
 	b.waitJS("Preview, marked starting", previewBtn+`?.querySelector(".pv-dot.starting")`)
 	runJS(t, b, previewBtn+`.click(), true`) // click Preview
 	b.waitJS("the pane, no warning", inPane+` && !document.querySelector("#ask-sheet").open`)
