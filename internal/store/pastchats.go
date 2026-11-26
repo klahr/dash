@@ -96,8 +96,8 @@ func pastChatTitle(msgs []model.ChatMessage) string {
 // putAside writes msgs, pl's conversation, as a past chat.
 func putAside(tx *sql.Tx, pl chatPlace, msgs []model.ChatMessage, at time.Time) error {
 	pc := model.PastChat{ID: NewID(), Title: pastChatTitle(msgs), At: at.UTC(), Count: len(msgs), Messages: msgs}
-	return put(tx, "INSERT INTO past_chats (id, kind, owner_id, project_id, user_id, org_id, at, data) VALUES (?, ?, ?, ?, ?, COALESCE(?, "+defaultOrg+"), ?, ?)",
-		pc, pc.ID, pl.kind, pl.owner, pl.project, pl.user, nullOrg(pl.org), at.UnixMilli())
+	return put(tx, "INSERT INTO past_chats (id, kind, owner_id, project_id, user_id, org_id, at, title, count, data) VALUES (?, ?, ?, ?, ?, COALESCE(?, "+defaultOrg+"), ?, ?, ?, ?)",
+		pc, pc.ID, pl.kind, pl.owner, pl.project, pl.user, nullOrg(pl.org), at.UnixMilli(), pc.Title, pc.Count)
 }
 
 func (s *Store) now() time.Time {
@@ -135,6 +135,7 @@ func (s *Store) PutChatAside(org, user int64, project string) error {
 
 // PastChats are the past chats of user's general chat in org (project "")
 // or of their chat about project, newest first, without their messages.
+// It reads the title and count columns, never data (the messages).
 func (s *Store) PastChats(org, user int64, project string) ([]model.PastChat, error) {
 	s.mu.RLock()
 	pl, err := s.placeLocked(org, user, project)
@@ -148,8 +149,21 @@ func (s *Store) PastChats(org, user int64, project string) ([]model.PastChat, er
 		err := sc.Scan(&pc.ID, &at, &pc.Title, &pc.Count)
 		pc.At = time.UnixMilli(at).UTC()
 		return pc, err
-	}, `SELECT id, at, COALESCE(json_extract(data, '$.title'), ''), COALESCE(json_extract(data, '$.count'), 0)
+	}, `SELECT id, at, title, count
 		FROM past_chats WHERE kind = ? AND owner_id = ? AND deleted_at IS NULL ORDER BY at DESC, rowid DESC`, pl.kind, pl.owner)
+}
+
+// PastChatCount is how many past chats PastChats would list.
+func (s *Store) PastChatCount(org, user int64, project string) (int, error) {
+	s.mu.RLock()
+	pl, err := s.placeLocked(org, user, project)
+	s.mu.RUnlock()
+	if err != nil {
+		return 0, err
+	}
+	var n int
+	err = s.db.QueryRow("SELECT COUNT(*) FROM past_chats WHERE kind = ? AND owner_id = ? AND deleted_at IS NULL", pl.kind, pl.owner).Scan(&n)
+	return n, err
 }
 
 // OpenPastChat makes past chat id the current conversation of user's

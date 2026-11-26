@@ -114,7 +114,7 @@ func (s *Server) chatBusy(sv *service, user int64, pid string) bool {
 // pastChatCount says in X-Chat-Past how many past chats user's chat
 // (about pid, or general) has.
 func pastChatCount(w http.ResponseWriter, sv *service, user int64, pid string) {
-	if list, err := sv.data.PastChats(user, pid); err == nil && len(list) > 0 {
-		w.Header().Set("X-Chat-Past", strconv.Itoa(len(list)))
+	if n, err := sv.data.PastChatCount(user, pid); err == nil && n > 0 {
+		w.Header().Set("X-Chat-Past", strconv.Itoa(n))
 	}
 }

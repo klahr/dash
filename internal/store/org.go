@@ -263,6 +263,14 @@ func (o *OrgStore) PastChats(user int64, project string) ([]model.PastChat, erro
 	return o.s.PastChats(o.org, user, project)
 }
 
+// PastChatCount is Store.PastChatCount in the org.
+func (o *OrgStore) PastChatCount(user int64, project string) (int, error) {
+	if !o.ownsChat(user, project) {
+		return 0, ErrNotFound
+	}
+	return o.s.PastChatCount(o.org, user, project)
+}
+
 // OpenPastChat is Store.OpenPastChat in the org.
 func (o *OrgStore) OpenPastChat(user int64, project, id string) ([]model.ChatMessage, error) {
 	if !o.ownsChat(user, project) {

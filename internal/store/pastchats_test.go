@@ -62,6 +62,9 @@ func TestPastChats(t *testing.T) {
 	if err != nil || len(past) != 1 || past[0].Title != "what is this?" || past[0].Count != 2 || !past[0].At.Equal(clock) {
 		t.Fatalf("past: %+v, %v", past, err)
 	}
+	if n, err := s.PastChatCount(1, 1, ""); err != nil || n != 1 {
+		t.Fatalf("count: %d, %v", n, err)
+	}
 	if other, _ := s.PastChats(1, 2, ""); len(other) != 0 {
 		t.Fatalf("another user's past chats: %+v", other)
 	}
@@ -96,6 +99,9 @@ func TestPastChats(t *testing.T) {
 	}
 	if l, _ := s.PastChats(1, 1, ""); len(l) != 0 {
 		t.Fatalf("listed after delete: %+v", l)
+	}
+	if n, _ := s.PastChatCount(1, 1, ""); n != 0 {
+		t.Fatalf("counted after delete: %d", n)
 	}
 	if err := s.RestorePastChat(1, 1, "", past[0].ID); err != nil {
 		t.Fatal(err)
@@ -146,5 +152,53 @@ func TestProjectPastChats(t *testing.T) {
 	var n int
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM past_chats").Scan(&n); err != nil || n != 0 {
 		t.Fatalf("past chats left after the project's delete: %d, %v", n, err)
+	}
+}
+
+// 0049 copies each past chat's title and count out of data into their own
+// columns, keeping the rest of the row.
+func TestPastChatsTitleMigration(t *testing.T) {
+	t.Parallel()
+	ms, err := migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ms[48].name != "0049_past_chats_title.sql" {
+		t.Fatalf("migration 49 is %s", ms[48].name)
+	}
+	db, err := openDB(filepath.Join(t.TempDir(), "dash.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, m := range ms[:48] {
+		if _, err := db.Exec(m.sql); err != nil {
+			t.Fatalf("%s: %v", m.name, err)
+		}
+	}
+	data := `{"id":"pc1","title":"what is this?","count":2,"messages":[{"role":"user","content":"what is this?"},{"role":"assistant","content":"a repo"}]}`
+	if _, err := db.Exec(`INSERT INTO past_chats (id, kind, owner_id, project_id, user_id, org_id, at, deleted_at, data)
+		VALUES ('pc1', 'main', 'o1', '', 1, 1, 5, NULL, ?), ('pc2', 'main', 'o1', '', 1, 1, 6, 7, '{}');
+		PRAGMA user_version = 48`, data); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db, nil); err != nil {
+		t.Fatal(err)
+	}
+	var title, got string
+	var count int
+	var at int64
+	if err := db.QueryRow("SELECT title, count, at, data FROM past_chats WHERE id = 'pc1'").Scan(&title, &count, &at, &got); err != nil {
+		t.Fatal(err)
+	}
+	if title != "what is this?" || count != 2 || at != 5 || got != data {
+		t.Fatalf("pc1: %q %d %d %s", title, count, at, got)
+	}
+	var deleted int64
+	if err := db.QueryRow("SELECT title, count, deleted_at FROM past_chats WHERE id = 'pc2'").Scan(&title, &count, &deleted); err != nil {
+		t.Fatal(err)
+	}
+	if title != "" || count != 0 || deleted != 7 {
+		t.Fatalf("pc2: %q %d %d", title, count, deleted)
 	}
 }
