@@ -153,6 +153,13 @@ func TestBrowserBoardRiskyActions(t *testing.T) {
 	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Another draft", "prompt": "Stay a draft"}, http.StatusCreated, &d2)
 	b.waitCard(d1.ID, "draft")
 	b.waitCard(d2.ID, "draft")
+	// Select shows every draft's box. A box also shows on hover, but not
+	// here: the viewport changes above turned Chrome's touch emulation off,
+	// which gives the page the machine's own pointer, and a CI machine has no
+	// mouse, so (hover: none) hides the boxes and a click opens the card.
+	// TestBrowserFindingDrafts picks with hover.
+	b.until("Select", `!document.querySelector("#combine-bar").hidden && /0 selected/.test(document.querySelector("#combine-bar").textContent)`,
+		chromedp.Click(chromedp.CSS(`#board .col[data-lane="draft"] .select-drafts`)))
 	b.until("pick a draft", `/1 selected/.test(document.querySelector("#combine-bar").textContent) && !document.querySelector("#combine-bar .combine")`,
 		chromedp.Click(chromedp.CSS(cardSel(d1.ID)+" .todo-pick input")))
 	b.until("pick the other", `document.querySelector("#combine-bar .combine")?.textContent === "Combine"`,
@@ -164,6 +171,8 @@ func TestBrowserBoardRiskyActions(t *testing.T) {
 
 	// A draft's Queue shows only on hover; the bar queues what is picked.
 	b.waitJS("Queue hidden at rest", fmt.Sprintf(`getComputedStyle(document.querySelector(%q)).opacity === "0"`, cardSel(d1.ID)+" .draft-actions"))
+	b.until("Select again", `!document.querySelector("#combine-bar").hidden`,
+		chromedp.Click(chromedp.CSS(`#board .col[data-lane="draft"] .select-drafts`)))
 	b.until("pick the draft left", `/1 selected/.test(document.querySelector("#combine-bar").textContent) && !!document.querySelector("#combine-bar .queue-picked")`,
 		chromedp.Click(chromedp.CSS(cardSel(d1.ID)+" .todo-pick input")))
 	b.do("queue it from the bar", chromedp.Click(chromedp.CSS(`#combine-bar .queue-picked`)))

@@ -877,7 +877,9 @@ func newBrowser(t *testing.T, chrome string) *browser {
 		// asks the system, and a CI machine has no mouse, so it would say
 		// (hover: none) and the Board would act as on a phone (hidden pick
 		// boxes, delete icons always showing). Hover 2 is "hover", pointer 4
-		// is "fine". The phone tests' touch emulation still overrides this.
+		// is "fine". This holds only until the first EmulateViewport: it
+		// turns touch emulation on or off, and either way Chrome then gives
+		// the page the machine's own pointer again ((hover: none) on CI).
 		chromedp.Flag("blink-settings", "primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4"),
 	))
 	t.Cleanup(cancel)
