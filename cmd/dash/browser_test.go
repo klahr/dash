@@ -599,7 +599,7 @@ func TestBrowserChatTabs(t *testing.T) {
 	for _, name := range []string{"lib", "web"} {
 		api.must("POST", peer+"/api/projects", map[string]any{"name": name}, http.StatusCreated, nil)
 	}
-	b.do("reload", chromedp.Reload())
+	b.reload()
 	b.waitJS("every project", `document.querySelectorAll("#side-project-list .side-project").length === 3`)
 	b.clickTextUntil(`#side-project-list .side-project`, "app", `document.querySelector("#project-name")?.textContent === "app"`)
 
@@ -639,7 +639,7 @@ func TestBrowserChatTabs(t *testing.T) {
 	tabs("app,General,web")
 
 	// They survive a reload.
-	b.do("reload", chromedp.Reload())
+	b.reload()
 	b.waitJS("app selected", `document.querySelector("#project-name")?.textContent === "app"`)
 	tabs("app,General,web")
 
@@ -663,7 +663,7 @@ func TestBrowserChatTabs(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.waitJS("app's tab unread", `[...document.querySelectorAll("#chat-tabs .chat-pane-tab-btn.unread .chat-tab-name")].map((n) => n.textContent).join() === "app"`)
-	b.do("reload", chromedp.Reload())
+	b.reload()
 	b.waitJS("web selected", `document.querySelector("#project-name")?.textContent === "web"`)
 	tabs("web,General,app") // unread survives a reload
 	b.clickTextUntil("#chat-tabs .chat-pane-tab-btn", "app", `document.querySelector('#chat-tabs [aria-selected="true"] .chat-tab-name')?.textContent === "app"`)
@@ -678,7 +678,7 @@ func TestBrowserChatTabs(t *testing.T) {
 	b.until("close web's tab", `![...document.querySelectorAll("#chat-tabs .chat-tab-name")].some((n) => n.textContent === "web")`,
 		chromedp.Click(chromedp.CSS(`#chat-tabs .chat-tab-close`)))
 	tabs("app,General")
-	b.do("reload", chromedp.Reload())
+	b.reload()
 	b.waitJS("app selected", `document.querySelector("#project-name")?.textContent === "app"`)
 	tabs("app,General")
 }
@@ -888,7 +888,31 @@ func newBrowser(t *testing.T, chrome string) *browser {
 	if err := chromedp.Do(ctx, chromedp.Navigate("about:blank")); err != nil {
 		t.Fatalf("start %s: %v", chrome, err)
 	}
+	// The client sizes its views with dvh units (Chrome 108): in an older
+	// browser they're invalid, and the tests fail on the layout instead.
+	ua, err := chromedp.Run(ctx, chromedp.Evaluate[string](`CSS.supports("height", "100dvh") ? "" : navigator.userAgent`))
+	if err != nil {
+		t.Fatalf("check %s: %v", chrome, err)
+	}
+	if ua != "" {
+		t.Fatalf("%s is too old (%s): the browser tests need Chrome or Chromium 108 or later", chrome, ua)
+	}
 	return b
+}
+
+// reload reloads the page once the page's timers queued so far have run:
+// the router writes a change to the URL in one (app/router.js: flush), and
+// the URL, not the saved project, is what a reload opens. A reload right
+// after a click (DevTools commands go before the page's timers) would
+// open the page as it was before the click.
+func (b *browser) reload() {
+	b.t.Helper()
+	ctx, cancel := context.WithTimeout(b.ctx, 30*time.Second)
+	defer cancel()
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`new Promise((done) => setTimeout(() => done(true)))`, chromedp.EvalAwaitPromise)); err != nil {
+		b.fail("let the page's timers run", err)
+	}
+	b.do("reload", chromedp.Reload())
 }
 
 func (b *browser) do(what string, steps ...chromedp.Action[chromedp.Void]) {

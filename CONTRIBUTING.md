@@ -87,7 +87,7 @@ narrow phone-sized window.
 flows (sign in, new task, review, rework with comments, approve and merge, drag and drop,
 permission approval) in headless Chrome, against a real hub and runner with
 [`testdata/fakeclaude`](cmd/dash/testdata/fakeclaude/main.go) for Claude Code. It uses the
-Chrome or Chromium on your `PATH`, or `DASH_TEST_CHROME=/path/to/chrome`, and is skipped
+Chrome or Chromium (108 or later) on your `PATH`, or `DASH_TEST_CHROME=/path/to/chrome`, and is skipped
 without one (CI sets `DASH_TEST_BROWSER=require` so it can't be skipped there). Run it alone
 with `go test -run TestBrowserMainFlows -v ./cmd/dash`; when a step fails it logs the page's
 text and saves a screenshot.
