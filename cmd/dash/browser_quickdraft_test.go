@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"slices"
 	"testing"
 
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 )
@@ -26,8 +29,7 @@ func TestBrowserQuickDraft(t *testing.T) {
 	const row = `#quick-sheet[open] #quick-rows .quick-row`
 	rows := `document.querySelectorAll("#quick-rows .quick-row")`
 	stored := `Object.entries(localStorage).filter(([k]) => k.startsWith("dash.draft.quick/")).map(([, v]) => v).join()`
-	shift := chromedp.KeyModifiers(chromedp.ModifierShift)
-	alt := chromedp.KeyModifiers(chromedp.ModifierAlt)
+	shift, alt := chromedp.ModifierShift, chromedp.ModifierAlt
 
 	for _, size := range []struct {
 		name string
@@ -43,7 +45,7 @@ func TestBrowserQuickDraft(t *testing.T) {
 		b.waitJS("an empty field", rows+`.length === 1 && `+rows+`[0].value === ""`)
 		b.run("note the field's height", `window.quickH = document.querySelector("#quick-rows .quick-row").offsetHeight; true`)
 		b.do("write two lines", chromedp.SendKeys(chromedp.CSS(row), first),
-			chromedp.KeyEvent(kb.Enter, shift),
+			enterKey(shift),
 			chromedp.SendKeys(chromedp.CSS(row), "line two #ui"))
 		b.waitJS("one field with both lines, grown to fit", fmt.Sprintf(`(() => {
 			const r = %s;
@@ -57,10 +59,10 @@ func TestBrowserQuickDraft(t *testing.T) {
 		b.until("open the sheet again", `document.querySelector("#quick-sheet").open`, chromedp.Click(chromedp.ID("new-todo")))
 		b.waitJS("the text back", fmt.Sprintf(`%s.length === 1 && %s[0].value === %q`, rows, rows, first+"\nline two #ui"))
 
-		b.do("Alt-Enter for another task", chromedp.KeyEvent(kb.Enter, alt))
+		b.do("Alt-Enter for another task", enterKey(alt))
 		b.waitJS("a second field, with focus", rows+`.length === 2 && document.activeElement === `+rows+`[1]`)
 		b.do("write the second task", chromedp.SendKeys(chromedp.CSS(`#quick-rows .quick-row:last-child`), "Second "+size.name))
-		b.until("Enter saves both", `!document.querySelector("#quick-sheet").open`, chromedp.KeyEvent(kb.Enter))
+		b.until("Enter saves both", `!document.querySelector("#quick-sheet").open`, enterKey(0))
 
 		one := waitTodo(t, api, pid, first+"\nline two")
 		waitTodo(t, api, pid, "Second "+size.name)
@@ -74,4 +76,25 @@ func TestBrowserQuickDraft(t *testing.T) {
 		b.waitJS("an empty field again", rows+`.length === 1 && `+rows+`[0].value === ""`)
 		b.until("close it", `!document.querySelector("#quick-sheet").open`, chromedp.KeyEvent(kb.Escape))
 	}
+}
+
+// enterKey presses Enter as a keyboard does: one keyDown that carries its
+// text, so the field types a new line only when the page doesn't prevent it.
+// chromedp.KeyEvent sends the text as a separate char event, which Chrome
+// delivers even after the page prevented the keydown: it typed a new line
+// after every Enter the sheet handled, and, once Enter had saved and closed
+// the sheet, clicked the New task button that had focus back.
+func enterKey(mods chromedp.Modifier) chromedp.Action[chromedp.Void] {
+	return chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+		for _, typ := range []input.DispatchKeyEventType{input.DispatchKeyEventTypeKeyDown, input.DispatchKeyEventTypeKeyUp} {
+			p := input.DispatchKeyEventParams{Type: typ, Modifiers: int64(mods), Key: "Enter", Code: "Enter", WindowsVirtualKeyCode: 13, NativeVirtualKeyCode: 13}
+			if typ == input.DispatchKeyEventTypeKeyDown {
+				p.Text, p.UnmodifiedText = "\r", "\r"
+			}
+			if _, err := cdp.Call(ctx, t, input.DispatchKeyEvent, p); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
