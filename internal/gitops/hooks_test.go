@@ -73,3 +73,54 @@ echo '{"id":7,"config":{"url":"https://dash.example.com/api/github/hook","secret
 		}
 	}
 }
+
+// Hooks reads each webhook's URL from its config: ci.Hooks finds Dash's
+// own webhook by it.
+func TestHooksReadsConfigURL(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	args := filepath.Join(dir, "args")
+	gh := filepath.Join(dir, "gh")
+	testbin.Write(t, gh, `#!/bin/sh
+echo "$*" >> `+args+`
+echo '[{"id":3,"active":true,"events":["workflow_run"],"config":{"url":"https://x.example.com/api/github/hook","content_type":"json"}}]'
+`)
+	g := New(nil)
+	g.GhBin = gh
+	hooks, err := g.Hooks(context.Background(), "", dir)
+	if err != nil || len(hooks) != 1 {
+		t.Fatalf("%+v, %v", hooks, err)
+	}
+	if h := hooks[0]; h.ID != 3 || h.URL != "https://x.example.com/api/github/hook" || !h.Active || len(h.Events) != 1 || h.Events[0] != "workflow_run" {
+		t.Fatalf("%+v", h)
+	}
+	if a, _ := os.ReadFile(args); !strings.Contains(string(a), "api repos/{owner}/{repo}/hooks?per_page=100") {
+		t.Fatalf("args: %s", a)
+	}
+}
+
+// UpdateHook patches the webhook by its id, with the secret on gh's stdin.
+func TestUpdateHookSecretOnStdin(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	args, input := filepath.Join(dir, "args"), filepath.Join(dir, "input")
+	gh := filepath.Join(dir, "gh")
+	testbin.Write(t, gh, `#!/bin/sh
+echo "$*" >> `+args+`
+cat > `+input+`
+echo '{"id":7}'
+`)
+	g := New(nil)
+	g.GhBin = gh
+	if err := g.UpdateHook(context.Background(), "", dir, 7, HookConfig{URL: "https://dash.example.com/api/github/hook", Secret: "topsecret", Events: []string{"workflow_run"}}); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := os.ReadFile(args)
+	in, _ := os.ReadFile(input)
+	if strings.Contains(string(a), "topsecret") || !strings.Contains(string(a), "api -X PATCH repos/{owner}/{repo}/hooks/7 --input -") {
+		t.Fatalf("args: %s", a)
+	}
+	if !strings.Contains(string(in), `"secret":"topsecret"`) || !strings.Contains(string(in), `"url":"https://dash.example.com/api/github/hook"`) || strings.Contains(string(in), `"name"`) {
+		t.Fatalf("input: %s", in)
+	}
+}
