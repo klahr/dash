@@ -4,9 +4,11 @@
 #
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.dns.yml
 #   CADDY_DNS_PROVIDER=cloudflare      # a module name from github.com/caddy-dns
+#   CADDY_DNS_VERSION=v0.2.4           # the module's release tag
 #   CADDY_DNS_API_TOKEN=...            # a token that can edit the zone
 #
-# then `docker compose up -d --build`. Rebuild after changing the provider.
+# then `docker compose up -d --build`. Rebuild after changing the provider or
+# its version.
 
 services:
   caddy:
@@ -16,3 +18,4 @@ services:
       context: ./caddy
       args:
         CADDY_DNS_PROVIDER: ${CADDY_DNS_PROVIDER}
+        CADDY_DNS_VERSION: ${CADDY_DNS_VERSION:-latest}

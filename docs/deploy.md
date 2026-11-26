@@ -267,7 +267,7 @@ hub's own [`/healthz`](#health), and Caddy only starts once the hub is healthy.
 
 ### Previews and org subdomains (wildcard certificates)
 
-Without them, plain Caddy (the `caddy:2` image) is all you need: the hub's certificate comes
+Without them, plain Caddy (the `caddy` image, pinned to a release by digest) is all you need: the hub's certificate comes
 through the HTTP challenge. `*.preview…` and `*.dash.example.com` need **wildcard certificates**,
 which Let's Encrypt only issues through a DNS challenge, so Caddy must be built with your DNS
 provider's module from [caddy-dns](https://github.com/caddy-dns).
@@ -277,12 +277,15 @@ provider's module from [caddy-dns](https://github.com/caddy-dns).
 ```sh
 COMPOSE_FILE=docker-compose.yml:docker-compose.dns.yml
 CADDY_DNS_PROVIDER=cloudflare          # the module's name: cloudflare, digitalocean, hetzner, ...
+CADDY_DNS_VERSION=v0.2.4               # the module's release tag
 CADDY_DNS_API_TOKEN=...                # a token that can edit the zone
 DASH_PREVIEW_DOMAIN=preview.dash.example.com
 DASH_ORG_DOMAIN=dash.example.com
 ```
 
-then `docker compose up -d --build`. Caddy serves a wildcard site for each domain that is set,
+then `docker compose up -d --build`. Set `CADDY_DNS_VERSION` to a release tag of your provider's
+module (see its *Releases* on GitHub): without it, each build takes the newest code. Rebuild
+after changing it. Caddy serves a wildcard site for each domain that is set,
 and only when `CADDY_DNS_PROVIDER` is set too; the hub reads the same two variables. Providers
 whose module takes more than one token (e.g. `route53`) need their own `tls { dns … }` lines:
 edit `wildcard` in `deploy/caddy/Caddyfile`. The token is passed to Caddy only, not to the hub.

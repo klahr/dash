@@ -41,7 +41,8 @@ services:
       retries: 3
 
   caddy:
-    image: ${CADDY_IMAGE:-caddy:2}
+    # The same release and digest as deploy/caddy/Dockerfile's last FROM.
+    image: ${CADDY_IMAGE:-caddy:2.11.9@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b}
     restart: unless-stopped
     depends_on:
       dash:

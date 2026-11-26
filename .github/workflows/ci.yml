@@ -209,7 +209,7 @@ jobs:
         working-directory: deploy/caddy
         run: |
           docker run --rm -v "$PWD:/etc/caddy:ro" -e DASH_DOMAIN=dash.example.com -e ACME_EMAIL=you@example.com \
-            caddy:2 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            caddy:2.11.9@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
       # The release image (deploy/Dockerfile.release), as GoReleaser builds it
       # on a tag, without pushing.
