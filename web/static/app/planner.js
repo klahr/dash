@@ -69,7 +69,8 @@ const pl = {
   repo: null, // projects.js planRepo(), once a source is picked
   launch: null, // GET /api/plans/{id}/launch
   briefView: "edit",
-  saving: null, // the brief's pending save
+  saving: null, // the brief's edit not sent yet
+  flight: null, // the brief's latest save sent (flushBrief)
   visible: false,
 };
 
@@ -109,13 +110,13 @@ export const planner = {
     planner.backTo("launch");
   },
   // closed: the sheet closed. An edit to the brief not saved yet is saved.
-  closed() { flushBrief().catch(fail); reset(); },
+  closed() { if (pl.saving) flushBrief().catch(fail); reset(); },
   launched() { pl.drafts = null; reset(); },
 };
 
 function reset() {
   clearTimeout(pl.saving?.timer);
-  Object.assign(pl, { cur: null, step: "idea", message: "", thinking: false, error: "", retry: null, repo: null, launch: null, saving: null, start: "task" });
+  Object.assign(pl, { cur: null, step: "idea", message: "", thinking: false, error: "", retry: null, repo: null, launch: null, saving: null, flight: null, start: "task" });
   pl.answers.clear();
   render();
 }
@@ -123,7 +124,7 @@ function reset() {
 // mount moves the planner's markup into kind's sheet (its Back and Next
 // into the sheet's footer), and shows kind's own parts of it.
 function mount(kind) {
-  if (pl.kind !== kind && pl.cur) { flushBrief().catch(fail); reset(); }
+  if (pl.kind !== kind && pl.cur) { if (pl.saving) flushBrief().catch(fail); reset(); }
   const k = KINDS[kind];
   pl.kind = kind;
   const slot = k.slot();
@@ -173,7 +174,7 @@ function newFeature({ card = null, project = "", idea = "" }) {
 KINDS.feature.sheet().addEventListener("close", () => {
   if (pl.kind !== "feature") return;
   pl.visible = false;
-  flushBrief().catch(fail);
+  if (pl.saving) flushBrief().catch(fail);
   reset();
 });
 
@@ -634,7 +635,7 @@ function renderBrief() {
       v.can_wait?.length ? h("div", { class: "plan-can-wait" }, h("span", {}, "Can wait:"), h("ul", {}, ...v.can_wait.map((x) => h("li", {}, x)))) : null,
       !v.ready ? h("button", { type: "button", class: "link", onclick: attempt(() => go("interview")) }, "Back to the interview") : null));
   const ta = $("#plan-brief");
-  if (document.activeElement !== ta && !pl.saving) ta.value = p.brief;
+  if (document.activeElement !== ta && !pl.saving && !pl.flight) ta.value = p.brief;
   const edit = pl.briefView === "edit";
   ta.hidden = !edit;
   $("#plan-brief-preview").hidden = edit;
@@ -654,20 +655,32 @@ $("#plan-brief").addEventListener("input", () => {
   $("#plan-next").disabled = !$("#plan-brief").value.trim();
 });
 
-async function flushBrief() {
-  if (!pl.saving || !pl.cur?.id) return;
-  clearTimeout(pl.saving.timer);
-  pl.saving = null;
-  const brief = $("#plan-brief").value, id = pl.cur.id;
-  $("#plan-saved").textContent = "Saving…";
-  try {
-    const p = await call("PATCH", plansAPI(id), { brief });
-    if (pl.cur?.id === id) pl.cur = p; // still open: not after the sheet closed
-    $("#plan-saved").textContent = "Saved";
-  } catch (e) {
-    $("#plan-saved").textContent = "Not saved";
-    throw e;
+// flushBrief saves an edit to the brief not saved yet, after the saves
+// already sent (one PATCH at a time, in order), and returns the latest
+// save: awaiting it waits for the brief as typed to be saved.
+function flushBrief() {
+  if (pl.saving && pl.cur?.id) {
+    clearTimeout(pl.saving.timer);
+    pl.saving = null;
+    const brief = $("#plan-brief").value, id = pl.cur.id, prev = pl.flight;
+    const req = (async () => {
+      await prev?.catch(() => {});
+      $("#plan-saved").textContent = "Saving…";
+      try {
+        const p = await call("PATCH", plansAPI(id), { brief });
+        if (pl.flight !== req) return; // a later save follows
+        if (pl.cur?.id === id) pl.cur = p; // still open: not after the sheet closed
+        $("#plan-saved").textContent = pl.saving ? "" : "Saved";
+      } catch (e) {
+        if (pl.flight === req) $("#plan-saved").textContent = "Not saved";
+        throw e;
+      } finally {
+        if (pl.flight === req) pl.flight = null;
+      }
+    })();
+    pl.flight = req;
   }
+  return pl.flight || Promise.resolve();
 }
 
 // ---- 4. the repository

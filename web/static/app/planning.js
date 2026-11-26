@@ -59,6 +59,7 @@ const pl = {
   projects: [],
   people: [], // the org's members a card may be assigned to
   boards: [], // the org's boards, in their order, with how many cards each has
+  loads: 0, // loadPlanning's count: only the latest one's answer is shown
   board: store.get("dash.planning.board", ""), // the board shown ("": the default one)
   filter: store.get("dash.planning.project", ""),
   // The board's other filters: only the cards with all of tags, with
@@ -232,7 +233,7 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
 // is gone (deleted elsewhere) gives way to the default one.
 export async function loadPlanning() {
   if (!pl.root) return;
-  const want = pl.board;
+  const seq = ++pl.loads, want = pl.board;
   const q = new URLSearchParams();
   if (want) q.set("board", want);
   if (pl.filter) q.set("project", pl.filter);
@@ -240,7 +241,8 @@ export async function loadPlanning() {
   const [cards, projects, people, boards] = await Promise.all([
     call("GET", cardAPI() + qs).catch((e) => { if (e.status === 404 && want) return null; throw e; }),
     call("GET", "/api/planning/projects"), call("GET", "/api/planning/people"), call("GET", boardAPI())]);
-  if (pl.board !== want) return; // another board was picked meanwhile: its load shows it
+  // A later load (another board or project picked, or an event) shows its own answer.
+  if (seq !== pl.loads || pl.board !== want) return;
   pl.boards = boards;
   if (!cards) {
     saveBoard("");
