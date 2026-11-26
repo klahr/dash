@@ -13,6 +13,13 @@ tasks, open issues, which are the tasks made from reported problems that aren't 
 when waiting too long); the runners; and today's merges, spend and
 merges per hour.
 
+When the runners are on more than one Claude account, the wall shows a set of meters per account,
+from the newest report of the account's online runners. Signed in, it shows your own runners'
+accounts (the org's if you have none), named by email. With a wall link it shows the org's runners' accounts, named by their
+runners (in public mode by their aliases, "Runner A"), never by email. An account at its limit is
+named in red. The queue shows as paused on limits only when every account that can run tasks is
+out of usage.
+
 It refreshes every 5 seconds. Changes are animated: a new task's card slides in, a finished
 one shows how it ended ("Ready for review", "Failed", "Done") before it leaves, and counts
 roll to their new values. Nothing moves while nothing changes. A screen set to reduce motion

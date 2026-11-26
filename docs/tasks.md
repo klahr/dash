@@ -239,6 +239,11 @@ the account or an org admin can change it; the hub keeps it in `pace.json`. A ru
 report an account (an older Dash) is paced on its own, and a runner whose hub doesn't pace (an
 older hub) paces itself from its own setting in `usage.json`.
 
+When your runners are on more than one Claude account, the **Claude usage** sheet shows each
+account's meters under its email, with the runners on it. Pick the account under **Settings for**
+to see and change its pace. The queue shows as paused only when every account waits; while one
+still has usage, new tasks go to its runners.
+
 ## Start now
 
 While the queue waits for the pace, each queued card says "Waiting for weekly pace", with

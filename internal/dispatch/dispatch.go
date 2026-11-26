@@ -1,12 +1,14 @@
 package dispatch
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,6 +25,7 @@ import (
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
+	"github.com/klahr/dash/internal/usage"
 )
 
 // Fleet is the hub's runners (a *tunnel.Hub).
@@ -348,7 +351,39 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		}
 		return nil, waitReason(append(why, notFor...)), strings.Join(full, "; ")
 	}
-	return prefer(cands, t, parent, load, limit), "", ""
+	return prefer(cands, t, parent, load, limit, usageLevels(d.Fleet.List(), cands, time.Now())), "", ""
+}
+
+// usageStep is how far apart (as a share of a window) two accounts' usage
+// must be for the lower one to win over load: usage counts in steps of 10
+// points, so 41% and 43% are the same step and the less busy runner takes
+// the task, while 15% beats 45% however busy the runners are.
+const usageStep = 10
+
+// noUsage is the usage level of a runner whose account hasn't reported its
+// usage (it just started, or runs Claude with an API key): after every
+// account that has.
+const noUsage = math.MaxInt
+
+// usageLevels is, for each of cands (by id), its Claude account's usage as
+// a step of usageStep points (usage.Snapshot.Used), or noUsage. Runners on
+// one account share its usage: each gets the freshest report of any of
+// them, grouped as the hub paces them (Group; all is every runner).
+func usageLevels(all, cands []tunnel.Runner, now time.Time) map[string]int {
+	levels := make(map[string]int, len(cands))
+	for _, r := range cands {
+		var u *usage.Snapshot
+		for _, x := range Group(all, r) {
+			if s := reportedUsage(x); s != nil && (u == nil || s.UpdatedAt.After(u.UpdatedAt)) {
+				u = s
+			}
+		}
+		levels[r.ID] = noUsage
+		if u != nil {
+			levels[r.ID] = int(u.Used(now)*100) / usageStep
+		}
+	}
+	return levels
 }
 
 // eligible keeps those of runners (the ones serving t's project) that may
@@ -418,8 +453,10 @@ func unavailable(r tunnel.Runner, pace GroupPace, busy, limit int, t model.Todo)
 
 // prefer chooses among cands, the runners free to start t: the one that
 // has t's worktree and session, else (for a task starting out) the one
-// that has parent's, else the least loaded relative to its limit.
-func prefer(cands []tunnel.Runner, t model.Todo, parent *model.Todo, load map[string]int, limit func(tunnel.Runner) int) *tunnel.Runner {
+// that has parent's, whatever its account's usage; else the one on the
+// Claude account with the lowest usage level (usageLevels: runners with no
+// report last), and of those the least loaded relative to its limit.
+func prefer(cands []tunnel.Runner, t model.Todo, parent *model.Todo, load map[string]int, limit func(tunnel.Runner) int, level map[string]int) *tunnel.Runner {
 	// The runner that has the task's worktree and session continues it.
 	if i := slices.IndexFunc(cands, func(r tunnel.Runner) bool { return r.ID == t.Runner }); i >= 0 {
 		return &cands[i]
@@ -430,6 +467,9 @@ func prefer(cands []tunnel.Runner, t model.Todo, parent *model.Todo, load map[st
 		}
 	}
 	best := slices.MinFunc(cands, func(a, b tunnel.Runner) int {
+		if c := cmp.Compare(level[a.ID], level[b.ID]); c != 0 {
+			return c // the account with spare usage
+		}
 		return load[a.ID]*limit(b) - load[b.ID]*limit(a) // the least loaded, relative to its limit
 	})
 	return &best

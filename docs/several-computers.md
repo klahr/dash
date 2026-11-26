@@ -390,10 +390,15 @@ member it is for: a runner runs only its owner's tasks, unless it is a shared ru
 key ([Whose work a runner does](#whose-work-a-runner-does)). From then on:
 
 - Each task goes to one of the project's runners that is online, not paused, below its limit and
-  not held back by its owner's Claude usage, the least busy first. A task that ran before goes
-  back to the runner that has its worktree and Claude session. A task that builds on an earlier
-  one (**Build on**) goes to the runner that ran the earlier one, when it can take it; on another
-  runner it starts a fresh Claude session with the full task.
+  not held back by its owner's Claude usage. A task that ran before goes back to the runner that
+  has its worktree and Claude session. A task that builds on an earlier one (**Build on**) goes to
+  the runner that ran the earlier one, when it can take it; on another runner it starts a fresh
+  Claude session with the full task. These two rules win over usage.
+- Otherwise the task goes to a runner on the Claude account with the most usage left, then to
+  the least busy of those. An account's usage is the higher of its 5-hour and 7-day windows, from
+  the newest report of any runner on it. It counts in steps of 10 points, so 41% and 43% are the
+  same and the less busy runner wins. Runners on the same account share its usage. A runner whose
+  account hasn't reported usage yet (it just started, or it uses an API key) comes last.
 - To run a task on one runner only, pick it under **Runner** in the task form (or in the task's
   pane on a wide screen). The field shows when the project has more than one runner. The task
   then waits queued while that runner is offline or busy, and never goes to another one. Pick

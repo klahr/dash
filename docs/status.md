@@ -18,7 +18,7 @@ Each row says what is going on, and its button goes to where you fix it:
 | **Live updates**      | whether the page gets live updates                               | **Reload**                                |
 | **Billing**           | the organization needs a subscription ([billing](billing.md))    | **Organization → Billing** (owners)       |
 | **Claude**            | services affected on [Claude's status page](claude-status.md)    | the incidents                             |
-| **Claude usage**      | the usage windows, and why the queue waits                       | **Claude usage**, with the pace settings  |
+| **Claude usage**      | the usage windows (per Claude account, with several), and why the queue waits | **Claude usage**, with the pace settings  |
 | **Runner**            | the project has no runner it can use                             | **Add a runner**, its labels or **Runners** |
 | **Disk space**        | runners nearly out of disk space                                 | the runner in **Runners**                 |
 | **GitHub sync**       | the default branch can't sync with GitHub                        | the **Shell**                             |

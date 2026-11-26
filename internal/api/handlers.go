@@ -1844,46 +1844,30 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request) {
 // usageFor is the usage the dashboard shows r's caller. The hub doesn't run
 // Claude, so it has no usage of its own: it shows the caller's, as their
 // runner last reported it, and how the hub paces the caller's Claude
-// account.
-func (s *Server) usageFor(r *http.Request) usage.Snapshot {
+// account. With runners on several Claude accounts it lists each account's
+// usage and pace in Accounts too (see usageView).
+func (s *Server) usageFor(r *http.Request) usageView {
 	var snap usage.Snapshot
 	if s.Usage != nil {
 		snap = s.Usage.Snapshot()
 	}
 	if !s.hub() {
-		return snap
+		return usageView{Snapshot: snap}
 	}
 	c, err := s.caller(r)
 	if err != nil {
-		return snap
+		return usageView{Snapshot: snap}
 	}
 	now := time.Now()
-	u := s.runnerUsage(c)
-	var pace *dispatch.GroupPace
-	acct := s.callerAccount(c)
-	if acct != "" && s.Dispatch != nil && s.Dispatch.Pacer != nil {
-		pace = s.Dispatch.Pacer.Account(acct)
-		if pace != nil && pace.Usage != nil && (u == nil || pace.Usage.UpdatedAt.After(u.UpdatedAt)) {
-			u = pace.Usage // the account's freshest figures
-		}
-	}
 	manual, reason := snap.ManualPause, snap.Reason
-	hubPace := usage.Pace{Hub: true, Account: acct}
-	if u != nil {
-		snap = *u
-	} else {
-		snap = usage.Snapshot{}
+	v := usageView{Snapshot: s.accountSnapshot(c, s.callerAccount(c), s.runnerUsage(c), manual, reason, now),
+		Accounts: s.callerAccounts(c, manual, reason, now)}
+	var ws []waits
+	for _, a := range v.Accounts {
+		ws = append(ws, waits{active: a.Active, snap: a.Snapshot})
 	}
-	snap.ManualPause = manual
-	if manual {
-		snap.Paused, snap.Reason, snap.Until = true, reason, time.Time{}
-	}
-	if pace != nil {
-		hubPace = pace.Pace
-		hubPace.Runners = s.accountRunners(c, acct)
-	}
-	// The runner's verdict may be stale: its windows may have reset since.
-	return snap.WithPace(hubPace, now)
+	combinePause(&v.Snapshot, ws)
+	return v
 }
 
 // callerAccount is the Claude account c's runners are logged in to (the

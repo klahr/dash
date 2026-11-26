@@ -24,19 +24,40 @@ const windowElapsed = (w) => {
   return Math.min(1, Math.max(0, (span - (new Date(w.resets_at) - Date.now())) / span));
 };
 
+// The Claude accounts to show one by one: on a hub whose runners (yours, in
+// this org) are on more than one (GET /api/usage's accounts), else null.
+const shownAccounts = (u) => (u?.accounts?.length > 1 ? u.accounts : null);
+const liveWindows = (u) => (u.windows || []).filter((w) => new Date(w.resets_at) > new Date());
+// The account whose pace settings the sheet shows, with several: the one
+// picked, else the one the hub shows first (your newest runner's).
+let paceAccount = "";
+function shownPace(u) {
+  const accts = shownAccounts(u)?.filter((a) => a.account);
+  if (!accts?.length) return u?.pace;
+  if (!accts.some((a) => a.account === paceAccount)) {
+    paceAccount = accts.some((a) => a.account === u.pace?.account) ? u.pace.account : accts[0].account;
+  }
+  return accts.find((a) => a.account === paceAccount).pace;
+}
+
 export function renderUsage() {
   const u = state.usage;
   if (!u || (!u.known && !u.manual_pause)) { setStatus("usage", null); return; }
-  const live = (u.windows || []).filter((w) => new Date(w.resets_at) > new Date());
+  const accts = shownAccounts(u);
+  const live = accts ? accts.flatMap(liveWindows) : liveWindows(u);
   const top = live.reduce((a, w) => (!a || w.utilization > a.utilization ? w : a), null);
   const overPace = (w) => { const e = windowElapsed(w); return e !== null && w.utilization > e; };
   // Waiting only to stay on the weekly pace is the queue working as asked, not a stop.
   const stopped = u.paused && !u.pacing;
   const tone = stopped ? "bad" : u.pacing || (top && (top.utilization >= 0.7 || overPace(top))) ? "warn" : "ok";
 
+  const until = (x) => (x.until && !x.manual_pause ? ` until ${whenText(x.until)}` : "");
   const reason = u.paused
-    ? `${u.reason}. No new tasks start${u.until && !u.manual_pause ? ` until ${whenText(u.until)}` : ""}; running ones finish.`
-    : "Tasks start normally.";
+    ? `${u.reason}. No new tasks start${until(u)}; running ones finish.`
+    : accts ? "Tasks start normally. A new task goes to a runner on the account with the most usage left." : "Tasks start normally.";
+  // One account's wait, under its name, while another still runs tasks.
+  const accountReason = (a) => (a.paused && !u.paused
+    ? h("p", { class: `usage-reason${a.pacing ? " pacing" : ""}` }, `${a.reason}: no new tasks on this account${until(a)}.`) : null);
   // What a window's figures say, in words and in exact numbers for tooltips.
   const describe = (w) => {
     const pct = Math.round(w.utilization * 100);
@@ -52,7 +73,7 @@ export function renderUsage() {
       exact: `${pct}% used${pace === null ? "" : `, ${pace}% of the window elapsed (${points >= 0 ? "+" : "−"}${Math.abs(points)} points vs pace)`}`,
     };
   };
-  const meter = (w, compact) => {
+  const meter = (w, compact, label = "") => {
     const d = describe(w);
     const { pct, pace } = d;
     const cls = w.utilization >= 1 ? "full" : w.utilization >= 0.7 ? "warn" : "";
@@ -64,7 +85,7 @@ export function renderUsage() {
         compact
           ? h("span", { title: d.exact }, `${pct}%`)
           : h("span", { title: `${d.exact}. ${d.resetClock}.` }, `${pct}% · ${d.reset}`)),
-      h("div", { class: `meter ${cls}`, role: "meter", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": windowLabel(w.name) },
+      h("div", { class: `meter ${cls}`, role: "meter", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": `${windowLabel(w.name)}${label ? `, ${label}` : ""}` },
         h("span", { style: `width:${fill}%` }),
         pace !== null && fill > pace ? h("b", { class: "over", style: `left:${pace}%;width:${fill - pace}%` }) : null,
         pace !== null ? h("i", { class: "mark pace", style: `left:${pace}%`, title: `Pace: ${pace}% of the window elapsed, ${pct}% used (${pacing})` }) : null),
@@ -73,19 +94,27 @@ export function renderUsage() {
           d.reset, pacing ? ` · ${pacing}` : null)
         : pacing ? h("div", { class: `meter-pace${d.over ? " over" : ""}`, title: d.exact }, pacing) : null);
   };
+  // With several Claude accounts: each one's meters under its name (and,
+  // in the sheet, the runners on it).
+  const perAccount = (compact) => accts.map((a) => h(compact ? "div" : "section", { class: "usage-account", "aria-label": `Claude account ${a.label}` },
+    h(compact ? "div" : "h3", { class: "usage-account-name" }, a.label),
+    !compact && a.account && a.runners?.length ? h("p", { class: "usage-account-runners" }, `on ${a.runners.join(", ")}`) : null,
+    accountReason(a),
+    liveWindows(a).map((w) => meter(w, compact, a.label))));
   // In the status popover: a summary, why the queue waits, and a compact meter per window.
   setStatus("usage", {
     tone, label: "Claude usage",
-    text: u.pacing ? "Waiting for pace" : u.paused ? "Queue paused" : top ? `${shortLabel(top.name)} ${Math.round(top.utilization * 100)}%${overPace(top) ? ", ahead of pace" : ""}` : "Queue running",
+    text: u.pacing ? "Waiting for pace" : u.paused ? "Queue paused"
+      : top ? `${shortLabel(top.name)} ${Math.round(top.utilization * 100)}%${overPace(top) ? ", ahead of pace" : ""}${accts ? `, ${accts.length} accounts` : ""}` : "Queue running",
     detail: h("div", { class: "status-usage" },
       u.paused ? h("p", { class: `usage-reason${u.pacing ? " pacing" : ""}` }, reason) : null,
-      live.map((w) => meter(w, true))),
+      accts ? perAccount(true) : live.map((w) => meter(w, true))),
     action: { label: "Details", run: openUsage },
   });
 
   $("#usage-reason").textContent = reason;
-  $("#usage-meters").replaceChildren(...live.map((w) => meter(w, false)));
-  renderPace(u.pace);
+  $("#usage-meters").replaceChildren(...(accts ? perAccount(false) : live.map((w) => meter(w, false))));
+  renderPace(shownPace(u), accts);
   // In the project menu, beside Pause this project: the queue is every project's.
   const q = $("#pm-queue");
   setLabel(q, u.manual_pause ? "play" : "pause", u.manual_pause ? "Resume queue (all projects)" : "Pause queue (all projects)");
@@ -93,26 +122,35 @@ export function renderUsage() {
 }
 
 // The "Follow weekly pace" settings and where the queue stands with them.
-// On a hub (p.hub) they are your Claude account's: the hub paces every
-// runner logged in to it as one budget, and caps catching up at a multiple
-// of their usual parallelism rather than a number of tasks.
-function renderPace(p) {
+// On a hub (p.hub) they are a Claude account's: the hub paces every runner
+// logged in to it as one budget, and caps catching up at a multiple of
+// their usual parallelism rather than a number of tasks. With runners on
+// several accounts (accts), the sheet picks which account's it shows.
+function renderPace(p, accts) {
   const follow = !!p?.follow;
   const hub = !!p?.hub;
   const box = $("#pace-follow");
   box.checked = follow;
   box.disabled = hub && !p.account;
-  $("#pace-help").textContent = hub
-    ? "Paces every runner on your Claude account as one budget: no new tasks while ahead of the pace line, more at once while behind."
-    : "Keeps weekly usage on the pace line: no new tasks while ahead of it, more at once while behind.";
+  const named = accts?.filter((a) => a.account) || [];
+  $("#pace-help").textContent = !hub
+    ? "Keeps weekly usage on the pace line: no new tasks while ahead of it, more at once while behind."
+    : named.length > 1
+      ? "Each Claude account has its own setting. Paces every runner on the account picked here as one budget: no new tasks while ahead of the pace line, more at once while behind."
+      : "Paces every runner on your Claude account as one budget: no new tasks while ahead of the pace line, more at once while behind.";
   const acct = $("#pace-account");
   acct.hidden = !hub;
   if (hub) {
     const rs = p.runners || [];
-    acct.replaceChildren(...(p.account
-      ? [h("span", {}, "Claude account ", h("strong", {}, p.account)),
-        rs.length ? h("span", {}, `on ${rs.join(", ")}`) : null]
-      : [h("span", {}, "Your runners haven't said which Claude account they're logged in to. Update Dash on them to pace them here.")]));
+    const on = rs.length ? h("span", {}, `on ${rs.join(", ")}`) : null;
+    const pick = () => h("label", { class: "pace-pick" }, h("span", {}, "Settings for"),
+      h("select", { id: "pace-account-pick", onchange: (e) => { paceAccount = e.target.value; renderPace(shownPace(state.usage), shownAccounts(state.usage)); } },
+        named.map((a) => h("option", { value: a.account, selected: a.account === p.account }, a.account))));
+    acct.replaceChildren(...(named.length > 1
+      ? [pick(), on]
+      : p.account
+        ? [h("span", {}, "Claude account ", h("strong", {}, p.account)), on]
+        : [h("span", {}, "Your runners haven't said which Claude account they're logged in to. Update Dash on them to pace them here.")]));
   }
   const text = paceStateText(p);
   const st = $("#pace-state");
@@ -139,7 +177,7 @@ function renderPace(p) {
 // The pace saves as it changes: "Saved" in the sheet's header, or the error
 // under the field (the number as typed stays, to fix it).
 const savePace = (e) => saveField(e.target, async () => {
-  const p = state.usage?.pace;
+  const p = shownPace(state.usage);
   if (p?.hub) {
     state.usage = await api("PUT", "/api/queue/pace", { follow: $("#pace-follow").checked, max_boost: Number($("#pace-boost").value) || 0, account: p.account || "" });
   } else {

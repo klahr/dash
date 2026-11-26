@@ -69,6 +69,20 @@ type wallQueue struct {
 type wallUsage struct {
 	Known   bool           `json:"known"`
 	Windows []usage.Window `json:"windows"`
+	// Accounts are the meters of each Claude account the runners online are
+	// on (on a hub; none elsewhere). Known and Windows are one of them, for
+	// an older wall page.
+	Accounts []wallAccount `json:"accounts"`
+}
+
+// wallAccount is one Claude account's usage on the wall.
+type wallAccount struct {
+	// Label names it: its email for a signed-in wall outside public mode,
+	// else its runners' names (as the wall shows them), never an email.
+	Label   string         `json:"label"`
+	Windows []usage.Window `json:"windows"`
+	Paused  bool           `json:"paused,omitempty"`
+	Reason  string         `json:"reason,omitempty"`
 }
 
 type wallStage struct {
@@ -271,7 +285,7 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 	v.finish(&d)
 	wallOpenIssues(&d, data, byProject, privacy)
 	s.wallRunners(&d, todos, projects, runners, v.runnerName)
-	s.wallQueue(&d, c, runners)
+	s.wallQueue(&d, c, runners, func(r tunnel.Runner) string { return v.runnerName(r.ID) })
 	return d, nil
 }
 
@@ -610,36 +624,58 @@ func (s *Server) wallRunners(d *wallData, todos []model.Todo, projects []model.P
 	})
 }
 
-// wallQueue fills in whether the queue runs and the Claude usage it pauses on.
-func (s *Server) wallQueue(d *wallData, c Caller, runners []tunnel.Runner) {
+// wallQueue fills in whether the queue runs and the Claude usage it pauses
+// on: on a hub, each Claude account's (the caller's own runners' when there
+// is a caller with any, else the org's), named by name as the wall shows
+// runners, or by email for a caller outside public mode.
+func (s *Server) wallQueue(d *wallData, c Caller, runners []tunnel.Runner, name func(tunnel.Runner) string) {
 	var snap usage.Snapshot
 	if s.Usage != nil {
 		snap = s.Usage.Snapshot()
 	}
+	d.Usage.Accounts = []wallAccount{}
 	if s.hub() {
+		now := time.Now()
+		manual, reason := snap.ManualPause, snap.Reason
 		// The hub runs no Claude: the usage is a runner's, as it last
 		// reported it (the caller's own runner's when there is a caller).
+		reported := func(u usage.Snapshot) usage.Snapshot {
+			u.ManualPause = manual
+			if manual {
+				u.Paused, u.Reason = true, reason
+			}
+			// The runner's verdict may be stale: its windows may have reset since.
+			return u.Reevaluate(now)
+		}
 		var u *usage.Snapshot
+		var groups []usageGroup
 		if c.User != 0 {
 			u = s.runnerUsage(c)
+			groups = usageGroups(s.claudeRunners(c))
 		}
 		if u == nil {
 			u = bestUsage(runners)
 		}
-		if u != nil {
-			ru := *u
-			ru.ManualPause = snap.ManualPause
-			if snap.ManualPause {
-				ru.Paused, ru.Reason = true, snap.Reason
-			}
-			// The runner's verdict may be stale: its windows may have reset since.
-			snap = ru.Reevaluate(time.Now())
+		if len(groups) == 0 {
+			groups = usageGroups(runners)
 		}
+		if u != nil {
+			snap = reported(*u)
+		}
+		var ws []waits
+		for _, g := range groups {
+			a := reported(*g.usage)
+			label := g.account
+			if label == "" || c.User == 0 || d.Privacy {
+				label = strings.Join(g.names(name), ", ")
+			}
+			d.Usage.Accounts = append(d.Usage.Accounts, wallAccount{Label: label, Windows: nonNil(a.Windows), Paused: a.Paused, Reason: a.Reason})
+			ws = append(ws, waits{active: g.active, snap: a})
+		}
+		// Waiting on limits only while every account that could run is.
+		combinePause(&snap, ws)
 	}
-	d.Usage = wallUsage{Known: snap.Known, Windows: snap.Windows}
-	if d.Usage.Windows == nil {
-		d.Usage.Windows = []usage.Window{}
-	}
+	d.Usage.Known, d.Usage.Windows = snap.Known, nonNil(snap.Windows)
 	d.Queue.Paused, d.Queue.Reason = snap.Paused, snap.Reason
 	if snap.Paused && snap.Reason == "" {
 		d.Queue.Reason = "paused"

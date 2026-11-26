@@ -47,6 +47,14 @@
   .meter{width:240px}
   .meter .lbl{display:flex;justify-content:space-between;font-size:18px;color:var(--dim);margin-bottom:6px;white-space:nowrap}
   .meter .lbl b{color:var(--text);font-weight:600}
+  /* Runners on several Claude accounts: a set of meters per account, under its name (wall.js). */
+  .usage.multi{gap:24px;min-width:0;flex:0 1 auto}
+  .acct{min-width:0;flex:1 1 0;max-width:420px}
+  .acct-name{font-size:15px;color:var(--dim);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acct.paused .acct-name{color:var(--bad)}
+  .acct-meters{display:flex;gap:16px}
+  .usage.multi .meter{width:auto;flex:1 1 0;min-width:96px}
+  .usage.multi .meter .lbl{font-size:16px;margin-bottom:4px} /* the name above still fits the 96px header */
   .bar{height:12px;border-radius:6px;background:var(--line);position:relative}
   .bar i{display:block;height:100%;border-radius:6px;transition:width .8s ease}
   .clock{font-size:52px;font-weight:600;min-width:170px;text-align:right}
@@ -177,6 +185,8 @@
   .phone .queue-state{font-size:22px;padding:8px 16px}
   .phone .usage{width:100%;gap:20px}
   .phone .meter{flex:1;width:auto}
+  .narrow .usage.multi{flex-wrap:wrap;flex:1 1 100%}
+  .phone .acct{flex-basis:100%;max-width:none}
   .phone .pipeline{grid-template-columns:repeat(2,1fr);gap:12px}
   .phone .stage .v{font-size:60px}
   .phone .side{grid-template-columns:minmax(0,1fr)}

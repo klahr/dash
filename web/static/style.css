@@ -1910,6 +1910,17 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 #pace-max-row, #pace-boost-row { justify-content: space-between; }
 .pace-account { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 0 0 10px; font-size: var(--fs-s); color: var(--muted); }
 .pace-account strong { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.pace-pick { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; max-width: 100%; }
+.pace-pick select { min-width: 0; max-width: 100%; }
+/* Runners on several Claude accounts (app/usage.js): one block of meters per account. */
+.usage-account { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.meters .usage-account + .usage-account { border-top: 1px solid var(--line); padding-top: 12px; }
+.usage-account-name { margin: 0; font-size: var(--fs-m); font-weight: 600; overflow-wrap: anywhere; }
+.usage-account-runners { margin: -8px 0 0; font-size: var(--fs-s); color: var(--muted); overflow-wrap: anywhere; }
+.usage-account .usage-reason { margin: 0; font-size: var(--fs-s); color: var(--failed); }
+.usage-account .usage-reason.pacing { color: var(--running); }
+.status-usage .usage-account { gap: 6px; }
+.status-usage .usage-account-name { font-size: var(--fs-xs); color: var(--muted); }
 
 /* ---------- permission requests ---------- */
 .perm-list { display: flex; flex-direction: column; gap: 10px; }

@@ -198,8 +198,12 @@ function tick() {
 
 // ---- rendering ----
 
-const USAGE = [["five_hour", "Claude 5h"], ["seven_day", "Claude 7d"]];
-let meters = null; // the header's meters, built once: [{num, bar, fill, sub}]
+const USAGE = [["five_hour", "Claude 5h", "5h"], ["seven_day", "Claude 7d", "7d"]];
+// The header's meters, per Claude account (one set, unnamed, with a single
+// account): [[{num, bar, fill, sub}]], built again only when the accounts
+// change (metersKey).
+let meters = null;
+let metersKey = null;
 
 function renderHeader(d) {
   const scope = d.project ? d.project : "all projects";
@@ -221,37 +225,68 @@ function renderHeader(d) {
   q.querySelector(".dot").classList.toggle("pulse", !d.queue.paused && busy > 0);
   setText($("queue-text"), text.length > 70 ? text.slice(0, 69) + "…" : text);
 
-  // The meters are built once and updated in place, so the bar's width
-  // transition runs only when its value moves.
-  if (!meters) {
-    meters = USAGE.map(([, label]) => {
-      const m = { num: h("b", { class: "num" }), fill: h("i"), sub: h("span") };
-      m.bar = h("div", { class: "bar" });
-      $("usage").append(h("div", { class: "meter" },
-        h("div", { class: "lbl" }, h("span", {}, label), m.num),
-        m.bar,
-        h("div", { class: "lbl", style: "margin-top:4px" }, m.sub, h("span"))));
-      return m;
+  // One set of meters per Claude account the runners are on, under its
+  // name; with one account (or an older hub), one unnamed set.
+  const accts = (d.usage.accounts || []).length > 1 ? d.usage.accounts : null;
+  const sets = accts
+    ? accts.map((a) => ({ label: a.label, known: true, windows: a.windows, paused: a.paused, reason: a.reason }))
+    : [{ label: "", known: d.usage.known, windows: d.usage.windows }];
+  // The meters are built once per set of accounts and updated in place, so
+  // the bar's width transition runs only when its value moves.
+  const key = sets.map((s) => s.label).join("\n");
+  if (key !== metersKey) {
+    metersKey = key;
+    const box = $("usage");
+    box.replaceChildren();
+    box.classList.toggle("multi", !!accts);
+    meters = sets.map((s) => {
+      const ms = USAGE.map(([, label, short]) => {
+        const m = { num: h("b", { class: "num" }), fill: h("i"), sub: h("span") };
+        m.bar = h("div", { class: "bar" });
+        m.el = h("div", { class: "meter" },
+          h("div", { class: "lbl" }, h("span", {}, accts ? short : label), m.num),
+          m.bar,
+          h("div", { class: "lbl", style: "margin-top:4px" }, m.sub, h("span")));
+        return m;
+      });
+      if (!accts) {
+        box.append(...ms.map((m) => m.el));
+        return ms;
+      }
+      ms.name = h("div", { class: "acct-name" }, s.label);
+      ms.group = h("div", { class: "acct" }, ms.name, h("div", { class: "acct-meters" }, ...ms.map((m) => m.el)));
+      box.append(ms.group);
+      return ms;
     });
   }
-  USAGE.forEach(([name], i) => {
-    const m = meters[i];
-    const w = (d.usage.windows || []).find((x) => x.name === name);
-    if (!d.usage.known || !w) {
-      setText(m.num, "—");
-      setText(m.sub, "no report yet");
-      if (m.fill.parentNode) m.fill.remove();
-      return;
+  sets.forEach((s, j) => {
+    const ms = meters[j];
+    if (ms.group) {
+      ms.group.classList.toggle("paused", !!s.paused);
+      const title = s.label + (s.paused && s.reason ? " · " + s.reason : "");
+      if (ms.name.title !== title) ms.name.title = title;
     }
-    const pct = Math.round(w.utilization * 100);
-    const color = w.utilization >= 1 ? "var(--bad)" : w.utilization >= 0.7 ? "var(--run)" : "var(--ok)";
-    setText(m.num, pct + "%");
-    setText(m.sub, resetText(w.resets_at, Date.now() + skew));
-    const width = Math.min(100, pct) + "%";
-    if (m.fill.style.width !== width) m.fill.style.width = width;
-    if (m.fill.style.background !== color) m.fill.style.background = color;
-    if (!m.fill.parentNode) m.bar.append(m.fill);
+    USAGE.forEach(([name], i) => meterTo(ms[i], s, name));
   });
+}
+
+// meterTo shows window name of usage set s (its known and windows) in m.
+function meterTo(m, s, name) {
+  const w = (s.windows || []).find((x) => x.name === name);
+  if (!s.known || !w) {
+    setText(m.num, "—");
+    setText(m.sub, "no report yet");
+    if (m.fill.parentNode) m.fill.remove();
+    return;
+  }
+  const pct = Math.round(w.utilization * 100);
+  const color = w.utilization >= 1 ? "var(--bad)" : w.utilization >= 0.7 ? "var(--run)" : "var(--ok)";
+  setText(m.num, pct + "%");
+  setText(m.sub, resetText(w.resets_at, Date.now() + skew));
+  const width = Math.min(100, pct) + "%";
+  if (m.fill.style.width !== width) m.fill.style.width = width;
+  if (m.fill.style.background !== color) m.fill.style.background = color;
+  if (!m.fill.parentNode) m.bar.append(m.fill);
 }
 
 function renderPipeline(d, now) {

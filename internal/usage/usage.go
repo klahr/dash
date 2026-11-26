@@ -223,6 +223,23 @@ func (t *Tracker) Snapshot() Snapshot {
 	return s
 }
 
+// FiveHourWindow is the session window, which resets every 5 hours.
+const FiveHourWindow = "five_hour"
+
+// Used is how much of its usage s's account has used as of now (0..1): the
+// higher of its 5-hour and weekly windows, so an account nearly out for the
+// week doesn't look fresh because its 5-hour window just reset. A window
+// that has reset since s was reported counts as unused.
+func (s Snapshot) Used(now time.Time) float64 {
+	used := 0.0
+	for _, w := range s.Windows {
+		if (w.Name == FiveHourWindow || w.Name == WeekWindow) && w.ResetsAt.After(now) {
+			used = max(used, w.Utilization)
+		}
+	}
+	return used
+}
+
 // Limited reports whether a window's status means Claude Code refuses work.
 // Only "rejected" is a limit: "allowed_warning" is Claude Code saying the
 // window is getting close, and its utilization tells how close.
