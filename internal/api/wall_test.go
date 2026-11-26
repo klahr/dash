@@ -437,3 +437,66 @@ func TestWallTokens(t *testing.T) {
 }
 
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+// A running card carries its project's icon, at a URL a wall token may load;
+// public mode has none, and a public token can't load it.
+func TestWallProjectIcon(t *testing.T) {
+	parallel(t)
+
+	s, web := wallServer(t)
+	s.UploadRoot = t.TempDir()
+	routes := s.Routes()
+	h := loginAs(t, routes, "u", "p")
+	w := do(t, h, "POST", "/api/uploads?name=icon.svg", `<svg xmlns="http://www.w3.org/2000/svg"/>`)
+	var up model.Attachment
+	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &up) != nil {
+		t.Fatalf("upload: %d %s", w.Code, w.Body)
+	}
+	if _, err := raw(s).UpdateProject(web.ID, func(x *model.Project) error { x.Icon = up.ID + "/" + up.Name; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	setTodo(t, s, web, func(x *model.Todo) { x.Status, x.StartedAt = model.StatusInProgress, at(-time.Minute) })
+
+	d, _ := getWallJSON(t, h, "/api/wall")
+	if len(d.Running) != 1 || !strings.HasPrefix(d.Running[0].Icon, "/api/wall/icon?") {
+		t.Fatalf("running: %+v", d.Running)
+	}
+	icon := d.Running[0].Icon
+	if d, _ := getWallJSON(t, h, "/api/wall?privacy=1"); d.Running[0].Icon != "" {
+		t.Errorf("public mode's icon: %q", d.Running[0].Icon)
+	}
+	if w := do(t, h, "GET", icon, ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "<svg") {
+		t.Errorf("signed in: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, routes, "GET", icon, ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("signed out: %d", w.Code)
+	}
+
+	owner := testOwner(t, s)
+	tok, _, err := s.Store.Accounts().CreateWallToken(owner.Org, owner.User, "TV", false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := do(t, routes, "GET", icon+"&token="+tok, ""); w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/svg+xml" {
+		t.Errorf("with a wall token: %d %s", w.Code, w.Body)
+	}
+	pub, _, err := s.Store.Accounts().CreateWallToken(owner.Org, owner.User, "lobby", true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := do(t, routes, "GET", icon+"&token="+pub, ""); w.Code != http.StatusNotFound {
+		t.Errorf("with a public wall token: %d", w.Code)
+	}
+	// Another org's token doesn't reach our project.
+	two, err := s.Auth.Accounts().CreateOrg(owner.User, "Two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := s.Store.Accounts().CreateWallToken(two.ID, owner.User, "their TV", false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := do(t, routes, "GET", icon+"&token="+other, ""); w.Code != http.StatusNotFound {
+		t.Errorf("another org's token: %d", w.Code)
+	}
+}

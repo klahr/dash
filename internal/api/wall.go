@@ -5,7 +5,8 @@ package api
 // /api/wall) that sums up an org's work across its projects. A signed-in
 // session sees its active org; a TV opens /wall?token=<wall token> instead,
 // a read-only token an org admin makes (/api/wall/tokens) that reaches
-// these two paths and nothing else (see auth.WallPaths).
+// these paths and nothing else (see auth.WallPaths). The running cards show
+// their project's icon from GET /api/wall/icon.
 //
 // Public mode (?privacy=1, and always with a public wall token) shows only
 // what anyone may see, for a screen visitors walk past or a link shared
@@ -18,6 +19,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -93,6 +95,7 @@ type wallRun struct {
 	Title     string     `json:"title"`
 	Project   string     `json:"project"`
 	Color     string     `json:"color,omitempty"`
+	Icon      string     `json:"icon,omitempty"` // the project's icon (GET /api/wall/icon); empty in privacy mode
 	Runner    string     `json:"runner"`
 	Run       int        `json:"run"`
 	CostUSD   *float64   `json:"cost_usd,omitempty"` // nil in privacy mode
@@ -201,6 +204,42 @@ func (s *Server) getWall(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, d)
+}
+
+// wallIconURL is where the wall gets p's icon, or "" if it has none. The
+// upload's id changes with the icon, so the URL does too.
+func wallIconURL(p model.Project) string {
+	if p.Icon == "" {
+		return ""
+	}
+	return "/api/wall/icon?" + url.Values{"project": {p.ID}, "v": {p.Icon}}.Encode()
+}
+
+// wallIcon serves GET /api/wall/icon?project=<id>: the project's icon image,
+// for a wall's running cards. Not in public mode, where a project's icon
+// would tell which one it is.
+func (s *Server) wallIcon(w http.ResponseWriter, r *http.Request) {
+	c, public, err := s.wallCaller(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	if public {
+		writeErr(w, store.ErrNotFound)
+		return
+	}
+	p, err := s.Store.ForOrg(c.Org).GetProject(r.URL.Query().Get("project"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	id, name, _ := strings.Cut(p.Icon, "/")
+	a, err := s.as(c).findUpload(id)
+	if err != nil || a.Name != name || !strings.HasPrefix(a.Type, "image/") {
+		writeErr(w, store.ErrNotFound)
+		return
+	}
+	serveUpload(w, r, a)
 }
 
 // wall sums up c's org's work as of now; privacy is public mode.
@@ -414,6 +453,7 @@ func (v *wallTally) running(t model.Todo) wallRun {
 	run := wallRun{ID: t.ID, Title: v.title(t), Project: p.Name, Color: p.Color, Runner: v.runnerName(t.Runner), Run: t.Runs + 1,
 		StartedAt: t.StartedAt, Add: t.DiffAdd, Del: t.DiffDel, Files: t.DiffFiles, SentBack: v.sentBack(t.SentBack)}
 	if !v.privacy {
+		run.Icon = wallIconURL(p)
 		cost := t.CostUSD
 		run.CostUSD = &cost
 		if v.s.Hub != nil {

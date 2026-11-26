@@ -7,7 +7,7 @@ portrait TV, a phone) get a stacked layout that scrolls. Nothing on it needs a c
 
 From top to bottom: whether the queue runs and how many runner slots are busy, the Claude
 usage of the 5-hour and 7-day windows (with the time left until each resets, e.g. "resets in 3d 4h"), a clock; the
-number of tasks in each stage; a card per running task (elapsed time, run, cost so far,
+number of tasks in each stage; a card per running task (its project's icon, elapsed time, run, cost so far,
 lines changed, the tool call it is making); what needs a human (reviews oldest first, failed
 tasks, open issues, which are the tasks made from reported problems that aren't merged yet; red
 when waiting too long); the runners; and today's merges, spend and
@@ -63,7 +63,7 @@ Options (combine them with `&`):
 ## A link for a TV
 
 A TV shouldn't keep someone's session. An org admin makes a **wall token** instead: it
-opens `/wall` (and its data, `/api/wall`) for that organization and nothing else, not the
+opens `/wall` (and its data, `/api/wall`, and project icons, `/api/wall/icon`) for that organization and nothing else, not the
 API and not the dashboard. Make one in **Organization → Wall view → Links for TVs**, or with the API:
 
 ```sh
@@ -83,7 +83,7 @@ the wall, so treat it like a password; add `&privacy=1` where visitors walk past
 The public view shows only what anyone may see: the counts in each stage, timers, lines
 changed, runner slots, Claude usage and merges per hour. It hides task titles and
 prompts, project names (they become "Project A", "Project B"…, lettered by when the
-project was made), runner names ("Runner A"…), why a task failed, why it was sent back
+project was made) and icons, runner names ("Runner A"…), why a task failed, why it was sent back
 (only "merge conflict" or "failing tests"), activity lines, issue titles and costs. With
 it, `?project=` takes a project's id only, so names can't be guessed.
 

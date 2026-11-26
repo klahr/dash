@@ -853,11 +853,11 @@ var public = map[string]bool{
 // publicAsset reports whether path is static artwork the sign-in and
 // invitation pages need before there's a session: images and the
 // self-hosted fonts.
-// WallPaths are the wall view's page and data. Opened with ?token=, they
-// skip the session: the handler checks the token (a store.WallToken), which
-// grants these two paths and nothing else. Without one, they need a session
-// as usual.
-var WallPaths = map[string]bool{"/wall": true, "/api/wall": true}
+// WallPaths are the wall view's page, data and project icons. Opened with
+// ?token=, they skip the session: the handler checks the token (a
+// store.WallToken), which grants these paths and nothing else. Without one,
+// they need a session as usual.
+var WallPaths = map[string]bool{"/wall": true, "/api/wall": true, "/api/wall/icon": true}
 
 // wallToken reports whether r is a GET of a wall path carrying a token.
 func wallToken(r *http.Request) bool {

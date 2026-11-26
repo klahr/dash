@@ -539,6 +539,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	// The wall view: a read-only TV dashboard (wall.go)
 	mux.HandleFunc("GET /wall", s.wallPage)
 	mux.HandleFunc("GET /api/wall", s.getWall)
+	mux.HandleFunc("GET /api/wall/icon", s.wallIcon)
 	s.wallTokenRoutes(mux)
 
 	// Frontend

@@ -318,6 +318,19 @@ function fit(list, panel, noun) {
   note.textContent = "+ " + (kids.length - keep) + " more " + noun;
 }
 
+// projectIcon is a running card's project icon: its image (with the wall's
+// token, which the image's URL needs too), else its initial in its color, as
+// the app shows it. None in public mode, where it would tell the project.
+function projectIcon(r, privacy) {
+  if (privacy || !r.project) return null;
+  const initial = () => h("span", { class: "picon", style: r.color ? "--pc:" + r.color : "", "aria-hidden": "true" }, [...r.project][0].toUpperCase());
+  if (!r.icon) return initial();
+  const src = r.icon + (params.get("token") ? "&token=" + encodeURIComponent(params.get("token")) : "");
+  const icon = h("span", { class: "picon img", "aria-hidden": "true" }, h("img", { src, alt: "" }));
+  icon.firstChild.addEventListener("error", () => icon.replaceWith(initial()), { once: true });
+  return icon;
+}
+
 function renderRunning(d) {
   setText($("running-count"), String(d.running.length));
   $("running-dot").classList.toggle("pulse", d.running.length > 0);
@@ -364,7 +377,7 @@ function renderRunning(d) {
     }
     return h("div", { class: "card", "data-key": r.id },
       h("div", {},
-        h("div", { class: "t" }, r.title, r.sent_back && h("span", { class: "tag" }, "sent back: " + r.sent_back)),
+        h("div", { class: "t" }, projectIcon(r, d.privacy), r.title, r.sent_back && h("span", { class: "tag" }, "sent back: " + r.sent_back)),
         h("div", { class: "meta" }, meta.map((m) => h("span", {}, m)))),
       h("div", { class: "right" }, clock, diff),
       live);

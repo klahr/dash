@@ -65,6 +65,10 @@
   .running{display:flex;flex-direction:column;gap:14px}
   .card{border:1px solid var(--line);border-radius:14px;padding:16px 20px;background:var(--raised);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 20px}
   .card .t{font-size:26px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .picon{display:inline-grid;place-items:center;width:30px;height:30px;margin-right:10px;vertical-align:-5px;border-radius:7px;
+         font-size:17px;font-weight:700;line-height:1;background:color-mix(in srgb,var(--pc,var(--dim)) 32%,var(--raised))}
+  .picon.img{background:none}
+  .picon img{width:100%;height:100%;border-radius:inherit;object-fit:cover}
   .card .meta{font-size:18px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .card .meta span+span::before{content:" · ";color:var(--faint)}
   .card .live{grid-column:1/-1;font:400 18px/1.4 "JetBrains Mono",ui-monospace,monospace;color:var(--text);
