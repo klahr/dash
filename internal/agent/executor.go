@@ -61,7 +61,10 @@ type ExecRequest struct {
 	// Claude Code's syntax ("Read", "Bash(npm audit:*)", "Read(//abs/**)"),
 	// which a provider maps to its own.
 	AllowedTools, DeniedTools []string
-	Env                       []string
+	// Settings, if set, is a JSON object of Claude Code settings for the
+	// run (claude --settings), e.g. a scan's command sandbox.
+	Settings string
+	Env      []string
 	// Shared, when set, is the Claude config folder of work for another
 	// member than this runner's owner: Claude runs with the API key in
 	// claudecli.KeyEnv and without any subscription login

@@ -43,7 +43,9 @@ Scans come from three places, marked on each card:
   or manifest, else proprietary): dependencies whose licence clashes with it (GPL or AGPL in an
   MIT or proprietary project, say), with no or an unknown licence, or whose licence changed in an
   upgrade in the lock files' recent history. It reads the licences from the package managers'
-  lock files and metadata already on the computer and installs nothing.
+  lock files and metadata and installs nothing. It has no general shell: it may run only
+  `govulncheck`, `npm audit` and `npm audit --json`, `pip-audit --disable-pip …`, `cargo audit` and
+  `cargo audit --json`, `pip show` and `cargo metadata` (see [Shell commands](#shell-commands)).
   The dead code scan (suggested monthly) reports unused functions, types, flags, routes, config
   keys and files, and TODO/FIXME comments older than 90 days (dated with git blame) worth
   turning into tasks. It checks "unused" against the whole repository, including references by
@@ -56,7 +58,8 @@ Scans come from three places, marked on each card:
   adding runs at about 25 minutes in total and installs nothing. Each run has a time limit:
   `timeout` (or `gtimeout`) where it exists, else the test runner's own (`go test -timeout`),
   else a `perl` alarm, so it works on macOS too.
-  Like the dependency audit it needs `Bash`. A scan with `Bash` may run the commands its prompt
+  It needs `Bash` and runs the repository's own test code, so it needs approval: see
+  [Shell commands](#shell-commands). A scan with `Bash` may run the commands its prompt
   asks for (and the network they use) and write to a temp directory, but not change the
   checkout's files; a scan without it is read-only.
 - **Repository:** markdown files in `.dash/scans/<name>.md`, versioned and shared with your team.
@@ -146,8 +149,9 @@ Look for vulnerabilities in {{path}} …
   sheet. Until then the scan runs with read-only tools and its schedule is off. The approval
   covers the exact tool list and expression: if the template's tools change, it goes back to
   read-only until you approve again; if its schedule changes, the approved one keeps running
-  until you approve the new one. Built-in scans need no approval, and neither do Dash scans: only
-  a Dash user can change them, so their tools and schedule apply as written.
+  until you approve the new one. Built-in scans need no approval, except `flaky-tests` (see
+  [Shell commands](#shell-commands)), and neither do Dash scans: only a Dash user can change
+  them, so their tools and schedule apply as written.
 - **Schedules.** The built-in scans' schedules are suggestions and a repository template's needs
   approval, so they only run once you turn them on; turning on a repository template's approves
   it. A Dash scan's schedule runs as soon as you save it. You can turn any schedule on or off, or
@@ -179,6 +183,39 @@ Look for vulnerabilities in {{path}} …
 - **Reports.** Each run shows what it found, e.g. "2 added, 3 already there, 1 dismissed". A
   red badge counts the critical and high drafts the run added, e.g. "1 critical · 2 high". A
   scheduled run that adds critical or high drafts sends a notification.
+
+## Shell commands
+
+Scans run unattended, with network, as the runner's user. A shell there could read your SSH
+keys, `~/.claude.json` or the runner's token, so Dash limits it:
+
+- **Named commands only.** A scan's `Bash` rules name the commands it may run, e.g.
+  `Bash(govulncheck:*)`. Any other command is refused. The `dependencies` scan has only the audit
+  and metadata commands listed above.
+- **`flaky-tests` needs approval.** It runs any command, including the repository's own tests.
+  A test merged to the default branch, or a prompt injection, could steal credentials. So it
+  runs only once you approve it for the project: **Approve tools** on the scan in the **Scans**
+  sheet, which says why. Until then its runs are skipped with a note. A runner started with
+  `-claude-sandbox` (see [sandbox](sandbox.md)) runs it without approval. On a hub, a run sent to
+  a runner without a sandbox is skipped until you approve it.
+- **Claude Code's sandbox.** Every scan that may run commands runs them in Claude Code's own
+  sandbox. Commands can't read the credentials the file tools can't: `~/.ssh`, `~/.gnupg`,
+  `~/.aws`, `~/.config/gh`, `~/.config/gcloud`, `~/.claude`, `~/.claude.json`, `~/.netrc`,
+  `~/.git-credentials`, `~/.docker`, `~/.kube`, `~/.npmrc`, `~/.pypirc`, cargo's and gem's
+  credentials, and Dash's data folders (the runner's token, the database, logs and worktrees).
+  They may write only the checkout, the temp folder and the package managers' caches, and reach
+  only the package registries and advisory databases the audit tools use.
+
+Where the credential deny list can't apply:
+
+- Claude Code's sandbox needs macOS, or Linux with bubblewrap and socat. Where it can't start
+  (Linux without them, Windows), Claude Code warns in the run's log and runs the commands without
+  it. The `dependencies` scan is still limited to its named commands, but those commands can read
+  any file you can. Install bubblewrap, or use `-claude-sandbox`, to close that gap.
+- A private registry that needs `~/.npmrc` or `~/.pypirc` can't be reached from the sandbox. The
+  audit then fails and the scan judges the versions from what it knows.
+- A repository template you approve with plain `Bash` runs in the same sandbox, but it can still
+  run any command there. Approve it only if you trust everyone who can merge.
 
 ## Findings on the Board
 
@@ -222,7 +259,9 @@ To keep the Board usable when scans find a lot:
 
 - `GET /api/projects/{pid}/scans` lists the scans, each with `source` (`builtin`, `repo` or
   `dash`); a repository scan replaced by a Dash scan of the same name is listed too, with
-  `shadowed_by: "dash"`.
+  `shadowed_by: "dash"`. `tools_approved` says whether it runs with its tools; a built-in that
+  needs approval says why in `approval_note`. `{"approve_tools": [the scan's tools]}` to `PATCH`
+  approves them.
 - `POST /api/projects/{pid}/scans` creates a Dash scan: `{"name", "title", "kind", "scope",
   "path", "model", "effort", "schedule", "tools": [], "prompt"}`. 409 if another Dash scan has
   the name; a built-in or repository scan of the name is replaced.

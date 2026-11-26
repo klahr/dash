@@ -31,6 +31,9 @@ type scanInfo struct {
 	// ApprovedTools is the tool list approved before, when the template
 	// asks for others now.
 	ApprovedTools []string `json:"approved_tools,omitempty"`
+	// ApprovalNote says why a built-in scan asks for approval
+	// (scan.ShellApprovalNote); "" when it doesn't.
+	ApprovalNote string `json:"approval_note,omitempty"`
 	// Markdown is a Dash scan as a repository file, for "Export to repo".
 	Markdown string `json:"markdown,omitempty"`
 }
@@ -48,6 +51,15 @@ func (sv *service) scanInfo(projectID string, t scan.Template) scanInfo {
 		return info
 	}
 	_, info.ToolsApproved = scan.Tools(t, set, has)
+	if !info.ToolsApproved && scan.SandboxTools(t, false) != nil {
+		// A runner that runs its own scans in a sandbox needs no approval;
+		// a hub can't tell which runner takes the next run.
+		if sc := sv.s.Scans; sc != nil && sc.Sandboxed && sc.Remote == nil {
+			info.ToolsApproved = true
+		} else {
+			info.ApprovalNote = scan.ShellApprovalNote
+		}
+	}
 	if !info.ToolsApproved {
 		info.ApprovedTools = set.ApprovedTools
 	}

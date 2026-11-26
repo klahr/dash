@@ -103,6 +103,49 @@ const (
 // anyone who can merge may change, so it needs approval.
 func (t Template) Trusted() bool { return t.Builtin || t.Origin == SourceDash }
 
+// RunsAnyCommand says the template asks for a shell without limits ("Bash",
+// "Bash(*)"), not just named commands ("Bash(govulncheck:*)").
+func (t Template) RunsAnyCommand() bool { return slices.ContainsFunc(t.Tools, anyCommand) }
+
+// anyCommand says tool is a Bash rule that allows every command.
+func anyCommand(tool string) bool {
+	tool = strings.TrimSpace(tool)
+	if tool == "Bash" {
+		return true
+	}
+	inner, ok := strings.CutPrefix(tool, "Bash(")
+	if !ok || !strings.HasSuffix(inner, ")") {
+		return false
+	}
+	switch strings.TrimSpace(strings.TrimSuffix(inner, ")")) {
+	case "", "*", ":*":
+		return true
+	}
+	return false
+}
+
+// usesShell says tools include any Bash rule.
+func usesShell(tools []string) bool {
+	return slices.ContainsFunc(tools, func(s string) bool {
+		s = strings.TrimSpace(s)
+		return s == "Bash" || strings.HasPrefix(s, "Bash(")
+	})
+}
+
+// ShellApproval says a built-in template's tools need the user's approval
+// all the same: it runs any command, e.g. the repository's own tests (the
+// flaky-tests scan), with the runner's user's rights and network. A test
+// merged to the default branch, or a prompt injection, could read the
+// computer's credentials. A runner that runs Claude in a sandbox
+// (-claude-sandbox, Runner.Sandboxed) runs it without approval.
+func (t Template) ShellApproval() bool { return t.Builtin && t.RunsAnyCommand() }
+
+// ShellApprovalNote is why a ShellApproval template asks for approval, for
+// the Scans view and the run's log.
+const ShellApprovalNote = "This scan runs the repository's own code (its tests) with a shell, as the runner's user. " +
+	"A test merged to the default branch, or a prompt injection, could read credentials on that computer. " +
+	"It doesn't run until you approve it for this project, except on runners that run Claude in a sandbox (-claude-sandbox)."
+
 // DefaultTools only read: files, and git's view of what changed through the
 // scan's git tools (see GitTools). Not Bash git rules: "Bash(git log:*)"
 // allows any arguments, and git log/diff/show --output=<file> writes a file.

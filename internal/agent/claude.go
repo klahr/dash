@@ -105,6 +105,9 @@ func (c ClaudeCode) RunArgs(req ExecRequest) []string {
 		// settings (and so their hooks) aren't loaded.
 		args = append(args, "--setting-sources", "", "--permission-mode", "dontAsk", "--permission-prompts", "none")
 	}
+	if req.Settings != "" {
+		args = append(args, "--settings", req.Settings)
+	}
 	if req.PermissionTool != (MCPTool{}) {
 		args = append(args, "--permission-prompt-tool", mcptools.ToolName(req.PermissionTool.Server, req.PermissionTool.Tool))
 	}

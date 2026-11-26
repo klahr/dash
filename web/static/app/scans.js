@@ -480,16 +480,21 @@ $("#scan-form").addEventListener("submit", attempt(async (e) => {
 // hasn't approved: tools beyond read-only (it runs read-only until then) and
 // its schedule (off, or the approved one, until then). Anyone who can merge
 // to the repository can change a template, so Dash asks before it runs a
-// shell or runs on a timer.
+// shell or runs on a timer. A built-in that runs the repository's code with
+// a shell (flaky-tests) asks too, saying why (approval_note).
 function scanApprovals(s, patch) {
   const sch = s.schedule;
   const askTools = s.tools?.length && !s.tools_approved;
   const askSched = !!sch.requested;
   if (!askTools && !askSched) return null;
+  // A built-in scan that runs the repository's code says why it asks.
+  const note = s.approval_note;
   const approveTools = attempt(async () => {
     if (!await ask({
       title: `Let ${s.title} use these tools?`,
-      body: `${s.file} asks for: ${s.tools.join(", ")}. Scans run on this computer; tools such as Bash run commands here. Approve only if you trust this template. If it asks for other tools later, it goes back to read-only until you approve again.`,
+      body: note
+        ? `${note} It asks for: ${s.tools.join(", ")}. Approve only if you trust everyone who can merge to this repository.`
+        : `${s.file} asks for: ${s.tools.join(", ")}. Scans run on this computer; tools such as Bash run commands here. Approve only if you trust this template. If it asks for other tools later, it goes back to read-only until you approve again.`,
       ok: "Approve tools",
     })) return;
     await patch({ approve_tools: s.tools });
@@ -497,8 +502,9 @@ function scanApprovals(s, patch) {
   const changed = sch.enabled && sch.cron !== sch.requested;
   return h("div", { class: "scan-approve", role: "note" },
     askTools ? h("p", {},
-      h("span", {}, s.approved_tools?.length ? "The template now asks for other tools: " : "The template asks for tools beyond read-only: ",
-        h("code", {}, s.tools.join(", ")), ". It runs read-only until you approve them."),
+      note ? h("span", {}, h("strong", {}, "Needs approval: "), note, " Tools: ", h("code", {}, s.tools.join(", ")), ". ")
+        : h("span", {}, s.approved_tools?.length ? "The template now asks for other tools: " : "The template asks for tools beyond read-only: ",
+          h("code", {}, s.tools.join(", ")), ". It runs read-only until you approve them."),
       h("button", { type: "button", class: "btn small", onclick: approveTools }, "Approve tools")) : null,
     askSched ? h("p", {},
       h("span", {}, changed

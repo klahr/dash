@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/klahr/dash/internal/model"
@@ -347,5 +348,51 @@ func TestScanEarlyEndpoint(t *testing.T) {
 	}
 	if set, _ := raw(s).ScanSetting(p.ID, "security"); set.Early != nil {
 		t.Fatalf("early after reset: %+v", set.Early)
+	}
+}
+
+// A built-in scan that runs any command (flaky-tests) asks for approval,
+// and says why; approving it in the project lets it run.
+func TestBuiltinShellScanNeedsApproval(t *testing.T) {
+	parallel(t)
+
+	s, _, p := boardServer(t)
+	repo := t.TempDir()
+	p, _ = raw(s).UpdateProject(p.ID, func(x *model.Project) error { x.Path = repo; return nil })
+	h := loggedIn(t, s.Routes())
+	type info struct {
+		Name          string   `json:"name"`
+		Tools         []string `json:"tools"`
+		ToolsApproved bool     `json:"tools_approved"`
+		ApprovalNote  string   `json:"approval_note"`
+	}
+	get := func(name string) info {
+		t.Helper()
+		var list struct{ Scans []info }
+		w := do(t, h, "GET", "/api/projects/"+p.ID+"/scans", "")
+		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil {
+			t.Fatalf("list: %d %s", w.Code, w.Body)
+		}
+		for _, in := range list.Scans {
+			if in.Name == name {
+				return in
+			}
+		}
+		t.Fatalf("no %s: %s", name, w.Body)
+		return info{}
+	}
+	flaky := get("flaky-tests")
+	if flaky.ToolsApproved || !strings.Contains(flaky.ApprovalNote, "credentials") {
+		t.Fatalf("flaky-tests before approval: %+v", flaky)
+	}
+	if deps := get("dependencies"); !deps.ToolsApproved || deps.ApprovalNote != "" {
+		t.Fatalf("dependencies: %+v", deps)
+	}
+	tools, _ := json.Marshal(flaky.Tools)
+	if w := do(t, h, "PATCH", "/api/projects/"+p.ID+"/scans/flaky-tests", `{"approve_tools":`+string(tools)+`}`); w.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", w.Code, w.Body)
+	}
+	if in := get("flaky-tests"); !in.ToolsApproved || in.ApprovalNote != "" {
+		t.Fatalf("after approval: %+v", in)
 	}
 }

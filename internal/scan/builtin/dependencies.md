@@ -3,8 +3,11 @@ name: dependencies
 title: Dependency audit
 kind: dependencies
 scope: repo
-# The audit tools need a shell (and the network); the checkout is a throwaway copy.
-tools: Read, Grep, Glob, Bash
+# Only the named audit and metadata commands, in Claude Code's sandbox (see
+# docs/scans.md): no general shell. npm and cargo audit only as written, so
+# no fix mode (which installs packages and runs their scripts) slips in.
+# git history through the git tools.
+tools: Read, Grep, Glob, mcp__dash_git__git_log, mcp__dash_git__git_show, mcp__dash_git__git_diff, Bash(govulncheck:*), Bash(npm audit), Bash(npm audit --json), Bash(pip-audit --disable-pip:*), Bash(cargo audit), Bash(cargo audit --json), Bash(pip show:*), Bash(cargo metadata:*)
 # Suggested: Mondays at 06:00. Built-in schedules are off until turned on.
 schedule: 0 6 * * 1
 ---
@@ -12,9 +15,13 @@ Audit the third-party dependencies of the project in {{path}}.
 
 Find the dependency manifests and lock files (go.mod, package.json and its
 lock file, requirements*.txt, pyproject.toml, Cargo.toml, Gemfile, …). Where
-the ecosystem's audit tool is installed, run it (for example `govulncheck
-./...`, `npm audit --json`, `pip-audit`, `cargo audit`); do not install
-anything. Otherwise judge the pinned versions from what you know.
+the ecosystem's audit tool is installed, run it: `govulncheck ./...`, `npm
+audit --json`, `pip-audit --disable-pip --no-deps -r <requirements file>`,
+`cargo audit --json` (npm audit and cargo audit exactly as written). These,
+`pip show` and `cargo metadata` are the only commands you can run: no other
+shell commands, no fix modes, and do not install anything. Read files with
+the Read, Grep and Glob tools. Where a tool isn't installed or fails, judge
+the pinned versions from what you know.
 
 Report each vulnerable dependency once: the package and version in the
 title, the advisory ids and whether the vulnerable code is reachable in the
@@ -35,12 +42,12 @@ Then check the dependencies' licences against the project's own.
 2. Each dependency's licence, from metadata the package managers already
    have, without installing anything or adding tools: the `license` field in
    package-lock.json, yarn.lock or pnpm-lock.yaml entries and in
-   node_modules/*/package.json; the LICENSE files of Go modules in the module
-   cache (`go env GOMODCACHE`) or vendor/; `pip show <package>` or the
-   dist-info METADATA in an existing virtualenv; `cargo metadata
-   --format-version 1` (its `license` fields) or the files in
-   ~/.cargo/registry; the gemspecs of installed gems. Where the metadata is
-   not on disk, use what you know of the package and say so in the details.
+   node_modules/*/package.json; the LICENSE files of Go modules in vendor/;
+   `pip show <package>` or the dist-info METADATA in a virtualenv in the
+   repository; `cargo metadata --format-version 1` (its `license` fields);
+   vendored gems' gemspecs. Where the metadata is not in the repository or
+   those commands' output, use what you know of the package and say so in
+   the details.
    Concentrate on direct dependencies, but report a transitive one whose
    licence clashes.
 3. Report, as type "issue" with the manifest as the file:
@@ -58,8 +65,8 @@ Then check the dependencies' licences against the project's own.
      custom text, "SEE LICENSE IN …", "UNLICENSED" from a third party), as
      severity "medium". Fingerprint "licence-unknown:<package>".
    - a dependency whose licence changed when it was upgraded. Look at the
-     lock files' recent history (`git log -p --since="3 months ago" --
-     <lock file>`) for upgraded packages and compare the licence of the old
+     lock files' recent history (the git_log tool on the lock file, with
+     patch, for the last few months' commits) for upgraded packages and compare the licence of the old
      version with the new one. Report a change to a licence that clashes, or
      to a more restrictive one, as above; a change between permissive
      licences (MIT to Apache-2.0, say) as severity "low". Give both versions

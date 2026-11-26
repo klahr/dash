@@ -3,7 +3,9 @@ name: flaky-tests
 title: Flaky tests
 kind: flaky_tests
 scope: repo
-# Running the tests needs a shell; the checkout is a throwaway copy.
+# Running the tests needs a shell, and runs the repository's code: it runs
+# only once approved per project, or on a runner with -claude-sandbox (see
+# docs/scans.md). Its commands run in Claude Code's sandbox where it can start.
 tools: Read, Grep, Glob, Bash
 # Suggested: Sundays at 03:00. Built-in schedules are off until turned on.
 schedule: 0 3 * * 0

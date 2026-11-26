@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,6 +32,11 @@ type Job struct {
 	// Tools are the tools Claude may use (see Tools: the template's once
 	// approved, else read-only ones).
 	Tools []string `json:"tools"`
+	// SandboxTools, if set, are the tools Claude may use instead where it
+	// runs in a sandbox (Runner.Sandboxed): a built-in scan that runs any
+	// command and isn't approved (SandboxTools, the function). A runner
+	// without one, or that predates this, uses Tools.
+	SandboxTools []string `json:"sandbox_tools,omitempty"`
 	// Timeout bounds Claude's run (0: the Runner's RunTimeout).
 	Timeout time.Duration `json:"timeout,omitempty"`
 	// LastCommit is, for ScopeSinceLastScan, the commit the scan last
@@ -134,12 +140,12 @@ func (j Job) Check() error {
 	default:
 		return fmt.Errorf("bad scan scope %q", t.Scope)
 	}
-	for _, v := range append([]string{t.Model, t.Effort, j.LastCommit}, j.Tools...) {
+	for _, v := range append(append([]string{t.Model, t.Effort, j.LastCommit}, j.Tools...), j.SandboxTools...) {
 		if strings.HasPrefix(strings.TrimSpace(v), "-") {
 			return fmt.Errorf("bad scan setting %q", v)
 		}
 	}
-	for _, v := range j.Tools {
+	for _, v := range append(slices.Clone(j.Tools), j.SandboxTools...) {
 		if strings.TrimSpace(v) == "" {
 			return errors.New("empty tool name")
 		}
@@ -155,6 +161,10 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 		return Outcome{}, fmt.Errorf("%w: %w", agent.ErrNoLocalClaude, err)
 	}
 	t := job.Template
+	if len(job.SandboxTools) > 0 && !r.Sandboxed {
+		// Read-only, it would only find that it can't run the tests.
+		return Outcome{Skip: "Not run: " + ShellApprovalNote + " Approve it with Approve tools in Scans."}, nil
+	}
 	tg, err := r.resolve(ctx, p, job)
 	if err != nil {
 		return Outcome{}, err
@@ -191,7 +201,13 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 		return out, nil
 	}
 
-	prompt := BuildPrompt(t, job.Tools, tg, knownIssues(job.Known, t, tg))
+	tools := job.Tools
+	if len(job.SandboxTools) > 0 && r.Sandboxed {
+		tools = job.SandboxTools
+		h.log("Claude runs in a sandbox here (-claude-sandbox): using the scan's tools: " + strings.Join(tools, ", "))
+	}
+	// The prompt says what the tools it runs with allow.
+	prompt := BuildPrompt(t, tools, tg, knownIssues(job.Known, t, tg))
 	h.log("prompt:\n" + prompt)
 	timeout := job.Timeout
 	if timeout <= 0 {
@@ -201,7 +217,7 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 	defer cancelRun()
 	// The tools may read the checkout only: not the runner's data directory
 	// (its hub token) or the user's credentials.
-	req := RunRequest(t, job.Tools, dir, filepath.Dir(r.Root), r.Root)
+	req := RunRequest(t, tools, dir, filepath.Dir(r.Root), r.Root)
 	req.Dir, req.Prompt, req.Shared = dir, prompt, job.Shared
 	if r.GitTools != nil && r.GitURL != "" && agent.CanMCP(r.Exec) {
 		token, release := r.GitTools.Register(dir)

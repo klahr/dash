@@ -699,6 +699,7 @@ func (a *app) newScans() {
 		RunTimeout:  o.scanTimeout,
 		GitTools:    &scan.GitMCP{Pin: a.git.PinnedEnv},
 		LogMaxBytes: -1, // -log-max-mb 0: no cap
+		Sandboxed:   len(o.sandbox()) > 0,
 	}
 	if o.logMaxMB > 0 {
 		a.scans.LogMaxBytes = int64(o.logMaxMB) << 20

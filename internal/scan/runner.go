@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -72,6 +73,10 @@ type Runner struct {
 	// cap). A log that grows past it is cut to its newest half, behind a
 	// note saying earlier output was trimmed.
 	LogMaxBytes int64
+	// Sandboxed says this computer runs Claude in a sandbox
+	// (-claude-sandbox, docs/sandbox.md): a built-in scan that runs any
+	// command (Template.ShellApproval) runs here without approval.
+	Sandboxed bool
 
 	mu      sync.Mutex
 	running map[string]*active // project/scan → the run
@@ -428,10 +433,16 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 
 	set, has := r.Store.ScanSetting(p.ID, t.Name)
 	tools, approved := Tools(t, set, has)
-	if !approved {
+	sandboxTools := SandboxTools(t, approved)
+	switch {
+	case approved:
+	case sandboxTools != nil:
+		logLine(fmt.Sprintf("⚠ %s needs approval for this project (%s), or a runner that runs Claude in a sandbox (-claude-sandbox): "+
+			"without either it doesn't run", t.Name, strings.Join(t.Tools, ", ")))
+	default:
 		logLine(fmt.Sprintf("⚠ the template asks for tools that are not approved in Dash (%s): running with read-only tools", strings.Join(t.Tools, ", ")))
 	}
-	job := Job{RunID: run.ID, Template: t, Tools: tools, Timeout: r.runTimeout(), Known: r.scanIssues(p.ID, t), For: run.StartedBy, Account: account}
+	job := Job{RunID: run.ID, Template: t, Tools: tools, SandboxTools: sandboxTools, Timeout: r.runTimeout(), Known: r.scanIssues(p.ID, t), For: run.StartedBy, Account: account}
 	if from != nil {
 		job.From = &Resume{Commit: from.Commit, Since: from.Since, Incremental: from.Incremental, Note: from.Note}
 	}
@@ -639,15 +650,27 @@ func (r *Runner) PruneLogs() {
 // template asks for. A built-in's and a Dash scan's are trusted. A repository template's
 // tools are code anyone who can merge may change (Bash is a shell on this
 // computer), so they apply only while the user's approval covers exactly
-// that list; otherwise the scan runs with the read-only DefaultTools.
+// that list; otherwise the scan runs with the read-only DefaultTools. A
+// built-in that runs any command (Template.ShellApproval) needs the same
+// approval, or a runner with a sandbox (SandboxTools).
 func Tools(t Template, set model.ScanSetting, hasSetting bool) (tools []string, approved bool) {
 	if len(t.Tools) == 0 {
 		return DefaultTools, true
 	}
-	if t.Trusted() || hasSetting && slices.Equal(set.ApprovedTools, t.Tools) {
+	if t.Trusted() && !t.ShellApproval() || hasSetting && slices.Equal(set.ApprovedTools, t.Tools) {
 		return t.Tools, true
 	}
 	return DefaultTools, false
+}
+
+// SandboxTools are the tools a scan that Tools left read-only may use all
+// the same on a runner that runs Claude in a sandbox (Runner.Sandboxed):
+// a ShellApproval built-in's; nil for any other.
+func SandboxTools(t Template, approved bool) []string {
+	if approved || !t.ShellApproval() {
+		return nil
+	}
+	return slices.Clone(t.Tools)
 }
 
 // RunRequest is the agent run of a scan, without its directory and prompt:
@@ -667,11 +690,82 @@ func RunRequest(t Template, tools []string, dir string, secrets ...string) agent
 		tools = DefaultTools
 	}
 	deny := []string{"Edit", "Write", "NotebookEdit"}
+	req := agent.ExecRequest{Unattended: true, Model: t.Model, Effort: t.Effort}
 	if dir != "" {
 		tools = Confine(tools, dir)
 		deny = append(deny, DenyReads(dir, secrets)...)
+		if usesShell(tools) {
+			req.Settings = SandboxSettings(dir, secrets)
+		}
 	}
-	return agent.ExecRequest{Unattended: true, AllowedTools: tools, DeniedTools: deny, Model: t.Model, Effort: t.Effort}
+	req.AllowedTools, req.DeniedTools = tools, deny
+	return req
+}
+
+// SandboxSettings are the Claude Code settings (claude --settings) of a
+// scan that may run commands: Bash runs in Claude Code's sandbox, which
+// can't read the credentials DenyReads keeps from the file tools, may write
+// only the checkout, the temp directory and the package managers' caches,
+// and reaches only the package registries the audit tools ask. Nothing
+// runs outside it (allowUnsandboxedCommands). Where the sandbox can't start
+// (Linux without bubblewrap, Windows), Claude Code warns and runs commands
+// without it: see docs/scans.md.
+func SandboxSettings(dir string, secrets []string) string {
+	var denyRead []string
+	for _, s := range secretPaths(dir, secrets) {
+		if !strings.Contains(s.path, "*") {
+			denyRead = append(denyRead, s.path)
+			continue
+		}
+		// The sandbox takes paths; spell a pattern out as the files there now.
+		matches, _ := filepath.Glob(s.path)
+		denyRead = append(denyRead, matches...)
+	}
+	set := map[string]any{"sandbox": map[string]any{
+		"enabled":                  true,
+		"allowUnsandboxedCommands": false,
+		// Go's tools (govulncheck, go test) need macOS's trust daemon for TLS.
+		"enableWeakerNetworkIsolation": true,
+		"network":                      map[string]any{"allowedDomains": registryDomains},
+		"filesystem":                   map[string]any{"denyRead": denyRead, "allowWrite": cacheDirs()},
+	}}
+	b, _ := json.Marshal(set)
+	return string(b)
+}
+
+// registryDomains are the package registries and advisory databases a
+// scan's commands may reach: what govulncheck, npm audit, pip-audit,
+// cargo audit and the toolchains' module downloads use.
+var registryDomains = []string{
+	"proxy.golang.org", "sum.golang.org", "vuln.go.dev", "storage.googleapis.com",
+	"registry.npmjs.org", "registry.yarnpkg.com",
+	"pypi.org", "files.pythonhosted.org", "api.osv.dev",
+	"github.com", "index.crates.io", "static.crates.io",
+}
+
+// cacheDirs are the package managers' caches a scan's commands write to:
+// Go's build and module caches, npm's, cargo's advisory database and
+// registry, and the user's cache directory (pip-audit's and others').
+func cacheDirs() []string {
+	var out []string
+	if c, err := os.UserCacheDir(); err == nil {
+		out = append(out, c)
+	}
+	for _, k := range []string{"GOCACHE", "GOMODCACHE"} {
+		if v := os.Getenv(k); filepath.IsAbs(v) {
+			out = append(out, v)
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return out
+	}
+	gopath := filepath.Join(home, "go")
+	if v := os.Getenv("GOPATH"); v != "" {
+		gopath = filepath.SplitList(v)[0]
+	}
+	return append(out, filepath.Join(gopath, "pkg", "mod"), filepath.Join(home, ".npm"),
+		filepath.Join(home, ".cargo", "advisory-db"), filepath.Join(home, ".cargo", "registry"))
 }
 
 // fileTools read files; unscoped, they read anything the runner's user can.
@@ -723,6 +817,7 @@ func Confine(tools []string, dir string) []string {
 var homeSecrets = []string{
 	".ssh", ".gnupg", ".aws", ".config/gh", ".config/gcloud", ".claude", ".claude.json",
 	".netrc", ".git-credentials", ".docker", ".kube",
+	".npmrc", ".pypirc", ".cargo/credentials", ".cargo/credentials.toml", ".gem/credentials",
 	".local/share/dash", ".local/share/dash-runner", ".local/share/dash-hub",
 }
 
@@ -737,14 +832,6 @@ var dataSecrets = []string{"*.json", "dash.db*", "logs", "worktrees", "uploads"}
 // directory that holds the checkout dir itself is not denied whole, only
 // its known secret files.
 func DenyReads(dir string, secrets []string) []string {
-	var paths []string
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		for _, s := range homeSecrets {
-			paths = append(paths, filepath.Join(home, s))
-		}
-	}
-	paths = append(paths, secrets...)
-	inside := func(parent string) bool { return fsutil.Within(parent, dir) }
 	var deny []string
 	add := func(p string, tree bool) {
 		for _, tool := range fileTools {
@@ -754,14 +841,47 @@ func DenyReads(dir string, secrets []string) []string {
 			}
 		}
 	}
+	for _, s := range secretPaths(dir, secrets) {
+		add(s.path, false)
+		if s.tree {
+			add(s.path, true)
+		}
+	}
+	return deny
+}
+
+// secret is a credential path a scan never reads, and whether everything
+// below it is one too; path may hold a * pattern.
+type secret struct {
+	path string
+	tree bool
+}
+
+// secretPaths are the credentials of DenyReads, as paths: the ones in the
+// user's home, and in each Dash data directory in secrets its known secret
+// files, or all of it when it doesn't hold the checkout dir.
+func secretPaths(dir string, secrets []string) []secret {
+	var paths []string
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		for _, s := range homeSecrets {
+			paths = append(paths, filepath.Join(home, s))
+		}
+	}
+	paths = append(paths, secrets...)
+	inside := func(parent string) bool { return fsutil.Within(parent, dir) }
+	var out []secret
+	add := func(s secret) {
+		if !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
 	for _, p := range paths {
 		if p == "" || !filepath.IsAbs(p) {
 			continue
 		}
 		p = filepath.Clean(p)
 		if !inside(p) {
-			add(p, false)
-			add(p, true)
+			add(secret{p, true})
 			continue
 		}
 		for _, s := range dataSecrets {
@@ -769,13 +889,10 @@ func DenyReads(dir string, secrets []string) []string {
 			if inside(sub) {
 				continue
 			}
-			add(sub, false)
-			if !strings.Contains(s, "*") {
-				add(sub, true)
-			}
+			add(secret{sub, !strings.Contains(s, "*")})
 		}
 	}
-	return deny
+	return out
 }
 
 // BuildPrompt is what the scan agent is asked: the template's prompt, what

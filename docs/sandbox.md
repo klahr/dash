@@ -141,6 +141,14 @@ Claude can then read only what your group, or everyone, can read. SSH keys, the 
 Claude's own login are yours alone (mode 600); check other secrets in your home folder the same
 way. Unlike the container, this user can read every project in the projects folder.
 
+## Scans
+
+With `-claude-sandbox`, the built-in `flaky-tests` scan runs on this runner without approval:
+it runs the repository's tests, and the sandbox keeps them away from your credentials. Without
+it, the scan needs approval per project (see [scans](scans.md#shell-commands)). Scans that may run
+commands also turn on Claude Code's own sandbox inside yours; where that can't start (in a
+container without bubblewrap, say), the commands run in your sandbox only.
+
 ## Limits
 
 - A sandbox limits what Claude's tools reach on the computer, not the network. A task can still
