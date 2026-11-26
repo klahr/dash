@@ -2,19 +2,21 @@
 // project's colour, so buttons, links and focus rings take it and still read.
 // No DOM: app/projects.js applies them; web/brandcolor_test.mjs tests them.
 
-// The app's defaults (style.css :root): the page and card backgrounds, and
-// the dark and light text a brand fill can carry.
+// The app's defaults (style.css :root): the page, card and raised
+// backgrounds, and the dark and light text a brand fill can carry.
 export const BG = "#101722";
 export const SURFACE = "#172131";
+export const RAISED = "#1f2b3e";
 export const ON_DARK = "#0d1424";
 export const ON_LIGHT = "#ffffff";
 // DEFAULT is style.css's --brand (and the Blue swatch): a project in it keeps
 // the stylesheet's brand colours as they are.
 export const DEFAULT = "#8aa4ff";
 
-// The contrast the brand colour needs against --bg and --surface (WCAG
-// 1.4.11, non-text), and its text against it (1.4.3).
-export const UI_CONTRAST = 3;
+// The contrast the brand colour needs against --bg, --surface and --raised,
+// and the text on a brand fill against it: style.css uses --brand as the
+// text colour of links and labels on those backgrounds (WCAG 1.4.3), which
+// covers its use for fills and focus rings too (1.4.11, 3:1).
 export const TEXT_CONTRAST = 4.5;
 
 // parseHex is "#rgb" or "#rrggbb" as [r, g, b] (0–255), or null.
@@ -53,7 +55,7 @@ function toHsl([r, g, b]) {
   if (!d) return [0, 0, l];
   const s = d / (1 - Math.abs(2 * l - 1));
   const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  return [h * 60, s, l];
+  return [(h * 60 + 360) % 360, s, l]; // 0–360: (g - b) / d is negative for a pink
 }
 function fromHsl([h, s, l]) {
   const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
@@ -68,29 +70,27 @@ export function onColor(fill, dark = ON_DARK, light = ON_LIGHT) {
 
 // brandColors makes the brand colours from a project's colour:
 //   brand  the colour, lightened (on a dark theme; darkened on a light one)
-//          until it has UI_CONTRAST against bg and surface, and its text has
-//          TEXT_CONTRAST on it
+//          until it has TEXT_CONTRAST against bg, surface and raised, as
+//          text, and the text on it has TEXT_CONTRAST too
 //   hover  a step further the same way, for :hover
 //   on     the text on a brand fill: ON_DARK or ON_LIGHT, whichever reads
 //          better (ON_DARK on a dark theme, as the brand is light there)
 // null for a colour that isn't one ("" or bad input): the defaults apply.
-export function brandColors(color, { bg = BG, surface = SURFACE, dark = true } = {}) {
+export function brandColors(color, { bg = BG, surface = SURFACE, raised = RAISED, dark = true } = {}) {
   const rgb = parseHex(color);
   if (!rgb) return null;
   const [h, s, l0] = toHsl(rgb);
   // The text aimed for is the one lightening (darkening) helps, so hover,
   // a step further, keeps every contrast too.
   const text = dark ? ON_DARK : ON_LIGHT;
-  const ok = (c) => contrast(c, bg) >= UI_CONTRAST && contrast(c, surface) >= UI_CONTRAST &&
-    contrast(c, text) >= TEXT_CONTRAST;
+  const ok = (c) => [bg, surface, raised, text].every((b) => contrast(c, b) >= TEXT_CONTRAST);
   let c = rgb;
   // Lightness in small steps toward white (or black), keeping the hue; at
   // the end of the range the colour is white (black), which always passes.
   for (let i = 1; !ok(c) && i <= 100; i++) {
     const l = dark ? l0 + (1 - l0) * i / 100 : l0 * (1 - i / 100);
-    c = fromHsl([h, s, l]);
+    c = fromHsl([h, s, l]).map(Math.round); // checked as it is stored
   }
-  c = c.map(Math.round);
   const hover = mix(c, dark ? [255, 255, 255] : [0, 0, 0], 0.2);
   const brand = toHex(c);
   return { brand, hover: toHex(hover), on: onColor(brand) };

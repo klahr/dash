@@ -1,4 +1,4 @@
-import { BG, DEFAULT as DEFAULT_BRAND, SURFACE, brandColors, luminance } from "../brandcolor.js";
+import { BG, DEFAULT as DEFAULT_BRAND, RAISED, SURFACE, brandColors, luminance } from "../brandcolor.js";
 import { projectGroups as groupProjects, isShared, LABEL_ANY, parseLabels, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, servesProject, starKey, starSections, uniqueProjects } from "../groups.js";
 import { $, $$, h, ib, ico, plural, resizeHandle, setLabel, sizeText } from "./dom.js";
 import * as store from "./store.js";
@@ -199,8 +199,9 @@ export function applyBrand() {
   let c = null;
   if (p?.color && p.color_buttons !== false && state.view !== "planning") {
     const css = getComputedStyle(root);
-    const bg = css.getPropertyValue("--bg").trim() || BG, surface = css.getPropertyValue("--surface").trim() || SURFACE;
-    c = brandColors(p.color, { bg, surface, dark: luminance(bg) < 0.5 });
+    const v = (name, def) => css.getPropertyValue(name).trim() || def;
+    const bg = v("--bg", BG), surface = v("--surface", SURFACE), raised = v("--raised", RAISED);
+    c = brandColors(p.color, { bg, surface, raised, dark: luminance(bg) < 0.5 });
     if (c?.brand === DEFAULT_BRAND) c = null; // Blue: exactly the stylesheet's
   }
   for (const [k, name] of Object.entries(vars)) {
