@@ -23,7 +23,7 @@ every account can create orgs and has a personal workspace of its own.
 Everything you work with belongs to the org you're working in, and only its members see
 it:
 
-- **Projects**, and with them their tasks, scans, scan runs and dismissed findings, task chats,
+- **Projects**, and with them their tasks, scans, scan runs, task chats,
   attachments, live previews, running commands and terminals, and Claude's
   permission prompts. Another org's project, or anything in it, answers "not found".
 - **Live updates**: the dashboard only receives events of its org's projects.

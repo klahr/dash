@@ -213,7 +213,7 @@ func TestRunRecordsFindings(t *testing.T) {
 	}
 }
 
-func TestRunCountsKnownDismissedReopened(t *testing.T) {
+func TestRunCountsKnownDeletedReopened(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t, "sec", "---\nkind: security\n---\nScan.")
@@ -227,7 +227,7 @@ func TestRunCountsKnownDismissedReopened(t *testing.T) {
 			unchecked = d
 		}
 	}
-	// The key's draft is deleted (dismissed); the unchecked error's task is merged.
+	// The key's draft is deleted; the unchecked error's task is merged.
 	if _, err := fx.st.DeleteTodo(key.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -243,26 +243,27 @@ func TestRunCountsKnownDismissedReopened(t *testing.T) {
 		{"title":"Race on map","type":"bug","severity":"medium","file":"main.go","fingerprint":"race:m"}
 	]}`)
 	r := fx.run(t, "sec")
-	if r.Counts != (model.UpsertCounts{New: 1, Dismissed: 1, Reopened: 1}) || len(r.ReopenedTasks) != 1 || r.Urgent != 0 {
+	// The deleted draft's issue comes back as a new draft, as anything new does.
+	if r.Counts != (model.UpsertCounts{New: 2, Reopened: 1}) || len(r.ReopenedTasks) != 1 || r.Critical != 1 || r.Urgent != 1 {
 		t.Fatalf("counts: %+v", r)
 	}
 	if back, _ := fx.st.GetTodo(r.ReopenedTasks[0]); back.ID == unchecked.ID || back.Finding.Earlier != unchecked.ID {
 		t.Fatalf("came back: %+v", back)
 	}
-	if ds := fx.st.ListDismissed(fx.p.ID); len(ds) != 1 || ds[0].Severity != model.SevHigh || ds[0].Rule != "hardcoded-key" {
-		t.Fatalf("dismissed issue changed: %+v", ds)
-	}
-	// The agent was told what it reported before, dismissed ones included.
-	if p := fx.exec.lastPrompt(); !strings.Contains(p, "`hardcoded-key` · dismissed") {
-		t.Fatalf("prompt lacks known issues:\n%s", p)
+	// The agent wasn't told of the deleted draft's issue: nothing of it is kept.
+	if p := fx.exec.lastPrompt(); strings.Contains(p, "hardcoded-key") {
+		t.Fatalf("prompt names the deleted draft's issue:\n%s", p)
 	}
 	// Reported again unchanged: already known.
 	r = fx.run(t, "sec")
-	if r.Counts != (model.UpsertCounts{Known: 2, Dismissed: 1}) || len(r.NewTasks) != 0 {
+	if r.Counts != (model.UpsertCounts{Known: 3}) || len(r.NewTasks) != 0 {
 		t.Fatalf("third run: %+v", r.Counts)
 	}
-	if n := len(findingDrafts(fx.st, fx.p.ID)); n != 3 { // the merged task, and two drafts
-		t.Fatalf("%d tasks with issues, want 3", n)
+	if p := fx.exec.lastPrompt(); !strings.Contains(p, "`hardcoded-key` · open") {
+		t.Fatalf("prompt lacks known issues:\n%s", p)
+	}
+	if n := len(findingDrafts(fx.st, fx.p.ID)); n != 4 { // the merged task, and three drafts
+		t.Fatalf("%d tasks with issues, want 4", n)
 	}
 }
 

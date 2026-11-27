@@ -98,7 +98,7 @@ func TestTaskRunGetsOnlyTaskTools(t *testing.T) {
 	}
 }
 
-func TestReportIssueEndpointAndDismissals(t *testing.T) {
+func TestReportIssueEndpoint(t *testing.T) {
 	parallel(t)
 
 	s, _, p := boardServer(t)
@@ -120,25 +120,16 @@ func TestReportIssueEndpointAndDismissals(t *testing.T) {
 	if again := report(http.StatusOK); again.Todo.ID != first.Todo.ID || again.Result != model.UpsertKnown {
 		t.Fatalf("again: %+v", again)
 	}
-	// Deleting the draft dismisses it.
+	// Deleting the draft keeps nothing: the next report adds a draft again.
 	if w := do(t, h, "DELETE", "/api/todos/"+first.Todo.ID, ""); w.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", w.Code, w.Body)
 	}
-	w := do(t, h, "GET", base+"/dismissed", "")
-	var ds []model.DismissedFinding
-	if err := json.Unmarshal(w.Body.Bytes(), &ds); err != nil || len(ds) != 1 || ds[0].Title != "Missing alt text" || ds[0].TodoID != first.Todo.ID || ds[0].By == 0 {
-		t.Fatalf("dismissed: %d %s", w.Code, w.Body)
+	if r := report(http.StatusCreated); r.Result != model.UpsertNew || r.Todo.ID == first.Todo.ID {
+		t.Fatalf("reported after deleting: %+v", r)
 	}
-	if r := report(http.StatusOK); r.Result != model.UpsertDismissed || r.Todo.ID != "" {
-		t.Fatalf("reported after dismissing: %+v", r)
+	if w := do(t, h, "GET", base+"/dismissed", ""); w.Code == http.StatusOK {
+		t.Fatalf("the dismissed list is still there: %d %s", w.Code, w.Body)
 	}
-	if w := do(t, h, "DELETE", base+"/dismissed/"+ds[0].Fingerprint, ""); w.Code != http.StatusOK {
-		t.Fatalf("undo: %d %s", w.Code, w.Body)
-	}
-	if w := do(t, h, "DELETE", base+"/dismissed/"+ds[0].Fingerprint, ""); w.Code != http.StatusNotFound {
-		t.Fatalf("undo twice: %d %s", w.Code, w.Body)
-	}
-	report(http.StatusCreated)
 	if w := do(t, h, "POST", base+"/issues", `{"title":""}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("no title: %d %s", w.Code, w.Body)
 	}

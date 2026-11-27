@@ -32,7 +32,7 @@ import { renderPane } from "./drawmode.js";
 import { attach, attached, termWS } from "./terminal.js";
 import { loadProcs, procsChanged } from "./try.js";
 import { refreshGraph } from "./history.js";
-import { loadDismissed, loadScans, onScanRun, scanFinished, scanTasksChanged, scans } from "./scans.js";
+import { loadScans, onScanRun, scanFinished, scanTasksChanged, scans } from "./scans.js";
 import { checkForUpdate } from "./updates.js";
 import { onPlanningEvent } from "./planning.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
@@ -239,9 +239,6 @@ function onEvent(ev, m = { name: "" }) {
     case "deploy.updated":
       if (mine) onDeployEvent(ev);
       if (mine && ev.data?.status === "live") { refreshGraph(); forgetLive(ev.project_id); } // History's markers, tasks' "Live in"
-      break;
-    case "dismissed.updated":
-      if (mine && scans.loaded) loadDismissed().catch(() => {});
       break;
     case "scan.run":
       if (mine) onScanRun(ev);

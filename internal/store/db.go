@@ -138,7 +138,7 @@ func migrate(db *sql.DB, backup func(from, to int) error) error {
 	return nil
 }
 
-var dataTables = []string{"projects", "todos", "dismissed_findings", "scan_runs", "scan_settings", "scan_templates", "chat_messages", "goals", "deploys"}
+var dataTables = []string{"projects", "todos", "scan_runs", "scan_settings", "scan_templates", "chat_messages", "goals", "deploys"}
 
 func dbEmpty(db *sql.DB) (bool, error) {
 	for _, t := range dataTables {
@@ -188,14 +188,9 @@ func importLegacy(db *sql.DB, legacy string) error {
 		if data.Todos == nil {
 			data.Todos = map[string]*model.Todo{}
 		}
-		_, dismissed := issuesToTasks(data.Issues, data.Todos) // changes data.Todos, all written below
+		issuesToTasks(data.Issues, data.Todos) // changes data.Todos, all written below
 		for _, t := range data.Todos {
 			if err := putTodo(tx, t); err != nil {
-				return err
-			}
-		}
-		for _, d := range dismissed {
-			if err := putDismissed(tx, d); err != nil {
 				return err
 			}
 		}
@@ -249,7 +244,6 @@ func load(db *sql.DB) (snapshot, error) {
 		Todos:         map[string]*model.Todo{},
 		TodoChats:     map[string][]model.ChatMessage{},
 		ProjectChats:  map[string][]model.ChatMessage{},
-		Dismissed:     map[string]*model.DismissedFinding{},
 		ScanRuns:      map[string]*model.ScanRun{},
 		ScanSettings:  map[string]*model.ScanSetting{},
 		ScanTemplates: map[string]*model.ScanTemplate{},
@@ -266,11 +260,6 @@ func load(db *sql.DB) (snapshot, error) {
 		return data, err
 	}
 	if err := loadRows(db, "SELECT data FROM todos", func(t *model.Todo, _ int64) { data.Todos[t.ID] = t }); err != nil {
-		return data, err
-	}
-	if err := loadRows(db, "SELECT data FROM dismissed_findings", func(d *model.DismissedFinding, _ int64) {
-		data.Dismissed[issueKey(d.ProjectID, d.Fingerprint)] = d
-	}); err != nil {
 		return data, err
 	}
 	if err := loadRows(db, "SELECT data FROM goals", func(g *model.Goal, _ int64) { data.Goals[g.ID] = g }); err != nil {

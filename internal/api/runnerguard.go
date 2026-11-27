@@ -60,7 +60,7 @@ func init() {
 		"GET /api/todos/{tid}/file", "PUT /api/todos/{tid}/file",
 
 		// Reported issues, as draft tasks (findings.go).
-		"POST /api/projects/{pid}/issues", "GET /api/projects/{pid}/dismissed", "DELETE /api/projects/{pid}/dismissed/{fp}",
+		"POST /api/projects/{pid}/issues",
 		"POST /api/projects/{pid}/todos/merge",
 
 		"GET /api/projects/{pid}/scans", "POST /api/projects/{pid}/scans/{name}/run", "PATCH /api/projects/{pid}/scans/{name}",

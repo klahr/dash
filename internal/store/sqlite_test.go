@@ -295,18 +295,16 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	before := struct {
 		Projects                                  []model.Project
 		Todos                                     []model.Todo
-		Dismissed                                 []model.DismissedFinding
 		Runs                                      []model.ScanRun
 		Chat, TodoChat, ProjectChat, GoneTodoChat []model.ChatMessage
-	}{s.ListProjects(), s.ListTodos(""), s.ListDismissed(""), s.ListScanRuns(p.ID, ""), s.Chat(1, 1), s.TodoChat(a.ID), s.ProjectChat(p.ID, 1), s.TodoChat(gt.ID)}
-	if len(before.Projects) != 1 || len(before.Todos) != 4 || len(before.Dismissed) != 1 || len(before.Runs) != 1 {
+	}{s.ListProjects(), s.ListTodos(""), s.ListScanRuns(p.ID, ""), s.Chat(1, 1), s.TodoChat(a.ID), s.ProjectChat(p.ID, 1), s.TodoChat(gt.ID)}
+	if len(before.Projects) != 1 || len(before.Todos) != 4 || len(before.Runs) != 1 {
 		t.Fatalf("unexpected state before reopen: %+v", before)
 	}
 
 	s = reopen(t, s, path)
 	sameJSON(t, "projects", s.ListProjects(), before.Projects)
 	sameJSON(t, "todos", s.ListTodos(""), before.Todos)
-	sameJSON(t, "dismissed", s.ListDismissed(""), before.Dismissed)
 	sameJSON(t, "scan runs", s.ListScanRuns(p.ID, ""), before.Runs)
 	sameJSON(t, "chat", s.Chat(1, 1), chat)
 	sameJSON(t, "todo chat", s.TodoChat(a.ID), chat)
@@ -324,7 +322,7 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	sameJSON(t, "scan run", gotRun, run)
 
 	// Nothing of the deleted project is left in the database.
-	for _, table := range []string{"todos", "dismissed_findings", "scan_runs", "scan_settings", "scan_templates"} {
+	for _, table := range []string{"todos", "scan_runs", "scan_settings", "scan_templates"} {
 		var n int
 		if err := s.db.QueryRow("SELECT count(*) FROM "+table+" WHERE project_id = ?", gone.ID).Scan(&n); err != nil || n != 0 {
 			t.Errorf("%s: %d rows of the deleted project (%v)", table, n, err)
@@ -346,9 +344,6 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	}
 	if got, _ := s.GetTodo(b.ID); len(got.DependsOn) != 0 {
 		t.Fatalf("dependency on deleted todo came back: %v", got.DependsOn)
-	}
-	if n := len(s.ListDismissed("")); n != 1 {
-		t.Fatalf("deleting a task without issues changed the dismissed ones: %d", n)
 	}
 	if len(s.TodoChat(a.ID)) != 0 {
 		t.Fatal("deleted todo's chat came back")

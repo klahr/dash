@@ -26,7 +26,7 @@ export const SCAN_KINDS = {
   breaking_changes: "Breaking changes", maintainability: "Duplication & complexity", supply_chain: "CI/CD & supply chain", custom: "Custom",
 };
 const SCAN_SCOPES = { repo: "Whole repository", since_last_scan: "Changes since the last scan", since_main: "Branch vs. main", path: "One path" };
-export const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map(), open: new Set(), dismissed: [] };
+export const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map(), open: new Set() };
 
 export async function loadScans() {
   const p = state.project;
@@ -36,48 +36,10 @@ export async function loadScans() {
   Object.assign(scans, { list: r.scans, problems: r.problems, builtin: r.builtin, dir: r.dir, loaded: true });
   for (const name of scans.history.keys()) loadScanHistory(name).catch(() => {});
   renderScans();
-  loadDismissed().catch(() => {});
-}
-
-// loadDismissed reads the project's dismissed issues: drafts with issues
-// that were deleted. Reports of them add no draft until undone.
-export async function loadDismissed() {
-  const p = state.project;
-  if (!p) return;
-  const list = await api("GET", `/api/projects/${p.id}/dismissed`);
-  if (projectKey(state.project) !== projectKey(p)) return;
-  scans.dismissed = list || [];
-  renderDismissed();
-}
-
-const sourceLabel = (src) => !src || src === "manual" ? "by hand" : src === "agent:chat" ? "the chat" : src.startsWith("agent:") ? `task ${src.slice(6)}` : src;
-
-// renderDismissed lists the dismissed issues, each with Undo.
-function renderDismissed() {
-  const el = $("#scan-dismissed");
-  const list = state.project ? scans.dismissed || [] : [];
-  el.hidden = !list.length;
-  if (!list.length) { el.replaceChildren(); return; }
-  const undo = (d) => attempt(async () => {
-    await api("DELETE", `/api/projects/${state.project.id}/dismissed/${encodeURIComponent(d.fingerprint)}`);
-    scans.dismissed = scans.dismissed.filter((x) => x.fingerprint !== d.fingerprint);
-    renderDismissed();
-    toast(`The next report of “${d.title}” adds a draft again`, { tone: "ok" });
-  });
-  el.replaceChildren(
-    h("h3", {}, "Dismissed", h("span", { class: "n" }, String(list.length))),
-    h("p", { class: "scan-hint" }, "Issues whose drafts were deleted. Scans and Claude don't add them again until you undo."),
-    h("ul", { class: "dismissed-list" }, ...list.map((d) => h("li", {},
-      d.severity ? h("span", { class: `tag-chip sev sev-${d.severity}` }, d.severity) : null,
-      h("div", { class: "dismissed-main" },
-        h("span", { class: "dismissed-title" }, d.title),
-        h("span", { class: "dismissed-sub" }, [d.file ? h("code", {}, d.file) : null, sourceLabel(d.source), d.at ? agoText(d.at) : null,
-          d.todo_title ? `deleted with “${d.todo_title}”` : null, d.reason || null].filter(Boolean).flatMap((x, i) => i ? [" · ", x] : [x]))),
-      h("button", { type: "button", class: "btn small", onclick: undo(d), title: "Let reports of it add a draft again" }, "Undo")))));
 }
 
 export function resetScans() {
-  Object.assign(scans, { list: [], problems: [], builtin: false, loaded: false, dismissed: [] });
+  Object.assign(scans, { list: [], problems: [], builtin: false, loaded: false });
   scans.history.clear();
   scans.open.clear();
   renderScans();
@@ -145,15 +107,15 @@ function scanSummary(r) {
     case "interrupted": return r.note || "Dash stopped during the scan";
   }
   const c = counts(r);
-  return r.findings ? `${c.added} added, ${c.there} already there, ${c.dismissed} dismissed` : "No issues found";
+  return r.findings ? `${c.added} added, ${c.there} already there` : "No issues found";
 }
 
 // counts sums up a run's findings: added (new drafts, including issues a
-// merged task had fixed that came back), already there (a task had them:
-// bumped) and dismissed (left out).
+// merged task had fixed that came back) and already there (a task had
+// them: bumped).
 function counts(r) {
   const c = r.counts || {};
-  return { added: (c.new || 0) + (c.reopened || 0), there: (c.known || 0) + (c.updated || 0), dismissed: c.dismissed || 0, reopened: c.reopened || 0 };
+  return { added: (c.new || 0) + (c.reopened || 0), there: (c.known || 0) + (c.updated || 0), reopened: c.reopened || 0 };
 }
 
 // runTasks are the drafts a run added: for new issues and for ones that came back.
@@ -234,7 +196,6 @@ export function renderScans() {
   probs.replaceChildren(...scans.problems.map((x) => h("li", {}, h("code", {}, x.file), `: ${x.error}`)));
   $("#scan-list").replaceChildren(...(p ? scans.list.map(scanCard) : []));
   $("#scan-empty").hidden = !!p;
-  renderDismissed();
 }
 
 // scanSource says where a scan comes from, for its card.
@@ -532,7 +493,7 @@ function scanApprovals(s, patch) {
 
 // runStatus sorts the drafts a run added by what became of them since:
 // still drafts (open), in the queue, running or in review (task), merged
-// (fixed), or gone (deleted, which dismissed their issues, or merged into
+// (fixed), or gone (deleted, or merged into
 // another draft). Critical and high ones still drafts are counted.
 function runStatus(r) {
   const out = { open: 0, task: 0, fixed: 0, gone: 0, critical: 0, high: 0 };
@@ -601,10 +562,9 @@ function scanReport(r, compact = false, lead = false) {
       lead ? null : st.open ? h("button", { type: "button", class: "scan-count link new", title: "Show them on the Board", onclick: () => showRunTasks(r) }, `${c.added} added`) : h("span", { class: "scan-count" }, `${c.added} added`),
       c.reopened ? h("span", { class: "scan-count", title: "Issues a merged task had fixed that came back: new drafts" }, `${c.reopened} came back`) : null,
       c.there ? h("span", { class: "scan-count", title: "A task already had them: it counts the report (×N)" }, `${c.there} already there`) : null,
-      c.dismissed ? h("span", { class: "scan-count muted", title: "Found again, but dismissed before: no draft" }, `${c.dismissed} dismissed`) : null,
       since(st.task, "in a task", "Drafts from this run that were queued since: running, in review or failed"),
       since(st.fixed, "fixed", "Drafts from this run that were merged since"),
-      since(st.gone, "deleted", "Drafts from this run deleted since (which dismissed their issues) or merged into another draft"),
+      since(st.gone, "deleted", "Drafts from this run deleted since or merged into another draft"),
       lead ? null : badge,
       pickable > 1 ? ib({ type: "button", class: "btn small scan-select", onclick: () => showRunTasks(r) }, "checks", `Select ${pickable} on the Board`) : null);
     if (lead && !body.children.length) body = null;

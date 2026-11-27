@@ -65,15 +65,6 @@ func TestDeleteUser(t *testing.T) {
 	if err := s.AppendProjectChat(p.ID, admin.ID, model.ChatMessage{Role: "user", Content: "admin's project question", CreatedBy: admin.ID}); err != nil {
 		t.Fatal(err)
 	}
-	// Ann dismisses a finding (deleting its draft as her).
-	finding := model.Issue{ProjectID: p.ID, Title: "Weak hash", Type: model.IssueVuln, File: "auth.go", Rule: "md5", Source: "scan:security"}
-	draft := mustReport(t, s, finding, model.UpsertNew)
-	if _, err := s.deleteTodo(draft.ID, ann); err != nil {
-		t.Fatal(err)
-	}
-	if ds := s.ListDismissed(p.ID); len(ds) != 1 || ds[0].By != ann {
-		t.Fatalf("dismissed before: %+v", ds)
-	}
 	if err := s.StarProject(ann, def.ID, p.ID, now); err != nil {
 		t.Fatal(err)
 	}
@@ -154,13 +145,6 @@ func TestDeleteUser(t *testing.T) {
 		}
 		if c := s.ProjectChat(p.ID, admin.ID); len(c) != 1 || c[0].CreatedBy != admin.ID {
 			t.Fatalf("admin's project chat: %+v", c)
-		}
-		// Her dismissal stays, by nobody named.
-		if ds := s.ListDismissed(p.ID); len(ds) != 1 || ds[0].By != model.DeletedUser || ds[0].Fingerprint != draft.Finding.Issues[0].Fingerprint {
-			t.Fatalf("dismissed: %+v", ds)
-		}
-		if o, err := s.ReportFinding(finding); err != nil || o.Result != model.UpsertDismissed {
-			t.Fatalf("reported again: %+v, %v", o, err)
 		}
 	}
 	check(s)

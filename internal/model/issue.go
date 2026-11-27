@@ -7,7 +7,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"time"
 )
 
 // An Issue is something wrong with a project — a bug, a vulnerability or
@@ -191,22 +190,20 @@ func (i Issue) Location() string {
 
 // UpsertCounts is what reporting a batch of issues did, by outcome.
 type UpsertCounts struct {
-	New       int `json:"new"`       // a new draft
-	Updated   int `json:"updated"`   // already on a task, which was bumped or changed
-	Known     int `json:"known"`     // already on a task, unchanged
-	Dismissed int `json:"dismissed"` // dismissed before, left out
-	Reopened  int `json:"reopened"`  // a merged task had fixed it, and it came back: a new draft
+	New      int `json:"new"`      // a new draft
+	Updated  int `json:"updated"`  // already on a task, which was bumped or changed
+	Known    int `json:"known"`    // already on a task, unchanged
+	Reopened int `json:"reopened"` // a merged task had fixed it, and it came back: a new draft
 }
 
 // UpsertResult is the outcome of reporting one issue.
 type UpsertResult string
 
 const (
-	UpsertNew       UpsertResult = "new"
-	UpsertUpdated   UpsertResult = "updated"
-	UpsertKnown     UpsertResult = "known"
-	UpsertDismissed UpsertResult = "dismissed" // its fingerprint was dismissed: no draft
-	UpsertReopened  UpsertResult = "reopened"  // a merged task had it: a new draft that names that task
+	UpsertNew      UpsertResult = "new"
+	UpsertUpdated  UpsertResult = "updated"
+	UpsertKnown    UpsertResult = "known"
+	UpsertReopened UpsertResult = "reopened" // a merged task had it: a new draft that names that task
 )
 
 // Add counts one result.
@@ -218,8 +215,6 @@ func (c *UpsertCounts) Add(r UpsertResult) {
 		c.Updated++
 	case UpsertKnown:
 		c.Known++
-	case UpsertDismissed:
-		c.Dismissed++
 	case UpsertReopened:
 		c.Reopened++
 	}
@@ -421,33 +416,4 @@ func WithFindingTags(tags []string, f *Finding) []string {
 		clean, _ = CleanTags(out[:min(len(out), MaxCardTags)])
 	}
 	return clean
-}
-
-// A DismissedFinding is an issue the user dismissed: they deleted the draft
-// that had it. Reports of its fingerprint add no draft until it is undone.
-type DismissedFinding struct {
-	ProjectID   string    `json:"project_id"`
-	Fingerprint string    `json:"fingerprint"`
-	Title       string    `json:"title"`
-	Type        IssueType `json:"type,omitempty"`
-	Severity    Severity  `json:"severity,omitempty"`
-	File        string    `json:"file,omitempty"`
-	Rule        string    `json:"rule,omitempty"`
-	Source      string    `json:"source,omitempty"`
-	ScanKind    string    `json:"scan_kind,omitempty"`
-	Reason      string    `json:"reason,omitempty"`
-	// TodoID is the task that was deleted, and TodoTitle its title.
-	TodoID    string    `json:"todo_id,omitempty"`
-	TodoTitle string    `json:"todo_title,omitempty"`
-	By        int64     `json:"by,omitempty"` // who dismissed it (0: unknown)
-	At        time.Time `json:"at"`
-}
-
-// Dismissal is the record of dismissing issue i of task t.
-func Dismissal(t Todo, i Issue, reason string, by int64, at time.Time) DismissedFinding {
-	return DismissedFinding{
-		ProjectID: t.ProjectID, Fingerprint: i.Fingerprint, Title: i.Title, Type: i.Type, Severity: i.Severity,
-		File: i.File, Rule: i.Rule, Source: i.Source, ScanKind: i.ScanKind, Reason: reason,
-		TodoID: t.ID, TodoTitle: t.Title, By: by, At: at,
-	}
 }

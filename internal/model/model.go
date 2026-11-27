@@ -1175,34 +1175,33 @@ type RunEvent struct {
 type EventType string
 
 const (
-	EvProjectUpdated   EventType = "project.updated"
-	EvProjectDeleted   EventType = "project.deleted"
-	EvTodoUpdated      EventType = "todo.updated"
-	EvTodoDeleted      EventType = "todo.deleted"
-	EvTodoOutput       EventType = "todo.output" // agent progress line
-	EvTodoEvent        EventType = "todo.event"  // a structured RunEvent of the worker
-	EvGitOp            EventType = "git.op"      // a git/gh command ran
-	EvMergeQueue       EventType = "merge.queue" // merge queue depth / current job
-	EvProcUpdated      EventType = "process.updated"
-	EvPermission       EventType = "permission.updated" // Claude asked to use a tool, or a request was answered
-	EvUsage            EventType = "usage.updated"      // subscription rate-limit usage / queue pause state
-	EvCI               EventType = "ci.updated"         // GitHub Actions status of a project's default branch
-	EvRemote           EventType = "remote.updated"     // how the default branch compares with origin's, after a fetch
-	EvCheckouts        EventType = "checkouts.updated"  // a hub's project: the runners whose checkout is behind origin; Data is []Checkout
-	EvRunnerDisk       EventType = "runner.disk"        // a hub's runner's free disk space fell below its threshold, or is back above it; Data is RunnerDisk
-	EvPreview          EventType = "preview.updated"    // a todo's live preview started, came up, crashed or stopped
-	EvDismissedUpdated EventType = "dismissed.updated"  // a project's dismissed issues changed (a draft with issues was deleted, or one was undone)
-	EvScanRun          EventType = "scan.run"           // a scan started, progressed or finished; Data is the ScanRun
-	EvScanSettings     EventType = "scan.settings"      // a scan's schedule was turned on/off or edited; Data is the ScanSetting
-	EvClaudeStatus     EventType = "claude.status"      // Claude's status page changed (internal/claudestatus); Data is its Status
-	EvScanTemplate     EventType = "scan.template"      // a Dash scan template was created, edited or deleted; Data is {"name": …, "deleted": bool}
-	EvGoalUpdated      EventType = "goal.updated"       // a goal was created or changed; Data is the Goal (without its log)
-	EvGoalDeleted      EventType = "goal.deleted"       // a goal was deleted (its tasks stay, without it); Data is the Goal as it was (without its log)
-	EvDeployUpdated    EventType = "deploy.updated"     // a deploy was queued, moved on or finished; Data is the Deploy (without its log)
-	EvProjectChat      EventType = "project.chat"       // a user's own chat about a project was saved or cleared, or a turn of it began or ended; Data is {"busy": bool} from a turn, nil from a save. Sent to that user only
-	EvPlanningCard     EventType = "planning.card"      // a planning card was created, changed, moved, commented, linked or deleted; Data is {"card": id, "deleted": bool}
-	EvPlanningWork     EventType = "planning.work"      // a task or goal linked to planning cards changed; Data is {"cards": [ids]}
-	EvPlanningBoards   EventType = "planning.boards"    // the org's planning boards were added, renamed, reordered or deleted (a deleted one's cards moved)
+	EvProjectUpdated EventType = "project.updated"
+	EvProjectDeleted EventType = "project.deleted"
+	EvTodoUpdated    EventType = "todo.updated"
+	EvTodoDeleted    EventType = "todo.deleted"
+	EvTodoOutput     EventType = "todo.output" // agent progress line
+	EvTodoEvent      EventType = "todo.event"  // a structured RunEvent of the worker
+	EvGitOp          EventType = "git.op"      // a git/gh command ran
+	EvMergeQueue     EventType = "merge.queue" // merge queue depth / current job
+	EvProcUpdated    EventType = "process.updated"
+	EvPermission     EventType = "permission.updated" // Claude asked to use a tool, or a request was answered
+	EvUsage          EventType = "usage.updated"      // subscription rate-limit usage / queue pause state
+	EvCI             EventType = "ci.updated"         // GitHub Actions status of a project's default branch
+	EvRemote         EventType = "remote.updated"     // how the default branch compares with origin's, after a fetch
+	EvCheckouts      EventType = "checkouts.updated"  // a hub's project: the runners whose checkout is behind origin; Data is []Checkout
+	EvRunnerDisk     EventType = "runner.disk"        // a hub's runner's free disk space fell below its threshold, or is back above it; Data is RunnerDisk
+	EvPreview        EventType = "preview.updated"    // a todo's live preview started, came up, crashed or stopped
+	EvScanRun        EventType = "scan.run"           // a scan started, progressed or finished; Data is the ScanRun
+	EvScanSettings   EventType = "scan.settings"      // a scan's schedule was turned on/off or edited; Data is the ScanSetting
+	EvClaudeStatus   EventType = "claude.status"      // Claude's status page changed (internal/claudestatus); Data is its Status
+	EvScanTemplate   EventType = "scan.template"      // a Dash scan template was created, edited or deleted; Data is {"name": …, "deleted": bool}
+	EvGoalUpdated    EventType = "goal.updated"       // a goal was created or changed; Data is the Goal (without its log)
+	EvGoalDeleted    EventType = "goal.deleted"       // a goal was deleted (its tasks stay, without it); Data is the Goal as it was (without its log)
+	EvDeployUpdated  EventType = "deploy.updated"     // a deploy was queued, moved on or finished; Data is the Deploy (without its log)
+	EvProjectChat    EventType = "project.chat"       // a user's own chat about a project was saved or cleared, or a turn of it began or ended; Data is {"busy": bool} from a turn, nil from a save. Sent to that user only
+	EvPlanningCard   EventType = "planning.card"      // a planning card was created, changed, moved, commented, linked or deleted; Data is {"card": id, "deleted": bool}
+	EvPlanningWork   EventType = "planning.work"      // a task or goal linked to planning cards changed; Data is {"cards": [ids]}
+	EvPlanningBoards EventType = "planning.boards"    // the org's planning boards were added, renamed, reordered or deleted (a deleted one's cards moved)
 )
 
 // PlanningEvent reports whether t is a Planning event: all a planner's

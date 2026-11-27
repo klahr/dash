@@ -12,7 +12,7 @@ import { PRIORITY_LEVELS, levelPriority, priorityLevel } from "./dnd.js";
 import { servesProject } from "../groups.js";
 import { agentCan, cantSay } from "./agents.js";
 import { dictation } from "./dictation.js";
-import { dismissNote, tagInput } from "./tags.js";
+import { tagInput } from "./tags.js";
 import { addTag } from "../tagtext.js";
 
 // ------------------------------------------------------------------ the task form
@@ -428,15 +428,14 @@ split.sheet.addEventListener("close", attempt(async () => {
 }));
 // replaceSplit deletes the task the parts were split from. Tasks in its
 // project that depended on it depend on the last part instead; when deleting
-// loses more than that (its scan issues, dependents in another project), it
+// loses more than that (dependents in another project), it
 // asks first. False: kept.
 async function replaceSplit(t, project, parts) {
   const last = parts.at(-1).id;
   const same = projectKey(project) === projectKey(state.project) && t.project_id === project.id;
   const dependents = [...state.todos.values()].filter((o) => o.depends_on?.includes(t.id));
   const lost = same ? "" : dependents.length ? ` ${plural(dependents.length, "task")} that depended on it no longer wait for it.` : "";
-  const note = dismissNote(t) + lost;
-  if (note && !await ask({ title: `Delete “${title(t)}”?`, body: `The new tasks replace it.${note}`, ok: "Delete", danger: true })) return false;
+  if (lost && !await ask({ title: `Delete “${title(t)}”?`, body: `The new tasks replace it.${lost}`, ok: "Delete", danger: true })) return false;
   if (same) {
     await Promise.all(dependents.map((o) => api("PATCH", `/api/todos/${o.id}`,
       { depends_on: [...new Set(o.depends_on.map((d) => d === t.id ? last : d))] })));

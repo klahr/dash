@@ -8,7 +8,7 @@ import (
 )
 
 // OrgStore is the store as one organization sees it: only its projects, and
-// the todos, dismissed issues, scans and chats that belong to them. Records of other
+// the todos, scans and chats that belong to them. Records of other
 // orgs don't exist here: reading or changing one is ErrNotFound, and lists
 // leave them out. The HTTP API and the MCP tools reach records only through
 // an OrgStore (Store.ForOrg), so a handler can't read across orgs by
@@ -172,13 +172,12 @@ func (o *OrgStore) SetStatus(id string, to model.TodoStatus, errMsg string) (mod
 	return o.UpdateTodo(id, statusFn(to, errMsg))
 }
 
-// DeleteTodo is Store.DeleteTodo by the view's user: the issues of a task
-// made from them are dismissed by them.
+// DeleteTodo is Store.DeleteTodo for the org's tasks.
 func (o *OrgStore) DeleteTodo(id string) (model.Todo, error) {
 	if !o.ownsTodo(id) {
 		return model.Todo{}, ErrNotFound
 	}
-	return o.s.deleteTodo(id, o.user)
+	return o.s.DeleteTodo(id)
 }
 
 // ---- chats ----
@@ -317,21 +316,6 @@ func (o *OrgStore) OpenFindings(keep func(projectID string) bool) []model.Todo {
 	}
 	slices.SortStableFunc(out, func(a, b model.Todo) int { return a.Finding.Severity().Rank() - b.Finding.Severity().Rank() })
 	return out
-}
-
-// ListDismissed is a project's dismissed issues; "" means all of the org's.
-func (o *OrgStore) ListDismissed(projectID string) []model.DismissedFinding {
-	if projectID != "" && !o.ownsProject(projectID) {
-		return []model.DismissedFinding{}
-	}
-	return o.s.listDismissed(func(p string) bool { return (projectID == "" || p == projectID) && o.ownsProject(p) })
-}
-
-func (o *OrgStore) Undismiss(projectID, fingerprint string) (model.DismissedFinding, error) {
-	if !o.ownsProject(projectID) {
-		return model.DismissedFinding{}, ErrNotFound
-	}
-	return o.s.Undismiss(projectID, fingerprint)
 }
 
 // MergeTodos is Store.MergeTodos for the org's drafts.

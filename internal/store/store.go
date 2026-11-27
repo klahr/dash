@@ -71,9 +71,6 @@ type snapshot struct {
 	// Issues are a state.json's issues, from before issues became draft
 	// tasks: importLegacy turns them into tasks (see issuesToTasks).
 	Issues map[string]*legacyIssue `json:"issues,omitempty"`
-	// Dismissed are the issues users dismissed, keyed by issueKey(project
-	// id, fingerprint): reports of them add no draft.
-	Dismissed map[string]*model.DismissedFinding `json:"-"`
 	// ScanRuns are the recent runs of each project's scans, keyed by run id.
 	ScanRuns map[string]*model.ScanRun `json:"scan_runs,omitempty"`
 	// ScanSettings are the schedule changes and approvals users made, keyed by
@@ -416,11 +413,6 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 			delete(s.data.TodoChats, tid)
 		}
 	}
-	for k, d := range s.data.Dismissed {
-		if d.ProjectID == id {
-			delete(s.data.Dismissed, k)
-		}
-	}
 	for rid, r := range s.data.ScanRuns {
 		if r.ProjectID == id {
 			delete(s.data.ScanRuns, rid)
@@ -466,7 +458,7 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 				return err
 			}
 		}
-		for _, table := range []string{"todos", "dismissed_findings", "scan_runs", "scan_settings", "scan_templates", "webhooks",
+		for _, table := range []string{"todos", "scan_runs", "scan_settings", "scan_templates", "webhooks",
 			"tracker_projects", "tracker_links", "project_events", "goals", "deploys", "environment_changes", "release_builds"} {
 			if _, err := tx.Exec("DELETE FROM "+table+" WHERE project_id = ?", id); err != nil {
 				return err
@@ -674,14 +666,8 @@ func statusFn(to model.TodoStatus, errMsg string) func(*model.Todo) error {
 }
 
 // DeleteTodo deletes a task. The issues of a task made from reported
-// issues (its Finding) are dismissed with it, unless it was merged: they
-// add no draft when reported again (see ReportFindings, Undismiss).
+// issues (its Finding) go with it: a later report of one adds a draft again.
 func (s *Store) DeleteTodo(id string) (model.Todo, error) {
-	return s.deleteTodo(id, 0)
-}
-
-// deleteTodo is DeleteTodo by user by (0: unknown).
-func (s *Store) deleteTodo(id string, by int64) (model.Todo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.data.Todos[id]
@@ -690,7 +676,6 @@ func (s *Store) deleteTodo(id string, by int64) (model.Todo, error) {
 	}
 	delete(s.data.Todos, id)
 	delete(s.data.TodoChats, id)
-	dismissed := s.dismissLocked(t, by)
 	// Forget the deleted todo in the dependencies of others, and in those
 	// building on it (they start fresh, with their full prompt).
 	var changed []*model.Todo
@@ -720,11 +705,6 @@ func (s *Store) deleteTodo(id string, by int64) (model.Todo, error) {
 				return err
 			}
 		}
-		for _, d := range dismissed {
-			if err := putDismissed(tx, d); err != nil {
-				return err
-			}
-		}
 		return nil
 	})
 	if err != nil {
@@ -733,9 +713,6 @@ func (s *Store) deleteTodo(id string, by int64) (model.Todo, error) {
 	s.emit(model.EvTodoDeleted, t.ProjectID, id, nil)
 	for _, o := range changed {
 		s.emit(model.EvTodoUpdated, o.ProjectID, o.ID, *o)
-	}
-	if len(dismissed) > 0 {
-		s.emit(model.EvDismissedUpdated, t.ProjectID, "", map[string]int{"dismissed": len(dismissed)})
 	}
 	return *t, nil
 }

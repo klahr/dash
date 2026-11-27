@@ -178,7 +178,7 @@ func TestChatUpdateProjectNeedsSettingsRights(t *testing.T) {
 }
 
 // combine_todos combines drafts like the board's Combine: their findings
-// stay linked to the combined task and none is dismissed. It refuses a task
+// stay linked to the combined task. It refuses a task
 // that isn't a draft, and drafts of two projects.
 func TestChatCombineTodos(t *testing.T) {
 	s, _, p := boardServer(t)
@@ -202,9 +202,6 @@ func TestChatCombineTodos(t *testing.T) {
 	}
 	if _, err := raw(s).GetTodo(b.ID); err == nil {
 		t.Error("the second draft is still there")
-	}
-	if d := raw(s).ListDismissed(p.ID); len(d) != 0 {
-		t.Errorf("dismissed %+v", d)
 	}
 	if issues := reportedIssues(raw(s), p.ID); len(issues) != 2 {
 		t.Errorf("findings %+v", issues)

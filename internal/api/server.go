@@ -350,10 +350,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/hub/github-repos", s.hubCreateGitHubRepo)
 
 	// Reported issues: each becomes a draft task (or bumps the task that has
-	// it); the dismissed ones are kept apart, and drafts can be merged.
+	// it), and drafts can be merged.
 	mux.HandleFunc("POST /api/projects/{pid}/issues", s.reportIssue)
-	mux.HandleFunc("GET /api/projects/{pid}/dismissed", s.listDismissed)
-	mux.HandleFunc("DELETE /api/projects/{pid}/dismissed/{fp}", s.undismiss)
 	mux.HandleFunc("POST /api/projects/{pid}/todos/merge", s.mergeTodos)
 
 	// Goals: a coordinator plans and dispatches tasks towards each

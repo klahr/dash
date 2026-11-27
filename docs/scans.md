@@ -10,7 +10,7 @@ Scans add their findings to the **Board**:
 - **From scans (N)** above the board shows only the tasks scans added. Click it again to show
   every task. It shows once scans have added drafts.
 - **⋮ → Scans…** in the top bar opens the **Scans** sheet: each scan, **Run now**, its schedule
-  and settings, **Create custom scan…** and **Dismissed**. `gn` opens it too.
+  and settings, and **Create custom scan…**. `gn` opens it too.
 
 Scans come from three places, marked on each card:
 
@@ -201,7 +201,7 @@ Look for vulnerabilities in {{path}} …
 - **Findings.** The scan answers with JSON findings (title, type, severity, file and line,
   details, fix and a fingerprint). Invalid findings are dropped and noted in the run's log. Each
   valid one becomes a draft task, as described in [Findings on the Board](#findings-on-the-board).
-  The scan is shown the findings it reported before, open and dismissed, so it reuses their
+  The scan is shown the findings it reported before that a task still has, so it reuses their
   fingerprints.
 - **Approvals.** Anyone who can merge to the repository can change its templates, so a
   repository template's `tools:` and `schedule:` only apply once you approve them in the **Scans**
@@ -239,7 +239,7 @@ Look for vulnerabilities in {{path}} …
   out in its clone and runs Claude there, and the hub records the findings. While none of the
   project's runners is online the run waits, showing "no runner online", and goes ahead as soon as
   one connects; a project no runner has the labels of can't be scanned. `-scan-timeout` is the hub's.
-- **Reports.** Each run shows what it found, e.g. "2 added, 3 already there, 1 dismissed". A
+- **Reports.** Each run shows what it found, e.g. "2 added, 3 already there". A
   red badge counts the critical and high drafts the run added, e.g. "1 critical · 2 high". A
   scheduled run that adds critical or high drafts sends a notification.
 
@@ -299,11 +299,10 @@ problem keeps its fingerprint when code above it moves.
   failed): no new draft. The task counts the report and its card shows it with the severity,
   e.g. "high · 2 reports". The same source twice in a row counts once, so a daily scan doesn't
   inflate it. The line and details are updated. A draft's prompt is written again, unless someone edited it.
-- **It was dismissed:** nothing is added. Deleting a draft (or any task with findings that isn't
-  merged) dismisses its findings. They are listed under **Scans → Dismissed**. Click **Undo** to
-  let the next report add a draft again.
 - **A merged task had it:** the problem came back. Dash adds a new draft that names the earlier
   task.
+- **Its draft was deleted:** Dash keeps nothing of a deleted draft, so the next report adds a
+  new draft.
 
 Two reports of one problem at the same moment, or twice in one scan, add one draft.
 
@@ -345,10 +344,8 @@ To keep the Board usable when scans find a lot:
 - `GET /api/projects/{pid}/todos?tag=scan:security` lists the tasks with a tag.
 - `POST /api/projects/{pid}/issues` reports an issue: `{"title", "type", "severity", "file",
   "line", "details", "fix", "rule", "source"}`. It adds a draft or bumps the task that has it,
-  and answers `{"todo", "result", "reason"}`. `result` is `new`, `updated`, `known`, `dismissed`
+  and answers `{"todo", "result"}`. `result` is `new`, `updated`, `known`
   or `reopened` (it came back after a merge).
-- `GET /api/projects/{pid}/dismissed` lists the dismissed findings, and
-  `DELETE /api/projects/{pid}/dismissed/{fingerprint}` undoes one.
 - `POST /api/projects/{pid}/todos/merge` merges drafts: `{"ids": []}`. The first one is kept.
 - `PATCH /api/projects/{pid}/scans/{name}` changes any scan's schedule and approvals, and
   `POST …/scans/{name}/run` runs it; send `{"full": true}` to make a `since_last_scan` scan look
@@ -357,12 +354,12 @@ To keep the Board usable when scans find a lot:
   out keep their value, and `0` means the default. The scan's `schedule.early` shows it, and each
   run's `trigger` is `manual`, `schedule`, `early` or `resume`.
 
-A run's `counts` are `new`, `updated` and `known` (already there), `dismissed` and `reopened`.
+A run's `counts` are `new`, `updated` and `known` (already there), and `reopened`.
 Its `new_tasks` and `reopened_tasks` are the ids of the drafts it added.
 
 ## Upgrading from Issues
 
 Dash used to keep findings on a separate **Issues** page. On upgrade, open issues become drafts
-with the same id, so old links still open them. Dismissed issues become dismissed findings.
+with the same id, so old links still open them. Dismissed issues are dropped.
 Issues that had a task attach their fingerprint to that task. Old `/p/<project>/issues` links
 open the Board.

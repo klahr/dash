@@ -624,8 +624,7 @@ func projectParam(o Options) (Param, func(b Board, a Args) (model.Project, error
 
 // IssueTools returns report_issue: a bug, vulnerability or other problem
 // becomes a draft task on the project's Board, tagged with its type,
-// severity and source, unless a task has it already (that one is bumped)
-// or the user dismissed it.
+// severity and source, unless a task has it already (that one is bumped).
 func IssueTools(b Board, o Options) []Tool {
 	pProject, project := projectParam(o)
 	reportDesc := "Report a bug, vulnerability or other problem in the project. It becomes a draft task on the project's Board, " +
@@ -663,13 +662,11 @@ func IssueTools(b Board, o Options) []Tool {
 	}
 }
 
-// Reported is what report_issue did: the task that has the issue now (zero
-// when it was dismissed), the outcome, and why it was dismissed.
+// Reported is what report_issue did: the task that has the issue now, and
+// the outcome.
 type Reported struct {
 	Todo   model.Todo         `json:"todo"`
 	Result model.UpsertResult `json:"result"`
-	// Reason is why the user dismissed the issue, when they did and said why.
-	Reason string `json:"reason,omitempty"`
 }
 
 // Message says what reporting an issue did, for Claude.
@@ -682,12 +679,6 @@ func (r Reported) Message() string {
 		return fmt.Sprintf("A merged task had fixed this before; it came back, so added draft task %s, %q, to the Board.", t.ID, t.Title)
 	case model.UpsertUpdated, model.UpsertKnown:
 		return fmt.Sprintf("Task %s, %q (%s), already has this problem; added your report to it (reported %d times).", t.ID, t.Title, t.Status, t.Finding.Reports())
-	case model.UpsertDismissed:
-		why := ""
-		if r.Reason != "" {
-			why = " (" + r.Reason + ")"
-		}
-		return "The user dismissed this problem before" + why + "; leave it."
 	}
 	return string(r.Result)
 }

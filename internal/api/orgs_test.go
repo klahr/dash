@@ -35,7 +35,6 @@ type twoOrgs struct {
 	web     model.Project
 	todo    model.Todo
 	issue   model.Todo // the draft a reported issue became
-	gone    string     // the fingerprint of a dismissed issue
 	run     model.ScanRun
 	proc    model.Process
 	perm    string // the waiting permission prompt's id
@@ -110,10 +109,6 @@ func newTwoOrgs(t *testing.T) *twoOrgs {
 		t.Fatal(err)
 	}
 	is := found.Todo
-	dis, _ := st.ReportFinding(model.Issue{ProjectID: web.ID, Title: "secret dismissed issue", Source: "agent:x"})
-	if _, err := st.DeleteTodo(dis.Todo.ID); err != nil {
-		t.Fatal(err)
-	}
 	run, err := st.CreateScanRun(model.ScanRun{ProjectID: web.ID, Scan: "security", Status: model.ScanSucceeded})
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +147,7 @@ func newTwoOrgs(t *testing.T) *twoOrgs {
 		t.Fatal(err)
 	}
 
-	o := &twoOrgs{s: s, h: s.Routes(), web: web, todo: td, issue: is, gone: dis.Todo.Finding.Issues[0].Fingerprint, run: run, proc: proc, hook: hook, goal: goal, beta: beta, bUser: bUser, cUser: cUser}
+	o := &twoOrgs{s: s, h: s.Routes(), web: web, todo: td, issue: is, run: run, proc: proc, hook: hook, goal: goal, beta: beta, bUser: bUser, cUser: cUser}
 	o.a = loggedIn(t, o.h)
 	o.b = loginAs(t, o.h, "b", "b-password")
 	o.c = loginAs(t, o.h, "c", "c-password")
@@ -214,9 +209,6 @@ func (o *twoOrgs) untouched(t *testing.T, after string) {
 	if is, err := st.GetTodo(o.issue.ID); err != nil || is.Status != model.StatusDraft || is.Title != o.issue.Title || is.Finding.Reports() != 1 {
 		t.Fatalf("after %s: the issue's draft changed: %+v %v", after, is, err)
 	}
-	if ds := st.ListDismissed(o.web.ID); len(ds) != 1 || ds[0].Fingerprint != o.gone {
-		t.Fatalf("after %s: dismissed issues changed: %+v", after, ds)
-	}
 	if len(st.TodoChat(o.todo.ID)) != 2 || len(st.ProjectChat(o.web.ID, ownerSession(t, o.s).User.ID)) != 2 {
 		t.Fatalf("after %s: chats changed", after)
 	}
@@ -272,8 +264,6 @@ func (o *twoOrgs) recordEndpoints() []endpoint {
 		{"GET", "/api/projects/" + pid + "/todos", ""},
 		{"POST", "/api/projects/" + pid + "/todos", `{"title":"intruder"}`},
 		{"POST", "/api/projects/" + pid + "/issues", `{"title":"secret issue","source":"agent:y"}`},
-		{"GET", "/api/projects/" + pid + "/dismissed", ""},
-		{"DELETE", "/api/projects/" + pid + "/dismissed/" + o.gone, ""},
 		{"POST", "/api/projects/" + pid + "/todos/merge", `{"ids":["` + iid + `","` + tid + `"]}`},
 		{"GET", "/api/projects/" + pid + "/scans", ""},
 		{"POST", "/api/projects/" + pid + "/scans/security/run", ""},
@@ -385,7 +375,7 @@ func TestOrgCannotReachAnotherOrgsRecords(t *testing.T) {
 
 	// The same calls as Default's own member work (a sample), so the 404s
 	// above are about the org and not the request.
-	for _, path := range []string{"/api/projects/" + pid, "/api/todos/" + tid, "/api/todos/" + tid + "/chat", "/api/projects/" + pid + "/dismissed"} {
+	for _, path := range []string{"/api/projects/" + pid, "/api/todos/" + tid, "/api/todos/" + tid + "/chat"} {
 		if w := do(t, o.c, "GET", path, ""); w.Code != http.StatusOK {
 			t.Errorf("GET %s as a member of the org: %d %s", path, w.Code, w.Body)
 		}

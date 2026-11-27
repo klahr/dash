@@ -141,9 +141,6 @@ func TestFindingBumpsTasksPastDraft(t *testing.T) {
 		if _, err := s.DeleteTodo(d.ID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.Undismiss(p.ID, b.Finding.Issues[0].Fingerprint); err != nil {
-			t.Fatal(err)
-		}
 	}
 }
 
@@ -184,54 +181,27 @@ func TestScanBatchWithDuplicatesGivesOneDraftEach(t *testing.T) {
 	}
 }
 
-func TestDismissedFindingsStayOut(t *testing.T) {
+func TestDeletedFindingsComeBack(t *testing.T) {
 	t.Parallel()
 	s, p, path := findingStore(t)
 	in := model.Issue{ProjectID: p.ID, Title: "Weak hash", Type: model.IssueVuln, File: "auth.go", Rule: "md5", Source: "scan:security"}
 	d := mustReport(t, s, in, model.UpsertNew)
-	if _, err := s.deleteTodo(d.ID, 7); err != nil { // as user 7 (OrgStore.DeleteTodo passes its user)
+	if _, err := s.DeleteTodo(d.ID); err != nil {
 		t.Fatal(err)
 	}
-	ds := s.ListDismissed(p.ID)
-	if len(ds) != 1 || ds[0].Fingerprint != d.Finding.Issues[0].Fingerprint || ds[0].Title != "Weak hash" || ds[0].TodoID != d.ID || ds[0].By != 7 {
-		t.Fatalf("dismissed: %+v", ds)
+	// Deleting the draft keeps nothing of it: the next report adds a draft again.
+	b := mustReport(t, s, in, model.UpsertNew)
+	if b.ID == d.ID {
+		t.Fatalf("the deleted draft came back: %+v", b)
 	}
-	o, err := s.ReportFinding(in)
-	if err != nil || o.Result != model.UpsertDismissed || o.Dismissed == nil || o.Todo.ID != "" {
-		t.Fatalf("reported again: %+v, %v", o, err)
+	if _, err := s.DeleteTodo(b.ID); err != nil {
+		t.Fatal(err)
 	}
-	counts, _, _ := s.ReportFindings(p.ID, "scan:security", []model.Issue{in})
-	if counts.Dismissed != 1 || len(findingDrafts(s, p.ID)) != 0 {
-		t.Fatalf("scan brought it back: %+v", counts)
-	}
-	// Dismissals are kept across restarts, and can be undone.
 	s.Close()
 	s = openTest(t, path)
-	if len(s.ListDismissed(p.ID)) != 1 {
-		t.Fatal("dismissal not saved")
-	}
-	if _, err := s.Undismiss(p.ID, d.Finding.Issues[0].Fingerprint); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Undismiss(p.ID, "nope"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("undismiss unknown: %v", err)
-	}
-	mustReport(t, s, in, model.UpsertNew)
-	s.Close()
-	if len(openTest(t, path).ListDismissed(p.ID)) != 0 {
-		t.Fatal("undo not saved")
-	}
-}
-
-func TestDeletingATaskWithoutIssuesDismissesNothing(t *testing.T) {
-	t.Parallel()
-	s, p, _ := findingStore(t)
-	td, _ := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: "plain"})
-	if _, err := s.DeleteTodo(td.ID); err != nil {
-		t.Fatal(err)
-	}
-	if len(s.ListDismissed("")) != 0 {
-		t.Fatal("a plain task's delete dismissed something")
+	counts, _, err := s.ReportFindings(p.ID, "scan:security", []model.Issue{in})
+	if err != nil || counts.New != 1 || len(findingDrafts(s, p.ID)) != 1 {
+		t.Fatalf("after a restart: %+v, %v", counts, err)
 	}
 }
 
@@ -247,13 +217,6 @@ func TestFindingAfterMergeGivesNewDraft(t *testing.T) {
 	}
 	if !strings.Contains(b.Prompt, d.ID) || !strings.Contains(b.Prompt, "came back") {
 		t.Errorf("the new draft doesn't name the merged task:\n%s", b.Prompt)
-	}
-	// The merged task keeps its issues; deleting it dismisses nothing.
-	if _, err := s.DeleteTodo(d.ID); err != nil {
-		t.Fatal(err)
-	}
-	if len(s.ListDismissed(p.ID)) != 0 {
-		t.Fatal("deleting a merged task dismissed its issues")
 	}
 }
 
@@ -302,9 +265,6 @@ func TestMergeTodos(t *testing.T) {
 	if _, err := s.GetTodo(b.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatal("the merged-away draft is still there")
 	}
-	if len(s.ListDismissed(p.ID)) != 0 {
-		t.Fatal("merging dismissed the merged-away draft's issues")
-	}
 	if got, _ := s.GetTodo(dep.ID); !slices.Equal(got.DependsOn, []string{a.ID}) {
 		t.Fatalf("dependency not moved to the merged draft: %q", got.DependsOn)
 	}
@@ -343,7 +303,7 @@ func TestMergeTodosWithEditedPrompts(t *testing.T) {
 }
 
 // TestMigrateIssues turns an issues table, as Dash kept it before, into
-// tasks and dismissed fingerprints.
+// tasks, dropping the dismissed ones.
 func TestMigrateIssues(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "dash.db")
@@ -384,12 +344,8 @@ func TestMigrateIssues(t *testing.T) {
 		!slices.Contains(got.Finding.LegacyIDs, "i-made") || !slices.Contains(got.Tags, "reported") {
 		t.Fatalf("task made for an issue: %+v", got)
 	}
-	ds := s.ListDismissed(p.ID)
-	if len(ds) != 1 || ds[0].Title != "Not a bug" || ds[0].Reason != "by design" {
-		t.Fatalf("dismissed: %+v", ds)
-	}
 	if n := len(s.ListTodos(p.ID)); n != 2 {
-		t.Fatalf("%d tasks, want 2 (the resolved issue is dropped)", n)
+		t.Fatalf("%d tasks, want 2 (the resolved and dismissed issues are dropped)", n)
 	}
 	var tables int
 	_ = s.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name = 'issues'").Scan(&tables)
@@ -398,7 +354,5 @@ func TestMigrateIssues(t *testing.T) {
 	}
 	// Reports find the migrated tasks.
 	mustReport(t, s, model.Issue{ProjectID: p.ID, Title: "Leak", Type: model.IssueBug, Source: "agent:y"}, model.UpsertUpdated)
-	if o, _ := s.ReportFinding(model.Issue{ProjectID: p.ID, Title: "Not a bug", Type: model.IssueOther, Source: "scan:sec"}); o.Result != model.UpsertDismissed {
-		t.Fatalf("migrated dismissal: %s", o.Result)
-	}
+	mustReport(t, s, model.Issue{ProjectID: p.ID, Title: "Not a bug", Type: model.IssueOther, Source: "scan:sec"}, model.UpsertNew)
 }

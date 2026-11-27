@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -27,19 +26,17 @@ var ErrBadIssue = errors.New("invalid issue")
 // all drafts, or not all in one project.
 var ErrBadMerge = errors.New("can't merge these tasks")
 
-// FindingOutcome is what reporting one issue did: the task that has it now
-// (zero for a dismissed one), and Dismissed, the record that kept it out.
+// FindingOutcome is what reporting one issue did: the task that has it now.
 type FindingOutcome struct {
-	Todo      model.Todo
-	Result    model.UpsertResult
-	Issue     model.Issue // the issue as reported, normalized, with its fingerprint
-	Dismissed *model.DismissedFinding
+	Todo   model.Todo
+	Result model.UpsertResult
+	Issue  model.Issue // the issue as reported, normalized, with its fingerprint
 }
 
 // ReportFinding adds the issue as a draft to its project's Board, unless
 // it is known: a task that isn't merged has its fingerprint (that task is
-// bumped: see Issue.AddReport), or it was dismissed (nothing changes). If a
-// merged task had it, it came back: the new draft names that task.
+// bumped: see Issue.AddReport). If a merged task had it, it came back: the
+// new draft names that task.
 func (s *Store) ReportFinding(in model.Issue) (FindingOutcome, error) {
 	_, out, err := s.ReportFindings(in.ProjectID, "", []model.Issue{in})
 	if err != nil {
@@ -196,10 +193,6 @@ func (s *Store) reportLocked(is model.Issue, idx findingIndex, changed map[strin
 		changed[id] = t
 		return FindingOutcome{Todo: clone(*t), Result: model.UpsertUpdated, Issue: is}
 	}
-	if d, ok := s.data.Dismissed[issueKey(is.ProjectID, is.Fingerprint)]; ok {
-		cp := *d
-		return FindingOutcome{Result: model.UpsertDismissed, Issue: is, Dismissed: &cp}
-	}
 	first := is
 	first.Reports, first.LastSource, first.Sources = 1, "", nil
 	first.AddReport(first.Source)
@@ -290,78 +283,9 @@ func todoEqual(a, b model.Todo) bool {
 	})
 }
 
-// issueKey is the key of a project's fingerprint in snapshot.Dismissed.
+// issueKey is the key of a project's fingerprint.
 func issueKey(projectID, fingerprint string) string {
 	return projectID + "\x00" + fingerprint
-}
-
-// dismissLocked records the issues of t, which is being deleted, as
-// dismissed, unless it was merged: its issues were fixed then, not
-// dismissed. It returns the records to save.
-func (s *Store) dismissLocked(t *model.Todo, by int64) []*model.DismissedFinding {
-	if t.Finding == nil || t.Status == model.StatusMerged {
-		return nil
-	}
-	if s.data.Dismissed == nil {
-		s.data.Dismissed = map[string]*model.DismissedFinding{}
-	}
-	var out []*model.DismissedFinding
-	now := time.Now()
-	for _, is := range t.Finding.Issues {
-		if is.Fingerprint == "" {
-			continue
-		}
-		d := model.Dismissal(*t, is, "", by, now)
-		s.data.Dismissed[issueKey(t.ProjectID, is.Fingerprint)] = &d
-		out = append(out, &d)
-	}
-	return out
-}
-
-// ListDismissed is a project's dismissed issues ("" for every project's),
-// latest first.
-func (s *Store) ListDismissed(projectID string) []model.DismissedFinding {
-	return s.listDismissed(func(p string) bool { return projectID == "" || p == projectID })
-}
-
-func (s *Store) listDismissed(keep func(projectID string) bool) []model.DismissedFinding {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := []model.DismissedFinding{}
-	for _, d := range s.data.Dismissed {
-		if keep(d.ProjectID) {
-			out = append(out, *d)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if !out[i].At.Equal(out[j].At) {
-			return out[i].At.After(out[j].At)
-		}
-		return out[i].Fingerprint < out[j].Fingerprint
-	})
-	return out
-}
-
-// Undismiss forgets that a project's issue was dismissed: the next report
-// of it adds a draft again.
-func (s *Store) Undismiss(projectID, fingerprint string) (model.DismissedFinding, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	k := issueKey(projectID, fingerprint)
-	d, ok := s.data.Dismissed[k]
-	if !ok {
-		return model.DismissedFinding{}, ErrNotFound
-	}
-	delete(s.data.Dismissed, k)
-	err := s.writeLocked(func(tx *sql.Tx) error {
-		_, err := tx.Exec("DELETE FROM dismissed_findings WHERE project_id = ? AND fingerprint = ?", projectID, fingerprint)
-		return err
-	})
-	if err != nil {
-		return *d, err
-	}
-	s.emit(model.EvDismissedUpdated, projectID, "", map[string]string{"fingerprint": fingerprint})
-	return *d, nil
 }
 
 // MergeTodos combines drafts of one project into the first of them: it
@@ -370,7 +294,7 @@ func (s *Store) Undismiss(projectID, fingerprint string) (model.DismissedFinding
 // report counts added up. Where every draft's prompt is still the one Dash
 // wrote from its issues, the merged prompt is written from all of them;
 // otherwise the prompts are put one after another. The other drafts are
-// deleted; their issues aren't dismissed.
+// deleted.
 func (s *Store) MergeTodos(ids []string) (model.Todo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -554,10 +478,4 @@ func (s *Store) repointDependentsLocked(gone map[string]bool, to string, at time
 		}
 	}
 	return others
-}
-
-func putDismissed(tx *sql.Tx, d *model.DismissedFinding) error {
-	return put(tx, "INSERT INTO dismissed_findings (project_id, fingerprint, org_id, data) VALUES (?, ?, "+projectOrg+", ?)"+
-		" ON CONFLICT (project_id, fingerprint) DO UPDATE SET org_id = excluded.org_id, data = excluded.data",
-		d, d.ProjectID, d.Fingerprint, d.ProjectID)
 }

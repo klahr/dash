@@ -39,15 +39,10 @@ func migrateIssues(db *sql.DB) error {
 	if err := loadRows(db, "SELECT data FROM todos", func(t *model.Todo, _ int64) { todos[t.ID] = t }); err != nil {
 		return err
 	}
-	changed, dismissed := issuesToTasks(issues, todos)
+	changed := issuesToTasks(issues, todos)
 	err := inTx(db, func(tx *sql.Tx) error {
 		for _, t := range changed {
 			if err := putTodo(tx, t); err != nil {
-				return err
-			}
-		}
-		for _, d := range dismissed {
-			if err := putDismissed(tx, d); err != nil {
 				return err
 			}
 		}
@@ -58,24 +53,23 @@ func migrateIssues(db *sql.DB) error {
 		return err
 	}
 	if len(issues) > 0 {
-		slog.Info("turned issues into draft tasks", "issues", len(issues), "tasks", len(changed), "dismissed", len(dismissed))
+		slog.Info("turned issues into draft tasks", "issues", len(issues), "tasks", len(changed))
 	}
 	return nil
 }
 
 // issuesToTasks turns issues kept the old way into tasks, adding to and
-// changing todos (by id), and returns the tasks it added or changed and
-// the dismissed issues to keep:
+// changing todos (by id), and returns the tasks it added or changed:
 //
 //   - an open issue becomes a draft with its title, prompt, tags and
 //     Finding, keeping the issue's id (old links to it open the draft);
 //   - an issue a task was created for (task_created, or resolved: that
 //     task was merged) goes in those tasks' Findings, so reports find them;
 //     one whose tasks are gone is open again, or dropped if it was resolved;
-//   - a dismissed issue is kept as a dismissed fingerprint.
+//   - a dismissed issue is dropped.
 //
 // Issues of one project with one fingerprint end up in one task.
-func issuesToTasks(issues map[string]*legacyIssue, todos map[string]*model.Todo) ([]*model.Todo, []*model.DismissedFinding) {
+func issuesToTasks(issues map[string]*legacyIssue, todos map[string]*model.Todo) []*model.Todo {
 	list := make([]*legacyIssue, 0, len(issues))
 	for _, is := range issues {
 		list = append(list, is)
@@ -96,8 +90,6 @@ func issuesToTasks(issues map[string]*legacyIssue, todos map[string]*model.Todo)
 	}
 	drafts := map[string]*model.Todo{} // issueKey → the draft made for it
 	doubled := map[*model.Todo]bool{}  // drafts that got one issue twice
-	var dismissed []*model.DismissedFinding
-	seenDismissed := map[string]bool{}
 	reporter := reporterIn(todos)
 	for _, li := range list {
 		is := li.Issue
@@ -145,17 +137,6 @@ func issuesToTasks(issues map[string]*legacyIssue, todos map[string]*model.Todo)
 			status = "open"
 		}
 		switch status {
-		case "dismissed":
-			if seenDismissed[key] {
-				continue
-			}
-			seenDismissed[key] = true
-			d := model.DismissedFinding{
-				ProjectID: is.ProjectID, Fingerprint: is.Fingerprint, Title: is.Title, Type: is.Type, Severity: is.Severity,
-				File: is.File, Rule: is.Rule, Source: is.Source, ScanKind: is.ScanKind, Reason: li.DismissReason,
-				At: firstTime(li.UpdatedAt, li.CreatedAt),
-			}
-			dismissed = append(dismissed, &d)
 		case "open":
 			if t, ok := drafts[key]; ok { // the same issue twice: one draft
 				t.Finding.Issues[0].Reports += is.ReportCount()
@@ -192,7 +173,7 @@ func issuesToTasks(issues map[string]*legacyIssue, todos map[string]*model.Todo)
 	for n, id := range order {
 		out[n] = changed[id]
 	}
-	return out, dismissed
+	return out
 }
 
 // firstTime is the first of ts that isn't zero.

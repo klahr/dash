@@ -340,16 +340,11 @@ export function renderDetailTags(t) {
   detailTags.render();
 }
 
-// dismissNote tells, in a delete dialog, that deleting t dismisses its
-// issues: reports of them add no draft until undone in Scans → Dismissed.
-export const dismissNote = (t) => t.finding?.issues?.length && t.status !== "merged"
-  ? ` Its ${t.finding.issues.length > 1 ? "issues are" : "issue is"} dismissed: scans and Claude won't add ${t.finding.issues.length > 1 ? "them" : "it"} again until you undo it in Scans → Dismissed.` : "";
-
 // deleteBody is the body of the dialog that asks before deleting t, from the
 // task pane's menu or the dd key: what goes with it, its open pull request too.
 export const deleteBody = (t) => {
   const pr = t.pr?.state === "OPEN" ? ` Its pull request #${t.pr.number} is closed on GitHub: the task is rejected.` : "";
-  return `Its worktree and branch are removed too.${pr}${dismissNote(t)} This can't be undone.`;
+  return `Its worktree and branch are removed too.${pr} This can't be undone.`;
 };
 
 // renderFinding shows what a task made from reported issues knows about

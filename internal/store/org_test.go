@@ -55,10 +55,6 @@ func TestForOrgIsolates(t *testing.T) {
 
 	td, _ := a.CreateTodo(model.Todo{ProjectID: pa.ID, Title: "a's", CreatedBy: u.ID})
 	found, _ := a.ReportFinding(model.Issue{ProjectID: pa.ID, Title: "a's issue", Source: "agent:x"})
-	gone, _ := a.ReportFinding(model.Issue{ProjectID: pa.ID, Title: "a's dismissed issue", Source: "agent:x"})
-	if _, err := a.DeleteTodo(gone.Todo.ID); err != nil {
-		t.Fatal(err)
-	}
 	run, _ := s.CreateScanRun(model.ScanRun{ProjectID: pa.ID, Scan: "sec"})
 	if _, err := s.SaveScanTemplate(model.ScanTemplate{ProjectID: pa.ID, Name: "deps"}, true); err != nil {
 		t.Fatal(err)
@@ -96,8 +92,6 @@ func TestForOrgIsolates(t *testing.T) {
 	notFound("AppendProjectChat", b.AppendProjectChat(pa.ID, u.ID, msgs...))
 	_, err = b.ReportFinding(model.Issue{ProjectID: pa.ID, Title: "x"})
 	notFound("ReportFinding", err)
-	_, err = b.Undismiss(pa.ID, gone.Todo.Finding.Issues[0].Fingerprint)
-	notFound("Undismiss", err)
 	_, err = b.MergeTodos([]string{td.ID, found.Todo.ID})
 	notFound("MergeTodos", err)
 	_, err = b.GetScanRun(run.ID)
@@ -110,7 +104,7 @@ func TestForOrgIsolates(t *testing.T) {
 	notFound("SaveScanTemplate", err)
 	notFound("DeleteScanTemplate", b.DeleteScanTemplate(pa.ID, "deps", false))
 
-	if len(b.ListTodos("")) != 0 || len(b.ListTodos(pa.ID)) != 0 || len(b.ListDismissed("")) != 0 || len(b.ListDismissed(pa.ID)) != 0 || len(b.OpenFindings(nil)) != 0 ||
+	if len(b.ListTodos("")) != 0 || len(b.ListTodos(pa.ID)) != 0 || len(b.OpenFindings(nil)) != 0 ||
 		len(b.ListScanRuns(pa.ID, "")) != 0 || len(b.ScanTemplates(pa.ID)) != 0 || len(b.Chat(u.ID)) != 0 {
 		t.Error("the other org's lists show a's records")
 	}
@@ -125,7 +119,7 @@ func TestForOrgIsolates(t *testing.T) {
 	if got, _ := a.GetTodo(td.ID); got.Title != "a's" || got.CreatedBy != u.ID {
 		t.Errorf("a's todo: %+v", got)
 	}
-	if len(a.ListTodos("")) != 2 || len(a.ListDismissed("")) != 1 || len(a.OpenFindings(nil)) != 1 || len(a.Chat(u.ID)) != 1 {
+	if len(a.ListTodos("")) != 2 || len(a.OpenFindings(nil)) != 1 || len(a.Chat(u.ID)) != 1 {
 		t.Error("a lost its records")
 	}
 
@@ -162,7 +156,7 @@ func TestRowsCarryTheirProjectsOrg(t *testing.T) {
 	p, _ := o.CreateProject(model.Project{Name: "p"})
 	td, _ := o.CreateTodo(model.Todo{ProjectID: p.ID, Title: "t"})
 	gone, _ := o.ReportFinding(model.Issue{ProjectID: p.ID, Title: "i"})
-	_, _ = o.DeleteTodo(gone.Todo.ID) // a dismissed fingerprint
+	_, _ = o.DeleteTodo(gone.Todo.ID)
 	_, _ = s.CreateScanRun(model.ScanRun{ProjectID: p.ID, Scan: "s"})
 	_, _ = o.SetScanSetting(p.ID, "s", func(*model.ScanSetting) {})
 	_, _ = o.SaveScanTemplate(model.ScanTemplate{ProjectID: p.ID, Name: "n"}, true)

@@ -189,8 +189,8 @@ status except running or merging.
   task's run don't have it.
 - `combine_todos(todos)` combines two or more drafts of one project into the first, like
   **Combine** on the board. The other drafts are removed; their reported problems and scan
-  findings stay linked to the combined task, so they aren't dismissed. It returns the combined
-  task. Only drafts, all in one project.
+  findings stay linked to the combined task. It returns the combined task. Only drafts, all in
+  one project.
 
 ### Task priority
 
@@ -222,8 +222,7 @@ Tasks have tags: short labels, at most 20, each at most 40 characters.
   fingerprint, severity, file and line, and how many times and by whom it was reported.
 - `report_issue` (title, type, severity, file, line, details, fix) adds a draft task, tagged with
   its type (`bug`, `security`, `issue`), severity and `reported`. If a task that isn't merged has
-  the same problem, it counts the report on that task instead. If the user dismissed it, nothing
-  is added. See [Scans](scans.md#findings-on-the-board) for how Dash matches problems.
+  the same problem, it counts the report on that task instead. See [Scans](scans.md#findings-on-the-board) for how Dash matches problems.
 
 `list_issues` is gone: use `list_todos` with a `tag` instead, e.g. `security` or `scan:security`.
 

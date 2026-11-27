@@ -71,7 +71,7 @@ it builds on. The model is under **Advanced**. **Something bigger?** is there to
 - **Split…** has Claude propose smaller tasks for a large one, each reviewed and merged on its
   own. Edit, remove or add to them, then save them all, each one waiting for the tasks it builds
   on. Split from a saved task, the new tasks replace it: tasks that waited for it wait for the
-  last new one. Dash asks first when deleting it also dismisses its scan issues.
+  last new one. Dash asks first when tasks in another project waited for it.
 
 ## The board
 
@@ -109,8 +109,8 @@ its severity and its source (`scan:<scan name>` or `reported`).
 
 - A problem a task already has adds no draft. That task's card shows how many times it was
   reported, with its severity, e.g. "low · 3 reports".
-- Deleting such a draft dismisses the problem: it won't come back as a draft. See
-  **Scans → Dismissed** to undo it.
+- Deleting such a draft deletes it for good. Dash keeps nothing of it: if a scan or Claude
+  reports the problem again, it adds a new draft.
 - A problem that comes back after its task was merged gets a new draft that names that task.
 - Drafts from scans below `high` severity show only under the **From scans (N)** chip, which
   shows only the tasks scans added. **⋮ → Scans…** opens the scans.
