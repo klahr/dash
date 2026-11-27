@@ -76,9 +76,11 @@ func TestBrowserWebRunPreviewsTheLatestCommit(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`.pv-widths [data-width="390"]`)))
 	next := strings.TrimSpace(run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "commit-tree", "main^{tree}", "-p", "main", "-m", "the fix"))
 	run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "update-ref", "refs/heads/main", next)
-	b.until("History → Refresh", `(() => { const u = document.querySelector("#pv-update");
-		return !u.hidden && u.textContent === "New commit `+next[:7]+` · Update" && u.getBoundingClientRect().height === document.querySelector("#pv-draw-btn").getBoundingClientRect().height; })()`,
-		chromedp.Click(chromedp.ID("graph-refresh")))
+	// The commit pane (a sheet over most of the page) covers Refresh at the
+	// head's right end: a mouse click lands on the pane, so click it in JS.
+	runJS(t, b, `document.querySelector("#graph-refresh").click(), true`) // History → Refresh
+	b.waitJS("New commit · Update, as tall as Draw", `(() => { const u = document.querySelector("#pv-update");
+		return !u.hidden && u.textContent === "New commit `+next[:7]+` · Update" && u.getBoundingClientRect().height === document.querySelector("#pv-draw-btn").getBoundingClientRect().height; })()`)
 	b.until("Update", `document.querySelector("#pv-update").hidden`, chromedp.Click(chromedp.ID("pv-update")))
 	b.waitJS("no warning; the new commit, starting, at the same width", `!document.querySelector("#ask-sheet").open
 		&& document.querySelector("#graph li.selected")?.dataset.hash === "`+next+`" && `+inPane+`
