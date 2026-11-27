@@ -10,9 +10,12 @@ unset DASH_URL
 hub=http://127.0.0.1:7791
 cd "$D"
 # setsid: it outlives whoever started it (the recorder runs runner-hook.sh).
+# macOS has no setsid; nohup does the same job there.
 # -codex: a path with nothing there, so a Codex CLI on this computer isn't
 # offered (or shown, logged out) by the demo's runner.
-setsid ./bin/dash runner -data "$D/runner" -projects "$D/projects" -name studio -env /dev/null \
+detach=nohup
+command -v setsid > /dev/null && detach=setsid
+$detach ./bin/dash runner -data "$D/runner" -projects "$D/projects" -name studio -env /dev/null \
 	-claude "$here/fakeclaude.mjs" -codex "$D/bin/no-codex" --server $hub --code "$1" > runner.log 2>&1 < /dev/null &
 echo $! >> pids
 for _ in $(seq 60); do

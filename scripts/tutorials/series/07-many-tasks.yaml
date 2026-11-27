@@ -34,7 +34,10 @@ steps:
       Your runner runs as many tasks at once as you allow it. You review them
       as they finish, in any order.
     do:
-      - hover: "#side-runner-list .side-runner-count"
+      - click: "#status-btn"
+      - hover: "#status-pop .status-runner"
+      - pause: 1.5
+      - click: "#status-close"
       - wait: "#board [data-lane=review] .todo"
         timeout: 120
 
@@ -51,9 +54,12 @@ steps:
       Merge one. Claude then brings the other up to date with it, and it comes
       back to Review, ready to merge too.
     do:
-      - click: .todo-open
-        in: "#board [data-lane=review] .todo"
-        text: lives
+      # Each card moves while its pull request opens; wait until all have one.
+      - wait: "#board [data-lane=review] .todo:not(:has(.approve-chip))"
+        gone: true
+        timeout: 60
+      - click: "#board [data-lane=review] .todo-open"
+        text: Three lives
       - click: "#d-actions .btn"
         text: Merge pull request
       - click: "#ask-ok"

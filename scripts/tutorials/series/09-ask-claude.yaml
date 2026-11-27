@@ -11,6 +11,7 @@ steps:
       Not everything starts as a task. Open the chat to ask Claude about the
       project; it can read all of the game's code.
     do:
+      - click: "#project-menu > summary"
       - click: "#pc-open"
       - wait: "#chat-pane .composer textarea[name=q]"
 

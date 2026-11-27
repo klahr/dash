@@ -46,12 +46,15 @@ steps:
       Back in Dash, the runner is online. It connects out to Dash, so it needs
       no open port.
     do:
-      - wait: "#side-runner-list .side-runner-count"
+      - click: "#runners-sheet .sheet-head button[value=cancel]"
+      - click: "#status-btn"
+      - wait: "#status-pop .status-runner-count"
         text: idle
-      - click: "#runners-sheet .sheet-head button[value=cancel], #runners-sheet button[aria-label=Close]"
-      - hover: "#side-runner-list .side-runner-count"
+      - hover: "#status-pop .status-runner"
 
   - say: >
       A runner does your work with your own Claude login. Next, we'll turn the
       idea for our game into a project.
+    do:
+      - click: "#status-close"
     hold: 0.5

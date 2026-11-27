@@ -26,8 +26,12 @@ steps:
     do:
       - caption: "Run Claude on many tasks at once"
       - hover: "#board [data-lane=draft] .col-label"
-      - click: "#board [data-lane=draft] .link.older"
-        text: Queue all
+      # Queue each draft; the pauses let the board settle before the next.
+      - click: "#board [data-lane=draft] .enqueue-chip"
+      - pause: 0.4
+      - click: "#board [data-lane=draft] .enqueue-chip"
+      - pause: 0.4
+      - click: "#board [data-lane=draft] .enqueue-chip"
       - wait: "#board [data-lane=in_progress] .todo"
 
   - say: each in its own copy of your code.

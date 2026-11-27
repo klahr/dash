@@ -8,9 +8,10 @@ seed: game-done
 steps:
   - say: >
       The game is ready to share. To put it online, tell Dash how to deploy
-      it: open Deploys, then Environments.
+      it: open History, then Deploys, and press Settings.
     do:
-      - click: ".nav > button[data-view=deploys]"
+      - click: ".menu-view[data-view=history]"
+      - click: "#view-history .page-tabs button[data-tab=deploys]"
       - click: "#deploy-settings"
 
   - say: >
@@ -24,33 +25,31 @@ steps:
         into: "#settings-envs .env-edit input[type=url]"
       - key: Enter
       - click: "#settings-form button[value=cancel]"
-      - click: ".nav > button[data-view=deploys]"
+      # The page doesn't show a new environment until it is opened again.
+      - click: "#view-deploys .page-tabs button[data-tab=history]"
+      - click: "#view-history .page-tabs button[data-tab=deploys]"
       - wait: "#env-cards .env-card[data-env=production]"
 
   - say: >
       Deploys go out as releases. Press Deploy: there's no release yet, so
-      press Tag release, keep the version Dash suggests, and Tag and push.
+      Dash offers a new one from main. Keep the version it suggests, and
+      press Tag and deploy.
     do:
       - click: "#env-cards .env-card[data-env=production] .env-deploy"
-      - click: "dialog[open] button"
-        text: Tag release
-      - wait: "#release-ok:not([disabled])"
+      - wait: "dialog[open] button[value=ok]:not([disabled])"
+        text: and deploy
         timeout: 60
-      - click: "#release-ok"
-
-  - say: Now press Deploy again, and pick the release.
-    do:
-      - pause: 1.5
-      - click: "#env-cards .env-card[data-env=production] .env-deploy"
-      - wait: "dialog[open] input[name=tag]"
-        timeout: 60
+      - pause: 1
       - click: "dialog[open] button[value=ok]"
+        text: and deploy
 
   - say: >
       Deploys to production wait for an admin's approval. That's you here:
-      press Approve.
+      press Approve, and confirm.
     do:
       - click: "#env-cards .env-card button"
+        text: Approve
+      - click: "dialog[open] button[value=ok]"
         text: Approve
 
   - say: >
