@@ -1,3 +1,4 @@
 # Rendered videos, and the voice clips and intro/outro renders reused between runs.
 /out/
 /cache/
+/node_modules/

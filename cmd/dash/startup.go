@@ -658,6 +658,15 @@ func (a *app) newQueue() {
 	o, st, events := a.o, a.st, a.events
 	a.todoLog = &queue.TodoLog{Pub: events, Root: filepath.Join(o.dataDir, "logs"), MaxBytes: int64(max(o.logMaxMB, 0)) << 20}
 	a.merges = queue.NewMergeQueue(st, a.git, events, a.todoLog, 1024)
+	// DASH_PR_POLL: how often open pull requests are checked on GitHub
+	// (default a minute), e.g. a few seconds for a demo.
+	if v := os.Getenv("DASH_PR_POLL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			a.merges.PRPoll = d
+		} else {
+			slog.Warn("DASH_PR_POLL: want a duration such as 30s; checking once a minute", "value", v)
+		}
+	}
 	a.merges.WorktreeRoot, a.merges.UploadRoot = filepath.Join(o.dataDir, "worktrees"), filepath.Join(o.dataDir, "uploads")
 	if o.cleanupDays > 0 {
 		a.merges.CleanupAfter, a.merges.CleanupEvery = time.Duration(o.cleanupDays)*24*time.Hour, 24*time.Hour

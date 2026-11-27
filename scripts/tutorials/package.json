@@ -1,0 +1,12 @@
+{
+  "name": "dash-tutorials",
+  "private": true,
+  "description": "The tutorial video pipeline (see README.md). Only the narration needs these packages; --no-voice and the tests run without them.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.79.0"
+  }
+}

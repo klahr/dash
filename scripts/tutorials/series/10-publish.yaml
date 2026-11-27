@@ -1,0 +1,71 @@
+# 10 · Publish the game. An environment with a deploy command, a release
+# tag, and a deploy, ending on the game live at its link.
+# Seed "game-done": touch controls and deploy.sh merged. deploy.sh copies the
+# game to $SITE_DIR, which site-server.mjs serves as star-catcher.r8.rs.
+title: Publish the game
+seed: game-done
+
+steps:
+  - say: >
+      The game is ready to share. To put it online, tell Dash how to deploy
+      it: open Deploys, then Environments.
+    do:
+      - click: ".nav > button[data-view=deploys]"
+      - click: "#deploy-settings"
+
+  - say: >
+      Add an environment. The deploy command is your own script: here it
+      copies the game to a static host. Add the URL where it will be.
+    do:
+      - click: "#settings-env-add"
+      - type: ./deploy.sh
+        into: "#settings-envs .env-edit textarea.script-field"
+      - type: http://star-catcher.r8.rs
+        into: "#settings-envs .env-edit input[type=url]"
+      - key: Enter
+      - click: "#settings-form button[value=cancel]"
+      - click: ".nav > button[data-view=deploys]"
+      - wait: "#env-cards .env-card[data-env=production]"
+
+  - say: >
+      Deploys go out as releases. Press Deploy: there's no release yet, so
+      press Tag release, keep the version Dash suggests, and Tag and push.
+    do:
+      - click: "#env-cards .env-card[data-env=production] .env-deploy"
+      - click: "dialog[open] button"
+        text: Tag release
+      - wait: "#release-ok:not([disabled])"
+        timeout: 60
+      - click: "#release-ok"
+
+  - say: Now press Deploy again, and pick the release.
+    do:
+      - pause: 1.5
+      - click: "#env-cards .env-card[data-env=production] .env-deploy"
+      - wait: "dialog[open] input[name=tag]"
+        timeout: 60
+      - click: "dialog[open] button[value=ok]"
+
+  - say: >
+      Deploys to production wait for an admin's approval. That's you here:
+      press Approve.
+    do:
+      - click: "#env-cards .env-card button"
+        text: Approve
+
+  - say: >
+      Dash runs your script on the runner, checks that the site answers, and
+      marks it Live.
+    do:
+      - wait: "#env-cards .env-live"
+        timeout: 120
+      - hover: "#env-cards .env-url"
+
+  - say: >
+      And there it is: Star Catcher, from an idea to a game anyone can play.
+      Thanks for building it with us.
+    do:
+      - open: https://star-catcher.r8.rs
+      - pause: 1
+      - key: ArrowRight
+      - pause: 2

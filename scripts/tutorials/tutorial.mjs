@@ -4,17 +4,18 @@
 //   node tutorial.mjs scene <script>             the seed scene the script needs
 //   node tutorial.mjs voice <script> [--no-voice] make (or find) the narration clips
 //   node tutorial.mjs make <script> [--no-voice]  record the demo Dash and assemble the video
-//   node tutorial.mjs brand "<title>" [--next "<title>"]  render the intro and outro to out/
+//   node tutorial.mjs brand "<title>" [--next "<title>"] [--brand short]  render the intro and outro to out/
 //
 // The demo Dash must be running for make (see make.sh).
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadScript } from './lib/script.mjs';
+import { BRANDS, loadScript } from './lib/script.mjs';
 import { clipsFor } from './lib/voice.mjs';
+import { musicFor } from './lib/music.mjs';
 import { brandClips } from './lib/brand.mjs';
 import { record } from './lib/record.mjs';
-import { framesToVideo, joinParts, mixNarration, probeDuration } from './lib/media.mjs';
+import { framesToVideo, joinParts, mixNarration, probeDuration, timeMap } from './lib/media.mjs';
 import { cues, toSRT } from './lib/srt.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -51,15 +52,21 @@ async function make(file) {
     pass: process.env.DASH_PASSWORD || 'demo-password-for-shots',
     workDir: work, log,
   });
-  const length = rec.end - rec.start;
+  const recorded = rec.end - rec.start;
   const gaps = rec.frames.slice(1).map((f, i) => f.t - rec.frames[i].t);
-  log(`recorded ${rec.frames.length} frames over ${length.toFixed(1)}s (${(rec.frames.length / length).toFixed(1)} fps on average, longest gap ${(Math.max(0, ...gaps) * 1000).toFixed(0)} ms)`);
+  log(`recorded ${rec.frames.length} frames over ${recorded.toFixed(1)}s (${(rec.frames.length / recorded).toFixed(1)} fps on average, longest gap ${(Math.max(0, ...gaps) * 1000).toFixed(0)} ms)`);
+
+  // Steps with speed play faster: from here on, times are the video's.
+  const spans = rec.steps.filter((s) => s.speed > 1).map((s) => ({ from: s.at, to: s.end, speed: s.speed }));
+  const map = timeMap(spans);
+  const steps = rec.steps.map((s) => ({ ...s, at: map(s.at), end: map(s.end), recorded: s.end - s.at }));
 
   log('encoding the recording');
   const tutorial = join(work, 'tutorial.mp4');
-  await framesToVideo(rec.frames, rec.start, rec.end, join(work, 'frames.txt'), tutorial);
+  const length = await framesToVideo(rec.frames, rec.start, rec.end, join(work, 'frames.txt'), tutorial, spans);
+  if (spans.length) log(`sped up to ${length.toFixed(1)}s`);
   if (!process.env.TUTORIAL_KEEP_FRAMES) rmSync(join(work, 'frames'), { recursive: true, force: true });
-  const placed = clips.map((c, i) => (c ? { ...c, at: rec.steps[i].at, text: script.steps[i].say } : null));
+  const placed = clips.map((c, i) => (c ? { ...c, at: steps[i].at, text: script.steps[i].say } : null));
   const narration = join(work, 'narration.wav');
   await mixNarration(placed, length, narration);
 
@@ -68,13 +75,24 @@ async function make(file) {
   if (sting && !existsSync(sting)) throw new Error(`no sting file ${sting}`);
   mkdirSync(outDir, { recursive: true });
   const mp4 = join(outDir, `${script.name}.mp4`);
-  const parts = await joinParts({ intro: brand.intro, tutorial, outro: brand.outro, narration, sting, out: mp4 });
+  // Music under the intro and the outro (brand.json's prompts), unless the
+  // script says music: false or there is no voice (no key, no network).
+  let music = null;
+  const bm = JSON.parse(readFileSync(join(here, 'brand', 'brand.json'), 'utf8')).music;
+  if (script.music && !noVoice && bm?.intro && bm?.outro) {
+    const [I, O] = await Promise.all([brand.intro, brand.outro].map(probeDuration));
+    music = { intro: await musicFor(bm.intro, I, { cacheDir, log }), outro: await musicFor(bm.outro, O, { cacheDir, log }), volume: bm.volume };
+  }
+  const parts = await joinParts({ intro: brand.intro, tutorial, outro: brand.outro, narration, sting, music, out: mp4 });
   const srt = join(outDir, `${script.name}.srt`);
   writeFileSync(srt, toSRT(cues(placed, parts.offset)));
 
   // Where each line ends up, for checking the sync by eye.
+  // at and took are in the final video; a sped-up step also says how long
+  // it took to record.
   const timing = script.steps.map((s, i) => ({
-    step: i + 1, at: +(parts.offset + rec.steps[i].at).toFixed(2), took: +(rec.steps[i].end - rec.steps[i].at).toFixed(2),
+    step: i + 1, at: +(parts.offset + steps[i].at).toFixed(2), took: +(steps[i].end - steps[i].at).toFixed(2),
+    ...(s.speed > 1 ? { speed: s.speed, recorded: +steps[i].recorded.toFixed(2) } : {}),
     line: clips[i] ? +clips[i].seconds.toFixed(2) : 0, say: s.say,
   }));
   writeFileSync(join(work, 'timing.json'), JSON.stringify({ parts, steps: timing }, null, 2));
@@ -101,14 +119,16 @@ try {
       await make(arg);
       break;
     case 'brand': {
-      if (!arg) throw new Error('usage: node tutorial.mjs brand "<title>" [--next "<title>"]');
-      const out = await brandClips({ title: arg, next: option('--next') || '' }, { cacheDir, previewDir: outDir, log });
+      if (!arg) throw new Error('usage: node tutorial.mjs brand "<title>" [--next "<title>"] [--brand short]');
+      const kind = option('--brand') || 'full';
+      if (!BRANDS.includes(kind)) throw new Error(`--brand must be ${BRANDS.join(' or ')}`);
+      const out = await brandClips({ title: arg, next: option('--next') || '', brand: kind }, { cacheDir, previewDir: outDir, log });
       for (const f of Object.values(out)) log(`${f}: ${(await probeDuration(f)).toFixed(2)}s`);
       log(`stills in ${outDir}`);
       break;
     }
     default:
-      log('usage: node tutorial.mjs scene|voice|make <script> [--no-voice]\n       node tutorial.mjs brand "<title>" [--next "<title>"]');
+      log('usage: node tutorial.mjs scene|voice|make <script> [--no-voice]\n       node tutorial.mjs brand "<title>" [--next "<title>"] [--brand short]');
       process.exit(2);
   }
 } catch (e) {

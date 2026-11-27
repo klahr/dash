@@ -168,10 +168,14 @@ export const ACTIONS = {
   key: [],
   wait: ['text', 'in', 'timeout', 'gone'],
   scroll: ['text', 'in', 'by', 'timeout'],
+  drag: ['from', 'to', 'circle', 'seconds', 'text', 'in', 'timeout'],
   pause: [],
   open: [],
+  terminal: ['output', 'close', 'run', 'from'],
+  caption: [],
 };
-const HEADER = ['title', 'next', 'voice', 'model', 'voice_settings', 'seed', 'start', 'sting', 'gap', 'lead', 'tail', 'steps'];
+const HEADER = ['title', 'next', 'voice', 'model', 'voice_settings', 'seed', 'start', 'sign_in', 'brand', 'sting', 'music', 'gap', 'lead', 'tail', 'steps'];
+export const BRANDS = ['full', 'short'];
 
 // validate checks a parsed script and fills in defaults. name is used in
 // error messages and as the output's name.
@@ -183,21 +187,24 @@ export function validate(s, name = 'script') {
   if (!Array.isArray(s.steps) || !s.steps.length) err('steps must be a non-empty list');
   for (const k of ['gap', 'lead', 'tail']) if (s[k] != null && !(typeof s[k] === 'number' && s[k] >= 0)) err(`${k} must be a number of seconds`);
   if (s.voice_settings != null && (typeof s.voice_settings !== 'object' || Array.isArray(s.voice_settings))) err('voice_settings must be a map');
+  if (s.sign_in != null && typeof s.sign_in !== 'boolean') err('sign_in must be true or false');
+  if (s.brand != null && !BRANDS.includes(s.brand)) err(`brand must be ${BRANDS.join(' or ')}`);
   const steps = s.steps.map((st, i) => {
     const where = `step ${i + 1}`;
     if (!st || typeof st !== 'object' || Array.isArray(st)) err(`${where}: expected a map with say and do`);
-    for (const k of Object.keys(st)) if (!['say', 'do', 'hold'].includes(k)) err(`${where}: unknown field ${k}`);
+    for (const k of Object.keys(st)) if (!['say', 'do', 'hold', 'speed'].includes(k)) err(`${where}: unknown field ${k}`);
     if (st.say != null && typeof st.say !== 'string') err(`${where}: say must be text`);
     if (st.hold != null && !(typeof st.hold === 'number' && st.hold >= 0)) err(`${where}: hold must be a number of seconds`);
+    if (st.speed != null && !(typeof st.speed === 'number' && st.speed > 1)) err(`${where}: speed must be a number above 1 (how many times faster the step plays)`);
     const actions = (st.do ?? []).map((a, j) => action(a, `${where}, action ${j + 1}`, err));
     if (!Array.isArray(st.do ?? [])) err(`${where}: do must be a list`);
     const say = (st.say ?? '').replace(/\s+/g, ' ').trim();
-    return { say, do: actions, hold: st.hold ?? 0 };
+    return { say, do: actions, hold: st.hold ?? 0, speed: st.speed ?? 1 };
   });
   return {
     title: s.title.trim(), next: s.next ? String(s.next).trim() : '',
     voice: s.voice || '', model: s.model || '', voice_settings: s.voice_settings || null,
-    seed: s.seed || 'landing', start: s.start || '/', sting: s.sting || '',
+    seed: s.seed || 'landing', start: s.start || '/', sign_in: s.sign_in ?? true, brand: s.brand || 'full', sting: s.sting || '', music: s.music ?? true,
     gap: s.gap ?? 0.4, lead: s.lead ?? 0.8, tail: s.tail ?? 1.2,
     steps,
   };
@@ -212,8 +219,42 @@ function action(a, where, err) {
   for (const k of Object.keys(a)) if (k !== kind && !ACTIONS[kind].includes(k)) err(`${where}: ${kind} takes no ${k}`);
   const v = a[kind];
   if (kind === 'pause' && !(typeof v === 'number' && v >= 0)) err(`${where}: pause takes seconds`);
-  if (['click', 'hover', 'wait', 'scroll', 'type', 'key', 'open'].includes(kind) && (typeof v !== 'string' || !v)) err(`${where}: ${kind} takes text`);
+  if (kind === 'caption' && typeof v !== 'string') err(`${where}: caption takes text ("" clears it)`);
+  if (kind === 'terminal') {
+    if (typeof v !== 'string' || !v) err(`${where}: terminal takes the command to type`);
+    if (a.output != null && !(Array.isArray(a.output) && a.output.every((l) => typeof l === 'string'))) err(`${where}: terminal's output must be a list of lines`);
+    if (a.close != null && !(typeof a.close === 'number' && a.close >= 0)) err(`${where}: terminal's close is the seconds to keep it before it closes`);
+    if (a.run != null && (typeof a.run !== 'string' || !a.run.trim())) err(`${where}: terminal's run takes a shell command`);
+    if (a.from != null && (typeof a.from !== 'string' || !a.from)) err(`${where}: terminal's from takes a selector`);
+    if (v.includes('{from}') && a.from == null) err(`${where}: terminal's command has {from} but no from: selector`);
+  }
+  if (['click', 'hover', 'wait', 'scroll', 'drag', 'type', 'key', 'open'].includes(kind) && (typeof v !== 'string' || !v)) err(`${where}: ${kind} takes text`);
+  if (kind === 'drag') {
+    // Points are [x, y] in the element's box: 0 is its left or top edge, 1 its right or bottom.
+    const point = (p, name) => {
+      if (!Array.isArray(p) || p.length !== 2 || !p.every((n) => typeof n === 'number' && n >= 0 && n <= 1)) err(`${where}: drag's ${name} must be [x, y], each from 0 to 1`);
+    };
+    if (a.from != null) point(a.from, 'from');
+    if ((a.to == null) === (a.circle == null)) err(`${where}: drag needs to: [x, y] (a line) or circle: <radius> (a circle around from)`);
+    if (a.to != null) point(a.to, 'to');
+    if (a.circle != null && !(typeof a.circle === 'number' && a.circle > 0 && a.circle <= 0.5)) err(`${where}: drag's circle is a radius, from 0 to 0.5 of the element's smaller side`);
+    if (a.seconds != null && !(typeof a.seconds === 'number' && a.seconds > 0)) err(`${where}: drag's seconds must be a number above 0`);
+  }
   return { ...a, kind };
+}
+
+// dragPath is the points a drag moves through, as [x, y] fractions of the
+// element's box: n steps along a line from "from" to "to", or once around a
+// circle of radius "circle" (a share of the box's smaller side) centred on
+// "from", starting at the top and a little past it, the way a hand closes a
+// circle. aspect is the box's width over its height, so the circle stays round.
+export function dragPath({ from = [0.5, 0.5], to, circle }, aspect = 1, n = 40) {
+  if (to) return Array.from({ length: n + 1 }, (_, i) => [from[0] + (to[0] - from[0]) * i / n, from[1] + (to[1] - from[1]) * i / n]);
+  const rx = circle * Math.min(1, 1 / aspect), ry = circle * Math.min(1, aspect);
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const t = -Math.PI / 2 + (2 * Math.PI * 1.06) * i / n;
+    return [from[0] + rx * Math.cos(t), from[1] + ry * Math.sin(t)];
+  });
 }
 
 // loadScript reads and validates a script file (.yaml, .yml or .json).

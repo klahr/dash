@@ -13,7 +13,8 @@
 // then sends only the new notes. A conflict is resolved by keeping both
 // sides' changes (it needs merge.conflictStyle diff3, which demo.sh sets);
 // a task with rework() makes that change on any other rework.
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
+import * as game from './starcatcher.mjs';
 import { dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -25,7 +26,15 @@ if (has('--version')) {
   console.log('2.1.0 (Claude Code)');
   process.exit(0);
 }
+// `claude auth status`: signed in, so the runner shows whose login it uses.
+if (args[0] === 'auth' && args[1] === 'status') {
+  console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', email: 'alex@example.com', orgName: "Alex's Organization", subscriptionType: 'max' }));
+  process.exit(0);
+}
 const stdin = readFileSync(0, 'utf8');
+// Every call's arguments and input, for working out what Dash sent.
+// Next to this script: Dash runs Claude with an environment of its own.
+try { writeFileSync(`${import.meta.dirname}/.claude-calls.log`, `\n===== ${new Date().toISOString()} ${process.argv.slice(2).filter((a) => a.length < 200).join(' ')}\n${stdin}\n`, { flag: 'a' }); } catch { /* best effort */ }
 if (!stdin.trim()) {
   console.error('Error: Input must be provided either through stdin or as a prompt argument when using --print');
   process.exit(1);
@@ -80,14 +89,22 @@ async function callTool(server, name, args_) {
   return body;
 }
 
+// mcpText is the text of an MCP tools/call answer (JSON, or one SSE event).
+function mcpText(body) {
+  const json = body.trim().startsWith('{') ? body : (body.match(/^data: (.*)$/m) || [])[1] || '{}';
+  const r = JSON.parse(json).result || {};
+  return (r.content || []).map((c) => c.text || '').join('') || JSON.stringify(r);
+}
+
 function edit(file, find, replace) {
   const s = readFileSync(file, 'utf8');
   if (!s.includes(find)) throw new Error(`${file}: no ${JSON.stringify(find)}`);
   writeFileSync(file, s.replace(find, replace));
 }
-function write(file, text) {
+function write(file, text, mode) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, text);
+  if (mode) chmodSync(file, mode);
 }
 
 // The demo video's five tasks (seed.mjs's demo-video scene), by their
@@ -532,6 +549,7 @@ test('no hint once shipping is free', () => {
 ];
 
 const sessionOf = (t) => `demo-${t.id || tasks.indexOf(t)}`;
+const gameSessionOf = (t) => `game-${game.tasks.indexOf(t)}`;
 
 // steps shows tool calls pace ms apart: [name, input, output?]. FAKECLAUDE_PACE_MS
 // overrides the pace (0 for tests, more to slow a rehearsal down).
@@ -547,13 +565,35 @@ async function steps(list, pace) {
 async function task() {
   // A resumed run gets only the new notes: its task is its session's.
   const resumed = has('--resume');
-  const t = (resumed && tasks.find((x) => sessionOf(x) === session)) || tasks.find((x) => x.key.test(stdin));
-  if (t) session = sessionOf(t);
+  const own = resumed && tasks.find((x) => sessionOf(x) === session);
+  // A Star Catcher task (starcatcher.mjs): its own instructions come first;
+  // what Dash adds after them (other tasks, history) can name other tasks'
+  // words, so the earliest match wins.
+  const at = (x) => { const i = stdin.search(x.key); return i < 0 ? Infinity : i; };
+  const g = !own && ((resumed && game.tasks.find((x) => gameSessionOf(x) === session))
+    || game.tasks.filter((x) => at(x) < Infinity).sort((a, b) => at(a) - at(b))[0]);
+  const t = !g && (own || tasks.find((x) => x.key.test(stdin)));
+  if (g) session = gameSessionOf(g);
+  else if (t) session = sessionOf(t);
   out({ type: 'system', subtype: 'init', session_id: session });
   usage();
   // The merge queue sent it back: main conflicts with it.
   if (/merging it into your work conflicts in|conflict markers are still in the code/.test(stdin)) {
     const files = conflictFiles();
+    if (g) {
+      // Star Catcher's tasks add lines side by side: keep both, ours first.
+      say('Main has moved on. I\'ll resolve the conflicts so both changes keep working.');
+      for (const f of files) {
+        tool('Read', { file_path: f }, '…');
+        await sleep(1500);
+        writeFileSync(f, game.keepBoth(readFileSync(f, 'utf8')));
+        tool('Edit', { file_path: f }, 'ok');
+      }
+      tool('Bash', { command: 'node --test' }, '# pass');
+      const text = 'Resolved the conflict: both changes are kept, and the tests pass.';
+      say(text);
+      return result(text, 0.12, 4);
+    }
     say(`\`main\` moved on under this task. I'll resolve the conflicts in ${files.join(', ')}, keeping both changes.`);
     await steps(files.map((f) => ['Read', { file_path: f }]), t?.pace || 500);
     files.forEach(resolveConflicts);
@@ -562,6 +602,7 @@ async function task() {
     say(text);
     return result(text, 0.12, 5);
   }
+  if (g) return gameTask(g);
   // Sent back with notes (Rework…): its rework, if it has one.
   const rework = t?.rework && (resumed ? !stdin.includes('You were interrupted') : stdin.includes('## Follow-up notes'));
   if (rework) {
@@ -612,6 +653,31 @@ async function task() {
   result(t.summary);
 }
 
+// gameTask runs one of Star Catcher's tasks (starcatcher.mjs), or its rework.
+async function gameTask(t) {
+  const re = t.rework && existsSync(t.rework.applied) ? t.rework : null;
+  const pause = () => sleep(t.slow ? 1800 : 300);
+  const touched = [];
+  const w = (f, text, mode) => { touched.push([f, existsSync(f)]); write(f, text, mode); };
+  const e = (f, a, b) => { edit(f, a, b); touched.push([f, true]); };
+  say(re ? 'I\'ll go through your notes and change what they ask for.' : 'I\'ll read the relevant code, make the change and run the tests.');
+  await pause();
+  for (const f of ['src/game.js', 'src/main.js'].filter(existsSync)) {
+    tool('Read', { file_path: f }, '…');
+    await pause();
+  }
+  (re || t).run(w, e);
+  for (const [f, had] of new Map(touched.map(([f, had]) => [f, had]))) {
+    tool(had ? 'Edit' : 'Write', { file_path: f }, 'ok');
+    await pause();
+  }
+  tool('Bash', { command: 'node --test' }, '# pass');
+  await pause();
+  const text = (re || t).summary;
+  say(text);
+  result(text);
+}
+
 // The coordinator's plans, by a word in the goal's title.
 const plans = [
   {
@@ -651,7 +717,8 @@ async function chat() {
   // Only the newest message counts: the goal's state, then what woke it.
   const last = stdin.slice(Math.max(0, stdin.lastIndexOf('<goal id=')));
   if (last.includes('propose a plan with propose_plan')) {
-    const plan = plans.find((p) => last.includes(p.goal)) || plans[0];
+    const plan = game.plans.find((p) => p.goal.test(last.slice(0, last.indexOf('</goal>') + 1 || undefined)))
+      || plans.find((p) => last.includes(p.goal)) || plans[0];
     await callTool('dash_board', 'propose_plan', { why: plan.why, tasks: plan.tasks });
     return done(`I've proposed a plan of ${plan.tasks.length} tasks.`);
   }
@@ -672,21 +739,73 @@ async function chat() {
   if (woke && statuses.length && statuses.every((s) => s === 'merged')) {
     await callTool('dash_board', 'finish_goal', { summary: 'Everything in the plan is merged.' });
   }
+  // The project chat (no goal): the game's question about phones drafts a task.
+  if (!woke && !stdin.includes('<goal id=') && game.chat.key.test(stdin.slice(-2000))) {
+    const servers = JSON.parse(args[args.indexOf('--mcp-config') + 1] || '{}').mcpServers || {};
+    const server = servers.dash_board ? 'dash_board' : Object.keys(servers).find((n) => /dash/.test(n)) || Object.keys(servers)[0];
+    tool('Read', { file_path: 'src/input.js' }, '…');
+    // The call and its result go in the stream too: Dash shows the task it
+    // made as a card under the call (agent.CreatedTask reads the result).
+    const input = { ...game.chat.task, draft: true };
+    const id = `toolu_demo_${++toolN}`;
+    out({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: `mcp__${server}__create_todo`, input }] } });
+    let text, isError = false;
+    try {
+      text = mcpText(await callTool(server, 'create_todo', input));
+    } catch (e) {
+      text = String(e.message || e);
+      isError = true;
+    }
+    out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: text, is_error: isError }] } });
+    return done(isError ? `I couldn't draft the task: ${text}` : game.chat.answer);
+  }
   done(woke ? 'Done for now.' : 'Sure: what would you like to change?');
 }
 
 // A short call: a title, or the summary of a finished task's report.
 // A task with a title of its own is named by its prompt.
-const small = () => console.log(tasks.find((t) => t.summary && stdin.includes(t.summary.slice(0, 40)))?.short
+const all = [...game.tasks, ...tasks];
+const small = () => console.log(all.find((t) => t.summary && stdin.includes(t.summary.slice(0, 40)))?.short
+  || all.find((t) => t.rework && stdin.includes(t.rework.summary.slice(0, 40)))?.short
   || (stdin.includes('Lined the Save button up') && 'Save button lined up with the field')
   || (stdin.includes('Resolved the conflicts in') && 'Conflicts with main resolved')
-  || tasks.find((t) => t.title && t.key.test(stdin))?.title || 'Demo task');
+  || (stdin.includes('Resolved the conflict') && game.tasks.map((t) => [stdin.search(t.key), t]).filter(([i]) => i >= 0).sort((a, b) => a[0] - b[0])[0]?.[1].short)
+  || all.find((t) => t.title && t.key.test(stdin))?.title || 'Demo task');
+
+// planTurn is one round of a brief's interview (agent.PlanInput in, JSON
+// out): the game's project brief, or its levels feature.
+function planTurn() {
+  const plan = JSON.parse(stdin.slice(stdin.indexOf('{')));
+  const iv = plan.feature_name || (plan.topics || []).some((t) => t.id === 'problem') ? game.interviews.feature : game.interviews.project;
+  const n = Math.min(plan.rounds.length, iv.rounds.length - 1);
+  const given = (id) => plan.rounds.flatMap((r) => r.questions || []).find((q) => q.id === id)?.answer;
+  const answer = (id) => {
+    const a = given(id);
+    if (a?.text) return a.text;
+    return iv.rounds.flatMap((r) => r.questions).find((q) => q.id === id)?.default || '';
+  };
+  const settled = new Set(iv.rounds.slice(0, n + 1).flatMap((r) => r.settled));
+  const r = iv.rounds[n];
+  console.log(JSON.stringify({
+    note: r.note,
+    questions: r.questions,
+    topics: iv.topics.map((id) => ({ id, status: settled.has(id) ? 'done' : 'open' })),
+    brief: iv.brief(answer),
+    open_questions: r.ready ? [] : [iv.open],
+    verdict: r.ready
+      ? { ready: true, summary: 'The brief settles what to build and how to tell it works.', can_wait: [iv.open] }
+      : { ready: false, summary: 'A few decisions are still open.', can_wait: [] },
+  }));
+}
 
 try {
-  if (has('text')) small();
+  if (has('text') && stdin.includes('The plan so far:')) planTurn();
+  else if (has('text')) small();
   else if (has('--include-partial-messages')) await chat();
   else await task();
 } catch (e) {
+  // Say it where the task's timeline shows it, too.
+  say(`fakeclaude: ${e.stack || e}`);
   console.error(String(e));
   process.exit(1);
 }

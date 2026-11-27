@@ -1,0 +1,89 @@
+# 2 · From an idea to a game. A project brief: Claude interviews you, writes
+# the brief, and Dash creates a GitHub repository and starts a goal.
+# Needs: a "runner" seed scene (video 1's end: a runner online, no project),
+# a canned project interview in fakeclaude.mjs, and a stand-in for GitHub
+# (gh and the API) so New GitHub repository works.
+title: From an idea to a game
+next: "Claude plans the first version"
+seed: runner
+
+steps:
+  - say: Press Add project, and pick Write a project brief.
+    do:
+      - click: "#side-new-project"
+      - click: "#new-project-nav [data-rail=plan]"
+      - click: "#plan-new"
+
+  - say: >
+      Describe the idea in a sentence or two. It doesn't have to be complete:
+      that's what the interview is for.
+    do:
+      - type: >-
+          A browser game where you move a basket with the arrow keys to catch
+          falling stars and dodge rocks.
+        into: "#plan-idea"
+        cps: 34
+      - type: star-catcher
+        into: "#plan-name"
+
+  - say: >
+      Press Start the interview. Claude asks a few questions at a time, about
+      the decisions you haven't made yet.
+    do:
+      - click: "#plan-next"
+      - wait: "#plan-talk fieldset.plan-q-card"
+
+  - say: >
+      Each question has a suggestion. Pick one, write your own answer, or
+      leave it for later. The brief fills in on the right as you go.
+    do:
+      - click: "#plan-talk .plan-chip"
+        text: Plain JavaScript and a canvas
+      - type: Three lives, and the game gets faster over time.
+        into: "#plan-talk .plan-own"
+      - hover: "#plan-live"
+
+  - say: Use all suggestions answers the rest. Send the answers for the next round.
+    do:
+      - click: "#plan-talk .plan-all-defaults"
+      - click: "#plan-talk .plan-compose .btn.primary"
+      - wait: "#plan-talk .msg.pending"
+        gone: true
+        timeout: 60
+      - click: "#plan-talk .plan-all-defaults"
+      - click: "#plan-talk .plan-compose .btn.primary"
+      - wait: "#plan-talk .msg.pending"
+        gone: true
+        timeout: 60
+
+  - say: >
+      When Claude has no more questions, review the brief. You can edit it
+      here; it's plain Markdown.
+    do:
+      - click: "#plan-next"
+      - wait: "#plan-verdict"
+      - scroll: "#plan-brief"
+        by: 300
+
+  - say: >
+      Now choose where the code lives: a new GitHub repository, named after
+      the game.
+    do:
+      - click: "#plan-next"
+      - click: "#plan-sources .plan-source"
+        text: New GitHub repository
+      - hover: "#new-project-main input[name=github]"
+      - pause: 1
+      - click: "#new-project-go"
+      - wait: "#plan-summary"
+
+  - say: >
+      Press Launch. Dash creates the repository, commits the brief, and starts
+      a goal: Claude's plan for the first version.
+    do:
+      - click: "#plan-next"
+      - wait: "#gd-title"
+        timeout: 60
+
+  - say: Next, we'll look at that plan and let Claude build it.
+    hold: 0.5

@@ -1,0 +1,63 @@
+# 7 · Many tasks at once. Three tasks queued together, running side by side;
+# a conflict between two is caught before either merges.
+# Needs: a "game-v2" seed scene (score and rocks merged), canned "sounds",
+# "lives" and "high score" changes in fakeclaude.mjs, two of which touch the
+# same lines of game.js, so the board shows a conflict tag.
+title: Many tasks at once
+next: "Plan a bigger feature"
+seed: game-v2
+
+steps:
+  - say: >
+      You don't have to wait for one task before starting the next. Open New
+      task, and press Another task for each idea: sounds, three lives, and a
+      best score that's kept.
+    do:
+      - click: "#new-todo"
+      - type: Play a short sound when a star is caught, and another for a rock.
+        into: "#quick-rows .quick-row"
+        cps: 90
+      - click: "#quick-another"
+      - type: Show three hearts for lives, and lose one when a rock hits.
+        cps: 90
+      - click: "#quick-another"
+      - type: Keep the best score in the browser, and show it on the start screen.
+        cps: 90
+
+  - say: Press Queue, and all three start at once, each in its own copy of the code.
+    do:
+      - click: "#quick-form button[value=queue]"
+      - wait: "#board [data-lane=in_progress] .todo:nth-child(3), #board [data-lane=in_progress] li:nth-child(3)"
+        timeout: 60
+
+  - say: >
+      Your runner runs as many tasks at once as you allow it. You review them
+      as they finish, in any order.
+    do:
+      - hover: "#side-runner-list .side-runner-count"
+      - wait: "#board [data-lane=review] .todo"
+        timeout: 120
+
+  - say: >
+      Two of them changed the same lines. Dash notices before either is
+      merged, and shows which tasks clash.
+    do:
+      - wait: "#board .conflict-tag"
+        timeout: 120
+      - hover: "#board .conflict-tag"
+      - pause: 1.5
+
+  - say: >
+      Merge one. Claude then brings the other up to date with it, and it comes
+      back to Review, ready to merge too.
+    do:
+      - click: .todo-open
+        in: "#board [data-lane=review] .todo"
+        text: lives
+      - click: "#d-actions .btn"
+        text: Merge pull request
+      - click: "#ask-ok"
+      - click: "#d-close"
+      - wait: "#board .todo.s-review"
+        text: best score
+        timeout: 120

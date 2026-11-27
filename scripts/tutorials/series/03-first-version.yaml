@@ -1,0 +1,64 @@
+# 3 · Claude plans the first version. The goal from video 2: review its plan,
+# queue it, and meet the board while the tasks run.
+# Needs: a "game-plan" seed scene (star-catcher launched, its goal's plan of
+# four tasks waiting), and canned game changes in fakeclaude.mjs for them.
+title: Claude plans the first version
+next: "Review, play and merge"
+seed: game-plan
+
+steps:
+  - say: >
+      A goal is something bigger than one task. Its coordinator, a Claude
+      that plans, has read the brief and proposes the first tasks.
+    do:
+      - click: ".nav > button[data-view=goals]"
+      - click: "#goal-list li .goal-open"
+        text: first version
+      - hover: "#gd-plan .goal-task.proposed"
+
+  - say: >
+      Press Edit plan to look it over. Each task is one piece of work, and
+      After says which tasks must be done first.
+    do:
+      - click: "#gd-actions .btn"
+        text: Edit plan
+      - wait: "#split-sheet"
+      - pause: 1.5
+
+  - say: It looks right, so press Queue. Nothing starts until you say so.
+    do:
+      - click: "#split-form button[value=queue]"
+
+  - say: >
+      Now open the Board. Every task is a card, and moves from left to right:
+      queued, running, review, and merged.
+    do:
+      - click: ".nav > button[data-view=board]"
+      - hover: "#board [data-lane=queued] .col-label"
+      - pause: 1
+      - hover: "#board [data-lane=done] .col-label"
+
+  - say: >
+      The first task sets up the page. The basket and the stars wait for it,
+      then run side by side, each in its own copy of the code.
+    do:
+      - wait: "#board [data-lane=in_progress] .todo"
+        text: Set up
+      - hover: "#board [data-lane=queued] .todo"
+
+  - say: >
+      Open a running task to follow along. Every file Claude reads and every
+      change it makes shows up in its timeline.
+    do:
+      - click: .todo-open
+        in: "#board [data-lane=in_progress] .todo"
+        text: Set up
+      - pause: 3
+      - click: "#d-close"
+
+  - say: >
+      When a task is done, it moves to Review and waits for you. That's next:
+      checking the work, and playing it.
+    do:
+      - wait: "#board [data-lane=review] .todo"
+        timeout: 120

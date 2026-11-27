@@ -1,0 +1,57 @@
+# 1 · Connect a runner. From the first sign-in to a runner that's online.
+# Starts on the sign-in page of a hub with one account and nothing else.
+# Seed "fresh": the account alex, no runner, no project. The terminal types
+# the command shown in Dash, and runner-hook.sh really registers the runner
+# with its one-time code.
+title: Connect a runner
+next: "From an idea to a game"
+seed: fresh
+sign_in: false
+start: /login.html
+
+steps:
+  - say: >
+      Welcome to Dash. In this series we'll build a small browser game, Star
+      Catcher, from an idea to a game you can share. First, sign in.
+    do:
+      - type: alex
+        into: "#login input[name=username]"
+      - type: demo-password-for-shots
+        into: "#login input[name=password]"
+        cps: 40
+      - click: "#login button.btn.primary"
+      - wait: "#board-empty .empty-title"
+
+  - say: >
+      Claude doesn't run in Dash itself. It runs on a runner: a computer of
+      yours, with git and Claude Code installed and logged in.
+    do:
+      - hover: "#board-empty .empty-title"
+      - pause: 1
+
+  - say: Press Add a runner. Dash gives you a one-line command to copy.
+    do:
+      - click: "#board-empty .empty-actions .btn.primary"
+      - wait: "#runners-code .copy-row pre.copy-text"
+      - click: "#runners-code .copy-row button"
+
+  - say: >
+      Paste it in a terminal on that computer. It installs Dash, checks that
+      Claude Code is logged in, and starts the runner in the background.
+    do:
+      - terminal: "{from}"
+        from: "#runners-code .copy-row pre.copy-text"
+        run: sh scripts/landing-shots/runner-hook.sh
+  - say: >
+      Back in Dash, the runner is online. It connects out to Dash, so it needs
+      no open port.
+    do:
+      - wait: "#side-runner-list .side-runner-count"
+        text: idle
+      - click: "#runners-sheet .sheet-head button[value=cancel], #runners-sheet button[aria-label=Close]"
+      - hover: "#side-runner-list .side-runner-count"
+
+  - say: >
+      A runner does your work with your own Claude login. Next, we'll turn the
+      idea for our game into a project.
+    hold: 0.5

@@ -106,5 +106,6 @@ export async function signIn(page, base, user, pass) {
     f.username.value = ${JSON.stringify(user)}; f.password.value = ${JSON.stringify(pass)};
     f.querySelector('button.btn.primary').click();
   })()`);
-  await page.wait('the board', `document.querySelector('#board .todo')`);
+  // The board's columns, or its welcome when there is no project yet.
+  await page.wait('the board', `document.querySelector('#board .col, #board-empty .empty-title')`);
 }

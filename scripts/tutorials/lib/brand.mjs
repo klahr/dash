@@ -1,4 +1,5 @@
-// Renders the intro and outro (brand/intro.html, brand/outro.html) frame
+// Renders the intro and outro (brand/intro.html, brand/outro.html; or for a
+// short brand, brand/sting.html and brand/endcard.html) frame
 // by frame: every animation is paused and stepped to each frame's time,
 // then captured with Page.captureScreenshot, so the clip is smooth however
 // slow the machine. Clips are cached by a hash of everything that goes
@@ -93,29 +94,42 @@ async function renderClip(page, base, kind, params, out, { hold = 0, stills = {}
   renameSync(out + '.tmp.mp4', out);
 }
 
-// brandClips returns the intro and outro for a video titled title (whose
-// next video is next), rendering whichever isn't cached yet. With
+// brandJobs lists the two clips around a video: with brand "full", the
+// intro and the outro; with "short" (a muted landing-page video), a logo
+// sting and an end card with the link.
+export function brandJobs({ title, next = '', brand = 'full' }, cfg = brandConfig()) {
+  if (brand === 'short') {
+    return [
+      { slot: 'intro', kind: 'sting', params: {}, hold: 0, stills: [0.3, 0.7, 1.0, 1.4] },
+      { slot: 'outro', kind: 'endcard', params: { link: cfg.link }, hold: 0, stills: [0.3, 0.8, 1.4, 2.4] },
+    ];
+  }
+  return [
+    { slot: 'intro', kind: 'intro', params: { title, series: cfg.series || 'Dash tutorials' }, hold: 0, stills: [0.5, 1.2, 2.0, 3.0, 4.2] },
+    { slot: 'outro', kind: 'outro', params: { next, link: cfg.link, thanks: cfg.thanks || 'Thanks for watching' }, hold: cfg.outro_hold_seconds ?? 2, stills: [0.5, 1.0, 1.6, 2.5, 5.4] },
+  ];
+}
+
+// brandClips returns the intro and outro ({intro, outro}: files) for a
+// video titled title (whose next video is next), rendering whichever isn't
+// cached yet. With brand "short" they are the sting and the end card. With
 // previewDir, both are rendered again into it with a few stills, and the
 // cache is left alone.
-export async function brandClips({ title, next = '' }, { cacheDir, previewDir, log = console.error }) {
-  const cfg = brandConfig();
-  const jobs = [
-    { kind: 'intro', params: { title, series: cfg.series || 'Dash tutorials' }, hold: 0, stills: [0.5, 1.2, 2.0, 3.0, 4.2] },
-    { kind: 'outro', params: { next, link: cfg.link, thanks: cfg.thanks || 'Thanks for watching' }, hold: cfg.outro_hold_seconds ?? 2, stills: [0.5, 1.0, 1.6, 2.5, 5.4] },
-  ];
+export async function brandClips(video, { cacheDir, previewDir, log = console.error }) {
+  const jobs = brandJobs(video);
   const out = {};
   const todo = [];
   for (const j of jobs) {
     if (previewDir) {
       mkdirSync(previewDir, { recursive: true });
-      out[j.kind] = join(previewDir, `brand-${j.kind}.mp4`);
+      out[j.slot] = join(previewDir, `brand-${j.kind}.mp4`);
       todo.push(j);
       continue;
     }
     const dir = join(cacheDir, 'brand');
     mkdirSync(dir, { recursive: true });
-    out[j.kind] = join(dir, `${j.kind}-${brandHash(j.kind, { ...j.params, hold: j.hold })}.mp4`);
-    if (!existsSync(out[j.kind])) todo.push(j);
+    out[j.slot] = join(dir, `${j.kind}-${brandHash(j.kind, { ...j.params, hold: j.hold })}.mp4`);
+    if (!existsSync(out[j.slot])) todo.push(j);
   }
   if (!todo.length) return out;
   const { server, base } = await serve();
@@ -125,7 +139,7 @@ export async function brandClips({ title, next = '' }, { cacheDir, previewDir, l
     for (const j of todo) {
       log(`rendering the ${j.kind}`);
       const stills = previewDir ? Object.fromEntries(j.stills.map((t) => [t, join(previewDir, `brand-${j.kind}-${t.toFixed(1)}s.png`)])) : {};
-      await renderClip(page, base, j.kind, j.params, out[j.kind], { hold: j.hold, stills });
+      await renderClip(page, base, j.kind, j.params, out[j.slot], { hold: j.hold, stills });
     }
   } finally {
     page.close();

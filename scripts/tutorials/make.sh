@@ -2,7 +2,7 @@
 # Makes a narrated tutorial video of Dash from a script (see README.md):
 #
 #   scripts/tutorials/make.sh scripts/tutorials/first-task.yaml [--no-voice]
-#   scripts/tutorials/make.sh --brand-preview "<title>" [--next "<title>"]
+#   scripts/tutorials/make.sh --brand-preview "<title>" [--next "<title>"] [--brand short]
 #
 # It makes the narration, starts the demo Dash (scripts/landing-shots/demo.sh)
 # with the script's seed scene, records it, stops it and writes
@@ -13,6 +13,11 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 cd "$root"
 
+# The ElevenLabs key may be in .env.local (from `elevenlabs onboard`); a key
+# already in the environment wins.
+node=node
+[ -f .env.local ] && node="node --env-file=.env.local"
+
 for tool in node ffmpeg ffprobe; do
 	command -v "$tool" > /dev/null || { echo "make.sh: $tool is needed" >&2; exit 1; }
 done
@@ -20,7 +25,7 @@ done
 if [ "${1:-}" = --brand-preview ]; then
 	[ $# -ge 2 ] || { echo "usage: make.sh --brand-preview \"<title>\" [--next \"<title>\"]" >&2; exit 2; }
 	shift
-	exec node "$here/tutorial.mjs" brand "$@"
+	exec $node "$here/tutorial.mjs" brand "$@"
 fi
 
 [ $# -ge 1 ] || { echo "usage: make.sh <script> [--no-voice] | --brand-preview \"<title>\"" >&2; exit 2; }
@@ -29,12 +34,21 @@ shift
 command -v go > /dev/null || { echo "make.sh: go is needed for the demo Dash" >&2; exit 1; }
 
 # The narration first: it fails fast without a key, before the demo starts.
-node "$here/tutorial.mjs" voice "$script" "$@"
+$node "$here/tutorial.mjs" voice "$script" "$@"
 
 export DEMO_DIR="${DEMO_DIR:-/tmp/tutorial-demo}"
 stop() { [ -f "$DEMO_DIR/pids" ] && kill $(cat "$DEMO_DIR/pids") 2> /dev/null || true; }
 trap stop EXIT INT TERM
 echo "starting the demo Dash in $DEMO_DIR" >&2
-SEED_SCENE=$(node "$here/tutorial.mjs" scene "$script") sh "$root/scripts/landing-shots/demo.sh" > "$DEMO_DIR.log" 2>&1 ||
+scene=$(node "$here/tutorial.mjs" scene "$script")
+# The Star Catcher series (series/*.yaml) is alex's, on a demo of its own
+# (scripts/landing-shots/seed-game.mjs); the rest is the landing page's demo.
+case $scene in
+fresh | runner | game-*)
+	export DASH_USERNAME=alex DEMO_GAME=1 DASH_URL=http://dash.localhost:7791
+	export TUTORIAL_CHROME_FLAGS="--ignore-certificate-errors --host-resolver-rules=MAP star-catcher.r8.rs 127.0.0.1:7796"
+	;;
+esac
+SEED_SCENE=$scene sh "$root/scripts/landing-shots/demo.sh" > "$DEMO_DIR.log" 2>&1 ||
 	{ echo "make.sh: the demo didn't start; see $DEMO_DIR.log" >&2; exit 1; }
-node "$here/tutorial.mjs" make "$script" "$@"
+$node "$here/tutorial.mjs" make "$script" "$@"

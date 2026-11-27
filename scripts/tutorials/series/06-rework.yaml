@@ -1,0 +1,70 @@
+# 6 · Not quite right: rework. Point at what's wrong, on the preview and in
+# the code, and send it back.
+# Seed "game-rocks": a "falling rocks" task in review whose rocks fall too
+# fast. Draw needs the demo's preview domain; the rework is canned in
+# starcatcher.mjs.
+title: "Not quite right: rework"
+next: "Many tasks at once"
+seed: game-rocks
+
+steps:
+  - say: >
+      This task added rocks to dodge. Let's play it before we merge.
+    do:
+      - click: .todo-open
+        in: "#board [data-lane=review] .todo"
+        text: rocks
+      - click: "#d-actions .pv-btn"
+        timeout: 90
+      - wait: "#pv-iframe"
+        timeout: 60
+      - click: "#pv-iframe"
+      - key: ArrowLeft
+      - pause: 1.5
+
+  - say: >
+      The rocks fall far too fast. Press Draw: the preview freezes, and you
+      can mark what you mean.
+    do:
+      - click: "#pv-draw-btn"
+      - wait: "#draw-stage canvas.draw-canvas"
+      - drag: "#draw-stage canvas.draw-canvas"
+        from: [0.55, 0.35]
+        circle: 0.08
+
+  - say: Add it to the rework notes, and say what should change.
+    do:
+      - click: "#draw-add"
+      - type: Rocks should fall at half this speed at the start.
+        into: "#d-rework textarea"
+        cps: 30
+
+  - say: >
+      Press Rework. Claude gets your note and the picture, and carries on
+      where it left off, in the same copy of the code.
+    do:
+      - click: "#d-rework .rework-actions .btn.primary"
+      - wait: "#board .todo.s-in_progress"
+        text: rocks
+
+  - say: A minute later it's back in Review.
+    do:
+      - wait: "#board .todo.s-review"
+        text: rocks
+        timeout: 120
+    speed: 3
+
+  - say: >
+      Play it again: the rocks start slow now. Better. Merge pull request.
+    do:
+      - click: "#d-actions .pv-btn"
+        timeout: 90
+      - wait: "#pv-iframe"
+        timeout: 60
+      - click: "#pv-iframe"
+      - key: ArrowLeft
+      - pause: 1.5
+      - click: "#pv-close"
+      - click: "#d-actions .btn"
+        text: Merge pull request
+      - click: "#ask-ok"

@@ -1,0 +1,55 @@
+# Overview, for the landing page: what Dash solves, in about 25 seconds, at
+# a steady pace: something moves on screen all the time. It autoplays muted,
+# so the words are on screen (`caption`); the voice is for those who turn the
+# sound on. Only the agents' work is sped up (`speed`), as a time-lapse.
+# Seed "game-overview": the game with score and rocks, and three drafts.
+title: Dash
+brand: short
+seed: game-overview
+lead: 0.3
+
+steps:
+  # The problem: one Claude in one terminal, working through one task.
+  - say: One Claude, one terminal, one task at a time. You wait.
+    do:
+      - caption: "One Claude. One task at a time."
+      - terminal: claude "Add sounds to the game"
+        output:
+          - "⏺ Reading src/game.js"
+          - "⏺ Reading src/catch.js"
+          - "⏺ Writing src/sound.js"
+          - "⏺ Running node --test"
+          - "✻ Working… (2m 41s)"
+
+  # Dash: three tasks queued with one click, running side by side.
+  - say: Dash runs Claude on many tasks at once,
+    do:
+      - caption: "Run Claude on many tasks at once"
+      - hover: "#board [data-lane=draft] .col-label"
+      - click: "#board [data-lane=draft] .link.older"
+        text: Queue all
+      - wait: "#board [data-lane=in_progress] .todo"
+
+  - say: each in its own copy of your code.
+    do:
+      - hover: "#board [data-lane=in_progress] .col-label"
+      - wait: "#board [data-lane=review] .todo"
+        timeout: 120
+    speed: 6
+
+  - say: You read the changes, and merge them with one click.
+    do:
+      - caption: "You review. You merge."
+      - click: .todo-open
+        in: "#board [data-lane=review] .todo"
+      - click: "#detail [data-pane=diff]"
+      - click: "#d-actions .btn"
+        text: Merge pull request
+        timeout: 30
+      - click: "#ask-ok"
+
+  - say: From an idea to shipped. Dash.
+    do:
+      - caption: "From an idea to shipped · dash.r8.rs"
+      - click: "#d-close"
+      - hover: "#board [data-lane=done] .col-label"

@@ -133,6 +133,9 @@ finishing keep working: **Approve** opens their pull request, which is then revi
 like the others. Pull requests opened by an approval in Dash before then are followed the same
 way: they move back to Review and wait for a person to merge them too.
 
+Dash checks open pull requests on GitHub once a minute. Set `DASH_PR_POLL` on the computer that
+follows them (the runner, or a Dash of your own) to check more or less often, e.g. `30s`.
+
 ## Approve tasks automatically
 
 With **Approve tasks automatically**:

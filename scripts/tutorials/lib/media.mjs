@@ -51,12 +51,35 @@ export function concatList(frames, start, end) {
   return lines.join('\n') + '\n';
 }
 
+// timeMap maps a time in the recording (seconds from its start) to the
+// time in the video, where each of spans ({from, to, speed}, recording
+// seconds, not overlapping) plays speed times faster.
+export function timeMap(spans = []) {
+  const fast = spans.filter((s) => s.speed > 1 && s.to > s.from);
+  return (t) => {
+    let saved = 0;
+    for (const s of fast) saved += Math.max(0, Math.min(t, s.to) - s.from) * (1 - 1 / s.speed);
+    return t - saved;
+  };
+}
+
+// retimeFrames moves frames (timestamps on Chrome's clock, from start to
+// end) to the video's time, from 0, with spans sped up (see timeMap). It
+// returns the frames and the video's length.
+export function retimeFrames(frames, start, end, spans = []) {
+  const map = timeMap(spans);
+  return { frames: frames.map((f) => ({ ...f, t: map(f.t - start) })), length: map(end - start) };
+}
+
 // framesToVideo encodes timestamped frames into a constant-rate video of
-// end - start seconds.
-export async function framesToVideo(frames, start, end, listFile, out) {
-  writeFileSync(listFile, concatList(frames, start, end));
+// end - start seconds, or less where spans (see timeMap) play faster. It
+// returns the video's length.
+export async function framesToVideo(frames, start, end, listFile, out, spans = []) {
+  const r = retimeFrames(frames, start, end, spans);
+  writeFileSync(listFile, concatList(r.frames, 0, r.length));
   await ffmpeg(['-f', 'concat', '-safe', '0', '-i', listFile,
-    '-vf', `fps=${FPS},scale=${WIDTH}:${HEIGHT}:flags=lanczos,format=yuv420p`, '-t', (end - start).toFixed(3), ...H264, '-an', out]);
+    '-vf', `fps=${FPS},scale=${WIDTH}:${HEIGHT}:flags=lanczos,format=yuv420p`, '-t', r.length.toFixed(3), ...H264, '-an', out]);
+  return r.length;
 }
 
 // mixNarration places each clip at its step's start (seconds into the
@@ -77,8 +100,11 @@ export async function mixNarration(clips, length, out) {
 }
 
 // joinParts crossfades intro → tutorial → outro and lays the narration
-// (fading in as the intro ends) and an optional sting under them.
-export async function joinParts({ intro, tutorial, outro, narration, sting, out }) {
+// (fading in as the intro ends) and an optional sting under them, and music
+// under the intro and the outro (music: {intro, outro, volume}, files or ''):
+// the intro's fades out as the tutorial fades in, the outro's fades in with
+// the outro and out at the end.
+export async function joinParts({ intro, tutorial, outro, narration, sting, music, out }) {
   const [I, T, O] = await Promise.all([intro, tutorial, outro].map(probeDuration));
   const offset = I - XFADE;
   const total = I + T + O - 2 * XFADE;
@@ -91,9 +117,27 @@ export async function joinParts({ intro, tutorial, outro, narration, sting, out 
     `[v01][v2]xfade=transition=fade:duration=${XFADE}:offset=${(I + T - 2 * XFADE).toFixed(3)}[v]`,
     `[3:a]aresample=48000,aformat=channel_layouts=stereo,afade=t=in:d=${XFADE},adelay=${Math.round(offset * 1000)}:all=1,apad[nar]`,
   ];
+  const under = ['[nar]'];
+  let next = 4;
   if (sting) {
-    f.push('[4:a]aresample=48000,aformat=channel_layouts=stereo,apad[sting]', '[nar][sting]amix=inputs=2:normalize=0:duration=first[a]');
-  } else f.push('[nar]anull[a]');
+    f.push(`[${next++}:a]aresample=48000,aformat=channel_layouts=stereo,apad[sting]`);
+    under.push('[sting]');
+  }
+  const vol = music?.volume ?? 0.35;
+  if (music?.intro) {
+    args.push('-i', music.intro);
+    f.push(`[${next++}:a]aresample=48000,aformat=channel_layouts=stereo,atrim=0:${I.toFixed(3)},afade=t=in:d=0.2,` +
+      `afade=t=out:st=${Math.max(0, I - XFADE - 0.3).toFixed(3)}:d=${(XFADE + 0.3).toFixed(3)},volume=${vol},apad[mi]`);
+    under.push('[mi]');
+  }
+  if (music?.outro) {
+    args.push('-i', music.outro);
+    const at = I + T - 2 * XFADE;
+    f.push(`[${next++}:a]aresample=48000,aformat=channel_layouts=stereo,atrim=0:${O.toFixed(3)},afade=t=in:d=${XFADE},` +
+      `afade=t=out:st=${Math.max(0, O - 1.5).toFixed(3)}:d=1.5,volume=${vol},adelay=${Math.round(at * 1000)}:all=1,apad[mo]`);
+    under.push('[mo]');
+  }
+  f.push(under.length > 1 ? `${under.join('')}amix=inputs=${under.length}:normalize=0:duration=first[a]` : '[nar]anull[a]');
   await ffmpeg([...args, '-filter_complex', f.join(';'), '-map', '[v]', '-map', '[a]', '-t', total.toFixed(3),
     ...H264, '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-movflags', '+faststart', out]);
   return { intro: I, tutorial: T, outro: O, total, offset };

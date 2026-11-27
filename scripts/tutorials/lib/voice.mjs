@@ -1,16 +1,38 @@
 // The narration: one clip per step's "say" line, from ElevenLabs'
-// text-to-speech (with timestamps), cached by what went into it. With
-// noVoice, silent clips of an estimated length stand in, so the pipeline
-// runs without a key or a network.
+// text-to-speech with timestamps (the @elevenlabs/elevenlabs-js SDK),
+// cached by what went into it. With noVoice, silent clips of an estimated
+// length stand in, so the pipeline runs without a key, a network or the SDK.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ffmpeg, probeDuration } from './media.mjs';
 
-export const DEFAULT_VOICE = '21m00Tcm4TlvDq8ikWAM'; // "Rachel", one of ElevenLabs' premade voices
+export const DEFAULT_VOICE = 'JBFqnCBsd6RMkjVDRZzb'; // "George", one of ElevenLabs' premade voices
 export const DEFAULT_MODEL = 'eleven_multilingual_v2';
 export const OUTPUT_FORMAT = 'mp3_44100_128';
-const API = 'https://api.elevenlabs.io/v1/text-to-speech';
+
+// client is the ElevenLabs client, made on first use. The SDK is imported
+// here, not at the top, so --no-voice and the tests don't need it
+// installed. It reads ELEVENLABS_API_KEY from the environment.
+let client;
+async function elevenLabs() {
+  if (client) return client;
+  let sdk;
+  try {
+    sdk = await import('@elevenlabs/elevenlabs-js');
+  } catch {
+    throw new Error('the ElevenLabs SDK is not installed: run `npm ci --prefix scripts/tutorials`, or use --no-voice');
+  }
+  client = { sdk, api: new sdk.ElevenLabsClient({ maxRetries: 2 }) };
+  return client;
+}
+
+// sdkSettings turns the script's voice settings (snake_case, as in
+// ElevenLabs' API docs) into the SDK's camelCase.
+export function sdkSettings(settings) {
+  if (!settings) return undefined;
+  return Object.fromEntries(Object.entries(settings).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), v]));
+}
 
 // voiceConfig picks the voice, model and settings: the environment first,
 // then the script's header, then the defaults.
@@ -78,28 +100,37 @@ export async function clipFor(text, cfg, { cacheDir, workDir, noVoice, log = con
     const m = JSON.parse(readFileSync(meta, 'utf8'));
     return { file, seconds: m.seconds, alignment: m.alignment, cached: true };
   }
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (!apiKey) throw new Error('ELEVENLABS_API_KEY is not set: set it, or use --no-voice for silent clips');
+  if (!process.env.ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY is not set: set it (or put it in .env.local), or use --no-voice for silent clips');
+  const { sdk, api } = await elevenLabs();
   log(`voice: ${JSON.stringify(text.slice(0, 60))}${text.length > 60 ? '…' : ''}`);
-  const body = { text, model_id: cfg.model };
-  if (cfg.settings) body.voice_settings = cfg.settings;
-  const res = await fetch(`${API}/${encodeURIComponent(cfg.voice)}/with-timestamps?output_format=${OUTPUT_FORMAT}`, {
-    method: 'POST',
-    headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
+  let data;
+  try {
+    data = await api.textToSpeech.convertWithTimestamps(cfg.voice, {
+      text,
+      modelId: cfg.model,
+      outputFormat: OUTPUT_FORMAT,
+      voiceSettings: sdkSettings(cfg.settings),
+    });
+  } catch (err) {
     // ElevenLabs' error bodies say what went wrong and never echo the key.
-    const detail = (await res.text()).slice(0, 400);
-    throw new Error(`ElevenLabs answered ${res.status}: ${detail}`);
+    if (err instanceof sdk.ElevenLabsError) {
+      const detail = typeof err.body === 'string' ? err.body : JSON.stringify(err.body);
+      throw new Error(`ElevenLabs answered ${err.statusCode ?? 'with an error'}: ${(detail || err.message).slice(0, 400)}`);
+    }
+    throw err;
   }
-  const data = await res.json();
-  if (!data.audio_base64 || !data.alignment) throw new Error('ElevenLabs answered without audio or alignment');
-  writeFileSync(file + '.tmp', Buffer.from(data.audio_base64, 'base64'));
+  if (!data.audioBase64 || !data.alignment) throw new Error('ElevenLabs answered without audio or alignment');
+  // The rest of the pipeline (and the cache) uses the API's snake_case names.
+  const alignment = {
+    characters: data.alignment.characters,
+    character_start_times_seconds: data.alignment.characterStartTimesSeconds,
+    character_end_times_seconds: data.alignment.characterEndTimesSeconds,
+  };
+  writeFileSync(file + '.tmp', Buffer.from(data.audioBase64, 'base64'));
   const seconds = await probeDuration(file + '.tmp');
-  writeFileSync(meta, JSON.stringify({ text, voice: cfg.voice, model: cfg.model, settings: cfg.settings, seconds, alignment: data.alignment }));
+  writeFileSync(meta, JSON.stringify({ text, voice: cfg.voice, model: cfg.model, settings: cfg.settings, seconds, alignment }));
   renameSync(file + '.tmp', file);
-  return { file, seconds, alignment: data.alignment, cached: false };
+  return { file, seconds, alignment, cached: false };
 }
 
 // clipsFor makes (or finds) the clips of every step of script.

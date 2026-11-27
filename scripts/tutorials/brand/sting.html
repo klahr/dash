@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dash tutorial: sting</title>
+<link rel="stylesheet" href="/web/static/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/brand/vars.css">
+<link rel="stylesheet" href="brand.css">
+<style>
+/* The short brand's sting, 1.5 s, before a muted landing-page video: the
+   logo builds itself quickly in the middle and the wordmark comes out from
+   behind it, settled by 1 s; the last 0.5 s crossfades into the video. */
+.lockup { position: absolute; left: 50%; top: 50%; display: flex; align-items: center; gap: 40px; transform: translate(-50%, -50%); }
+.lockup .logo { width: 200px; height: 200px; flex: none; z-index: 1; }
+.wordmark { position: relative; font-size: 150px; font-weight: 700; letter-spacing: -.035em; line-height: 1; overflow: hidden; padding: 0 .06em .08em 0; }
+.wordmark span { display: block; }
+.halo { width: 820px; height: 820px; left: 50%; top: 50%; margin: -410px 0 0 -410px; }
+
+body.go .logo .tile { animation-duration: .45s; }
+body.go .logo .top { animation-duration: .35s; animation-delay: .1s; }
+body.go .logo .stem { animation-duration: .45s; animation-delay: .12s; }
+body.go .logo .ring { animation-duration: .35s; animation-delay: .32s; }
+body.go .logo .head { animation-duration: .4s; animation-delay: .42s; }
+body.go .logo .glow { animation-duration: .7s; animation-delay: .42s; }
+body.go .logo .sweep::before { animation-duration: .6s; animation-delay: .78s; }
+body.go .halo { animation: halo 1.3s var(--out) both; }
+body.go .lockup .logo { animation: shift .5s var(--move) .36s both; }
+body.go .wordmark span { animation: reveal .55s var(--out) .45s both; }
+
+@keyframes shift { from { transform: translateX(var(--shift)); } to { transform: none; } }
+@keyframes reveal { from { transform: translateX(-105%); opacity: 0; } 30% { opacity: 1; } to { transform: none; opacity: 1; } }
+@keyframes halo { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: .9; } }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="stage">
+  <div class="halo"></div>
+  <div class="lockup">
+    <div class="logo"></div>
+    <div class="wordmark"><span>Dash</span></div>
+  </div>
+</div>
+<script type="module">
+import { start } from './brand.js';
+start({
+  duration: 1.5,
+  setup() {
+    // How far right the logo starts: to the middle of the lockup.
+    const lockup = document.querySelector('.lockup'), logo = document.querySelector('.lockup .logo');
+    const l = lockup.getBoundingClientRect(), g = logo.getBoundingClientRect();
+    lockup.style.setProperty('--shift', `${l.left + l.width / 2 - (g.left + g.width / 2)}px`);
+  },
+});
+</script>
+</body>
+</html>

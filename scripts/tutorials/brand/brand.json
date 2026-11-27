@@ -1,6 +1,11 @@
 {
-  "link": "https://dash.example.com",
+  "link": "https://dash.r8.rs",
   "series": "Dash tutorials",
   "thanks": "Thanks for watching",
-  "outro_hold_seconds": 2
+  "outro_hold_seconds": 2,
+  "music": {
+    "intro": "A soft, warm opening for a calm software tutorial: airy synth pads with a gentle bell melody rising over a few notes, modern and friendly, no drums, no vocals, quiet throughout.",
+    "outro": "A soft, warm closing for a calm software tutorial: airy synth pads with a gentle bell melody that settles and resolves, modern and friendly, no drums, no vocals, quiet throughout, ending in a gentle fade.",
+    "volume": 0.35
+  }
 }

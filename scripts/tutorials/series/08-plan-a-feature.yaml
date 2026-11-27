@@ -1,0 +1,68 @@
+# 8 · Plan a bigger feature. A Planning card for levels, a feature brief, and
+# a goal started from it.
+# Needs: a "game-v3" seed scene (the game with sounds, lives and a best
+# score; Planning with a "Levels" card in Ideas and a few others), and a
+# canned feature interview and goal plan in fakeclaude.mjs.
+title: Plan a bigger feature
+next: "Ask Claude"
+seed: game-v3
+
+steps:
+  - say: >
+      Bigger ideas start on Planning: a board of cards, each something to
+      build.
+    do:
+      - click: ".nav > button[data-view=planning]"
+      - hover: ".pl-col[data-col=ideas] .col-label"
+
+  - say: >
+      Levels is a bigger change. Open the card, and press Write a feature
+      brief.
+    do:
+      - click: ".pl-card .pl-open"
+        text: Levels
+      - click: "#pd-actions .btn"
+        text: Write a feature brief
+      - wait: "#plan-idea"
+
+  - say: >
+      It's the same interview as for the project, about this one feature.
+      Claude has read the game's code, so it only asks what the code doesn't
+      answer.
+    do:
+      - click: "#plan-next"
+      - wait: "#plan-talk fieldset.plan-q-card"
+      - pause: 1.5
+
+  - say: How many levels, and what makes one harder? Pick, or write your own.
+    do:
+      - click: "#plan-talk .plan-chip"
+        text: Every 20 stars
+      - click: "#plan-talk .plan-all-defaults"
+      - click: "#plan-talk .plan-compose .btn.primary"
+      - wait: "#plan-talk .msg.pending"
+        gone: true
+        timeout: 60
+
+  - say: >
+      Review the brief, and choose how to start. This is more than one task,
+      so start it as a goal.
+    do:
+      - click: "#plan-next"
+      - click: "#plan-next"
+      - click: "#feature-sheet label.radio"
+        text: A goal
+
+  - say: >
+      Press Start the goal. The brief goes onto the card, and the card moves to
+      In progress, linked to its goal.
+    do:
+      - click: "#plan-next"
+      - wait: ".pl-col[data-col=in_progress] .pl-card"
+        text: Levels
+      - hover: ".pl-col[data-col=in_progress] .pl-card"
+
+  - say: >
+      From here, it's the goal from earlier: review its plan, queue it, and
+      merge what it builds.
+    hold: 0.5

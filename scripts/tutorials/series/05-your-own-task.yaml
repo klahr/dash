@@ -1,0 +1,62 @@
+# 5 · Your own task. New task → draft → Queue, for a score in the corner.
+# Needs: a "game-v1" seed scene (the first version merged, a quiet board),
+# and a canned "score" change in fakeclaude.mjs (slow, so it can be watched).
+title: Your own task
+next: "Not quite right: rework"
+seed: game-v1
+
+steps:
+  - say: >
+      The game has no score yet. Press New task, and describe what you want in
+      plain words, the way you'd ask a colleague.
+    do:
+      - click: "#new-todo"
+      - type: Show the score in the top left corner, one point per star caught.
+        into: "#quick-rows .quick-row"
+        cps: 34
+
+  - say: >
+      Save it as a draft. Claude gives the task a short name, and it waits in
+      Drafts until you're ready.
+    do:
+      - click: "#quick-form button[value=draft]"
+      - wait: "#board .todo.s-draft"
+        text: score
+
+  - say: When it looks right, press Queue, and Claude starts working on it.
+    do:
+      - click: .enqueue-chip
+        in: "#board .todo"
+        text: score
+      - wait: "#board .todo.s-in_progress"
+        text: score
+
+  - say: A few minutes later, it's in Review, with the tests passing.
+    do:
+      - wait: "#board .todo.s-review"
+        text: score
+        timeout: 120
+    speed: 3
+
+  - say: Preview it, and the score counts up as you catch stars.
+    do:
+      - click: .todo-open
+        in: "#board .todo"
+        text: score
+      - click: "#d-actions .pv-btn"
+        timeout: 90
+      - wait: "#pv-iframe"
+        timeout: 60
+      - click: "#pv-iframe"
+      - key: ArrowRight
+      - pause: 2
+
+  - say: Merge pull request, and the score is part of the game.
+    do:
+      - click: "#pv-close"
+      - click: "#d-actions .btn"
+        text: Merge pull request
+      - click: "#ask-ok"
+      - wait: "#board .todo.s-merged"
+        text: score
+        timeout: 60

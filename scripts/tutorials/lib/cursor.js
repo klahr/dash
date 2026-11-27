@@ -47,10 +47,12 @@
         // An S-curve: slow start, quick middle, a gentle landing.
         return p.animate([{ transform: from }, { transform: to }], { duration: ms, easing: 'cubic-bezier(.45,.05,.2,1)' }).finished.then(() => {});
       },
-      // down and up press and release the pointer; up draws the ripple.
+      // down and up press and release the pointer; up draws the ripple,
+      // unless quiet (the end of a drag).
       down() { raise(); p.classList.add('down'); },
-      up() {
+      up(quiet) {
         p.classList.remove('down');
+        if (quiet) return;
         const r = document.createElement('div');
         r.className = 'r';
         r.style.left = x + 'px';

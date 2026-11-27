@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dash tutorial: end card</title>
+<link rel="stylesheet" href="/web/static/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/brand/vars.css">
+<link rel="stylesheet" href="brand.css">
+<style>
+/* The short brand's end card, 2.5 s, after a muted landing-page video: the
+   logo and the wordmark, and the link under them. Everything has settled
+   and the background stopped by 2 s, so the last frame holds still (and a
+   looping video jumps cleanly back to the sting). */
+.card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; }
+.brandline { display: flex; align-items: center; gap: 34px; }
+.brandline .logo { width: 168px; height: 168px; flex: none; }
+.brandline .name { font-size: 128px; font-weight: 700; letter-spacing: -.035em; line-height: 1; }
+.halo { width: 820px; height: 820px; left: 50%; top: 42%; margin: -410px 0 0 -410px; }
+.link {
+  margin-top: 64px; display: inline-flex; align-items: center; gap: 16px; padding: 18px 34px 18px 26px;
+  border-radius: 999px; font-size: 40px; font-weight: 600; color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.link .dot { width: 15px; height: 15px; border-radius: 50%; background: var(--merged); box-shadow: 0 0 18px var(--merged); }
+
+body.go .logo .tile { animation-duration: .5s; }
+body.go .logo .top { animation-delay: .1s; animation-duration: .4s; }
+body.go .logo .stem { animation-delay: .15s; animation-duration: .55s; }
+body.go .logo .ring { animation-delay: .4s; animation-duration: .4s; }
+body.go .logo .head { animation-delay: .5s; animation-duration: .45s; }
+body.go .logo .glow { animation-delay: .5s; animation-duration: .8s; }
+body.go .logo .sweep::before { animation-delay: 1.25s; animation-duration: .7s; }
+body.go .halo { animation: halo 1.6s var(--out) both; }
+body.go .name { animation: slide .6s var(--out) .3s both; }
+body.go .link { animation: rise .65s var(--out) .7s both; }
+@keyframes slide { from { transform: translateX(-40px); opacity: 0; clip-path: inset(0 100% 0 0); } to { transform: none; opacity: 1; clip-path: inset(0 0 0 0); } }
+@keyframes halo { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: .8; } }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="stage">
+  <div class="halo"></div>
+  <div class="card">
+    <div class="brandline"><div class="logo"></div><div class="name">Dash</div></div>
+    <div class="link"><span class="dot"></span><span id="link"></span></div>
+  </div>
+</div>
+<script type="module">
+import { start, text } from './brand.js';
+start({
+  duration: 2.5,
+  stillAt: 2,
+  setup() {
+    // The link without its scheme reads better on screen.
+    document.getElementById('link').textContent = text('link', 'https://dash.example.com').replace(/^https?:\/\//, '');
+  },
+});
+</script>
+</body>
+</html>

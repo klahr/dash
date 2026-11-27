@@ -1,0 +1,40 @@
+# 9 · Ask Claude. The project chat: a question about the game becomes a
+# task.
+# Needs: a "game-v4" seed scene (levels merged), and a canned project-chat
+# answer in fakeclaude.mjs that drafts one task.
+title: Ask Claude
+next: "Publish the game"
+seed: game-v4
+
+steps:
+  - say: >
+      Not everything starts as a task. Open the chat to ask Claude about the
+      project; it can read all of the game's code.
+    do:
+      - click: "#pc-open"
+      - wait: "#chat-pane .composer textarea[name=q]"
+
+  - say: >
+      Can people play this on a phone? There are no arrow keys there.
+    do:
+      - type: Can people play this on a phone? There are no arrow keys there.
+        into: "#chat-pane .composer textarea[name=q]"
+        cps: 34
+      - key: Enter
+      - wait: "#chat-pane .msg.assistant:not(.pending)"
+        timeout: 60
+
+  - say: >
+      Claude explains that the basket only listens to the keyboard, and
+      offers a task: move it with your finger.
+    do:
+      - wait: "#chat-pane .chat-task"
+      - hover: "#chat-pane .chat-task"
+      - pause: 1
+
+  - say: Press Queue on it, and it goes on the board like any other task.
+    do:
+      - click: "#chat-pane .chat-task button"
+        text: Queue
+      - wait: "#chat-pane .chat-task"
+        text: Queued

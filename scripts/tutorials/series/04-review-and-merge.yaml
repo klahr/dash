@@ -1,0 +1,66 @@
+# 4 · Review, play and merge. A task in review: its changes, a live preview
+# of the game, and Merge pull request.
+# Seed "game-review": the page is set up and merged; "Move the basket" and
+# "Make stars fall" ran side by side and wait in Review with pull requests.
+title: Review, play and merge
+next: "Your own task"
+seed: game-review
+
+steps:
+  - say: >
+      A task in Review is finished. Dash opened a pull request for it on
+      GitHub, but you can review it all here.
+    do:
+      - click: .todo-open
+        in: "#board [data-lane=review] .todo"
+        text: Move the basket
+      - wait: "#d-actions"
+
+  - say: >
+      The tests pass. Open Changes to read what Claude did, file by file.
+    do:
+      - click: "#detail [data-pane=diff]"
+      - click: "#d-diff details.diff-file summary"
+        text: basket.js
+      - scroll: "#d-diff"
+        by: 400
+
+  - say: >
+      Reading code is one thing; for a game, you want to play it. Press
+      Preview to run this version, right next to the task.
+    do:
+      - click: "#d-actions .pv-btn"
+        timeout: 90
+      - wait: "#pv-iframe"
+        timeout: 60
+
+  - say: >
+      Press the arrow keys, and the basket follows. The first piece of the
+      game works.
+    do:
+      - click: "#pv-iframe"
+      - key: ArrowLeft
+      - pause: 0.6
+      - key: ArrowRight
+      - pause: 0.6
+      - key: ArrowRight
+      - pause: 1
+
+  - say: >
+      Happy with it? Press Merge pull request. The change lands on main, and
+      the card moves to Merged.
+    do:
+      - click: "#pv-close"
+      - click: "#d-actions .btn"
+        text: Merge pull request
+      - click: "#ask-ok"
+      - wait: "#board .todo.s-merged"
+        text: Move the basket
+        timeout: 60
+
+  - say: >
+      Merge the falling stars the same way, and the rest of the plan follows.
+      Next, a task of your own.
+    do:
+      - click: "#d-close"
+      - hover: "#board [data-lane=done] .col-label"
