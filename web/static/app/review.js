@@ -254,6 +254,89 @@ $("#d-diff").addEventListener("click", (e) => {
   commentBox(line, line, t).focus();
 });
 
+// ------------------------------------------------------------------ since the last review
+// Back in Review after a rework, Changes shows what changed since the user's
+// last review (the server's sinceReview, from the task's reviews), with the
+// line comments sent with that rework next to it. A switch shows the full
+// diff instead; the choice is kept per task in this browser.
+const FULL_KEY = "dash.diffFull";
+const fullFor = (id) => !!store.getJSON(FULL_KEY, {})[id];
+function setFull(id, on) {
+  const all = store.getJSON(FULL_KEY, {});
+  delete all[id];
+  if (on) all[id] = 1;
+  const ids = Object.keys(all); // oldest first: only the newest 200 are kept
+  for (const k of ids.slice(0, Math.max(0, ids.length - 200))) delete all[k];
+  store.setJSON(FULL_KEY, all);
+}
+
+// reworked: task t is back in Review after at least one rework.
+export const reworked = (t) => t?.status === "review" && t.reviews?.length > 0;
+
+// fetchChanges is task t's Changes: text, the patch, and since, what it
+// shows back in Review after a rework ({ round, full, note }; null at a
+// first review or in another column).
+export async function fetchChanges(t) {
+  const full = () => api("GET", `/api/todos/${t.id}/diff`);
+  if (!reworked(t)) return { text: await full(), since: null };
+  const round = t.reviews.length + 1;
+  if (fullFor(t.id)) return { text: await full(), since: { round, full: true, chosen: true, note: "" } };
+  try {
+    const r = await api("GET", `/api/todos/${t.id}/diff/since`);
+    return { text: r.diff || "", since: { round: r.round || round, full: !r.since, chosen: false, note: r.note || "" } };
+  } catch (e) {
+    return { text: await full(), since: { round, full: true, chosen: false, note: `The changes since your last review couldn't be loaded (${e.message}).` } };
+  }
+}
+
+// sinceShown is what the open task's Changes shows (fetchChanges' since),
+// when it is back in Review after a rework.
+function sinceShown(t) {
+  const s = state.diffSince;
+  return reworked(t) && s?.todo === t.id ? s : null;
+}
+
+// sentComments are the line comments sent with task t's last rework, while
+// it is back in Review.
+export const sentComments = (t) => sinceShown(t) ? t.reviews.at(-1).comments || [] : [];
+
+// sentRow is a comment sent with the last rework, under its line in the
+// diff (diffLines): marked as sent, read only.
+export function sentRow(c) {
+  return h("div", { class: "comment sent", "data-id": c.id },
+    h("div", { class: "comment-body" },
+      h("span", { class: "comment-where" }, h("span", { class: "sent-tag" }, ico("check"), "Sent"), ` with your last rework · ${linesLabel(c)}`),
+      h("span", { class: "comment-text" }, c.text)));
+}
+
+// sinceBar sits above task t's Changes back in Review after a rework: what
+// the diff is (since the last review, or all of it, and why), the switch
+// between the two, and the comments sent with the rework whose lines the
+// diff doesn't show (rest).
+export function sinceBar(t, rest = [], reload) {
+  const s = sinceShown(t);
+  if (!s) return null;
+  const base = baseBranch(state.project) || "main";
+  const sw = h("input", { type: "checkbox", role: "switch", checked: s.chosen, onchange: (e) => { setFull(t.id, e.target.checked); reload(); } });
+  const sent = t.reviews.at(-1).comments?.length || 0;
+  return h("section", { class: "since-bar", "aria-label": "What these changes are" },
+    h("div", { class: "since-head" },
+      h("span", { class: "since-label" }, ico(s.full ? "branch" : "redo"),
+        s.full ? `All changes against ${base}` : `Changes since your last review (round ${s.round})`),
+      h("span", { class: "pv-spacer" }),
+      h("label", { class: "toggle since-switch", title: s.chosen ? "Show only what changed since your last review" : `Show every change against ${base}` },
+        sw, h("span", {}, "Show all changes"))),
+    !s.chosen && s.note ? h("p", { class: "since-note" }, s.note, " This is the full diff.") : null,
+    !s.full && sent ? h("p", { class: "since-note" }, `${plural(sent, "comment")} sent with your last rework, marked Sent: check each was dealt with.`) : null,
+    rest.length ? h("details", { class: "since-sent", open: true },
+      h("summary", {}, `${plural(rest.length, "sent comment")} on lines not shown here`),
+      ...rest.map((c) => h("div", { class: "comment sent", "data-id": c.id },
+        h("div", { class: "comment-body" },
+          h("span", { class: "comment-where" }, h("span", { class: "sent-tag" }, ico("check"), "Sent"), ` ${c.file}, ${linesLabel(c)}`),
+          c.code ? h("pre", { class: "since-code" }, c.code) : null,
+          h("span", { class: "comment-text" }, c.text))))) : null);
+}
+
 // ------------------------------------------------------------------ tests (checks)
 // The checks and the token use sit in one Details fold, which shows when
 // either has something, with a badge on it while the last test run failed.

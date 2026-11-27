@@ -2182,6 +2182,29 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   margin: 0 0 8px; padding: 8px 10px; border-radius: var(--r-s); background: var(--surface);
   border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); font-size: var(--fs-m);
 }
+/* Back in Review after a rework: what the diff is (since the last review,
+   or all of it), the switch between them, and the comments sent with it. */
+.since-bar {
+  display: grid; gap: 4px; margin: 0 0 8px; padding: 6px 10px; border-radius: var(--r-s);
+  background: var(--surface); border: 1px solid var(--line); font-size: var(--fs-m);
+}
+.since-head { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; }
+.since-label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.since-label .ico { width: 16px; height: 16px; flex: none; color: var(--brand); }
+.since-switch { min-height: 36px; font-weight: 400; }
+.since-note { margin: 0; font-size: var(--fs-s); color: var(--muted); }
+.since-sent > summary { cursor: pointer; font-size: var(--fs-s); color: var(--muted); padding: 4px 0; }
+.since-sent .comment { display: block; margin: 6px 0; padding: 8px 10px; border-radius: var(--r-s); border: 1px solid var(--line); background: var(--bg); }
+.since-sent .comment-body { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.since-sent .comment-where { margin: 0; }
+.since-sent .comment-text { white-space: pre-wrap; }
+.since-code { margin: 0; padding: 6px 8px; border-radius: var(--r-s); background: var(--raised); font: var(--fs-s)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-lines .comment.sent { border-color: var(--line); border-style: dashed; }
+.sent-tag {
+  display: inline-flex; align-items: center; gap: 3px; margin-right: 2px; padding: 1px 6px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent2) 18%, transparent); color: var(--text); font-weight: 600; font-size: var(--fs-2xs);
+}
+.sent-tag .ico { width: 12px; height: 12px; }
 .comments-count { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .comments-count .ico { width: 16px; height: 16px; }
 /* Touch: no hover, so the comment marker shows faintly on every line. */

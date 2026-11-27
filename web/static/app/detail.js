@@ -12,7 +12,7 @@ import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.j
 import { canPreview, hidePreview, previewButton, previewOf, pv, renderPreview, stopPreview } from "./preview.js";
 import { canRework, popMenu, renderPane, renderReworkBox, revertTodo, reviewTodo, reworkTodo } from "./drawmode.js";
 import { runnerName } from "./runners.js";
-import { renderChecks, renderPerms } from "./review.js";
+import { fetchChanges, renderChecks, renderPerms } from "./review.js";
 import { renderTodoChatMode, todoChat } from "./chat.js";
 import { renderRunStats } from "./runstats.js";
 import { loadTodoChat } from "./chatpane.js";
@@ -121,10 +121,11 @@ desktop.addEventListener("change", () => { if (state.detail) { syncDetailMode();
 export async function loadDiff() {
   const id = state.detail;
   const t = state.todos.get(id);
-  if (!t?.worktree) { state.diff = ""; renderPane(); return; }
-  const text = await api("GET", `/api/todos/${id}/diff`).catch((e) => `error: ${e.message}`);
+  if (!t?.worktree) { state.diff = ""; state.diffSince = null; renderPane(); return; }
+  const { text, since } = await fetchChanges(t).catch((e) => ({ text: `error: ${e.message}`, since: null }));
   if (state.detail !== id) return;
   state.diff = text;
+  state.diffSince = since && { ...since, todo: id };
   renderPane();
 }
 

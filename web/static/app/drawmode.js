@@ -12,10 +12,10 @@ import { baseBranch, multi, projectKey } from "./events.js";
 import { selectProject } from "./projects.js";
 import { closable, title } from "./branches.js";
 import { agoText } from "../time.js";
-import { renderActions } from "./detail.js";
+import { loadDiff, renderActions } from "./detail.js";
 import { PV_LABEL, commitShown, hidePreview, isTermPreview, paneIn, previewOf, previewTodo, pv, renderPreview, shownPreview } from "./preview.js";
 import { canEditDiff, openDiffEdit } from "./diffedit.js";
-import { commentRow, commentsBar, commentsFor, keepCommentBoxes } from "./review.js";
+import { commentRow, commentsBar, commentsFor, keepCommentBoxes, sentComments, sentRow, sinceBar } from "./review.js";
 import { setTodoChatMode, todoChat } from "./chat.js";
 import { isTyping, openDialog } from "./vim.js";
 import { popMenu } from "./popmenu.js";
@@ -693,15 +693,18 @@ function renderDiff(text) {
   const del = files.reduce((n, f) => n + f.del, 0);
   $("#d-diffstat").replaceChildren(...(files.length ? [h("span", { class: "plus" }, `+${add}`), " ", h("span", { class: "minus" }, `−${del}`)] : []));
 
+  const t = state.todos.get(state.detail);
+  const reload = () => loadDiff().catch(fail);
+  const sent = sentComments(t);
   if (!files.length) {
-    const t = state.todos.get(state.detail);
-    const msg = text.startsWith("error:") ? text : t?.worktree ? "No changes compared to the default branch." : "Changes appear here once Claude has worked on this task.";
-    $("#d-diff").replaceChildren(...[autoNote(t), goalNote(t), h("p", { class: "pane-empty" }, msg)].filter(Boolean));
+    const since = state.diffSince?.todo === t?.id && !state.diffSince.full;
+    const msg = text.startsWith("error:") ? text : since ? "No changes since your last review." : t?.worktree ? "No changes compared to the default branch." : "Changes appear here once Claude has worked on this task.";
+    $("#d-diff").replaceChildren(...[autoNote(t), goalNote(t), sinceBar(t, sent, reload), h("p", { class: "pane-empty" }, msg)].filter(Boolean));
     return;
   }
-  const commented = new Set(commentsFor(state.detail).map((c) => c.file));
-  const t = state.todos.get(state.detail), editable = canEditDiff(t);
-  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[autoNote(t), goalNote(t), shotsView(t), commentsBar(t)].filter(Boolean), ...files.map((f) => h("details", {
+  const commented = new Set([...commentsFor(state.detail), ...sent].map((c) => c.file));
+  const editable = canEditDiff(t);
+  const fileEls = files.map((f) => h("details", {
     class: "diff-file", open: state.diffOpen.has(f.path) || commented.has(f.path),
     ontoggle: (e) => state.diffOpen[e.target.open ? "add" : "delete"](f.path),
   },
@@ -716,7 +719,12 @@ function renderDiff(text) {
       : h("div", { class: "diff-lines" }, diffLines(f, {
         comments: commentsFor(state.detail).filter((c) => c.file === f.path),
         commentable: ["review", "failed"].includes(state.todos.get(state.detail)?.status),
-      }))))));
+        sent: sent.filter((c) => c.file === f.path),
+      }))));
+  // Sent comments whose lines aren't in this diff are listed above it.
+  const placed = new Set(fileEls.flatMap((el) => [...el.querySelectorAll(".comment.sent")].map((c) => c.dataset.id)));
+  const rest = sent.filter((c) => !placed.has(c.id));
+  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[autoNote(t), goalNote(t), sinceBar(t, rest, reload), shotsView(t), commentsBar(t)].filter(Boolean), ...fileEls));
 }
 
 // Images a diff shows instead of "Binary files … differ" (the server's
@@ -744,8 +752,9 @@ export function diffImages(before, after, url) {
 
 // Rows for one file, numbered like the new file (removed lines use old numbers),
 // with a task's saved review comments under the last line they are on, and
-// those lines marked.
-export function diffLines(f, { comments = [], commentable = false } = {}) {
+// those lines marked; and those sent with its last rework (sent) likewise,
+// marked as sent.
+export function diffLines(f, { comments = [], commentable = false, sent = [] } = {}) {
   const rows = [];
   let oldLn = 0, newLn = 0;
   for (const l of f.lines) {
@@ -766,6 +775,7 @@ export function diffLines(f, { comments = [], commentable = false } = {}) {
       commentable ? h("button", { type: "button", class: "ln-comment", "aria-label": `Comment on ${f.path} ${side === "old" ? "removed line" : "line"} ${ln}` }, "+") : null,
       h("span", { class: "code" }, l || " ")));
     for (const c of comments.filter((c) => (c.end_line || c.line) === ln && c.side === side)) rows.push(commentRow(c));
+    for (const c of sent.filter((c) => (c.end_line || c.line) === ln && c.side === side)) rows.push(sentRow(c));
   }
   return rows;
 }

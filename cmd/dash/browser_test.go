@@ -111,6 +111,24 @@ func TestBrowserMainFlows(t *testing.T) {
 	}
 	b.waitJS("the reworked diff", `document.querySelector("#d-diff")?.textContent.includes("rework-by-runner.txt")`)
 
+	// Back in Review after the rework, Changes shows only what changed since
+	// the last review (the runner kept the commit reviewed), and the comment
+	// sent with the rework, marked as sent; its line isn't in this diff.
+	sinceFiles := `[...document.querySelectorAll("#d-diff details.diff-file .path")].map((e) => e.textContent).join()`
+	b.waitJS("the changes since the last review", `document.querySelector("#d-diff .since-label")?.textContent === "Changes since your last review (round 2)" && `+
+		sinceFiles+` === "rework-by-runner.txt"`)
+	b.waitJS("the sent comment", `[...document.querySelectorAll("#d-diff .since-sent .comment.sent")].some((c) => c.textContent.includes("Sent") && c.textContent.includes("Say it louder"))`)
+	// On a phone the bar wraps instead of scrolling sideways.
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844))
+	b.waitJS("the bar fits a phone", `(() => { const bar = document.querySelector("#d-diff .since-bar"); return !!bar && bar.offsetWidth > 0 && bar.scrollWidth <= bar.clientWidth + 1; })()`)
+	b.do("a wide screen again", chromedp.EmulateViewport(1600, 1000))
+	// The switch shows the full diff against main, and the choice is kept
+	// for the task (the rest of this flow sees the full diff).
+	b.until("show all changes", `document.querySelector("#d-diff .since-label")?.textContent === "All changes against main" && `+
+		sinceFiles+`.includes("done-by-runner.txt")`,
+		chromedp.Click(chromedp.CSS(`#d-diff .since-switch input`)))
+	b.waitJS("the choice kept", `JSON.parse(localStorage.getItem("dash.diffFull") || "{}")[`+fmt.Sprintf("%q", first)+`] === 1 && document.querySelector("#d-diff .since-switch input").checked`)
+
 	// Rework from the task chat: the switch above its box sends to the agent
 	// instead of the side chat, and the send button's label follows it.
 	b.do("show the timeline", chromedp.Click(chromedp.CSS(`.pane-tabs button[data-pane=timeline]`)))

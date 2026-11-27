@@ -176,7 +176,8 @@ review it first. A changed image
 project can also show [before/after screenshots](screenshots.md) of the pages the task changed,
 above the diff.
 
-- Not right? Click **Rework…**, say what to change, and it goes back to Claude.
+- Not right? Click **Rework…**, say what to change, and it goes back to Claude. When it comes
+  back, **Changes** shows what changed since. See [After a rework](#after-a-rework).
 - To point at code, comment on its lines. See [Comment on lines](#comment-on-lines).
 - For a small fix, click **Edit** on a changed file: saving commits your edit on the task's
   branch, so approving merges it with the rest.
@@ -201,6 +202,26 @@ comment** (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>).
 - After you send them, the comments are in the task's history: in the timeline, as that round's
   message to the agent, and under the prompt with the other rework notes.
 - A message sent from the task chat in **Rework** mode takes the waiting comments along too.
+
+### After a rework
+
+When a task you sent back comes to *Review* again, **Changes** shows only what changed since your
+last review. The bar above the diff says so, with the round: **Changes since your last review
+(round 2)**.
+
+- The comments you sent with the rework show under their lines, marked **Sent**, so you can check
+  each was dealt with. Those whose lines aren't in the new diff are listed in the bar.
+- Turn on **Show all changes** for the full diff against the base branch. Dash remembers the
+  choice for the task, in this browser.
+- When the branch was rebased, or the base branch was merged into it, since your last review,
+  the diff since then would mix in other work. Dash then shows the full diff, with a short note
+  saying why.
+- A task's first review shows the full diff, as before.
+
+Dash records the commit you reviewed each time a task leaves *Review* back to Claude (a rework
+or a retry), so every round starts from the one before. A task on a
+[runner](several-computers.md) needs Dash updated on that runner too; until then it shows the
+full diff, with a note.
 
 ## Needs you
 

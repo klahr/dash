@@ -51,7 +51,7 @@ func init() {
 		"GET /api/projects/{pid}/todos", "POST /api/projects/{pid}/todos",
 		"GET /api/todos/{tid}", "PATCH /api/todos/{tid}", "DELETE /api/todos/{tid}",
 		"POST /api/todos/{tid}/enqueue", "POST /api/todos/{tid}/start-now", "POST /api/todos/{tid}/cancel", "POST /api/todos/{tid}/pause",
-		"POST /api/todos/{tid}/resume", "GET /api/todos/{tid}/diff", "GET /api/todos/{tid}/log",
+		"POST /api/todos/{tid}/resume", "GET /api/todos/{tid}/diff", "GET /api/todos/{tid}/diff/since", "GET /api/todos/{tid}/log",
 		"GET /api/todos/{tid}/image", // images in its diff (diffimage.go)
 		"GET /api/todos/{tid}/events", "POST /api/todos/{tid}/approve", "POST /api/todos/{tid}/close", "POST /api/todos/{tid}/rework",
 		// Draft review comments on its diff (comments.go).
@@ -106,7 +106,7 @@ func init() {
 		"DELETE /api/hub/tasks/{htid}", "POST /api/hub/tasks/{htid}/approve", "POST /api/hub/tasks/{htid}/cancel",
 		"POST /api/hub/tasks/{htid}/revert", "POST /api/hub/tasks/{htid}/test", "POST /api/hub/tasks/{htid}/open",
 		"POST /api/hub/tasks/{htid}/merge-pr",
-		"GET /api/hub/tasks/{htid}/diff", "GET /api/hub/tasks/{htid}/files", "GET /api/hub/tasks/{htid}/log", "GET /api/hub/tasks/{htid}/events",
+		"GET /api/hub/tasks/{htid}/diff", "GET /api/hub/tasks/{htid}/diff/since", "GET /api/hub/tasks/{htid}/files", "GET /api/hub/tasks/{htid}/log", "GET /api/hub/tasks/{htid}/events",
 		"GET /api/hub/tasks/{htid}/file", "PUT /api/hub/tasks/{htid}/file", "GET /api/hub/tasks/{htid}/image",
 		"GET /api/hub/tasks/{htid}/screenshots/{name}",
 		"POST " + dispatch.PermissionPath, // the hub's board answers its task's permission request

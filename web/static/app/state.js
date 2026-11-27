@@ -42,6 +42,7 @@ export const state = {
   detail: null,        // open todo id
   pane: "timeline",
   diff: "",
+  diffSince: null,    // what the open todo's Changes shows back in Review after a rework (review.js fetchChanges), with its todo id
   diffOpen: new Set(), // diff files the user expanded in the open todo
   procs: [],
   previews: new Map(), // "machine/todo id" → live preview, on every computer

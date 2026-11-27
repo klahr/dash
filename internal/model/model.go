@@ -534,6 +534,16 @@ type Todo struct {
 	// diff (Changes), kept until Rework sends them as one feedback note
 	// (agent.ReviewNote), which then stays in Feedback, or they're discarded.
 	Comments []ReviewComment `json:"comments,omitempty"`
+	// ReviewHead is the head of the task's branch as Review shows it (after
+	// its latest run, or an edit made in review), and ReviewBase that
+	// commit's merge base with the branch it lands on. Set where the
+	// worktree is (on a runner for its tasks; empty on the hub).
+	ReviewHead string `json:"review_head,omitempty"`
+	ReviewBase string `json:"review_base,omitempty"`
+	// Reviews are the task's reviews that sent it back to Claude, oldest
+	// first (EndReview): back in Review, Changes shows what changed since
+	// the last one.
+	Reviews []ReviewRound `json:"reviews,omitempty"`
 	// SessionID is Claude Code's session for this todo; later runs resume it.
 	SessionID string `json:"session_id,omitempty"`
 	// LastSessionID is the latest SessionID, kept when cleanup or a fresh
@@ -843,6 +853,37 @@ type Attachment struct {
 	Type string `json:"type"`
 	Size int64  `json:"size"`
 	Path string `json:"path"` // absolute path Claude reads it from
+}
+
+// ReviewRound is one review of a task that ended with the task going back
+// to Claude (a rework, a retry), so the next review can show only what
+// changed since (see Todo.Reviews).
+type ReviewRound struct {
+	// Commit is the head of the task's branch the user reviewed, and Base
+	// its merge base with the branch it lands on then (empty: not known,
+	// e.g. a hub's copy of a task on a runner, which keeps its own).
+	Commit string    `json:"commit,omitempty"`
+	Base   string    `json:"base,omitempty"`
+	At     time.Time `json:"at"`
+	// Comments are the line comments sent with the rework.
+	Comments []ReviewComment `json:"comments,omitempty"`
+}
+
+// EndReview is the review round a task leaving Review, from before to
+// after, ends: the commit reviewed and the comments sent with it (those
+// before had and after hasn't). ok is false when it isn't the end of a
+// review: the task doesn't go back to Claude.
+func EndReview(before, after Todo, now time.Time) (r ReviewRound, ok bool) {
+	if before.Status != StatusReview || (after.Status != StatusQueued && after.Status != StatusInProgress) {
+		return r, false
+	}
+	r = ReviewRound{Commit: before.ReviewHead, Base: before.ReviewBase, At: now}
+	for _, c := range before.Comments {
+		if !slices.ContainsFunc(after.Comments, func(x ReviewComment) bool { return x.ID == c.ID }) {
+			r.Comments = append(r.Comments, c)
+		}
+	}
+	return r, true
 }
 
 // ReviewComment is a reviewer's comment on a line, or a range of lines, of

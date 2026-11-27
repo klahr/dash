@@ -998,6 +998,10 @@ func (r *todoRun) commitAndCheck() (step, error) {
 	if derr == nil {
 		_ = r.update(func(x *model.Todo) { x.DiffFiles, x.DiffAdd, x.DiffDel, x.NoChanges = files, add, del, files == 0 })
 	}
+	// What the next review sees, for the one after it to start from.
+	if head, mb, err := e.Git.ReviewPoint(ctx, p.ID, wt.Path, p.Base()); err == nil {
+		_ = r.update(func(x *model.Todo) { x.ReviewHead, x.ReviewBase = head, mb })
+	}
 	if derr == nil && files == 0 {
 		// An answer, an investigation or "it already works": nothing to
 		// test or merge, but not a failure. Review it, where it is closed,

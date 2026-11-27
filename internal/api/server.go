@@ -336,6 +336,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/todos/{tid}/pause", s.pauseTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/resume", s.resumeTodo)
 	mux.HandleFunc("GET /api/todos/{tid}/diff", s.todoDiff)
+	mux.HandleFunc("GET /api/todos/{tid}/diff/since", s.todoDiffSince)
 	mux.HandleFunc("GET /api/todos/{tid}/image", s.todoImage)
 	mux.HandleFunc("GET /api/todos/{tid}/screenshots/{name}", s.todoScreenshot)
 	mux.HandleFunc("GET /api/todos/{tid}/log", s.todoLog)

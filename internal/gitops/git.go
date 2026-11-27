@@ -508,6 +508,43 @@ func (g *Git) Diff(ctx context.Context, projectID, repo, base, branch string) (s
 	return g.runPatch(ctx, true, projectID, repo, "diff", "--stat", "--patch", base+"..."+branch)
 }
 
+// ReviewPoint is where the branch checked out in dir is as it goes to
+// review: its head commit, and that commit's merge base with base (what
+// Diff compares it with).
+func (g *Git) ReviewPoint(ctx context.Context, projectID, dir, base string) (head, mergeBase string, err error) {
+	if head, err = g.Head(ctx, projectID, dir, "HEAD"); err != nil {
+		return "", "", err
+	}
+	mb, err := g.MergeBase(ctx, projectID, dir, base, head)
+	if err != nil {
+		return "", "", err
+	}
+	return strings.TrimSpace(head), strings.TrimSpace(mb), nil
+}
+
+// DiffSince returns the patch from commit since, a head of branch the user
+// reviewed (whose merge base with base was sinceBase), to branch now: what
+// changed since that review. When that patch would mix in other changes
+// (base was merged into branch, or branch was rebased or rewritten since)
+// it returns no patch and moved, a short sentence saying why.
+func (g *Git) DiffSince(ctx context.Context, projectID, repo, base, branch, since, sinceBase string) (patch, moved string, err error) {
+	if _, err := g.run(ctx, false, projectID, repo, "git", "cat-file", "-e", since+"^{commit}"); err != nil {
+		return "", "The commit you reviewed is gone from the branch.", nil
+	}
+	if _, err := g.run(ctx, false, projectID, repo, "git", "merge-base", "--is-ancestor", since, branch); err != nil {
+		return "", "The branch was rebased or rewritten since your last review.", nil
+	}
+	mb, err := g.MergeBase(ctx, projectID, repo, base, branch)
+	if err != nil {
+		return "", "", err
+	}
+	if sinceBase != "" && strings.TrimSpace(mb) != sinceBase {
+		return "", fmt.Sprintf("%s was merged into the branch since your last review.", base), nil
+	}
+	patch, err = g.runPatch(ctx, true, projectID, repo, "diff", "--stat", "--patch", since+".."+branch)
+	return patch, "", err
+}
+
 // Show returns the patch a single commit introduced, cut at MaxPatch.
 func (g *Git) Show(ctx context.Context, projectID, repo, sha string) (string, error) {
 	return g.runPatch(ctx, true, projectID, repo, "show", "--stat", "--patch", "--format=", sha)

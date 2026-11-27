@@ -240,9 +240,13 @@ func (sv *service) commitTodoFile(ctx context.Context, t model.Todo, e todoFileE
 	res := todoFileSaved{Path: name, Blob: blob, Commit: commit}
 	if files, add, del, err := g.DiffStat(ctx, p.ID, wt.Path, p.For(t).Base()); err == nil {
 		res.DiffFiles, res.DiffAdd, res.DiffDel = files, add, del
+		head, mb, perr := g.ReviewPoint(ctx, p.ID, wt.Path, p.For(t).Base())
 		_, _ = sv.data.UpdateTodo(t.ID, func(x *model.Todo) error {
 			x.DiffFiles, x.DiffAdd, x.DiffDel = files, add, del
 			x.NoChanges = x.NoChanges && files == 0 // edited: it has changes now
+			if perr == nil {
+				x.ReviewHead, x.ReviewBase = head, mb // the user's own edit isn't news at the next review
+			}
 			return nil
 		})
 	}

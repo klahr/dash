@@ -629,6 +629,9 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 	if cp.Status != model.StatusQueued {
 		cp.Rejoin = false // only a queued todo waits to rejoin its runner
 	}
+	if r, ok := model.EndReview(*t, cp, time.Now()); ok {
+		cp.Reviews = append(cp.Reviews, r)
+	}
 	cp.ID, cp.ProjectID, cp.UpdatedAt = t.ID, t.ProjectID, time.Now()
 	s.data.Todos[id] = &cp
 	if err := s.writeLocked(func(tx *sql.Tx) error { return putTodo(tx, &cp) }); err != nil {
@@ -1010,6 +1013,7 @@ func clone(t model.Todo) model.Todo {
 	cp := t
 	cp.Feedback = append([]string(nil), t.Feedback...)
 	cp.Comments = slices.Clone(t.Comments)
+	cp.Reviews = slices.Clone(t.Reviews)
 	cp.Tags = slices.Clone(t.Tags)
 	cp.Finding = t.Finding.Clone()
 	cp.DependsOn = append([]string(nil), t.DependsOn...)
