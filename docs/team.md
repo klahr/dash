@@ -70,6 +70,11 @@ can't:
 
 See [Claude runs on each user's own runner](several-computers.md#claude-runs-on-each-users-own-runner).
 
+A member whose tasks no runner can take sees a warning on the board, and when they add a task:
+"No runner can take your tasks", with the steps and **Add a runner**. Their queued tasks say why
+they wait. There is no warning when another member's shared runner can take them. Admins see who
+has a runner in **Organization → Members**.
+
 ## 4. Share the projects by labels
 
 Add each project with **+ Add project** on the hub, from GitHub or a remote URL. That makes it a

@@ -6,9 +6,6 @@ Most important first within each section.
 
 - [ ] Local only projects: always `git init` the new folder, never adopt an enclosing repository
       (a dotfiles `$HOME` makes `~/dash-projects/x` part of it). Fix `SeedRepo` and the delete check.
-- [ ] Tell a member who has no runner, on the board and on each waiting card, that their tasks
-      can't run, and what to do (add a runner, or ask for a shared one). Show admins who has a
-      runner in **Organization → Members**.
 - [ ] Planning **Start** by a planner: pick the developer who runs the task or owns the goal, so
       the work runs on a runner and the goal's plan can be accepted. Show the waiting reason on
       the card.

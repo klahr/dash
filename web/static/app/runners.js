@@ -48,9 +48,11 @@ export async function loadRunners() {
     // By name, so every list of them (a project's settings too) keeps one
     // order across refreshes.
     state.runners = [...(res.runners || [])].sort(byName);
+    runnerNeeds = res.needs || null;
     Object.assign(runnerInfo, { hub: res.hub || location.origin, version: res.version || "", canUpdate: !!res.can_update });
   } catch {
     state.runners = null; // this Dash has no runners (it is one, say)
+    runnerNeeds = null;
   }
   syncSettingsRunners(); // the open settings show which runners have the project's labels
   refreshLabelPickers(); // the labels they offer, too
@@ -87,48 +89,120 @@ const osChip = (r) => {
 };
 
 // The hub never runs Claude: tasks and scans of p run only on a runner with
-// the labels it runs on that does the viewer's work (their own, or a shared
-// one: tunnel.Runner.WorksFor). runnerNeeded says why their work would wait
-// now, or "" (also on a Dash without runners of its own, a runner, and for
-// another runner's project).
+// the labels it runs on that does the viewer's work (their own, or another
+// member's shared one: tunnel.Runner.WorksFor). The hub says, per project,
+// why the viewer's tasks would wait (GET /api/runners' needs,
+// tunnel.RunnerNeed): "labels" (no runner has p's labels), "runner" (none
+// of theirs and no shared one; they have no runner), "your_labels" (they
+// have runners, none with p's labels) or "online" (none of those is
+// online). runnerNeed is that kind for p, or "" (also on a Dash without
+// runners of its own, a runner, and for another runner's project).
 export const startRunner = "use Runners → Add a runner";
 export const noRunnerOfMine = "You have no runner for this project.";
-function runnerNeeded(p) {
+let runnerNeeds = null; // project id → kind, from the hub (null: not loaded)
+function runnerNeed(p) {
   if (!p || p.prefix || !Array.isArray(state.runners)) return "";
-  if (!state.runners.length) return `Its work needs a runner. To add one, ${startRunner}.`;
-  const linked = state.runners.filter((r) => servesProject(r, p));
-  if (!linked.length) return `${p.name} needs a runner: ${p.runs_on?.length ? `none has ${projectLabels(p).join(", ")}` : "it has no labels"}. Its work waits.`;
-  const usable = linked.filter(worksForMe);
-  if (!usable.length) return `${noRunnerOfMine} Your tasks wait. To add one, ${startRunner}, or ask an admin for a shared runner.`;
-  if (!usable.some((r) => r.online)) return "No runner of this project is online. Its work waits.";
+  // The labels as the project has them now (they may have changed since
+  // the runners were loaded); the rest as the hub says.
+  if (!state.runners.some((r) => servesProject(r, p))) return "labels";
+  const need = runnerNeeds?.[p.id] || "";
+  if (need && need !== "labels") return need;
+  if (runnerNeeds && !need) return "";
+  // The hub said "labels" (stale) or nothing: work it out from the list.
+  const usable = state.runners.filter((r) => servesProject(r, p) && worksForMe(r));
+  if (!usable.length) return state.runners.some((r) => r.mine && !r.claude_only) ? "your_labels" : "runner";
+  return usable.some((r) => r.online) ? "" : "online";
+}
+// runnerNeeded says why the viewer's work of p would wait now, or "".
+function runnerNeeded(p) {
+  const need = runnerNeed(p);
+  const labels = projectLabels(p).join(", ");
+  switch (need) {
+    case "labels":
+      if (!state.runners.length) return `Its work needs a runner. To add one, ${startRunner}.`;
+      return `${p.name} needs a runner: ${p.runs_on?.length ? `none has ${labels}` : "it has no labels"}. Its work waits.`;
+    case "runner":
+      return `${noRunnerOfMine} Your tasks wait. To add one, ${startRunner}, or ask an admin for a shared runner.`;
+    case "your_labels":
+      return `None of your runners has the labels ${labels}, and no shared runner does. Your tasks wait. Give one of yours those labels in Runners, or ask an admin for a shared runner.`;
+    case "online":
+      return "No runner that takes your tasks of this project is online. Your tasks wait until one is.";
+  }
   return "";
 }
+// mineToFix reports whether need is the viewer's to fix with a runner of
+// their own (rather than the project's labels, or a runner coming online).
+const mineToFix = (need) => need === "runner" || need === "your_labels";
 // worksForMe reports whether runner r takes the viewer's tasks: it is
-// theirs, or it takes other members' tasks.
-const worksForMe = (r) => !!(r.mine || r.takes_others);
-// renderRunnerStatus says in the status popover when the open project's
-// git, files and commands can't be reached (no runner with its labels, none
-// of the viewer's, or none online), with a way to change that.
+// theirs (not a planner's runner, which takes no tasks), or it takes other
+// members' tasks.
+const worksForMe = (r) => !!((r.mine && !r.claude_only) || r.takes_others);
+const openRunsOn = () => { openSettings(); $("#settings-runners-field")?.scrollIntoView({ block: "center" }); };
+// renderRunnerStatus says when the open project's tasks by the viewer can't
+// run: on the board, in a banner, when no runner can ever take them (with
+// what to do), and in the status popover, also when none is online.
 export function renderRunnerStatus() {
   const p = state.project;
-  const why = isHub() && p && !p.prefix && state.runners?.length ? runnerNeeded(p) : "";
-  if (!why) { setStatus("runner", null); return; }
+  const need = isHub() && p && !p.prefix && state.runners?.length ? runnerNeed(p) : "";
+  renderRunnerBanner(p, need);
+  if (!need) { setStatus("runner", null); return; }
+  const why = runnerNeeded(p);
   const row = { tone: "warn", label: "Runner" };
-  if (why.startsWith(noRunnerOfMine)) {
+  if (need === "runner") {
     setStatus("runner", { ...row, text: noRunnerOfMine, detail: h("p", { class: "hint" }, "Add one, or ask an admin for a shared runner. Your tasks wait until then."),
       action: { label: "Add a runner", run: attempt(() => openAddRunner()) } });
     return;
   }
-  setStatus("runner", { ...row, text: why, action: needsRunner(p)
-    ? { label: "Change its labels", run: () => { openSettings(); $("#settings-runners-field")?.scrollIntoView({ block: "center" }); } }
+  setStatus("runner", { ...row, text: why, action: need === "labels" && needsRunner(p)
+    ? { label: "Change its labels", run: openRunsOn }
     : { label: "Runners", run: attempt(() => openRunners()) } });
 }
 
-// showRunnerNeeded fills a .runner-note element for p, hidden when nothing is missing.
+// renderRunnerBanner warns above the lanes that no runner can run the
+// viewer's tasks of p (need: runnerNeed), and how to get one: Add a
+// runner, the steps, and the docs. Nothing while one can, or only isn't
+// online now.
+function renderRunnerBanner(p, need) {
+  const el = $("#runner-banner");
+  if (!el) return;
+  el.hidden = !need || need === "online";
+  if (el.hidden) { el.replaceChildren(); return; }
+  const labels = projectLabels(p).filter((l) => l.toLowerCase() !== "any");
+  const giveLabels = labels.length ? h("li", {}, "Give it the labels ", h("strong", {}, labels.join(", ")), " in ", h("strong", {}, "Runners"), ".") : null;
+  if (need === "labels") {
+    el.replaceChildren(
+      h("strong", {}, "No runner can run this project's tasks"),
+      h("span", {}, runnerNeeded(p)),
+      h("div", { class: "runner-banner-actions" },
+        ib({ class: "btn", onclick: openRunsOn }, "settings", "Change its labels"),
+        ib({ class: "btn", onclick: attempt(() => openRunners()) }, "computer", "Runners")));
+    return;
+  }
+  el.replaceChildren(
+    h("strong", {}, need === "runner" ? "No runner can take your tasks" : "None of your runners can take this project's tasks"),
+    h("span", {}, need === "runner"
+      ? `Your tasks in ${p.name} wait in Queued: the runners here take only their owners' tasks. Add a runner of your own, or ask an admin for a shared runner.`
+      : `Your tasks in ${p.name} wait in Queued: none of your runners has its labels, and no shared runner does.`),
+    need === "runner"
+      ? h("ol", { class: "steps" },
+        h("li", {}, "Choose ", h("strong", {}, "Add a runner"), "."),
+        h("li", {}, "Run the command it shows on your computer, where git and Claude Code are signed in."),
+        giveLabels)
+      : h("ol", { class: "steps" }, giveLabels || h("li", {}, "Give one of your runners this project's labels in ", h("strong", {}, "Runners"), ".")),
+    h("div", { class: "runner-banner-actions" },
+      need === "runner"
+        ? ib({ class: "btn primary", onclick: attempt(() => openAddRunner()) }, "plus", "Add a runner")
+        : ib({ class: "btn primary", onclick: attempt(() => openRunners()) }, "computer", "Runners"),
+      docsLink("team.md#3-give-each-developer-a-runner", "Setup steps")));
+}
+
+// showRunnerNeeded fills a .runner-note element for p (where tasks are
+// queued), hidden when nothing is missing; with Add a runner when the
+// viewer needs one.
 export function showRunnerNeeded(el, p) {
   const why = runnerNeeded(p);
   el.hidden = !why;
-  el.textContent = why;
+  el.replaceChildren(why, ...(mineToFix(runnerNeed(p)) ? [" ", h("button", { type: "button", class: "link inline", onclick: attempt(() => openAddRunner()) }, "Add a runner")] : []));
 }
 const runnerLimit = (r) => r.parallel || r.reported?.parallel || 1;
 // runnerBoost is how many more tasks than its limit runner r may run at once

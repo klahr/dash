@@ -635,9 +635,19 @@ of alice's has the labels Linux; laptop is bob's runner and only takes bob's tas
 has no runner at all, it says that first ("alice has no runner: Runners → Add a runner, or ask an
 admin for a shared one"), as labels on someone else's runner wouldn't help.
 
-When no runner of yours (and no shared runner) has a project's labels, the board says so above
-the lanes, with **Add a runner**. Admins see how many runners each member has in
-**Organization → Members**: "no runner" means that member's tasks wait.
+When no runner can take your tasks of a project, the board says so above the lanes, and **New
+task** says so too:
+
+- You have no runner, and no shared runner has the project's labels: the banner shows the steps
+  and **Add a runner**.
+- You have runners, but none has the project's labels: give one of them those labels in
+  **Runners**.
+- No runner has the project's labels at all: change them in
+  **Project settings → Agent & runners**.
+
+Another member's shared runner counts: when one has the labels, there is no warning. When the only
+runners that can take your tasks are offline, the status icon says so instead. Admins see how many
+runners each member has in **Organization → Members**: "no runner" means that member's tasks wait.
 
 #### Shared runners use an API key
 

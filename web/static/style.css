@@ -3298,6 +3298,11 @@ a.revert-tag { text-decoration: underline; }
 .sync-warn { display: grid; gap: 2px; margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid var(--running); border-radius: 0 var(--r-s) var(--r-s) 0; background: color-mix(in srgb, var(--running) 10%, transparent); overflow-wrap: anywhere; animation: chip-in .25s var(--ease); }
 .sync-warn strong { color: var(--running); }
 .paused-warn .btn { justify-self: start; margin-top: 6px; }
+/* No runner can take the viewer's tasks: the steps to add one, then the buttons. */
+#runner-banner .steps { margin: 4px 0 0; padding-left: 1.4em; }
+#runner-banner .steps > li { margin-bottom: 2px; }
+.runner-banner-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 6px; }
+.runner-banner-actions .btn { margin-top: 0; }
 
 /* ---- spending (Project settings → Spending, app/spending.js) ---- */
 .spend-caps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }

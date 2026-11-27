@@ -136,6 +136,24 @@ func (s *Server) view(c Caller, r tunnel.Runner) runnerView {
 
 var errNoRunner = errors.New("no such runner in your organization")
 
+// runnerNeeds is, for each project of c's org whose tasks by c would wait
+// for a runner, why (tunnel.RunnerNeed: no runner has its labels, none of
+// c's and no shared one has them, or none of those is online). Projects a
+// runner can run now aren't in it. The board warns c with it. A planner,
+// whose tasks a developer runs, and a caller who is no user get none.
+func (s *Server) runnerNeeds(c Caller, runners []tunnel.Runner) map[string]tunnel.Need {
+	out := map[string]tunnel.Need{}
+	if c.User == 0 || c.Planner {
+		return out
+	}
+	for _, p := range s.as(c).data.ListProjects() {
+		if need := tunnel.RunnerNeed(runners, p, []int64{c.User}); need != tunnel.NeedNone {
+			out[p.ID] = need
+		}
+	}
+	return out
+}
+
 func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 	mux.HandleFunc("GET /api/runners", func(w http.ResponseWriter, r *http.Request) {
 		c, ok := s.callerOr(w, r)
@@ -151,8 +169,10 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 		// hub and version: for the command that updates an outdated runner.
 		hubURL, _ := s.hubURL(r)
 		// can_update: runners can update themselves to the hub's release (not
-		// for a hub built from source).
-		writeJSON(w, http.StatusOK, map[string]any{"runners": out, "hub": hubURL, "version": buildinfo.Version, "can_update": rh.Release != ""})
+		// for a hub built from source). needs: why the caller's tasks of
+		// each project would wait for a runner (runnerNeeds).
+		writeJSON(w, http.StatusOK, map[string]any{"runners": out, "hub": hubURL, "version": buildinfo.Version, "can_update": rh.Release != "",
+			"needs": s.runnerNeeds(c, rh.List())})
 	})
 	// A code registers a runner as the caller's, in their active org; only
 	// a signed-in browser makes one (not an API token).

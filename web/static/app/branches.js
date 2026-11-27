@@ -272,6 +272,7 @@ function renderBoardNow() {
     $("#board-head").hidden = true;
     $("#board-filters").hidden = true;
     $("#combine-bar").hidden = true;
+    $("#runner-banner").hidden = true;
     // Until the projects and runners are in, don't flash a welcome, a board
     // or "create your first project" that one of the others then replaces.
     empty.hidden = !state.projectsLoaded || state.runners === undefined;
