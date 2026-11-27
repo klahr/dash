@@ -102,7 +102,6 @@ func TestRunnerGuardsTheHubsRequests(t *testing.T) {
 	}
 
 	// Terminals started on the runner itself stay there.
-	needTerminals(t)
 	pty, err := s.Procs.StartPTY(p.ID, p.Path, "sleep 30", 80, 24)
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +154,6 @@ func TestRunnerOpensTerminalsForItsOwnerOnly(t *testing.T) {
 		t.Fatalf("adopting /etc with trailing data: %d %s", w.Code, w.Body)
 	}
 	// The owner gets a terminal, where the runner can open one.
-	needTerminals(t)
 	w := as("42", "POST", procs, `{"kind":"pty","command":"sleep 30","dir":"/etc","path":"/etc"}`)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("terminal for the owner: %d %s", w.Code, w.Body)

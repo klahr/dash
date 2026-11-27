@@ -17,8 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/creack/pty"
-
 	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
@@ -30,7 +28,7 @@ type Publisher interface{ Publish(model.Event) }
 var ErrNotFound = errors.New("process not found")
 
 // ErrNoTerminals is returned for a terminal on a runner whose system Dash
-// can't open pseudo-terminals on (Windows).
+// can't open pseudo-terminals on.
 var ErrNoTerminals = errors.New("terminals aren't supported on this runner's operating system yet")
 
 const scrollbackSize = 256 * 1024
@@ -38,9 +36,9 @@ const scrollbackSize = 256 * 1024
 type proc struct {
 	mu   sync.Mutex
 	info model.Process
-	cmd  *exec.Cmd
-	tty  *os.File // nil unless Kind == ProcPTY
-	buf  []byte   // scrollback, capped at scrollbackSize
+	cmd  *exec.Cmd // nil when Kind == ProcPTY
+	tty  terminal  // nil unless Kind == ProcPTY
+	buf  []byte    // scrollback, capped at scrollbackSize
 	subs map[chan []byte]struct{}
 }
 
@@ -262,15 +260,24 @@ func (m *Manager) startPiped(projectID string, kind model.ProcessKind, command, 
 		return model.Process{}, err
 	}
 	w.Close() // child holds its own copy
-	p := m.register(projectID, kind, command, url, cmd, nil, init)
+	p := m.register(projectID, kind, command, url, cmd.Dir, cmd.Process.Pid, cmd, nil, init)
 	go m.pump(p, r)
 	go m.wait(p, r)
 	return p.snapshot(), nil
 }
 
-// StartPTY runs command (default: the user's shell) attached to a pseudo-terminal.
-// pty.Start uses Setsid, which already makes the child a process-group leader,
-// so Setpgid must not be set as well (the kernel rejects the combination).
+// terminal is a process attached to a pseudo-terminal (pty_unix.go,
+// pty_windows.go): reading gives its output, writing types into it. Close
+// ends the output once the process has exited.
+type terminal interface {
+	io.ReadWriteCloser
+	Resize(cols, rows uint16) error
+	Pid() int
+	Wait() error // as exec.Cmd.Wait
+}
+
+// StartPTY runs command (default: the user's shell, else bash) attached to a
+// pseudo-terminal.
 func (m *Manager) StartPTY(projectID, dir, command string, cols, rows uint16, o ...Origin) (model.Process, error) {
 	if command == "" {
 		command = os.Getenv("SHELL")
@@ -299,24 +306,21 @@ func (m *Manager) startPTY(projectID, dir, command, script string, env []string,
 	if cols == 0 || rows == 0 {
 		cols, rows = 120, 32
 	}
-	tty, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})
-	if errors.Is(err, pty.ErrUnsupported) {
-		return model.Process{}, ErrNoTerminals
-	}
+	tty, err := startTerminal(cmd, cols, rows)
 	if err != nil {
 		return model.Process{}, err
 	}
-	p := m.register(projectID, model.ProcPTY, command, "", cmd, tty, init)
+	p := m.register(projectID, model.ProcPTY, command, "", dir, tty.Pid(), nil, tty, init)
 	go m.pump(p, tty)
 	go m.wait(p, tty)
 	return p.snapshot(), nil
 }
 
-func (m *Manager) register(projectID string, kind model.ProcessKind, command, url string, cmd *exec.Cmd, tty *os.File, init func(*model.Process)) *proc {
+func (m *Manager) register(projectID string, kind model.ProcessKind, command, url, dir string, pid int, cmd *exec.Cmd, tty terminal, init func(*model.Process)) *proc {
 	p := &proc{
 		info: model.Process{
-			ID: store.NewID(), ProjectID: projectID, Kind: kind, Command: command, Dir: cmd.Dir,
-			PID: cmd.Process.Pid, URL: url, Running: true, StartedAt: time.Now(),
+			ID: store.NewID(), ProjectID: projectID, Kind: kind, Command: command, Dir: dir,
+			PID: pid, URL: url, Running: true, StartedAt: time.Now(),
 		},
 		cmd: cmd, tty: tty, subs: map[chan []byte]struct{}{},
 	}
@@ -366,7 +370,12 @@ func appendScrollback(buf, chunk []byte) []byte {
 }
 
 func (m *Manager) wait(p *proc, r io.Closer) {
-	err := p.cmd.Wait()
+	var err error
+	if p.tty != nil {
+		err = p.tty.Wait()
+	} else {
+		err = p.cmd.Wait()
+	}
 	code := 0
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -500,7 +509,7 @@ func (s *Session) Resize(cols, rows uint16) error {
 	if s.p.tty == nil {
 		return nil
 	}
-	return pty.Setsize(s.p.tty, &pty.Winsize{Cols: cols, Rows: rows})
+	return s.p.tty.Resize(cols, rows)
 }
 
 // Tail returns up to the last n bytes of a process's output.

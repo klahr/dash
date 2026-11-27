@@ -3,7 +3,6 @@ package preview
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,15 +13,6 @@ import (
 
 func terminalProject(command string) model.Project {
 	return model.Project{ID: "p1", PreviewKind: model.PreviewTerminal, PreviewCommand: command}
-}
-
-// needTerminals skips the test where the runner can't open terminals
-// (runner.ErrNoTerminals: no pty on Windows yet).
-func needTerminals(t *testing.T) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("terminals aren't supported on Windows yet")
-	}
 }
 
 // terminalWait is how long readUntil waits. It is long on purpose: macOS
@@ -66,7 +56,6 @@ func waitGone(t *testing.T, m *Manager, id, what string) {
 }
 
 func TestTerminalPreview(t *testing.T) {
-	needTerminals(t)
 	t.Parallel()
 
 	m, procs, td := setup(t, "preview.dash.test")
@@ -150,7 +139,6 @@ func TestTerminalPreview(t *testing.T) {
 }
 
 func TestTerminalPreviewIdle(t *testing.T) {
-	needTerminals(t)
 	t.Parallel()
 
 	m, _, td := setup(t, "")
@@ -169,7 +157,6 @@ func TestTerminalPreviewIdle(t *testing.T) {
 }
 
 func TestTerminalPreviewCrashKeepsLog(t *testing.T) {
-	needTerminals(t)
 	t.Parallel()
 
 	m, _, td := setup(t, "")

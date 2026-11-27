@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -173,7 +174,6 @@ var sessionSeq atomic.Int64
 // the hub, with the scrollback again on reattaching.
 func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 	parallel(t)
-	needTerminals(t)
 
 	hub, _, _ := boardServer(t)
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
@@ -329,9 +329,14 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 		}
 	}
 	send(map[string]any{"type": "resize", "cols": 101, "rows": 33})
-	send(map[string]any{"type": "input", "data": "pwd; stty size; echo hub-$((40+2))\r"})
+	// Git Bash's pwd says /tmp/...; pwd -W says C:/Users/.../Temp/...
+	pwd, wantDir := "pwd", checkout
+	if runtime.GOOS == "windows" {
+		pwd, wantDir = "pwd -W", strings.ToLower(filepath.ToSlash(checkout))
+	}
+	send(map[string]any{"type": "input", "data": pwd + "; stty size; echo hub-$((40+2))\r"})
 	out := read(ws, "hub-42\r\n")
-	if !strings.Contains(out, checkout) || !strings.Contains(out, "33 101") {
+	if !strings.Contains(strings.ToLower(out), strings.ToLower(wantDir)) || !strings.Contains(out, "33 101") {
 		t.Errorf("terminal output through the hub:\n%s", out)
 	}
 	ws.Close()

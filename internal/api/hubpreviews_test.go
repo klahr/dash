@@ -417,7 +417,6 @@ func TestHubReworkSendsAttachmentsToTheRunner(t *testing.T) {
 // owner, and its socket goes through the hub by the hub's task id.
 func TestHubTerminalPreviewOnTheTasksRunner(t *testing.T) {
 	parallel(t)
-	needTerminals(t)
 
 	hub, _, _ := boardServer(t)
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}

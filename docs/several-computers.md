@@ -336,9 +336,9 @@ dash runner update
 Stopping a task's processes stops their whole process tree
 (`taskkill /T`); there are no signals, so a stopped server gets no chance to shut down cleanly.
 
-Not yet on Windows: **terminals** (and terminal previews) need a pseudo-terminal Dash doesn't
-open on Windows yet; starting one says so. Everything else (tasks, chats, scans, servers and
-previews over HTTP, tests and deploys) works as on the other systems.
+**Terminals** (and terminal previews) run Git Bash in a Windows pseudo console. They need
+Windows 10 version 1809 or later, or Windows Server 2019 or later. In Git Bash, `pwd` shows
+`/c/Users/...` paths; `pwd -W` shows `C:/Users/...`.
 
 ### Manually
 

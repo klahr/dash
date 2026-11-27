@@ -60,15 +60,6 @@ func symlink(t *testing.T, target, link string) {
 	}
 }
 
-// needTerminals skips the test where the runner can't open terminals
-// (runner.ErrNoTerminals: no pty on Windows yet).
-func needTerminals(t *testing.T) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("terminals aren't supported on Windows yet")
-	}
-}
-
 // A clone of the same remote already in <projects>/<org>/<repo> is adopted, not
 // cloned again, and the user's uncommitted work in it stays as it was.
 func TestHubLinkAdoptsAnExistingClone(t *testing.T) {

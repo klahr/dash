@@ -12,29 +12,6 @@ import (
 	"github.com/klahr/dash/internal/model"
 )
 
-type nopPub struct{}
-
-func (nopPub) Publish(model.Event) {}
-
-func readUntil(t *testing.T, s *Session, want string) string {
-	t.Helper()
-	var buf bytes.Buffer
-	buf.Write(s.Scrollback)
-	deadline := time.After(5 * time.Second)
-	for !strings.Contains(buf.String(), want) {
-		select {
-		case b, ok := <-s.Output:
-			if !ok {
-				t.Fatalf("output closed before %q; got %q", want, buf.String())
-			}
-			buf.Write(b)
-		case <-deadline:
-			t.Fatalf("timeout waiting for %q; got %q", want, buf.String())
-		}
-	}
-	return buf.String()
-}
-
 func TestPTYRoundTripAndStop(t *testing.T) {
 	t.Parallel()
 

@@ -81,7 +81,6 @@ func reviewTodo(t *testing.T, st *store.Store, pid string) model.Todo {
 // the UI attaches to over a WebSocket, and whose last lines can be sent back.
 func TestTerminalPreviewWithoutRunCommand(t *testing.T) {
 	parallel(t)
-	needTerminals(t)
 
 	s, _, p := boardServer(t)
 	s.Git = gitops.New(nil)
@@ -251,7 +250,6 @@ func TestRunnerTerminalPreviewThroughTheHub(t *testing.T) {
 	}
 	rs.HubUser = creds.UserID
 
-	needTerminals(t)
 	w := do(t, h, "POST", start, "")
 	var pv model.Preview
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &pv) != nil {
