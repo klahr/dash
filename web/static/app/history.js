@@ -94,11 +94,10 @@ export const refreshGraph = debounce(() => state.view === "history" && loadGraph
 // commits came in; without one it only redraws.
 let refreshing = false;
 export async function refreshHistory() {
-  const p = state.project, btn = $("#graph-refresh");
+  const p = state.project, btns = $$("#graph-refresh, #cd-refresh");
   if (!p || refreshing) return;
   refreshing = true;
-  btn.disabled = true;
-  btn.setAttribute("aria-busy", "true");
+  for (const b of btns) { b.disabled = true; b.setAttribute("aria-busy", "true"); }
   const before = new Set(hist.commits.map((c) => c.hash));
   try {
     const st = p.remote_url ? await loadRemote(true, true, { wait: true }) : null;
@@ -112,11 +111,11 @@ export async function refreshHistory() {
     fail(e);
   } finally {
     refreshing = false;
-    btn.disabled = false;
-    btn.removeAttribute("aria-busy");
+    for (const b of btns) { b.disabled = false; b.removeAttribute("aria-busy"); }
   }
 }
-$("#graph-refresh").addEventListener("click", () => refreshHistory());
+// The commit pane has its own Refresh: on desktop it lies over the page's.
+for (const id of ["#graph-refresh", "#cd-refresh"]) $(id).addEventListener("click", () => refreshHistory());
 
 const LANE_W = 14;
 
@@ -137,7 +136,7 @@ function graphLines(lines, width, stretch) {
 export function renderGraph(res) {
   const commits = res?.commits || [];
   $("#graph-empty").hidden = commits.length > 0;
-  $("#graph-refresh").hidden = !state.project?.remote_url; // without a remote, r still redraws
+  for (const b of $$("#graph-refresh, #cd-refresh")) b.hidden = !state.project?.remote_url; // without a remote, r still redraws
   $("#graph-empty-text").textContent = state.project ? `${baseBranch(state.project) || "main"} has no commits yet.` : "Select a project to see its main branch.";
   // Commits origin's tip can't reach haven't been pushed yet: their dots are
   // hollow. Those the local branch's tip can't reach are only on origin

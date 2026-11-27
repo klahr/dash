@@ -2806,6 +2806,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   :is(.commit-detail, .goal-detail, .deploy-detail, .card-detail) .detail-titles h2 { flex-basis: 100%; }
   :is(.commit-detail, .goal-detail, .deploy-detail, .card-detail) .detail-meta { margin-top: 0; }
   .commit-detail .commit-actions { margin: 0 0 0 auto; }
+  /* Refresh beside Close (the head runs right to left here), the titles after them. */
+  .commit-detail .detail-titles { order: 1; }
   :is(.goal-detail, .deploy-detail) .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
   :is(.goal-detail, .deploy-detail) .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
   /* Below the head: message and facts across, then the file list beside the diff, each scrolling on its own. */
