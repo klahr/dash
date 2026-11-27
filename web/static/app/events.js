@@ -131,7 +131,7 @@ export async function refreshMachines() {
   for (const m of state.machines) if (m.ok && !sockets.has(m.name)) connectEvents(m);
   await loadProjects();
   loadProcs().catch(() => {}); // a runner back online lists its processes again
-  if ($("#runners-sheet").open) await renderRunners();
+  if ($("#runners-sheet").open) await renderRunners({ background: true });
   else await loadRunners();
 }
 
@@ -184,7 +184,7 @@ function onEvent(ev, m = { name: "" }) {
       // runner's Projects screen shows on both sides.
       loadProjects().then(async () => {
         syncSettingsRunners();
-        if ($("#runners-sheet").open) { await renderRunners(); await refreshRunnerLinks(); }
+        if ($("#runners-sheet").open) { await renderRunners({ background: true }); await refreshRunnerLinks(); }
       }).catch(fail);
       break;
     case "todo.updated":
@@ -342,7 +342,7 @@ function trackActive(ev, m) {
 
 // A task started or stopped running: the runners' running counts changed.
 // Reloaded once a burst of changes settles.
-const reloadRunnerCountsSoon = debounce(() => ($("#runners-sheet").open ? renderRunners() : loadRunners()).catch(() => {}), 400);
+const reloadRunnerCountsSoon = debounce(() => ($("#runners-sheet").open ? renderRunners({ background: true }) : loadRunners()).catch(() => {}), 400);
 function reloadRunnerCounts() {
   if (Array.isArray(state.runners)) reloadRunnerCountsSoon();
 }

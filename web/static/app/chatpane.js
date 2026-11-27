@@ -212,8 +212,16 @@ async function loadGoalChat(gc) {
   const p = projectByKey(gc.tab.pk);
   if (!p) return;
   gc.loaded = true;
-  const saved = await api("GET", `/api/goals/${gc.tab.id}/chat`, null, p.prefix || "");
-  if (!gc.chat.busy) gc.chat.reset(saved);
+  // Only the latest load's answer is shown; a failed one is tried again next time.
+  const seq = gc.loadSeq = (gc.loadSeq || 0) + 1;
+  let saved;
+  try {
+    saved = await api("GET", `/api/goals/${gc.tab.id}/chat`, null, p.prefix || "");
+  } catch (e) {
+    if (gc.loadSeq === seq) gc.loaded = false;
+    throw e;
+  }
+  if (gc.loadSeq === seq && !gc.chat.busy) gc.chat.reset(saved);
 }
 // setGoalSlot puts goal g (of project p) in the goal tab, in place of the
 // goal there; a tab shown on the old goal shows the new one.

@@ -113,7 +113,11 @@ export async function openFile(path) {
   if (!s || s.path === path) return;
   if (fileDirty(s) && !(await ask({ title: `Discard your changes to ${s.path}?`, ok: "Discard", danger: true }))) return;
   const isLocal = !!s.local?.has(path);
+  // Only the last file asked for opens: a slow answer for one clicked before
+  // doesn't replace it (and what is typed in it).
+  const seq = s.openSeq = (s.openSeq || 0) + 1;
   const res = await api("GET", `/api/projects/${p.id}/file?path=${encodeURIComponent(path)}${isLocal ? "&local=1" : ""}`, null, p.prefix || "");
+  if (s.openSeq !== seq) return;
   const text = res.content ?? "";
   Object.assign(s, { path, isLocal, isNew: false, blob: res.blob, original: text, text, size: res.size, saved: false,
     note: res.binary ? "binary" : res.too_large ? "large" : "" });
@@ -129,14 +133,24 @@ export async function newFile(path, template) {
   if (!s) return;
   if (s.list?.includes(path)) return openFile(path);
   if (fileDirty(s) && !(await ask({ title: `Discard your changes to ${s.path}?`, ok: "Discard", danger: true }))) return;
+  s.openSeq = (s.openSeq || 0) + 1; // a file still loading doesn't replace it
   Object.assign(s, { path, isLocal: false, isNew: true, blob: "", original: "", text: template, size: 0, saved: false, note: "" });
   renderFile();
   renderFileTree();
 }
 
+// saveFile saves the open file; a save already on its way (a second Ctrl+S)
+// is waited for, not sent again: the same old blob would be refused as
+// changed on disk, or a second task made.
 async function saveFile() {
-  const s = fileSession(), p = state.project;
-  if (!fileDirty(s)) return;
+  const s = fileSession();
+  if (!fileDirty(s) || s.saving) return;
+  s.saving = true;
+  try { await saveFileNow(s); } finally { s.saving = false; }
+}
+
+async function saveFileNow(s) {
+  const p = state.project;
   const { path, blob, text } = s;
   if (s.isLocal) {
     const res = await api("PUT", `/api/projects/${p.id}/file`, { path, blob, content: text }, p.prefix || "");

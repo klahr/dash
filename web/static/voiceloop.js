@@ -86,7 +86,7 @@ export function readBack(p) {
 //   { do: "say", text }          speak text
 //   { do: "stopSpeaking" }       cut speech off
 //   { do: "run", id }            run the app's command id (voice.js)
-//   { do: "act", action }        carry out a confirmed action: { kind: "task" | "message", text, to? }
+//   { do: "act", action }        carry out a confirmed action: { kind: "task" | "message", text, to? } or { kind: "command", id, text, ref? }
 //                                or { kind: "command", id }
 //   { do: "readAll" }            read the last thing said in short in full
 //   { do: "note", text }         show text (not said): what was heard and ignored
@@ -235,7 +235,8 @@ export function step(m, ev, ctx = {}) {
       if (ev.cmd && CONFIRMED.has(ev.cmd)) {
         const d = ctx.describe?.(ev.cmd) || { error: "That can't run here." };
         if (d.error) { say(d.error); return { m: n, out }; }
-        n.pending = { kind: "command", id: ev.cmd, text: d.text };
+        // ref names what was read back (the permission request): "yes" acts on it, not on whatever is first by then.
+        n.pending = { kind: "command", id: ev.cmd, text: d.text, ...(d.ref != null ? { ref: d.ref } : {}) };
         to("confirming");
         say(readBack(n.pending));
         return { m: n, out };

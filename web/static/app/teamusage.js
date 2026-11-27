@@ -42,12 +42,15 @@ function table(u, label, keyOf, nameOf) {
         ...u.periods.map((p) => cell(row.cells[p])), cell(row.total))))));
 }
 
+let loads = 0; // loadUsage's count: only the latest answer is shown (Month, then Week: Week's)
 async function loadUsage() {
   const box = $("#org-usage");
   if (box.hidden) return;
+  const seq = ++loads;
   $$("#org-usage .segmented button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.period === period)));
   $("#org-usage-csv").href = `/api/usage/team?${query({ format: "csv" })}`;
   const u = await api("GET", `/api/usage/team?${query()}`, null, "");
+  if (seq !== loads) return;
   const body = $("#org-usage-body");
   if (!u.rows.length) {
     fill(body, h("p", { class: "hint" }, `No Claude runs from ${u.from} to ${u.to}.`));

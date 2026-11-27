@@ -175,7 +175,7 @@ async function act(a) {
     } else if (a.kind === "message") {
       speak(sendMessage(a.text) === "queued" ? "Queued." : "Sent.");
     } else {
-      const r = await runVoiceCommand(a.id);
+      const r = await runVoiceCommand(a.id, a.ref);
       speak(r.ok ? r.text || "Done." : r.text);
     }
   } catch (e) {

@@ -231,6 +231,8 @@ $("#palette-input").addEventListener("keydown", (e) => {
 // the dialog itself, outside its box. Both press and release must be outside,
 // so dragging a text selection out of a field doesn't close the sheet.
 // close("cancel") like a Cancel button: sheets save only on their own values.
+// It fires a cancelable "cancel" first, as Esc does, so a sheet that guards
+// unsaved changes (diffedit.js, goals.js, scans.js) can ask before closing.
 const outsideDialog = (d, e) => {
   if (e.target !== d || !d.open) return false;
   const r = d.getBoundingClientRect();
@@ -241,7 +243,7 @@ document.addEventListener("pointerdown", (e) => { backdropDown = e.target instan
 document.addEventListener("click", (e) => {
   const d = backdropDown;
   backdropDown = null;
-  if (d && outsideDialog(d, e)) d.close("cancel");
+  if (d && outsideDialog(d, e) && d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel");
 });
 $("#palette-open").addEventListener("click", () => openPalette());
 // Ctrl-k (⌘K on a Mac) works everywhere but the terminal, even while typing.

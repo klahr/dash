@@ -33,9 +33,11 @@ export async function loadGraph() {
   const live = envs ? api("GET", `/api/projects/${p.id}/deploys/live`).catch(() => null) : null;
   const deploys = envs ? loadDeploys().catch(() => {}) : null;
   const res = await api("GET", `/api/projects/${p.id}/graph`);
-  hist.live = liveByCommit(await live);
+  const byCommit = liveByCommit(await live);
   await deploys;
-  if (projectKey(state.project) === projectKey(p)) renderGraph(res);
+  if (projectKey(state.project) !== projectKey(p)) return; // another project's markers stay
+  hist.live = byCommit;
+  renderGraph(res);
 }
 
 // liveByCommit maps each commit an environment runs to those environments.

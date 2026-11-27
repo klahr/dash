@@ -73,10 +73,17 @@ export function commandOf(result) {
 
 // runVoiceCommand runs command id for voice mode: { ok, text }, text what it
 // did (a command that changes something) or why it couldn't.
-export async function runVoiceCommand(id) {
+// ref is what describeCommand read back (approve: the permission request's
+// id): the command acts on that one, or says it no longer waits.
+export async function runVoiceCommand(id, ref) {
   const cmd = COMMANDS.find((c) => c.id === id);
   try {
-    const done = await cmd.run();
+    let done;
+    if (id === "approve" && ref != null) {
+      const p = state.perms.find((x) => x.id === ref);
+      if (!p) return { ok: false, text: "That permission request no longer waits. Nothing was approved." };
+      done = (await permKey("y", p)) === true ? undefined : null;
+    } else done = await cmd.run();
     return { ok: true, text: cmd.changes && done !== null ? (done || cmd.does) : "" };
   } catch (e) {
     return { ok: false, text: e.message || String(e) };
@@ -90,7 +97,7 @@ export function describeCommand(id) {
     const p = pendingPerm();
     if (!p) return { error: "No permission request waiting." };
     if (isQuestion(p)) return { error: "Claude asked a question. Answer it on the screen." };
-    return { text: `Approve: Claude wants to ${speakable(describePerm(p).title).replace(/[.\s]+$/, "")}` };
+    return { text: `Approve: Claude wants to ${speakable(describePerm(p).title).replace(/[.\s]+$/, "")}`, ref: p.id };
   }
   if (id === "queue") {
     const t = state.detail ? state.todos.get(state.detail) : keys.active && state.view === "board" ? cursorTodo() : null;

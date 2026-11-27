@@ -60,7 +60,9 @@ const pl = {
   projects: [],
   people: [], // the org's members a card may be assigned to
   boards: [], // the org's boards, in their order, with how many cards each has
+  redrawing: false, // renderCard is replacing the card's body
   loads: 0, // loadPlanning's count: only the latest one's answer is shown
+  burst: { cards: new Set(), deleted: new Set(), all: false }, // what the events waiting for reloadPlanning named
   board: store.get("dash.planning.board", ""), // the board shown ("": the default one)
   filter: store.get("dash.planning.project", ""),
   // The board's other filters: only the cards with all of tags, with
@@ -281,13 +283,21 @@ export async function loadPlanning() {
 export function onPlanningEvent(ev) {
   if (!pl.root) return;
   const cards = ev.data?.cards || (ev.data?.card ? [ev.data.card] : []);
-  reloadPlanning(cards, ev);
+  // Every event of the burst counts, not just the last: the cards it names
+  // (none: any card), and the cards deleted.
+  const b = pl.burst;
+  if (!cards.length) b.all = true;
+  for (const id of cards) b.cards.add(id);
+  if (ev.data?.deleted && ev.data.card) b.deleted.add(ev.data.card);
+  reloadPlanning();
 }
-const reloadPlanning = debounce((cards, ev) => {
+const reloadPlanning = debounce(() => {
+  const b = pl.burst;
+  pl.burst = { cards: new Set(), deleted: new Set(), all: false };
   if (pl.hooks.visible && !pl.hooks.visible() && !pl.open) { pl.loaded = false; return; }
   loadPlanning().catch(() => {});
-  if (pl.open && (cards.includes(pl.open) || !cards.length)) {
-    if (ev.data?.deleted && ev.data.card === pl.open) { closeCard(); return; }
+  if (pl.open && (b.all || b.cards.has(pl.open))) {
+    if (b.deleted.has(pl.open)) { closeCard(); return; }
     loadCard(pl.open).catch(() => {});
   }
 }, 250);
@@ -1281,10 +1291,10 @@ async function attachFiles(id, files) {
   if (pl.open === id) renderCard();
   for (const f of files) {
     try { applyCard(await postFile(cardAPI(id, "/files"), f)); } catch (e) { fail(e); }
-    pl.uploading[id]--;
+    // Another batch for the card may still be on its way: it keeps the count.
+    if (!--pl.uploading[id]) delete pl.uploading[id];
     if (pl.open === id) renderCard();
   }
-  delete pl.uploading[id];
 }
 
 // wireFileDrop lets files be dropped on el, for the card cardOf(event) names.
@@ -1399,7 +1409,7 @@ function tagsField(c) {
     if (fresh.length) set([...tags, ...fresh]).then(() => $("#card-detail .pl-tag-input")?.focus());
   };
   const input = h("input", { class: "pl-tag-input", list: "pl-tag-options", maxlength: 40, autocomplete: "off", "aria-label": "Add a tag",
-    placeholder: "Add…",
+    placeholder: "Add…", "data-keep": "tag",
     onkeydown: (e) => {
       if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(e.target); }
       else if (e.key === "Backspace" && !e.target.value && tags.length) set(tags.slice(0, -1));
@@ -1624,9 +1634,49 @@ function renderCard() {
   const body = $("#pd-body");
   if (pl.error) { fill(body, h("p", { class: "error-note" }, pl.error)); return; }
   const keep = body.scrollTop;
-  fill(body, descSection(c), propsEl(c), workSection(c), depsSection(c), filesSection(c), addRow(c),
-    commentsSection(c), dangerEl(c));
+  const typed = typedFields(body, c.id);
+  pl.redrawing = true;
+  try {
+    fill(body, descSection(c), propsEl(c), workSection(c), depsSection(c), filesSection(c), addRow(c),
+      commentsSection(c), dangerEl(c));
+  } finally { pl.redrawing = false; }
+  body.dataset.card = c.id;
+  retype(body, typed);
   body.scrollTop = keep;
+}
+
+// typedFields is what is being typed in the card's small fields (data-keep:
+// the comment, Target, the tag box) before body is drawn again for card id:
+// each one's text, when it isn't the text drawn (data-was), and its focus
+// and selection. retype puts it back in the new fields, so a redraw (a
+// planning event, linked work changing) doesn't take it.
+function typedFields(body, id) {
+  if (body.dataset.card !== id) return [];
+  return [...body.querySelectorAll("[data-keep]")].map((el) => ({
+    key: el.dataset.keep, value: el.value, changed: el.value !== (el.dataset.was || ""),
+    focused: document.activeElement === el, start: el.selectionStart, end: el.selectionEnd, dir: el.selectionDirection,
+  })).filter((x) => x.changed || x.focused);
+}
+function retype(body, typed) {
+  for (const x of typed) {
+    const el = body.querySelector(`[data-keep="${x.key}"]`);
+    if (!el) continue;
+    if (x.changed) el.value = x.value;
+    if (x.focused) {
+      el.focus({ preventScroll: true });
+      if (x.changed) try { el.setSelectionRange(x.start, x.end, x.dir); } catch { /* not a text field */ }
+    }
+  }
+}
+
+// saveTarget saves the Target field when it differs from what was drawn or
+// last saved: on change, and on leaving it (a value put back by retype
+// isn't a change to the browser). The blur of a field a redraw takes out
+// doesn't count.
+function saveTarget(el) {
+  if (pl.redrawing || el.value === (el.dataset.was || "")) return;
+  el.dataset.was = el.value;
+  patchCard({ target: el.value })().catch(fail);
 }
 
 // propsEl is the card's properties, compact: board, priority, target,
@@ -1636,8 +1686,8 @@ function propsEl(c) {
   return h("div", { class: "pl-props" },
     pl.boards.length > 1 ? prop("Board", sel(pl.boards.map((b) => [b.id, b.name]), c.board_id, (e) => moveToBoard(c, e.target.value).catch(fail))) : null,
     prop("Priority", sel([["", "None"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]], c.priority || "", (e) => patchCard({ priority: e.target.value })().catch(fail))),
-    prop("Target", h("input", { value: c.target || "", maxlength: 60, autocomplete: "off",
-      onchange: (e) => patchCard({ target: e.target.value })().catch(fail) })),
+    prop("Target", h("input", { value: c.target || "", maxlength: 60, autocomplete: "off", "data-keep": "target", "data-was": c.target || "",
+      onchange: (e) => saveTarget(e.target), onblur: (e) => saveTarget(e.target) })),
     prop("Project", sel([["", "None"], ...pl.projects.map((p) => [p.id, p.name])], c.project_id || "",
       (e) => patchCard({ project: e.target.value })().catch(fail))),
     membersField(c),
@@ -1668,7 +1718,7 @@ function workSection(c) {
 function commentsSection(c) {
   const comments = c.discussion || [];
   const me = pl.hooks.me?.();
-  const box = h("textarea", { rows: 3, placeholder: "Add a comment", "aria-label": "Comment", maxlength: 10000, onpaste: pasteFiles });
+  const box = h("textarea", { rows: 3, placeholder: "Add a comment", "aria-label": "Comment", maxlength: 10000, onpaste: pasteFiles, "data-keep": "comment" });
   return h("section", { class: "pl-section", "aria-labelledby": "pd-comments" },
     h("h3", { id: "pd-comments" }, "Comments"),
     comments.length ? h("ol", { class: "pl-comments-list" }, ...comments.map((m) => h("li", { class: `pl-comment${m.dash ? " pl-comment-dash" : ""}` },
@@ -1683,7 +1733,8 @@ function commentsSection(c) {
       const text = box.value.trim();
       if (!text) return;
       await busy(e.submitter || $("button", e.currentTarget), () => call("POST", cardAPI(c.id, "/comments"), { text }));
-      box.value = "";
+      // A redraw meanwhile put the text in a new box (retype): empty that one.
+      for (const b of [box, $('#pd-body [data-keep="comment"]')]) if (b && b.value.trim() === text) b.value = "";
       await loadCard(c.id);
     }) }, box, h("div", { class: "pl-comment-actions" },
       dictation(box, { place: () => {}, cls: "icon-btn small", send: () => !!box.value.trim() && (box.form.requestSubmit(), true) }),
@@ -1814,7 +1865,9 @@ function sheet(title, kids, ok, icon = "check") {
 // accept its plan (the card's first developer is suggested). A planner's
 // task runs for a developer too (Runs for), on their runners, as a draft
 // they queue.
-async function startSheet(c) {
+// prev is what was chosen and typed when a start failed: the sheet opens
+// again with it, so the rewritten prompt isn't lost.
+async function startSheet(c, prev = null) {
   if (!pl.projects.length) await loadPlanning();
   if (!pl.projects.length) throw new Error("There are no projects to start work in yet. Planning starts work in shared projects only, not in a runner's own project. Ask a developer to add a shared one with + Add project, from GitHub or a URL.");
   // Dash doesn't stop either, but says so: work already under way for the
@@ -1867,13 +1920,23 @@ async function startSheet(c) {
     owner,
     h("div", { class: "field" }, textLabel, text),
   ], footer: [queueBtn, draftBtn, goalBtn] });
+  if (prev) {
+    for (const r of form.querySelectorAll('input[name="kind"]')) if (r.value === prev.kind) { r.checked = true; kindChanged({ target: r }); }
+    for (const k of ["project", "run_by", "owner", "prompt"]) if (prev[k] != null && form.elements[k]) form.elements[k].value = prev[k];
+  }
   const how = await closed;
   if (!["draft", "queue", "goal"].includes(how)) return;
   const data = new FormData(form);
   const body = { project: data.get("project"), kind: data.get("kind"), prompt: data.get("prompt"), draft: how === "draft" };
   if (body.kind === "goal" && data.get("owner")) body.owner = Number(data.get("owner"));
   if (body.kind !== "goal" && data.get("run_by")) body.run_by = Number(data.get("run_by"));
-  const v = await call("POST", cardAPI(c.id, "/start"), body);
+  let v;
+  try {
+    v = await call("POST", cardAPI(c.id, "/start"), body);
+  } catch (e) {
+    startSheet(c, Object.fromEntries(data)).catch(fail);
+    throw e;
+  }
   toast(body.kind === "goal" ? "Goal started and linked" : how === "queue" ? "Task queued and linked" : "Draft created and linked", { tone: "ok" });
   if (pl.open === c.id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }
   await loadPlanning();

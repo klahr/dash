@@ -624,7 +624,7 @@ export function startAdd(plan = null) {
   if (plan) railOf(SHEET).show(mode);
   showProgress(true);
   $("#new-project-progress-title").focus(); // the button that had it is gone
-  runAdd(run);
+  runAdd(run).catch(fail);
   return true;
 }
 
@@ -688,7 +688,7 @@ async function runAdd(run) {
 // was made, Change details, back to the form as it was. Once the project is
 // there (only its clone failed), Open project instead.
 function failActions(run) {
-  const again = ib({ type: "button", class: "btn small primary", onclick: () => runAdd(run) }, "reload", "Try again");
+  const again = ib({ type: "button", class: "btn small primary", onclick: () => runAdd(run).catch(fail) }, "reload", "Try again");
   const back = run.project
     ? ib({ type: "button", class: "btn small", onclick: () => finishAdd(run).catch(fail) }, "right", "Open project")
     : ib({ type: "button", class: "btn small", onclick: () => {
@@ -705,19 +705,25 @@ async function finishAdd(run) {
   const { r, mode } = run;
   const d = $(`#${SHEET}`), f = $("#new-project");
   renderRun(run);
-  await loadProjects();
-  const made = run.mode === "local" ? state.projects.find((x) => x.id === run.project.id && x.machine === r.name)
-    : state.projects.find((x) => x.id === run.project.id && !x.prefix);
-  if (made) await selectProject(made);
-  if (!reduceMotion.matches && d.open) await new Promise((ok) => setTimeout(ok, 500)); // a moment to see it all ticked
-  np.run = null;
-  f.reset();
-  setLabels(f.runs_on, []);
-  setLabels(f.deploy_runs_on, []);
-  np.nameAuto = np.runsOnAuto = "";
-  ghState.pick = null;
-  if (d.open) d.close();
-  showProgress(false);
+  let made;
+  try {
+    await loadProjects();
+    made = run.mode === "local" ? state.projects.find((x) => x.id === run.project.id && x.machine === r.name)
+      : state.projects.find((x) => x.id === run.project.id && !x.prefix);
+    if (made) await selectProject(made);
+    if (!reduceMotion.matches && d.open) await new Promise((ok) => setTimeout(ok, 500)); // a moment to see it all ticked
+  } finally {
+    // The project is made either way: the sheet is cleared for the next one,
+    // even when opening it failed (the caller shows why).
+    np.run = null;
+    f.reset();
+    setLabels(f.runs_on, []);
+    setLabels(f.deploy_runs_on, []);
+    np.nameAuto = np.runsOnAuto = "";
+    ghState.pick = null;
+    if (d.open) d.close();
+    showProgress(false);
+  }
   if (run.plan) return finishPlan(run, made);
   const clone = run.steps.at(-1);
   const name = run.project.name;

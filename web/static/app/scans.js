@@ -1,6 +1,6 @@
 import { $, dateTimeText, h, ib, ico, plural, setModelField } from "./dom.js";
 import { api, here, on } from "./api.js";
-import { ask, attempt, copy, toast } from "./dialogs.js";
+import { ask, attempt, copy, guardDiscard, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { projectKey, projectName } from "./events.js";
 import { showView } from "./nav.js";
@@ -410,9 +410,16 @@ function openScanEditor(s = null, edit = false) {
   const from = $("#scan-form-from");
   from.hidden = !(s && !edit);
   if (s && !edit) from.textContent = `A new scan, kept in Dash, starting from ${s.source === "dash" ? "the Dash scan" : s.builtin ? "the built-in scan" : s.file} “${s.name}”.`;
+  scanFormWas = scanFormValues(f);
   $("#scan-sheet").showModal();
   (edit ? f.prompt : f.title).focus();
 }
+
+// The editor asks before it drops what was typed (Esc, its backdrop, ×).
+let scanFormWas = "";
+const scanFormValues = (f) => JSON.stringify([...new FormData(f)]);
+guardDiscard($("#scan-sheet"), $("#scan-form"), () => scanFormValues($("#scan-form")) !== scanFormWas,
+  () => (scanEditing ? `Discard your changes to ${scanEditing.title}?` : "Discard this scan?"));
 
 // scanSlug makes a scan name from its title: "API error handling" →
 // "api-error-handling", unique among the scans listed.

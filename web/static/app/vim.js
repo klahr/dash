@@ -161,8 +161,8 @@ export async function todoKey(t, k) {
 // with none open, the first waiting. null when there's none.
 export const pendingPerm = () => state.perms.find((x) => x.todo_id === state.detail) || (!state.detail && state.perms[0]) || null;
 
-export async function permKey(k) {
-  const p = pendingPerm();
+// p is the request to answer (default: pendingPerm()).
+export async function permKey(k, p = pendingPerm()) {
   if (!p) return false;
   const decision = { y: "allow", A: "always", X: "deny" }[k];
   if (isQuestion(p) && decision !== "deny") return toast("Answer Claude's question in its card");

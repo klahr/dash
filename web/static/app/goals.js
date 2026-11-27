@@ -2,7 +2,7 @@ import { renderMarkdown } from "../editor.js";
 import { $, $$, dateTimeText, fill, h, ib, ico, nameHue, plural } from "./dom.js";
 import { chatBeside } from "./viewport.js";
 import { api, on } from "./api.js";
-import { attempt, busy, copy, fail, toast } from "./dialogs.js";
+import { attempt, busy, copy, fail, guardDiscard, toast } from "./dialogs.js";
 import { popMenu } from "./popmenu.js";
 import { detailPane } from "./detailpane.js";
 import { statusLabel, projectFirst, state } from "./state.js";
@@ -799,15 +799,24 @@ async function goalAction(g, action) {
 // is gone from the list.
 export const GOAL_UNDO_MS = 6000;
 function endWithUndo(g, verb) {
-  if (ending.has(g.id)) return;
   const p = prefix(), del = verb === "delete";
+  const was = ending.get(g.id);
+  if (was) {
+    // Delete takes over a stop still waiting on its Undo (the goal shows
+    // stopped, so its menu offers Delete): the stop is sent now, its toast
+    // goes, and the delete gets its own Undo.
+    if (!(del && was.verb === "stop")) return;
+    ending.delete(g.id);
+    was.send();
+    was.toast?.dismiss();
+  }
   const path = del ? goalAPI(g.id) : `${goalAPI(g.id)}/stop`, method = del ? "DELETE" : "POST";
   const m = { verb, send: () => fetch(on(p, path), { method, keepalive: true }) };
   ending.set(g.id, m);
   if (del && gp.open === g.id) closeGoal();
   renderGoals();
   renderGoal();
-  toast(g.title, {
+  m.toast = toast(g.title, {
     head: del ? "Goal deleted" : "Goal stopped", icon: del ? "trash" : "stop", ms: GOAL_UNDO_MS, action: { label: "Undo", run: () => {} },
     onClose: attempt(async (undone) => {
       if (ending.get(g.id) !== m) return; // sent already: the page was left
@@ -881,9 +890,14 @@ export function openGoalSheet({ goal = null, title: t = "", description = "" } =
   f.max_tasks.value = goal?.budget?.max_tasks || "";
   f.mode.value = goal?.mode || "ask";
   $("#goal-sheet").returnValue = "";
+  gp.formWas = goalFormValues(f);
   $("#goal-sheet").showModal();
   f.description.focus();
 }
+
+const goalFormValues = (f) => JSON.stringify([f.title.value, f.description.value, f.max_tasks.value, f.mode.value]);
+guardDiscard($("#goal-sheet"), $("#goal-form"), () => goalFormValues($("#goal-form")) !== gp.formWas,
+  () => (gp.editing ? "Discard your changes to this goal?" : "Discard this new goal?"));
 
 const whole = (v, max, what) => {
   if (v === "") return 0;

@@ -72,14 +72,18 @@ $("#release-form").addEventListener("submit", attempt(async (e) => {
   if (!release?.fields) return;
   const r = release.fields.read();
   if (r.error) return;
-  const { commit, project: p } = release;
+  const mine = release, { commit, project: p } = release;
   const ok = $("#release-ok");
   ok.disabled = true;
   setLabel(ok, "tag", `Pushing ${r.tag}…`);
   try {
     const out = await api("POST", `/api/projects/${p.id}/tags`, { sha: commit.sha, version: r.tag, notes: r.notes });
-    release = null;
-    $("#release-sheet").close();
+    // The sheet may have been closed meanwhile and opened on another commit:
+    // that one stays open.
+    if (release === mine) {
+      release = null;
+      $("#release-sheet").close();
+    }
     toast(out.build ? "The release workflow is starting; Builds shows how it goes." : `Pushed to origin.`, {
       tone: "ok", icon: "tag", head: `Tagged ${out.tag}`,
       action: out.build ? { label: "Builds", run: openCI } : out.url ? { label: "View", run: () => window.open(out.url, "_blank", "noopener") } : null,

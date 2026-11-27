@@ -208,13 +208,25 @@ function saveRunner(el, r, body, then) {
   })();
 }
 
+// saveDisk saves one of runner r's disk thresholds. The API takes them all:
+// the others are the latest known (state.runners, and those sent but not
+// loaded back yet), not those of when the page was drawn, so two quick
+// edits don't undo each other.
+const diskSent = new Map(); // runner id → the thresholds last sent
+function saveDisk(el, r, key) {
+  const latest = state.runners?.find((x) => x.id === r.id)?.disk || r.disk;
+  const disk = { ...latest, ...diskSent.get(r.id), [key]: Number(el.value) || 0 };
+  diskSent.set(r.id, disk);
+  saveRunner(el, r, { disk }, () => { if (diskSent.get(r.id) === disk) diskSent.delete(r.id); });
+}
+
 // diskSettings are runner r's disk thresholds, for its owner and the org's
 // admins: empty is the default (for the Go build cache trim: off).
 function diskSettings(r) {
   const input = (key, label, { max = 100000, placeholder = String(diskDefaults[key] ?? "") } = {}) =>
     h("input", { type: "number", min: "0", max: String(max), step: "any", inputmode: "decimal", value: r.disk?.[key] ? String(r.disk[key]) : "",
       placeholder, "aria-label": `${label} (${r.name})`,
-      onchange: (e) => saveRunner(e.target, r, { disk: { ...r.disk, [key]: Number(e.target.value) || 0 } }) });
+      onchange: (e) => saveDisk(e.target, r, key) });
   const unit = (el, text) => h("span", { class: "runner-setting-unit" }, el, h("span", { "aria-hidden": "true" }, text));
   const setting = (title, hint, control) => h("div", { class: "runner-setting" },
     h("div", { class: "runner-setting-text" }, h("strong", {}, title), h("p", { class: "hint" }, hint)), control);
@@ -396,9 +408,15 @@ function closeRunnerPanels() {
   for (const id of ["#runners-links", "#runners-repos"]) { $(id).hidden = true; $(id).replaceChildren(); }
 }
 
+// typingIn reports whether a text field in the runner's page has focus.
+const typingIn = () => {
+  const a = document.activeElement;
+  return !!a?.matches?.("input, textarea, select") && ($("#runner-manage").contains(a) || $("#runner-detail").contains(a));
+};
+
 // paintRunners draws the sheet from state.runners: the rail, the overview
 // and the chosen runner. The rail keeps its focus across a redraw.
-function paintRunners() {
+function paintRunners({ background = false } = {}) {
   const list = state.runners;
   if (shown !== "overview" && shown !== "add" && !list?.some((r) => r.id === shown)) { closeRunnerPanels(); shown = "overview"; }
   if (shown === "add" && !$("#runners-code").hasChildNodes()) shown = "overview";
@@ -407,7 +425,10 @@ function paintRunners() {
   paintRunnerNav(list);
   paintOverview(list);
   const r = list?.find((x) => x.id === shown);
-  if (r) paintRunner(r);
+  // Drawn again in the background while a setting is being typed: only its
+  // status changes, in place, so what is typed (and the focus) stays.
+  if (r && background && typingIn()) paintRunnerStatus(r);
+  else if (r) paintRunner(r);
   const section = r ? "runner" : shown;
   for (const s of $("#runners-main").children) s.classList.toggle("current", s.dataset.section === section);
   if (navFocused) $("#runners-nav .rail-item[aria-current]")?.focus();
@@ -527,6 +548,16 @@ function paintOverview(list) {
 
 // paintRunner fills the chosen runner's page: its status, warnings, usage
 // and projects above its Projects panels, then what its owner can change.
+// paintRunnerStatus updates runner r's status on its page, in place.
+function paintRunnerStatus(r) {
+  const st = runnerStatus(r);
+  const head = $("#runner-detail .runner-head");
+  if (!head) return;
+  head.className = `runner-head tone-${st.tone}`;
+  const s = $(".runner-state", head);
+  if (s) s.textContent = st.text;
+}
+
 function paintRunner(r) {
   const st = runnerStatus(r);
   const outdated = runnerOutdated(r);
@@ -733,7 +764,10 @@ function runnerUpdate(r) {
     ...updateCmds());
 }
 
-export async function renderRunners() {
+// background: drawn again for a change elsewhere (a task started, a runner
+// came online), not for something done here: a runner page being typed in
+// keeps its fields (see paintRunners).
+export async function renderRunners({ background = false } = {}) {
   const list = await loadRunners();
   let added = null;
   if (runnerAdd && list) {
@@ -749,14 +783,16 @@ export async function renderRunners() {
       toast(`Connected: ${added.name} is online`, { tone: "ok" });
     } else added = null;
   }
-  paintRunners();
+  paintRunners({ background });
   if (added?.mine) showRunnerRepos(added).catch(fail);
 }
 
 // showRunnerRepos lists the git repositories runner r (the caller's own)
 // finds in its projects directory, to tick and add as its projects. The
 // runner looks; it reports only names, paths, remotes and branches.
+let reposSeq = 0; // showRunnerRepos's count: only the latest one's answer is shown
 async function showRunnerRepos(r) {
+  const seq = ++reposSeq;
   links.runner = null;
   $("#runners-links").hidden = true;
   const box = $("#runners-repos");
@@ -768,9 +804,10 @@ async function showRunnerRepos(r) {
   try {
     res = await api("GET", url);
   } catch (e) {
-    box.replaceChildren(h("h4", {}, `Projects on ${r.name}`), h("p", { class: "hint warn" }, e.message || String(e)));
+    if (seq === reposSeq && !box.hidden) box.replaceChildren(h("h4", {}, `Projects on ${r.name}`), h("p", { class: "hint warn" }, e.message || String(e)));
     return;
   }
+  if (seq !== reposSeq || box.hidden) return; // another runner's list asked for since, or closed
   const close = h("button", { class: "btn small", type: "button", onclick: () => { box.hidden = true; box.replaceChildren(); } }, "Close");
   const where = res.root ? h("code", {}, res.root) : "its projects directory";
   if (!res.repos.length) {
@@ -828,6 +865,7 @@ async function showRunnerRepos(r) {
 const links = { runner: null, data: null, gh: null, ghError: "", busy: new Set(), q: "" };
 
 async function showRunnerLinks(r) {
+  reposSeq++; // a list of repositories on its way isn't shown
   $("#runners-repos").hidden = true;
   const box = $("#runners-links");
   Object.assign(links, { runner: r, data: null, gh: null, ghError: "", q: "" });
@@ -855,12 +893,18 @@ export async function refreshRunnerLinks() {
 }
 
 async function loadLinkRepos(r) {
+  // An answer for a panel closed or showing another runner since is dropped:
+  // its repositories would be offered as projects to make on this one.
+  let gh = null, ghError = "";
   try {
-    links.gh = await api("GET", `/api/runners/${encodeURIComponent(r.id)}/github-repos`);
+    gh = await api("GET", `/api/runners/${encodeURIComponent(r.id)}/github-repos`);
   } catch (e) {
-    links.ghError = e.message || String(e);
+    ghError = e.message || String(e);
   }
-  if (links.runner === r) renderRunnerLinks();
+  if (links.runner !== r) return;
+  if (gh) links.gh = gh;
+  else links.ghError = ghError;
+  renderRunnerLinks();
 }
 
 const linksClose = () => h("div", { class: "runner-repos-actions" },

@@ -114,6 +114,12 @@ test("approve and queue are read back first; deny is not", () => {
   assert.deepEqual(r.out, [{ do: "run", id: "deny" }]);
 });
 
+test("yes acts on the permission request that was read back (its ref)", () => {
+  const c = { ...ctx, describe: () => ({ text: "Approve: Claude wants to run go test", ref: "perm-1" }) };
+  const r = run([{ type: "heard", text: "approve", cmd: "approve" }], initial(), c);
+  assert.deepEqual(run(["yes"], r.m, c).out, [{ do: "act", action: { kind: "command", id: "approve", text: "Approve: Claude wants to run go test", ref: "perm-1" } }]);
+});
+
 test("without a project, new task and dictate say so", () => {
   const r = run(["new task", "dictate"], initial(), noProject);
   assert.equal(r.m.state, "listening");

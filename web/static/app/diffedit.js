@@ -40,12 +40,14 @@ async function saveDiffEdit() {
   if (!diffEditDirty() || diffEdit.saving) return;
   const { id, path, blob } = diffEdit, content = diffEditText.value;
   diffEdit.saving = true;
+  diffEditText.readOnly = true; // nothing typed while it commits is lost (the editor follows it)
   renderDiffEdit();
   try {
     await api("PUT", `/api/todos/${id}/file`, { path, blob, content });
     diffEdit.original = content;
   } finally {
     diffEdit.saving = false;
+    diffEditText.readOnly = false;
     renderDiffEdit();
   }
   $("#diff-edit-sheet").close();

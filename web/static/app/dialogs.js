@@ -49,6 +49,7 @@ export function toast(msg, opts = {}) {
   for (let ts = box.querySelectorAll(":scope > .toast:not(.voice-bar)"), i = 0; i < ts.length - 4; i++) { ts[i].dismiss?.(); ts[i].remove(); }
   run();
   raiseToasts();
+  return t; // t.dismiss() takes it away
 }
 
 // Sheets are modal <dialog>s in the top layer, above any z-index, and they make
@@ -167,6 +168,30 @@ export function ask({ title, body = "", input = false, value = "", placeholder =
       if (attach) return askAttach.settled().then(() => resolve({ text: field.value.trim(), attachments: askAttach.ids() }));
       resolve(input ? field.value.trim() : true);
     }, { once: true });
+  });
+}
+
+// guardDiscard makes sheet ask before it drops unsaved input: on Esc, a click
+// on its backdrop (palette.js sends "cancel" first) and its Cancel and ×
+// buttons (value="cancel" in form). dirty says whether there is input to lose.
+export function guardDiscard(sheet, form, dirty, title = "Discard your changes?") {
+  let asking = false;
+  const confirm = async () => {
+    if (asking) return;
+    asking = true;
+    try {
+      if (await ask({ title: typeof title === "function" ? title() : title, ok: "Discard", danger: true })) sheet.close("cancel");
+    } finally { asking = false; }
+  };
+  form.addEventListener("submit", (e) => {
+    if (e.submitter?.value !== "cancel" || !dirty()) return;
+    e.preventDefault();
+    confirm().catch(fail);
+  });
+  sheet.addEventListener("cancel", (e) => {
+    if (!dirty()) return;
+    e.preventDefault();
+    confirm().catch(fail);
   });
 }
 
