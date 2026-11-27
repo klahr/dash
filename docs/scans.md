@@ -53,15 +53,17 @@ Scans come from three places, marked on each card:
   and each finding says what gets simpler and how risky the change is. The
   dependency audit reports vulnerable, abandoned
   and far outdated dependencies. Each vulnerability names its advisory id (CVE, GHSA or OSV). One
-  that no audit tool's output confirmed (`govulncheck`, `npm audit`, `pip-audit`, `cargo audit`)
+  that no audit tool's output confirmed (`govulncheck`, `npm audit`, `pip-audit`, `cargo-audit`)
   is titled "Unverified:" and is at most `medium`. A missing audit tool is reported once, as
   `low`. It also checks licences against the project's own (its LICENSE file
   or manifest, else proprietary): dependencies whose licence clashes with it (GPL or AGPL in an
   MIT or proprietary project, say), with no or an unknown licence, or whose licence changed in an
   upgrade in the lock files' recent history. It reads the licences from the package managers'
   lock files and metadata and installs nothing. It has no general shell: it may run only
-  `govulncheck`, `npm audit` and `npm audit --json`, `pip-audit --disable-pip …`, `cargo audit` and
-  `cargo audit --json`, and `pip show` (see [Shell commands](#shell-commands)).
+  `govulncheck`, `npm audit` and `npm audit --json`, `pip-audit --disable-pip …`,
+  `cargo-audit audit [--json] --file Cargo.lock`, and `pip show` (see
+  [Shell commands](#shell-commands)). It runs `cargo-audit` directly, never `cargo`: the
+  repository's `rust-toolchain.toml` and `.cargo/config.toml` choose what `cargo` runs.
   The CI/CD and supply chain scan (suggested weekly, Thursdays at 06:00) looks at what changed
   in the CI configuration (GitHub Actions, GitLab CI, CircleCI, Jenkins, …), Dockerfiles and
   package manifests since its last run (everything on its first run); it is skipped when nothing

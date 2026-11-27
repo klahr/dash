@@ -80,14 +80,14 @@ func TestDependenciesNamedCommandsOnly(t *testing.T) {
 	}
 	allowed := []string{
 		"Bash(govulncheck:*)", "Bash(npm audit)", "Bash(npm audit --json)", "Bash(pip-audit --disable-pip:*)",
-		"Bash(cargo audit)", "Bash(cargo audit --json)", "Bash(pip show:*)",
+		"Bash(cargo-audit audit --file Cargo.lock)", "Bash(cargo-audit audit --json --file Cargo.lock)", "Bash(pip show:*)",
 	}
 	for _, tool := range tools {
 		if strings.HasPrefix(tool, "Bash") && !slices.Contains(allowed, tool) {
 			t.Errorf("dependencies: unexpected shell rule %q", tool)
 		}
 	}
-	for _, want := range []string{"Bash(govulncheck:*)", "Bash(npm audit --json)", "Bash(pip-audit --disable-pip:*)", "Bash(cargo audit --json)"} {
+	for _, want := range []string{"Bash(govulncheck:*)", "Bash(npm audit --json)", "Bash(pip-audit --disable-pip:*)", "Bash(cargo-audit audit --json --file Cargo.lock)"} {
 		if !slices.Contains(tools, want) {
 			t.Errorf("dependencies lacks %s: %q", want, tools)
 		}
@@ -95,6 +95,11 @@ func TestDependenciesNamedCommandsOnly(t *testing.T) {
 	for _, tool := range tools {
 		if strings.Contains(tool, "audit:*") && (strings.Contains(tool, "npm") || strings.Contains(tool, "cargo")) {
 			t.Errorf("%s allows a fix mode", tool)
+		}
+		// cargo itself takes its toolchain (rust-toolchain.toml) and
+		// aliases (.cargo/config.toml) from the repository.
+		if strings.HasPrefix(tool, "Bash(cargo ") || strings.HasPrefix(tool, "Bash(cargo:") {
+			t.Errorf("%s runs cargo, which the repository configures", tool)
 		}
 	}
 }

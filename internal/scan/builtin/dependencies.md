@@ -4,12 +4,18 @@ title: Dependency audit
 kind: dependencies
 scope: repo
 # Only the named audit and metadata commands, in Claude Code's sandbox (see
-# docs/scans.md): no general shell. npm and cargo audit only as written, so
-# no fix mode (which installs packages and runs their scripts) slips in.
-# No `cargo metadata`: it runs rustc, or a wrapper the repository's
-# .cargo/config.toml names, so it would run the repository's code.
+# docs/scans.md): no general shell. npm audit and cargo-audit only as
+# written, so no fix mode (which installs packages and runs their scripts)
+# slips in. No `cargo` at all: rustup's cargo proxy takes its toolchain from
+# the repository's rust-toolchain.toml (a `path` toolchain is a cargo
+# binary in the repository), an `[alias] audit` in its .cargo/config.toml
+# shadows the cargo-audit plugin (`audit = "run"`), and `cargo metadata`
+# runs rustc or the rustc-wrapper that file names. So cargo-audit is run
+# directly, with --file, so it doesn't run `cargo generate-lockfile`.
+# govulncheck's go command honours go.mod's `toolchain` line, but downloads
+# only official Go toolchains, checked against sum.golang.org.
 # git history through the git tools.
-tools: Read, Grep, Glob, mcp__dash_git__git_log, mcp__dash_git__git_show, mcp__dash_git__git_diff, Bash(govulncheck:*), Bash(npm audit), Bash(npm audit --json), Bash(pip-audit --disable-pip:*), Bash(cargo audit), Bash(cargo audit --json), Bash(pip show:*)
+tools: Read, Grep, Glob, mcp__dash_git__git_log, mcp__dash_git__git_show, mcp__dash_git__git_diff, Bash(govulncheck:*), Bash(npm audit), Bash(npm audit --json), Bash(pip-audit --disable-pip:*), Bash(cargo-audit audit --file Cargo.lock), Bash(cargo-audit audit --json --file Cargo.lock), Bash(pip show:*)
 # Suggested: Mondays at 06:00. Built-in schedules are off until turned on.
 schedule: 0 6 * * 1
 ---
@@ -19,9 +25,13 @@ Find the dependency manifests and lock files (go.mod, package.json and its
 lock file, requirements*.txt, pyproject.toml, Cargo.toml, Gemfile, …). Where
 the ecosystem's audit tool is installed, run it: `govulncheck ./...`, `npm
 audit --json`, `pip-audit --disable-pip --no-deps -r <requirements file>`,
-`cargo audit --json` (npm audit and cargo audit exactly as written). These
+`cargo-audit audit --json --file Cargo.lock` (npm audit and cargo-audit
+exactly as written; not `cargo audit`, and no other `cargo` command). These
 and `pip show` are the only commands you can run: no other
-shell commands, no fix modes, and do not install anything. Read files with
+shell commands, no fix modes, and do not install anything. cargo-audit
+reads the Cargo.lock in the directory the commands run in; if the only
+Cargo.lock is elsewhere, report the Rust dependencies as "Unverified:"
+with the command to run there. Read files with
 the Read, Grep and Glob tools. The tools' output is the evidence for a
 vulnerability.
 
