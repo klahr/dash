@@ -6,8 +6,10 @@ scope: repo
 # Only the named audit and metadata commands, in Claude Code's sandbox (see
 # docs/scans.md): no general shell. npm and cargo audit only as written, so
 # no fix mode (which installs packages and runs their scripts) slips in.
+# No `cargo metadata`: it runs rustc, or a wrapper the repository's
+# .cargo/config.toml names, so it would run the repository's code.
 # git history through the git tools.
-tools: Read, Grep, Glob, mcp__dash_git__git_log, mcp__dash_git__git_show, mcp__dash_git__git_diff, Bash(govulncheck:*), Bash(npm audit), Bash(npm audit --json), Bash(pip-audit --disable-pip:*), Bash(cargo audit), Bash(cargo audit --json), Bash(pip show:*), Bash(cargo metadata:*)
+tools: Read, Grep, Glob, mcp__dash_git__git_log, mcp__dash_git__git_show, mcp__dash_git__git_diff, Bash(govulncheck:*), Bash(npm audit), Bash(npm audit --json), Bash(pip-audit --disable-pip:*), Bash(cargo audit), Bash(cargo audit --json), Bash(pip show:*)
 # Suggested: Mondays at 06:00. Built-in schedules are off until turned on.
 schedule: 0 6 * * 1
 ---
@@ -17,8 +19,8 @@ Find the dependency manifests and lock files (go.mod, package.json and its
 lock file, requirements*.txt, pyproject.toml, Cargo.toml, Gemfile, …). Where
 the ecosystem's audit tool is installed, run it: `govulncheck ./...`, `npm
 audit --json`, `pip-audit --disable-pip --no-deps -r <requirements file>`,
-`cargo audit --json` (npm audit and cargo audit exactly as written). These,
-`pip show` and `cargo metadata` are the only commands you can run: no other
+`cargo audit --json` (npm audit and cargo audit exactly as written). These
+and `pip show` are the only commands you can run: no other
 shell commands, no fix modes, and do not install anything. Read files with
 the Read, Grep and Glob tools. The tools' output is the evidence for a
 vulnerability.
@@ -61,8 +63,9 @@ Then check the dependencies' licences against the project's own.
    package-lock.json, yarn.lock or pnpm-lock.yaml entries and in
    node_modules/*/package.json; the LICENSE files of Go modules in vendor/;
    `pip show <package>` or the dist-info METADATA in a virtualenv in the
-   repository; `cargo metadata --format-version 1` (its `license` fields);
-   vendored gems' gemspecs. Where the metadata is not in the repository or
+   repository; the `license` field of the Cargo.toml of crates vendored in
+   the repository (vendor/); vendored gems' gemspecs. Cargo.lock names the
+   Rust crates and versions but not their licences. Where the metadata is not in the repository or
    those commands' output, use what you know of the package and say so in
    the details.
    Concentrate on direct dependencies, but report a transitive one whose

@@ -224,6 +224,13 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 	// (its hub token) or the user's credentials.
 	req := RunRequest(t, tools, dir, filepath.Dir(r.Root), r.Root)
 	req.Dir, req.Prompt, req.Shared = dir, prompt, job.Shared
+	if len(req.Env) > 0 {
+		// The commands' throwaway package caches (CacheEnv).
+		if err := os.MkdirAll(CacheDir(dir), 0o755); err != nil {
+			return out, err
+		}
+		defer func() { _ = RemoveCache(dir) }()
+	}
 	if r.GitTools != nil && r.GitURL != "" && agent.CanMCP(r.Exec) {
 		token, release := r.GitTools.Register(dir)
 		defer release()

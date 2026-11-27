@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -140,7 +141,7 @@ func (r *Runner) Cleanup(ctx context.Context) {
 	if len(dirs) == 0 {
 		return
 	}
-	_ = os.RemoveAll(root)
+	_ = removeTree(root)
 	if !localrun.Allowed() {
 		return // the hub's scans run on runners: it has no clones to prune
 	}
@@ -734,6 +735,7 @@ func RunRequest(t Template, tools []string, dir string, secrets ...string) agent
 		deny = append(deny, DenyReads(dir, secrets)...)
 		if usesShell(tools) {
 			req.Settings = SandboxSettings(dir, secrets)
+			req.Env = CacheEnv(CacheDir(dir))
 		}
 	}
 	req.AllowedTools, req.DeniedTools = tools, deny
@@ -743,8 +745,9 @@ func RunRequest(t Template, tools []string, dir string, secrets ...string) agent
 // SandboxSettings are the Claude Code settings (claude --settings) of a
 // scan that may run commands: Bash runs in Claude Code's sandbox, which
 // can't read the credentials DenyReads keeps from the file tools, may write
-// only the checkout, the temp directory and the package managers' caches,
-// and reaches only the package registries the audit tools ask. Nothing
+// only the checkout, the temp directory, the run's own throwaway caches
+// (CacheDir, see CacheEnv) and the audit tools' advisory caches, and
+// reaches only the package registries the audit tools ask. Nothing
 // runs outside it (allowUnsandboxedCommands). Where the sandbox can't start
 // (Linux without bubblewrap, Windows), Claude Code warns and runs commands
 // without it: see docs/scans.md.
@@ -765,7 +768,7 @@ func SandboxSettings(dir string, secrets []string) string {
 		// Go's tools (govulncheck, go test) need macOS's trust daemon for TLS.
 		"enableWeakerNetworkIsolation": true,
 		"network":                      map[string]any{"allowedDomains": registryDomains},
-		"filesystem":                   map[string]any{"denyRead": denyRead, "allowWrite": cacheDirs()},
+		"filesystem":                   map[string]any{"denyRead": denyRead, "allowWrite": writableDirs(dir)},
 	}}
 	b, _ := json.Marshal(set)
 	return string(b)
@@ -781,29 +784,54 @@ var registryDomains = []string{
 	"github.com", "index.crates.io", "static.crates.io",
 }
 
-// cacheDirs are the package managers' caches a scan's commands write to:
-// Go's build and module caches, npm's, cargo's advisory database and
-// registry, and the user's cache directory (pip-audit's and others').
-func cacheDirs() []string {
-	var out []string
-	if c, err := os.UserCacheDir(); err == nil {
-		out = append(out, c)
+// CacheDir is the throwaway cache directory of a scan run checked out in
+// dir: beside the checkout, and removed with it (RemoveCache).
+func CacheDir(dir string) string { return dir + ".cache" }
+
+// CacheEnv points the package managers' caches of a scan's commands at
+// cache, the run's own (CacheDir). Code a scan runs (a repository's tests,
+// a build tool's config) must not write the shared caches (GOMODCACHE,
+// GOCACHE, ~/.npm, …): the user's tasks build and test from them later,
+// outside any sandbox.
+func CacheEnv(cache string) []string {
+	return []string{
+		"GOCACHE=" + filepath.Join(cache, "go-build"),
+		"GOMODCACHE=" + filepath.Join(cache, "go-mod"),
+		"npm_config_cache=" + filepath.Join(cache, "npm"),
+		"PIP_CACHE_DIR=" + filepath.Join(cache, "pip"),
+		"XDG_CACHE_HOME=" + filepath.Join(cache, "xdg"),
 	}
-	for _, k := range []string{"GOCACHE", "GOMODCACHE"} {
-		if v := os.Getenv(k); filepath.IsAbs(v) {
-			out = append(out, v)
+}
+
+// RemoveCache removes a run's CacheDir. Go makes its module cache
+// read-only, so the directories are made writable first.
+func RemoveCache(dir string) error { return removeTree(CacheDir(dir)) }
+
+// removeTree is os.RemoveAll that also removes read-only directories
+// (a Go module cache's).
+func removeTree(p string) error {
+	_ = filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			_ = os.Chmod(path, 0o755)
 		}
+		return nil
+	})
+	return os.RemoveAll(p)
+}
+
+// writableDirs are where a scan's commands in the checkout dir may write
+// besides it and the temp directory: the run's CacheDir, and the advisory
+// databases of the audit tools (cargo audit's, pip-audit's), which no
+// build reads.
+func writableDirs(dir string) []string {
+	out := []string{CacheDir(dir)}
+	if c, err := os.UserCacheDir(); err == nil {
+		out = append(out, filepath.Join(c, "pip-audit"))
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return out
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		out = append(out, filepath.Join(home, ".cargo", "advisory-db"))
 	}
-	gopath := filepath.Join(home, "go")
-	if v := os.Getenv("GOPATH"); v != "" {
-		gopath = filepath.SplitList(v)[0]
-	}
-	return append(out, filepath.Join(gopath, "pkg", "mod"), filepath.Join(home, ".npm"),
-		filepath.Join(home, ".cargo", "advisory-db"), filepath.Join(home, ".cargo", "registry"))
+	return out
 }
 
 // fileTools read files; unscoped, they read anything the runner's user can.

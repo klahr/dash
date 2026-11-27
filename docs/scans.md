@@ -61,7 +61,7 @@ Scans come from three places, marked on each card:
   upgrade in the lock files' recent history. It reads the licences from the package managers'
   lock files and metadata and installs nothing. It has no general shell: it may run only
   `govulncheck`, `npm audit` and `npm audit --json`, `pip-audit --disable-pip …`, `cargo audit` and
-  `cargo audit --json`, `pip show` and `cargo metadata` (see [Shell commands](#shell-commands)).
+  `cargo audit --json`, and `pip show` (see [Shell commands](#shell-commands)).
   The CI/CD and supply chain scan (suggested weekly, Thursdays at 06:00) looks at what changed
   in the CI configuration (GitHub Actions, GitLab CI, CircleCI, Jenkins, …), Dockerfiles and
   package manifests since its last run (everything on its first run); it is skipped when nothing
@@ -262,8 +262,10 @@ keys, `~/.claude.json` or the runner's token, so Dash limits it:
   `~/.aws`, `~/.config/gh`, `~/.config/gcloud`, `~/.claude`, `~/.claude.json`, `~/.netrc`,
   `~/.git-credentials`, `~/.docker`, `~/.kube`, `~/.npmrc`, `~/.pypirc`, cargo's and gem's
   credentials, and Dash's data folders (the runner's token, the database, logs and worktrees).
-  They may write only the checkout, the temp folder and the package managers' caches, and reach
-  only the package registries and advisory databases the audit tools use.
+  They may write only the checkout, the temp folder, the audit tools' advisory databases and a
+  throwaway package cache for the run. They can't change the shared Go, npm or pip caches your
+  tasks build from. They reach only the package registries and advisory databases the audit
+  tools use.
 
 Where the credential deny list can't apply:
 

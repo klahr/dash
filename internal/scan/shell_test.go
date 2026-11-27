@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -79,7 +80,7 @@ func TestDependenciesNamedCommandsOnly(t *testing.T) {
 	}
 	allowed := []string{
 		"Bash(govulncheck:*)", "Bash(npm audit)", "Bash(npm audit --json)", "Bash(pip-audit --disable-pip:*)",
-		"Bash(cargo audit)", "Bash(cargo audit --json)", "Bash(pip show:*)", "Bash(cargo metadata:*)",
+		"Bash(cargo audit)", "Bash(cargo audit --json)", "Bash(pip show:*)",
 	}
 	for _, tool := range tools {
 		if strings.HasPrefix(tool, "Bash") && !slices.Contains(allowed, tool) {
@@ -129,7 +130,8 @@ func TestShellRunsInSandbox(t *testing.T) {
 				Enabled                  bool  `json:"enabled"`
 				AllowUnsandboxedCommands *bool `json:"allowUnsandboxedCommands"`
 				Filesystem               struct {
-					DenyRead []string `json:"denyRead"`
+					DenyRead   []string `json:"denyRead"`
+					AllowWrite []string `json:"allowWrite"`
 				} `json:"filesystem"`
 				Network struct {
 					AllowedDomains []string `json:"allowedDomains"`
@@ -149,6 +151,28 @@ func TestShellRunsInSandbox(t *testing.T) {
 		} {
 			if !slices.Contains(sb.Filesystem.DenyRead, want) {
 				t.Errorf("%s readable by commands: %q", want, sb.Filesystem.DenyRead)
+			}
+		}
+		// Commands write a throwaway cache of the run's, not the shared
+		// package caches the user's builds read.
+		cache := CacheDir(dir)
+		if !slices.Contains(sb.Filesystem.AllowWrite, cache) {
+			t.Errorf("run's cache %s not writable: %q", cache, sb.Filesystem.AllowWrite)
+		}
+		for _, p := range sb.Filesystem.AllowWrite {
+			for _, shared := range []string{filepath.Join(home, "go"), filepath.Join(home, ".npm"), filepath.Join(home, ".cargo", "registry")} {
+				if fsutil.Within(p, shared) || fsutil.Within(shared, p) {
+					t.Errorf("shared cache %s writable by commands: %q", shared, sb.Filesystem.AllowWrite)
+				}
+			}
+			if c, err := os.UserCacheDir(); err == nil && p == c {
+				t.Errorf("user cache dir writable by commands: %q", sb.Filesystem.AllowWrite)
+			}
+		}
+		env := RunRequest(Template{}, tools, dir, data, root).Env
+		for _, k := range []string{"GOCACHE", "GOMODCACHE", "npm_config_cache", "PIP_CACHE_DIR", "XDG_CACHE_HOME"} {
+			if i := slices.IndexFunc(env, func(e string) bool { return strings.HasPrefix(e, k+"=") }); i < 0 || !fsutil.Within(cache, strings.TrimPrefix(env[i], k+"=")) {
+				t.Errorf("%s not in the run's cache: %q", k, env)
 			}
 		}
 		for _, p := range []string{data, root, dir} {
@@ -203,5 +227,28 @@ func TestJobCheckSandboxTools(t *testing.T) {
 	j := Job{Template: Template{Name: "flaky-tests", Scope: model.ScopeRepo}, Tools: DefaultTools, SandboxTools: []string{"--dangerously-skip-permissions"}}
 	if err := j.Check(); err == nil {
 		t.Error("flag in sandbox tools accepted")
+	}
+}
+
+// A run's cache goes with it, read-only Go module directories and all.
+func TestRemoveCache(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), "run")
+	mod := filepath.Join(CacheDir(dir), "go-mod", "example.com", "m@v1.0.0")
+	if err := os.MkdirAll(mod, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mod, "go.mod"), []byte("module example.com/m\n"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(mod, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveCache(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(CacheDir(dir)); !os.IsNotExist(err) {
+		t.Errorf("cache left behind: %v", err)
 	}
 }
