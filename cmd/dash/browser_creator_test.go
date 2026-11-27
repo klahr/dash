@@ -53,8 +53,26 @@ func TestBrowserTaskCreatorAndMine(t *testing.T) {
 
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the one-lane layout", `!matchMedia("(min-width: 1024px)").matches && [...document.querySelectorAll("#board .col")].filter((c) => c.offsetWidth).length === 1`)
-	b.waitJS("Mine shown on a phone", `document.querySelector("#mine-filter")?.offsetWidth > 0`)
-	b.until("turn Mine off", fmt.Sprintf(`document.querySelector("#mine-filter").getAttribute("aria-pressed") === "false" && !!document.querySelector(%q)`, cardSel(theirs.ID)),
+	// The switch reflows the board head (a taller button for touch, the
+	// filters row wrapping): click only once the button stays put between two
+	// checks and is what a click at its centre hits, or the click can land on
+	// a card where the button was.
+	b.waitJS("Mine shown and settled on a phone", `(() => {
+		const el = document.querySelector("#mine-filter");
+		const r = el?.getBoundingClientRect();
+		if (!r || !r.width) return false;
+		const at = [r.left, r.top, r.width, r.height].join();
+		const settled = window.__e2eMineRect === at;
+		window.__e2eMineRect = at;
+		return settled && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+	})()`)
+	// Should a click still miss and open a task, its pane covers the board on
+	// a phone: close it before the next try.
+	b.until("turn Mine off", fmt.Sprintf(`(() => {
+		if (document.querySelector("#mine-filter").getAttribute("aria-pressed") === "false" && !!document.querySelector(%q)) return true;
+		if (!document.querySelector("#detail").hidden) document.querySelector("#d-close")?.click();
+		return false;
+	})()`, cardSel(theirs.ID)),
 		chromedp.Click(chromedp.CSS(`#mine-filter`)))
 	b.waitJS("the face on a phone's card", fmt.Sprintf(`document.querySelector(%q)?.offsetWidth > 0`, cardSel(theirs.ID)+" .todo-creator .avatar"))
 	b.openTask(theirs.ID)
