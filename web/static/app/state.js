@@ -32,6 +32,7 @@ export const state = {
   projectsLoaded: false, // the board's empty states wait for the first project list
   project: null,
   todos: new Map(),
+  todosOf: null, // the project whose todos are loaded (app/board.js)
   goals: new Map(),   // the project's goals by id, for their tasks' chips
   goalFilter: null,   // the board shows only this goal's tasks (null: every task)
   mine: false,        // the board shows only the tasks the user created (see people.js)

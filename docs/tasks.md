@@ -43,6 +43,9 @@ chat; Claude names the task. The sheet's title names the project it goes into, e
 <kbd>Alt</kbd>+<kbd>Enter</kbd> (<kbd>Option</kbd>+<kbd>Enter</kbd> on a Mac) or **Another task** adds a
 field for another task.
 
+A project with no tasks yet shows a few example tasks on its board instead of empty columns.
+Click one to open **New task** with its text filled in, then edit it and click **Queue**.
+
 Closing the sheet keeps what you typed on this device, and it is back the next time you open it.
 Saving the tasks clears it.
 

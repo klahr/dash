@@ -300,6 +300,17 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .empty .welcome-steps { text-align: left; margin: 18px auto 0; max-width: 42ch; }
 .empty .welcome-steps > li { margin-bottom: 12px; }
 .empty .welcome-steps strong { color: var(--text); }
+/* An empty project's example tasks (firstTaskScreen in app/branches.js): a click fills in New task. */
+.empty .first-tasks { list-style: none; padding: 0; margin: 14px auto 0; display: grid; gap: 6px; max-width: 42ch; }
+.empty .first-task {
+  width: 100%; text-align: left; padding: 10px 12px; border-radius: var(--r-m); cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit;
+}
+.empty .first-task:hover { border-color: var(--accent); }
+.empty .first-task:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A phone's New task floats: room under the steps for it (a desktop's is in the header). */
+.board-head:not([hidden]) ~ #board-empty { padding-bottom: calc(2 * var(--sp-5) + 72px); }
+@media (min-width: 1024px) { .board-head:not([hidden]) ~ #board-empty { padding-bottom: calc(2 * var(--sp-5)); } }
 
 /* ---------- board ---------- */
 .lanes {

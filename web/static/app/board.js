@@ -21,6 +21,7 @@ export async function loadTodos() {
     else if (ev.type === "todo.deleted") todos.delete(ev.todo_id);
   }
   state.todos = todos;
+  state.todosOf = projectKey(p); // loaded: an empty Map is a project with no tasks (firstTaskScreen)
   renderBoard();
   scanTasksChanged(); // Scans counts what became of its drafts from these
   if (state.detail) renderDetail();

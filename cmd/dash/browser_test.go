@@ -951,7 +951,8 @@ func (b *browser) signIn(h *runnerHub) {
 		chromedp.SendKeys(chromedp.CSS(`#login input[name=password]`), h.password),
 		chromedp.Click(chromedp.CSS(`#login button.btn.primary`)),
 	)
-	b.waitJS("the board with the project", `document.querySelector("#project-name")?.textContent === "app" && !!document.querySelector('#board .col[data-lane="review"]')`)
+	// The board: its columns, or, with no tasks yet, the first-task screen.
+	b.waitJS("the board with the project", `document.querySelector("#project-name")?.textContent === "app" && !!document.querySelector('#board .col[data-lane="review"], #board-empty:not([hidden]) .first-task')`)
 }
 
 // findChrome is $DASH_TEST_CHROME, or a Chrome or Chromium on $PATH.
@@ -1500,15 +1501,16 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	b := newBrowser(t, chrome)
 	b.signIn(h)
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	// A task first: a project with none shows the first-task screen, not the lanes.
+	var draft struct{ ID string }
+	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Hold me", "prompt": "Stay a draft"}, http.StatusCreated, &draft)
+	b.waitCard(draft.ID, "draft")
 	b.waitJS("the one-lane layout", `!matchMedia("(min-width: 1024px)").matches && document.querySelectorAll("#board .col").length && [...document.querySelectorAll("#board .col")].filter((c) => c.offsetWidth).length === 1`)
 	// Chrome on Linux also takes a sideways swipe the page doesn't scroll as
 	// Back or Forward: a swipe left went Forward to Project settings closed a
 	// moment before (opening it over the board), a swipe right Back to a blank
 	// page. The page turns that off where it switches lanes.
 	b.waitJS("no history swipes", `getComputedStyle(document.documentElement).overscrollBehaviorX === "none"`)
-	var draft struct{ ID string }
-	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Hold me", "prompt": "Stay a draft"}, http.StatusCreated, &draft)
-	b.waitCard(draft.ID, "draft")
 
 	// Count the slide-ins of a lane, and note how far the page got wider than
 	// the screen while one ran: a phone grows its layout viewport to fit, which

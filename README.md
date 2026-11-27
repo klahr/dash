@@ -58,7 +58,8 @@ shows, on this computer or another one. It looks like this:
 ## Use it
 
 1. Click **Add project** and pick a GitHub repository, a remote URL, or **Local only**.
-2. Click **New task** (<kbd>n</kbd>) and say what Claude should do. Click **Queue**.
+2. Click **New task** (<kbd>n</kbd>) and say what Claude should do. Click **Queue**. A project
+   with no tasks yet shows example tasks on its board: click one to start from it.
 3. When the task is in *Review*, read the diff. Click a line to comment on it, then **Rework…** to
    send it back, or **Approve** to merge it.
 4. With several projects, open **Needs you** (<kbd>g</kbd> <kbd>i</kbd>): every task to review,

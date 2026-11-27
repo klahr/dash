@@ -100,6 +100,7 @@ export async function selectProject(p, { follow = true, restore = follow } = {})
   }
   state.project = p;
   state.todos = new Map();
+  state.todosOf = null;
   state.goals = new Map();
   state.goalFilter = null;
   state.unpushed = 0;

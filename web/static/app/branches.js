@@ -21,6 +21,7 @@ import { loadGraph } from "./history.js";
 import { loadFiles } from "./files.js";
 import { PRIORITY_LEVELS, drag, priorityLevel } from "./dnd.js";
 import { hoverCard } from "./hovercard.js";
+import { openQuickAdd } from "./todos.js";
 import { tokenTag } from "./runstats.js";
 import { keys, laneHidden, todoKey } from "./vim.js";
 import { desktop } from "./viewport.js";
@@ -234,6 +235,31 @@ function flipPlay(before) {
   }
 }
 
+// Example tasks for a project's first: generic and safe on any repository.
+// A click opens New task with the text filled in, to edit before queueing.
+const FIRST_TASKS = [
+  "Add a README section on how to build, run and test this project.",
+  "Run the tests and fix any that fail.",
+  "Add tests for the code that has the fewest.",
+  "Fix typos and broken links in the docs.",
+];
+
+// The board of a project with no tasks yet (compare welcomeScreen).
+function firstTaskScreen() {
+  return [
+    h("p", { class: "empty-title" }, "Add your first task"),
+    h("p", {}, "Say what Claude should do, in plain words. Or start from one of these:"),
+    h("ul", { class: "first-tasks" }, ...FIRST_TASKS.map((text) => h("li", {},
+      h("button", { type: "button", class: "first-task", onclick: () => openQuickAdd([text]) }, text)))),
+    h("div", { class: "empty-actions" },
+      ib({ class: "btn primary", onclick: () => openQuickAdd() }, "plus", "New task")),
+    h("ol", { class: "steps welcome-steps" },
+      h("li", {}, h("strong", {}, "It runs in its own worktree, "), "so several tasks can run at once."),
+      h("li", {}, h("strong", {}, "It lands in Review. "), "Read the diff and click a line to comment on it."),
+      h("li", {}, h("strong", {}, "Rework… or Approve. "), "Rework sends it back with your comments; Approve merges it.")),
+  ];
+}
+
 function renderBoardNow() {
   const items = laneItems();
   const empty = $("#board-empty");
@@ -273,6 +299,17 @@ function renderBoardNow() {
   $("#board-filters").hidden = $("#goal-filter").hidden && $("#mine-filter").hidden && !tagged;
   renderBoardSearch();
   renderCombineBar();
+
+  // A project with no tasks at all, once they are in: how to start and what
+  // comes after, instead of empty columns. The header (New task) stays.
+  if (!state.todos.size && state.todosOf === projectKey(state.project)) {
+    $("#board").replaceChildren();
+    $("#lane-tabs").replaceChildren();
+    empty.replaceChildren(...firstTaskScreen());
+    empty.hidden = false;
+    renderReviewBadge(); // goals and questions can wait for you with no tasks
+    return;
+  }
 
   // A task just added may already have moved on (a queued task picked up at
   // once is Running): follow it rather than show its old lane empty.
@@ -321,12 +358,16 @@ function renderBoardNow() {
       l.key === "draft" ? selectBtn(items.draft) : null,
       l.key === "done" ? oldToggle() : null,
       l.key === "done" ? clearDoneBtn() : null))));
+  $(".lane-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  renderReviewBadge();
+}
+
+// The Board's badge: what waits on you, and Needs you's count.
+function renderReviewBadge() {
   // What needs you counts every task, whatever the board is filtered to.
   // (Always a filter: drafts from scans below high show only under From scans.)
   const every = laneItems(true);
   updateNeedsYou(every);
-
-  $(".lane-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
 
   const goals = waitingGoals().length;
   const review = every.review.length + state.perms.length + goals;
