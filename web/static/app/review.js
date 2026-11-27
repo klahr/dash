@@ -1,53 +1,202 @@
-import { $, h, ib, plural } from "./dom.js";
+import { $, h, ib, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
-import { saveComments, state } from "./state.js";
+import { state } from "./state.js";
+import * as store from "./store.js";
 import { baseBranch } from "./events.js";
 import { renderBoard, title } from "./branches.js";
 import { describePerm, duration, isQuestion, isSettingsChange, questionGroups, settingChanges } from "./chatparts.js";
 import { openDetail, renderActions } from "./detail.js";
-import { renderPane } from "./drawmode.js";
+import { renderPane, reworkTodo } from "./drawmode.js";
 
 // ------------------------------------------------------------------ diff comments
-export function commentsFor(id) { return state.comments[id] || []; }
+// Comments on lines of a task's diff (Changes), stored with the task until
+// Rework sends them all in one note (reworkTodo) or they are discarded.
+export function commentsFor(id) { return state.todos.get(id)?.comments || []; }
+const canComment = (t) => !!t && ["review", "failed"].includes(t.status);
+
+// applyTodo shows the task as the server answered a change to its comments
+// at once; its todo.updated event follows.
+function applyTodo(t) {
+  if (!t?.id) return;
+  state.todos.set(t.id, t);
+  if (state.detail !== t.id) return;
+  renderPane();
+  renderActions(t);
+}
+
+// "line 12", "lines 3–5", "removed line 7": where comment c is.
+export function linesLabel(c) {
+  const lines = c.end_line > c.line ? `lines ${c.line}–${c.end_line}` : `line ${c.line}`;
+  return c.side === "old" ? `removed ${lines}` : lines;
+}
 
 // Comments being typed, kept across re-renders of the diff (the task updates
-// often while in review): JSON [todo, file, side, line] → text.
+// often while in review): JSON [todo, file, side, line] of the range's last
+// row → { text, from: the range's first row's { side, ln } }.
 const drafts = new Map();
 const draftKey = (id, { file, side, ln }) => JSON.stringify([id, file, side, ln]);
 const diffLine = (file, side, ln) => [...$("#d-diff").querySelectorAll(".diff-lines > div[data-ln]")]
-  .find((d) => d.dataset.file === file && d.dataset.ln === ln && d.dataset.side === side);
+  .find((d) => d.dataset.file === file && d.dataset.ln === String(ln) && d.dataset.side === side);
+// The draft box new lines extend (tap or shift-click another line): the one opened last.
+let lastDraft = null;
 
-function commentBox(line, t, text = "") {
-  const key = draftKey(t.id, line.dataset);
-  drafts.set(key, text);
+// rowsBetween is the diff's rows from a to b (either order), in one file.
+function rowsBetween(a, b) {
+  const rows = [...a.parentElement.querySelectorAll(":scope > div[data-ln]")];
+  const [i, j] = [rows.indexOf(a), rows.indexOf(b)].sort((x, y) => x - y);
+  return i < 0 ? [b] : rows.slice(i, j + 1);
+}
+
+// rangeOf is what a comment on rows says about where it is: numbered as the
+// file is now when any row is in it, else as the removed lines were; code
+// quotes every row as the diff shows it.
+function rangeOf(rows) {
+  const news = rows.filter((r) => r.dataset.side === "new");
+  const use = news.length ? news : rows;
+  return {
+    file: rows[0].dataset.file, side: news.length ? "new" : "old",
+    line: Number(use[0].dataset.ln), end_line: Number(use.at(-1).dataset.ln),
+    code: rows.map((r) => r.querySelector(".code").textContent).join("\n"),
+  };
+}
+
+// commentBox opens a new comment on the rows from start to end, under the
+// last of them.
+function commentBox(start, end, t, text = "") {
+  const rows = rowsBetween(start, end);
+  const last = rows.at(-1), first = rows[0];
+  const key = draftKey(t.id, last.dataset);
+  const draft = { text, from: { side: first.dataset.side, ln: first.dataset.ln } };
+  drafts.set(key, draft);
+  lastDraft = key;
+  rows.forEach((r) => r.classList.add("sel"));
+  const where = rangeOf(rows);
   // Closing the box puts focus back on the line's comment button.
-  const close = () => { drafts.delete(key); const l = box.previousElementSibling; box.remove(); l?.querySelector(".ln-comment")?.focus(); };
-  const ta = h("textarea", { rows: 3, placeholder: "What should Claude change here?", "aria-label": `Comment on ${line.dataset.file} line ${line.dataset.ln}` });
+  const close = () => {
+    drafts.delete(key);
+    if (lastDraft === key) lastDraft = null;
+    rows.forEach((r) => r.classList.remove("sel"));
+    box.remove();
+    last.querySelector(".ln-comment")?.focus();
+  };
+  const ta = h("textarea", { rows: 3, placeholder: "What should Claude change here?", "aria-label": `Comment on ${where.file} ${linesLabel(where)}` });
   ta.value = text;
-  ta.addEventListener("input", () => drafts.set(key, ta.value));
-  const box = h("form", { class: "comment-box", "data-key": key }, ta,
+  ta.addEventListener("input", () => { draft.text = ta.value; });
+  const add = ib({ class: "btn primary" }, "comment", "Add comment");
+  const box = h("form", { class: "comment-box", "data-key": key },
+    h("p", { class: "comment-where" }, `${where.file}, ${linesLabel(where)}`,
+      h("span", { class: "hint" }, rows.length > 1 ? "" : " · shift-click or tap another line for a range")),
+    ta,
     h("div", { class: "comment-actions" },
       ib({ type: "button", class: "btn", onclick: close }, "x", "Cancel"),
-      ib({ class: "btn primary" }, "comment", "Add comment")));
-  box.addEventListener("submit", (ev) => {
+      add));
+  box.addEventListener("submit", attempt(async (ev) => {
     ev.preventDefault();
-    const text = ta.value.trim();
-    if (!text) return close();
-    const { file, ln, side } = line.dataset;
-    drafts.delete(key);
-    state.comments[t.id] = [...commentsFor(t.id), { file, line: Number(ln), side, code: line.querySelector(".code").textContent, text }];
-    saveComments();
-    renderPane();
-    renderActions(t);
-    diffLine(file, side, ln)?.querySelector(".ln-comment")?.focus();
-  });
+    const body = { ...where, text: ta.value.trim() };
+    if (!body.text) return close();
+    add.disabled = true;
+    let res;
+    try {
+      res = await api("POST", `/api/todos/${t.id}/comments`, body);
+    } finally {
+      add.disabled = false;
+    }
+    close();
+    applyTodo(res);
+    diffLine(where.file, last.dataset.side, last.dataset.ln)?.querySelector(".ln-comment")?.focus();
+  }));
   ta.addEventListener("keydown", (ev) => {
     if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") { ev.preventDefault(); box.requestSubmit(); }
     if (ev.key === "Escape") { ev.stopPropagation(); close(); }
   });
-  line.after(box);
+  last.after(box);
   return ta;
+}
+
+// Comments being edited: comment id → the text so far.
+const editing = new Map();
+
+// commentRow is a saved comment under its line in the diff (diffLines):
+// its text with Edit and Delete, or the box editing it.
+export function commentRow(c) {
+  const t = state.todos.get(state.detail);
+  if (editing.has(c.id)) return editRow(c, t);
+  const edit = () => { editing.set(c.id, c.text); renderPane(); $(`#d-diff .comment-box[data-key="edit:${c.id}"] textarea`)?.focus(); };
+  return h("div", { class: "comment", "data-id": c.id },
+    h("div", { class: "comment-body" },
+      c.end_line > c.line || c.side === "old" ? h("span", { class: "comment-where" }, linesLabel(c)) : null,
+      h("span", { class: "comment-text" }, c.text)),
+    h("span", { class: "comment-tools" },
+      ib({ class: "link", type: "button", "aria-label": `Edit comment on ${c.file} ${linesLabel(c)}`, onclick: edit }, "edit", "Edit"),
+      ib({ class: "link", type: "button", "aria-label": `Delete comment on ${c.file} ${linesLabel(c)}`, onclick: attempt(async () => {
+        applyTodo(await api("DELETE", `/api/todos/${t.id}/comments/${c.id}`));
+      }) }, "trash", "Delete")));
+}
+
+function editRow(c, t) {
+  const key = `edit:${c.id}`;
+  const ta = h("textarea", { rows: 3, "aria-label": `Edit comment on ${c.file} ${linesLabel(c)}` });
+  ta.value = editing.get(c.id);
+  ta.addEventListener("input", () => editing.set(c.id, ta.value));
+  const close = () => { editing.delete(c.id); renderPane(); };
+  const save = ib({ class: "btn primary" }, "check", "Save");
+  const box = h("form", { class: "comment-box", "data-key": key },
+    h("p", { class: "comment-where" }, `${c.file}, ${linesLabel(c)}`),
+    ta,
+    h("div", { class: "comment-actions" },
+      ib({ type: "button", class: "btn", onclick: close }, "x", "Cancel"),
+      save));
+  box.addEventListener("submit", attempt(async (ev) => {
+    ev.preventDefault();
+    const text = ta.value.trim();
+    if (!text) return close();
+    save.disabled = true;
+    let res;
+    try {
+      res = await api("PATCH", `/api/todos/${t.id}/comments/${c.id}`, { text });
+    } finally {
+      save.disabled = false;
+    }
+    editing.delete(c.id);
+    applyTodo(res);
+  }));
+  ta.addEventListener("keydown", (ev) => {
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") { ev.preventDefault(); box.requestSubmit(); }
+    if (ev.key === "Escape") { ev.stopPropagation(); close(); }
+  });
+  return box;
+}
+
+// commentsBar sits above the diff while the task has comments to send: how
+// many, Discard, and Send rework (with an optional note for all of them).
+export function commentsBar(t) {
+  const n = commentsFor(t?.id).length;
+  if (!n || !canComment(t)) return null;
+  return h("div", { class: "comments-bar", role: "group", "aria-label": "Comments to send" },
+    h("span", { class: "comments-count" }, ico("comment"), `${plural(n, "comment")} to send`),
+    h("span", { class: "pv-spacer" }),
+    ib({ class: "btn small", type: "button", title: "Throw these comments away", onclick: attempt(async () => {
+      if (!await ask({ title: `Discard ${plural(n, "comment")}?`, ok: "Discard", danger: true })) return;
+      applyTodo(await api("DELETE", `/api/todos/${t.id}/comments`));
+    }) }, "x", "Discard"),
+    ib({ class: "btn small primary", type: "button", title: "Send every comment, and a note if you like, as the rework", onclick: attempt(() => reworkTodo(t)) }, "redo", "Send rework…"));
+}
+
+// Comments this browser kept before they were stored with the task: moved
+// to it the first time the task's diff shows.
+const legacy = store.getJSON("dash.comments", null);
+function moveLegacy(t) {
+  const list = legacy?.[t.id];
+  if (!list) return;
+  delete legacy[t.id];
+  if (Object.keys(legacy).length) store.setJSON("dash.comments", legacy);
+  else store.remove("dash.comments");
+  (async () => {
+    let res = null;
+    for (const c of list) res = await api("POST", `/api/todos/${t.id}/comments`, { file: c.file, side: c.side, line: c.line, code: c.code, text: c.text });
+    applyTodo(res);
+  })().catch(() => {});
 }
 
 // keepCommentBoxes runs rebuild (which replaces the diff's rows) and puts the
@@ -58,42 +207,52 @@ export function keepCommentBoxes(rebuild) {
   const sel = focused && active.tagName === "TEXTAREA" ? [active.selectionStart, active.selectionEnd] : null;
   rebuild();
   const t = state.todos.get(state.detail);
-  if (!t || !["review", "failed"].includes(t.status)) return;
-  for (const [key, text] of drafts) {
+  if (!canComment(t)) return;
+  moveLegacy(t);
+  const last = lastDraft;
+  for (const [key, d] of [...drafts]) {
     const [id, file, side, ln] = JSON.parse(key);
     if (id !== t.id) continue;
-    const line = diffLine(file, side, ln);
-    if (!line) continue; // kept, in case the line comes back
-    const ta = commentBox(line, t, text);
-    if (key === focused) {
-      ta.focus();
-      if (sel) ta.setSelectionRange(...sel);
-    }
+    const end = diffLine(file, side, ln);
+    if (!end) continue; // kept, in case the line comes back
+    commentBox(diffLine(file, d.from.side, d.from.ln) || end, end, t, d.text);
+  }
+  lastDraft = last;
+  const box = focused && [...$("#d-diff").querySelectorAll(".comment-box")].find((b) => b.dataset.key === focused);
+  const ta = box?.querySelector("textarea");
+  if (ta) {
+    ta.focus();
+    if (sel) ta.setSelectionRange(...sel);
   }
 }
 
+// Shift-click would select the code's text: the range is the comment's.
+$("#d-diff").addEventListener("mousedown", (e) => {
+  if (e.shiftKey && e.target.closest(".diff-lines > div[data-ln]") && lastDraft) e.preventDefault();
+});
+
+// A click (a tap) on a line opens a comment on it. With a comment just
+// opened in the same file, and nothing typed in it yet (or with Shift), it
+// covers the lines from there to here instead.
 $("#d-diff").addEventListener("click", (e) => {
   const line = e.target.closest(".diff-lines > div[data-ln]");
   const t = state.todos.get(state.detail);
-  if (!line || !t || !["review", "failed"].includes(t.status)) return;
+  if (!line || !canComment(t)) return;
+  const d = lastDraft && drafts.get(lastDraft);
+  const openBox = d && [...line.parentElement.querySelectorAll(":scope > .comment-box")].find((b) => b.dataset.key === lastDraft);
+  if (openBox && (e.shiftKey || !d.text.trim())) {
+    const from = diffLine(line.dataset.file, d.from.side, d.from.ln);
+    if (from) {
+      drafts.delete(lastDraft);
+      rowsBetween(from, openBox.previousElementSibling).forEach((r) => r.classList.remove("sel"));
+      openBox.remove();
+      commentBox(from, line, t, d.text).focus();
+      return;
+    }
+  }
   if (line.nextElementSibling?.classList.contains("comment-box")) return line.nextElementSibling.querySelector("textarea").focus();
-  commentBox(line, t).focus();
+  commentBox(line, line, t).focus();
 });
-
-function commentFeedback(list, extra) {
-  const parts = list.map((c) => `### ${c.file}, ${c.side === "old" ? "removed line" : "line"} ${c.line}\n> ${c.code}\n\n${c.text}`);
-  return `Review comments on your diff:\n\n${parts.join("\n\n")}${extra ? `\n\nAlso: ${extra}` : ""}`;
-}
-
-export async function sendComments(t) {
-  const list = commentsFor(t.id);
-  const extra = await ask({ title: `Rework with ${plural(list.length, "note")}`, body: "Claude continues in the same worktree and addresses each of your rework notes.", input: true, placeholder: "Anything else? (optional)", ok: "Rework" });
-  if (extra === null) return;
-  await api("POST", `/api/todos/${t.id}/rework`, { feedback: commentFeedback(list, extra) });
-  delete state.comments[t.id];
-  saveComments();
-  toast("Sent for rework");
-}
 
 // ------------------------------------------------------------------ tests (checks)
 // The checks and the token use sit in one Details fold, which shows when

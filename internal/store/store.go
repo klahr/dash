@@ -1009,6 +1009,7 @@ func (s *Store) ProjectChats() [][]model.ChatMessage {
 func clone(t model.Todo) model.Todo {
 	cp := t
 	cp.Feedback = append([]string(nil), t.Feedback...)
+	cp.Comments = slices.Clone(t.Comments)
 	cp.Tags = slices.Clone(t.Tags)
 	cp.Finding = t.Finding.Clone()
 	cp.DependsOn = append([]string(nil), t.DependsOn...)

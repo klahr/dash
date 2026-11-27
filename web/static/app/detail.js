@@ -12,7 +12,7 @@ import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.j
 import { canPreview, hidePreview, previewButton, previewOf, pv, renderPreview, stopPreview } from "./preview.js";
 import { canRework, popMenu, renderPane, renderReworkBox, revertTodo, reviewTodo, reworkTodo } from "./drawmode.js";
 import { runnerName } from "./runners.js";
-import { commentsFor, renderChecks, renderPerms, sendComments } from "./review.js";
+import { commentsFor, renderChecks, renderPerms } from "./review.js";
 import { renderTodoChatMode, todoChat } from "./chat.js";
 import { renderRunStats } from "./runstats.js";
 import { loadTodoChat } from "./chatpane.js";
@@ -239,6 +239,9 @@ export function renderActions(t) {
   const post = (verb, body, msg) => attempt((e) => busy(e.currentTarget, async () => { await api("POST", `/api/todos/${t.id}/${verb}`, body); toast(msg); }));
   const b = (icon, label, onclick, cls = "") => ib({ class: `btn ${cls}`, onclick }, icon, label);
   const rework = attempt(() => reworkTodo(t));
+  // With comments on the diff waiting, Rework sends them: it says how many.
+  const comments = commentsFor(t.id).length;
+  const reworkButton = () => comments ? b("redo", `Send rework (${comments})…`, rework, "primary") : b("redo", "Rework…", rework);
   // On a desktop the task is edited in the pane itself (⋯ has the full form).
   const edit = () => desktop.matches ? null : b("edit", "Edit", () => openTodoForm(t));
   const btns = [];
@@ -277,11 +280,7 @@ export function renderActions(t) {
       }
       // Preview · Rework · Approve (Claude's review is on the card and in ⋯)
       if (canPreview(t)) btns.push(previewButton(t));
-      if (commentsFor(t.id).length) {
-        btns.push(b("redo", `Rework with ${plural(commentsFor(t.id).length, "note")}…`, attempt(() => sendComments(t)), "primary"));
-      } else {
-        btns.push(b("redo", "Rework…", rework));
-      }
+      btns.push(reworkButton());
       if (approvable(t)) {
         btns.push(b("check", "Approve", attempt(async () => {
           await whileBusy(t, waitsOnGitHub(t) ? "Pushing…" : "Merging…", () => api("POST", `/api/todos/${t.id}/approve`));
@@ -301,7 +300,7 @@ export function renderActions(t) {
       if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, ico("external"), `Open pull request #${t.pr.number}`));
       break;
     case "failed":
-      btns.push(t.worktree ? b("redo", "Rework…", rework) : edit());
+      btns.push(t.worktree ? reworkButton() : edit());
       btns.push(t.worktree && t.error?.startsWith("merge:")
         ? b("merge", "Retry merge", post("approve", null, "Merging again"), "review grow")
         : retryButton(t, b, post));

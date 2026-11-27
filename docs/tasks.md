@@ -175,12 +175,30 @@ review it first. A changed image
 (PNG, JPEG, GIF or WebP) shows as pictures, before and after, here and in **History**.
 
 - Not right? Click **Rework…**, say what to change, and it goes back to Claude.
+- To point at code, comment on its lines. See [Comment on lines](#comment-on-lines).
 - For a small fix, click **Edit** on a changed file: saving commits your edit on the task's
   branch, so approving merges it with the rest.
 - The task's prompt shows folded to its first line. Click **Show** to read all of it.
 - **Details**, folded above the tabs, holds the test results and **Token use**: each Claude run
   on the task, with its tokens (and how many were cached), turns and cost. When the tests failed,
   **Details** has a **Tests fail** badge.
+
+### Comment on lines
+
+On the **Changes** tab, click a line of the diff (tap it on a phone) to comment on it. For a range,
+shift-click the last line, or tap it before you type. Write what to change and click **Add
+comment** (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>).
+
+- The comment shows under its line, with **Edit** and **Delete**.
+- Comments are kept with the task until you send them. Closing the task or reloading the page
+  keeps them, on every device.
+- A bar above the diff counts them. **Discard** throws them all away.
+- **Send rework…** (in the bar, or the action bar's **Send rework (n)…**) sends every comment as
+  one rework, with an optional note for all of them. Each comment goes to Claude with its file,
+  its line numbers and the lines it quotes.
+- After you send them, the comments are in the task's history: in the timeline, as that round's
+  message to the agent, and under the prompt with the other rework notes.
+- A message sent from the task chat in **Rework** mode takes the waiting comments along too.
 
 ## Approve
 

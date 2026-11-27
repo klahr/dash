@@ -55,8 +55,8 @@ shows, on this computer or another one. It looks like this:
 
 1. Click **Add project** and pick a GitHub repository, a remote URL, or **Local only**.
 2. Click **New task** (<kbd>n</kbd>) and say what Claude should do. Click **Queue**.
-3. When the task is in *Review*, read the diff. Click **Rework…** to send it back, or
-   **Approve** to merge it.
+3. When the task is in *Review*, read the diff. Click a line to comment on it, then **Rework…** to
+   send it back, or **Approve** to merge it.
 
 Queue as many tasks as you like: they run in parallel. See [Tasks](docs/tasks.md) for the
 details: test commands, priorities, follow-up tasks, pacing and pausing.

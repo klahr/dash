@@ -7,15 +7,14 @@ import { desktop } from "./viewport.js";
 import { api, here, on } from "./api.js";
 import { ask, attempt, fail, openSheet, toast } from "./dialogs.js";
 import { attachThumb, uploadFile } from "./attachments.js";
-import { saveComments, state } from "./state.js";
+import { state } from "./state.js";
 import { baseBranch, multi, projectKey } from "./events.js";
 import { selectProject } from "./projects.js";
 import { closable, title } from "./branches.js";
 import { agoText } from "../time.js";
-import { renderActions } from "./detail.js";
 import { PV_LABEL, commitShown, hidePreview, isTermPreview, previewOf, previewTodo, pv, renderPreview, shownPreview } from "./preview.js";
 import { canEditDiff, openDiffEdit } from "./diffedit.js";
-import { commentsFor, keepCommentBoxes } from "./review.js";
+import { commentRow, commentsBar, commentsFor, keepCommentBoxes } from "./review.js";
 import { setTodoChatMode, todoChat } from "./chat.js";
 import { isTyping, openDialog } from "./vim.js";
 import { popMenu } from "./popmenu.js";
@@ -552,14 +551,18 @@ export const canRework = (t) => !!t?.worktree && ["review", "failed"].includes(t
 export const reworkLabel = (t) => closable(t) ? "Ask for changes…" : "Rework…";
 // text prefills the notes, e.g. from the task chat. Pictures added from the
 // preview's draw mode (and their notes) come along. Resolves true once sent.
+// The task's comments on its diff (Changes) go with them, before the notes.
 export async function reworkTodo(t, text = "") {
   const shot = shots.get(t.id);
   const value = [shot?.text.trim(), text].filter(Boolean).join("\n\n");
-  const res = closable(t)
+  const n = commentsFor(t.id).length;
+  const res = n
+    ? await ask({ title: `Send rework with ${plural(n, "comment")}`, body: "Claude continues in the same worktree and addresses each of your comments on the changes. Add a note for all of them if you like.", input: true, value, placeholder: "Anything else? (optional)", ok: "Send rework", attach: true, attachments: shot?.items || [] })
+    : closable(t)
     ? await ask({ title: "Ask for changes", body: "Claude continues in the same worktree with your message and runs again. Paste or attach a screenshot if it helps.", input: true, value, placeholder: "What should Claude do?", ok: "Send", attach: true, attachments: shot?.items || [] })
     : await ask({ title: "Rework", body: "Claude continues in the same worktree with your rework notes. Paste or attach a screenshot to show what's wrong.", input: true, value, placeholder: "What should change?", ok: "Rework", attach: true, attachments: shot?.items || [] });
   if (res === null) return false;
-  await api("POST", `/api/todos/${t.id}/rework`, { feedback: res.text, attachments: res.attachments });
+  await api("POST", `/api/todos/${t.id}/rework`, { feedback: res.text, attachments: res.attachments, comments: n > 0 });
   shots.delete(t.id);
   renderReworkBox();
   toast(closable(t) ? "Sent to Claude" : "Sent for rework");
@@ -646,7 +649,7 @@ function renderDiff(text) {
   }
   const commented = new Set(commentsFor(state.detail).map((c) => c.file));
   const t = state.todos.get(state.detail), editable = canEditDiff(t);
-  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[goalNote(t)].filter(Boolean), ...files.map((f) => h("details", {
+  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[goalNote(t), commentsBar(t)].filter(Boolean), ...files.map((f) => h("details", {
     class: "diff-file", open: state.diffOpen.has(f.path) || commented.has(f.path),
     ontoggle: (e) => state.diffOpen[e.target.open ? "add" : "delete"](f.path),
   },
@@ -688,7 +691,8 @@ export function diffImages(before, after, url) {
 }
 
 // Rows for one file, numbered like the new file (removed lines use old numbers),
-// with a task's saved review comments under their lines.
+// with a task's saved review comments under the last line they are on, and
+// those lines marked.
 export function diffLines(f, { comments = [], commentable = false } = {}) {
   const rows = [];
   let oldLn = 0, newLn = 0;
@@ -703,18 +707,13 @@ export function diffLines(f, { comments = [], commentable = false } = {}) {
     const side = l.startsWith("-") ? "old" : "new";
     const ln = side === "old" ? oldLn++ : newLn++;
     if (l.startsWith(" ") || l === "") oldLn++;
+    const covered = comments.some((c) => c.side === side && ln >= c.line && ln <= (c.end_line || c.line));
+    const kind = l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "";
     // The button gives keyboard and screen reader users a way to open the comment box.
-    rows.push(h("div", { class: l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "", "data-ln": ln, "data-side": side, "data-file": f.path, title: commentable ? "Click to comment" : null },
+    rows.push(h("div", { class: `${kind}${covered ? " commented" : ""}`.trim(), "data-ln": ln, "data-side": side, "data-file": f.path, title: commentable ? "Click to comment, shift-click for a range" : null },
       commentable ? h("button", { type: "button", class: "ln-comment", "aria-label": `Comment on ${f.path} ${side === "old" ? "removed line" : "line"} ${ln}` }, "+") : null,
       h("span", { class: "code" }, l || " ")));
-    for (const c of comments.filter((c) => c.line === ln && c.side === side)) {
-      rows.push(h("div", { class: "comment" },
-        h("span", {}, c.text),
-        ib({ class: "link", type: "button", "aria-label": "Delete comment", onclick: () => {
-          state.comments[state.detail] = commentsFor(state.detail).filter((x) => x !== c);
-          saveComments(); renderPane(); renderActions(state.todos.get(state.detail));
-        } }, "trash", "Delete")));
-    }
+    for (const c of comments.filter((c) => (c.end_line || c.line) === ln && c.side === side)) rows.push(commentRow(c));
   }
   return rows;
 }

@@ -522,6 +522,10 @@ type Todo struct {
 	// Claude has already seen, so a resumed session only gets the new ones.
 	Feedback     []string `json:"feedback,omitempty"`
 	FeedbackSent int      `json:"feedback_sent,omitempty"`
+	// Comments are the reviewer's draft comments on lines of the task's
+	// diff (Changes), kept until Rework sends them as one feedback note
+	// (agent.ReviewNote), which then stays in Feedback, or they're discarded.
+	Comments []ReviewComment `json:"comments,omitempty"`
 	// SessionID is Claude Code's session for this todo; later runs resume it.
 	SessionID string `json:"session_id,omitempty"`
 	// LastSessionID is the latest SessionID, kept when cleanup or a fresh
@@ -823,6 +827,23 @@ type Attachment struct {
 	Type string `json:"type"`
 	Size int64  `json:"size"`
 	Path string `json:"path"` // absolute path Claude reads it from
+}
+
+// ReviewComment is a reviewer's comment on a line, or a range of lines, of
+// one file in a task's diff.
+type ReviewComment struct {
+	ID   string `json:"id"`
+	File string `json:"file"`
+	// Side is "new" when Line and EndLine number the file as it is now,
+	// "old" when they number removed lines as the file was before.
+	Side    string `json:"side"`
+	Line    int    `json:"line"`
+	EndLine int    `json:"end_line,omitempty"` // the range's last line; 0: Line alone
+	// Code is the lines commented on, as the diff shows them: each starts
+	// with "+" (added), "-" (removed) or " " (unchanged).
+	Code      string    `json:"code"`
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // FileEdit is a file's new content, saved in the web editor. Blob is the git

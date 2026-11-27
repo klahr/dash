@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../editor.js";
-import { $, chatSuggestOn, dateTimeText, entering, h, ib, ico, whenText } from "./dom.js";
+import { $, chatSuggestOn, dateTimeText, entering, h, ib, ico, plural, whenText } from "./dom.js";
 import * as store from "./store.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on, request } from "./api.js";
@@ -11,6 +11,7 @@ import { projectKey } from "./events.js";
 import { chatCloseReason, chatPermCard, duration, permDecided, placeToolCall, savedToolCall, sendStopButton, toolCall, toolResult, toolSettled } from "./chatparts.js";
 import { closeDetail } from "./detail.js";
 import { canRework, reworkLabel, reworkTodo, takeReviewNext } from "./drawmode.js";
+import { commentsFor } from "./review.js";
 import { loadTodoChat, renderChatBadge, renderChatDots, renderChatHead, renderChatPane, viewingChat } from "./chatpane.js";
 import { timeline } from "./timeline.js";
 import { fmtTokens } from "./runstats.js";
@@ -1392,8 +1393,10 @@ async function sendRework(q, files) {
   if (!canRework(t)) { setTodoChatMode("chat"); return false; }
   // Nothing written: the Rework sheet, where notes and pictures can be added.
   if (!q && !files.length) return reworkTodo(t);
-  await api("POST", `/api/todos/${t.id}/rework`, { feedback: q, attachments: files.map((a) => a.id) });
-  toast("Sent for rework");
+  // The comments on its diff waiting to be sent go too, before this.
+  const comments = commentsFor(t.id).length;
+  await api("POST", `/api/todos/${t.id}/rework`, { feedback: q, attachments: files.map((a) => a.id), comments: comments > 0 });
+  toast(comments ? `Sent for rework with ${plural(comments, "comment")}` : "Sent for rework");
   return true;
 }
 export function setTodoChatMode(mode) {

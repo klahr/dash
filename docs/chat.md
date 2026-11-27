@@ -47,6 +47,8 @@ follows it. Hover over either for a reminder of where it sends.
 - **Rework**: sends the message (and any pictures or files attached to it) to the agent as
   rework notes. It continues in the task's worktree. The button says **Rework**; with an
   empty box it opens the **Rework** sheet. Only for a task in review or failed that has a worktree.
+  Comments waiting on the diff's lines go along, before the message (see
+  [Comment on lines](tasks.md#comment-on-lines)).
 
 <kbd>Enter</kbd> sends either way. Opening another task switches back to **Ask Claude**.
 

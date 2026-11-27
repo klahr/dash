@@ -1444,6 +1444,8 @@ func (s *Server) reworkTodo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Feedback    string   `json:"feedback"`
 		Attachments []string `json:"attachments"` // upload ids, e.g. a screenshot of what's wrong
+		// Comments sends the task's draft comments on its diff too, before feedback.
+		Comments bool `json:"comments"`
 	}
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -1458,7 +1460,7 @@ func (s *Server) reworkTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	t, err := sv.rework(r.PathValue("tid"), req.Feedback, atts)
+	t, err := sv.reworkWith(r.PathValue("tid"), req.Feedback, atts, req.Comments)
 	if err != nil {
 		writeErr(w, err)
 		return

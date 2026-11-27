@@ -2110,6 +2110,24 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .comment-box textarea { font-size: var(--fs-body); }
 .comment-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .comment-actions .btn { min-height: 38px; }
+/* The lines a comment being written covers, and those saved comments are on. */
+.diff-lines div[data-ln].sel { box-shadow: inset 3px 0 0 var(--brand); background-image: linear-gradient(color-mix(in srgb, var(--brand) 14%, transparent), color-mix(in srgb, var(--brand) 14%, transparent)); }
+.diff-lines div[data-ln].commented { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--brand) 60%, transparent); }
+.comment-where { margin: 0 0 6px; font-size: var(--fs-s); color: var(--muted); overflow-wrap: anywhere; }
+.diff-lines .comment .comment-body { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.diff-lines .comment .comment-where { margin: 0; }
+.diff-lines .comment .comment-text { white-space: pre-wrap; }
+.comment-tools { display: flex; gap: 10px; flex: none; }
+/* Above the diff while comments wait: how many, Discard, Send rework. */
+.comments-bar {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 8px; padding: 8px 10px; border-radius: var(--r-s); background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); font-size: var(--fs-m);
+}
+.comments-count { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.comments-count .ico { width: 16px; height: 16px; }
+/* Touch: no hover, so the comment marker shows faintly on every line. */
+@media (hover: none) { .diff-lines .ln-comment { opacity: .35; } }
 @media (min-width: 1024px) {
   #view-board.active { position: relative; }
 }

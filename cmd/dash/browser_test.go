@@ -87,7 +87,17 @@ func TestBrowserMainFlows(t *testing.T) {
 		chromedp.SendKeys(chromedp.CSS(`#d-diff .comment-box textarea`), "Say it louder"),
 		chromedp.Click(chromedp.CSS(`#d-diff .comment-box button.primary`)),
 	)
-	b.clickText("#d-actions button", "Rework with 1 note…")
+	// The comment is stored with the task (so it outlives a reload), and shows under its line.
+	b.waitJS("the comment under its line", `document.querySelector("#d-diff .diff-lines .comment")?.textContent.includes("Say it louder")`)
+	var stored struct {
+		Comments []struct{ File, Text string }
+	}
+	api.must("GET", "/api/todos/"+first, nil, http.StatusOK, &stored)
+	if len(stored.Comments) != 1 || stored.Comments[0].File != "done-by-runner.txt" || stored.Comments[0].Text != "Say it louder" {
+		t.Fatalf("the comment stored with the task: %+v", stored.Comments)
+	}
+	b.waitJS("the comments bar", `document.querySelector("#d-diff .comments-bar")?.textContent.includes("1 comment to send")`)
+	b.clickText("#d-actions button", "Send rework (1)…")
 	b.do("add a note",
 		chromedp.WaitVisible(chromedp.ID("ask-input")),
 		chromedp.SendKeys(chromedp.ID("ask-input"), "And add a rework file"),
@@ -96,7 +106,7 @@ func TestBrowserMainFlows(t *testing.T) {
 	b.until("send it back", `!document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.ID("ask-ok")))
 	waitStatus(t, api, "/api/todos/"+first, "review", func(td todo) bool { return td.Status == "review" && td.Runs > 1 })
 	if _, diff := api.try("GET", "/api/todos/"+first+"/diff", nil); !strings.Contains(diff, "rework-by-runner.txt") ||
-		!strings.Contains(diff, "Say it louder") || !strings.Contains(diff, "And add a rework file") {
+		!strings.Contains(diff, "Say it louder") || !strings.Contains(diff, "done-by-runner.txt, line ") || !strings.Contains(diff, "And add a rework file") {
 		t.Fatalf("the rework didn't get the comment and the note:\n%s", diff)
 	}
 	b.waitJS("the reworked diff", `document.querySelector("#d-diff")?.textContent.includes("rework-by-runner.txt")`)

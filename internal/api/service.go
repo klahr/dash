@@ -692,8 +692,21 @@ func (sv *service) runTests(ctx context.Context, t model.Todo, shared bool) erro
 // rework sends a reviewed (or failed) todo back to the queue with feedback;
 // the next run reuses its worktree so Claude builds on its changes.
 func (sv *service) rework(id, feedback string, atts []model.Attachment) (model.Todo, error) {
+	return sv.reworkWith(id, feedback, atts, false)
+}
+
+// reworkWith is rework that, with comments, also sends the reviewer's draft
+// comments on the diff (Todo.Comments) in the one note, with feedback
+// after them (agent.ReviewNote), and clears them.
+func (sv *service) reworkWith(id, feedback string, atts []model.Attachment, comments bool) (model.Todo, error) {
 	t, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		fb := strings.TrimSpace(feedback)
+		if comments {
+			if len(t.Comments) == 0 && fb == "" && len(atts) == 0 {
+				return fmt.Errorf("%w: there are no comments to send (sent already?)", errBadRequest)
+			}
+			fb, t.Comments = agent.ReviewNote(t.Comments, fb), nil
+		}
 		if len(atts) > 0 {
 			if fb == "" {
 				fb = "See the attached files."

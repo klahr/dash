@@ -55,7 +55,6 @@ export const state = {
   showOld: false,      // show merged todos older than a day
   unpushed: 0,         // commits on the default branch origin doesn't have
   unpushedTodos: null, // ids of merged todos origin doesn't have yet (null until known)
-  comments: loadComments(), // todo id → [{file, line, side, code, text}] (diff review notes)
   collapsed: new Set(arrayOf(store.getJSON("dash.collapsed"))), // desktop: minimized lane keys
 };
 // projectFirst says what to do when an action needs a project and none is
@@ -69,9 +68,3 @@ export const cp = { sha: null, project: null, detail: null, error: "", diffs: nu
 
 // arrayOf keeps stored data that isn't a list (stale or tampered) from breaking startup.
 function arrayOf(v) { return Array.isArray(v) ? v : []; }
-function loadComments() {
-  return store.getJSON("dash.comments", {});
-}
-export function saveComments() {
-  store.setJSON("dash.comments", state.comments);
-}
