@@ -12,6 +12,7 @@ import (
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/disk"
+	"github.com/klahr/dash/internal/doctor"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/runnerctl"
 	"github.com/klahr/dash/internal/store"
@@ -305,6 +306,37 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 			return
 		}
 		s.Todos.Kick() // it takes tasks again
+		x, _ = rh.Get(x.ID)
+		writeJSON(w, http.StatusOK, s.view(c, x))
+	})
+	// Check again: the runner runs its doctor checks now (tunnel/doctor.go).
+	// Anyone who sees the runner may ask: the checks only look.
+	mux.HandleFunc("POST /api/runners/{id}/doctor", func(w http.ResponseWriter, r *http.Request) {
+		c, x, ok := s.runnerFor(w, r, func(Caller, tunnel.Runner) bool { return true }, deny(""))
+		if !ok {
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+		defer cancel()
+		var rep doctor.Report
+		err := rh.Call(ctx, x.ID, http.MethodPost, tunnel.DoctorPath, nil, &rep)
+		var ce *tunnel.CallError
+		switch {
+		case errors.Is(err, tunnel.ErrOffline):
+			writeError(w, http.StatusConflict, x.Name+" is offline: it checks again once it is back")
+			return
+		case errors.As(err, &ce) && (ce.Status == http.StatusForbidden || ce.Status == http.StatusNotFound || ce.Status == http.StatusMethodNotAllowed):
+			// A runner from before the doctor: its guard refuses the route.
+			writeError(w, http.StatusConflict, x.Name+" runs a Dash without doctor checks: update the runner")
+			return
+		case err != nil:
+			writeErr(w, err)
+			return
+		}
+		if err := rh.SetDoctor(x.ID, rep); err != nil {
+			writeErr(w, err)
+			return
+		}
 		x, _ = rh.Get(x.ID)
 		writeJSON(w, http.StatusOK, s.view(c, x))
 	})

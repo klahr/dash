@@ -15,6 +15,7 @@ runners (see [Whose work a runner does](#whose-work-a-runner-does)).
 
 - [Two kinds of projects](#two-kinds-of-projects): a runner's own, or shared on labels
 - [Add a runner](#add-a-runner): install, update, manage, Windows, a planner's runner
+  - [The runner's Doctor](#the-runners-doctor): setup checks, and how to fix what is missing
 - [Shared projects: tasks on runners](#shared-projects-tasks-on-runners)
   - [Runner labels](#runner-labels)
   - [Where deploys run](#where-deploys-run)
@@ -253,6 +254,34 @@ changing it.
 
 Logs: `journalctl --user -u dash-runner` on Linux, `~/Library/Logs/dash-runner.log` on macOS,
 `%LOCALAPPDATA%\dash-runner\dash-runner.log` on Windows.
+
+### The runner's Doctor
+
+A runner checks its own setup when it starts, every hour, and when you click **Check again**. To
+see the results, open **Runners → the runner → Doctor**. A runner with something to fix has a
+yellow (warning) or red (error) dot in the list.
+
+The checks come in three groups:
+
+- **Required**: `git` (and bash on Windows), `claude` installed and logged in, the hub reachable,
+  and at least 5 GB free for task worktrees (or the runner's **Start no task below**, if higher).
+  A failure here is an error.
+- **Features**: `gh` installed and logged in (without it, no pull requests), and a headless
+  Chrome or Chromium (without it, no before/after screenshots or browser tests). A failure here
+  is a warning.
+- **Project: …**: for each project the runner serves, the tools its **Test command** and **Run
+  command** start with (`go`, `npm`, `make`, …). Scripts like `./scripts/check.sh` and shell
+  builtins are skipped. A missing tool is a warning: tasks that run it fail.
+
+Each failed check has a fix command for the runner's system (macOS, Windows, or the Linux
+distribution's package manager), with a **Copy** button. Run it on the runner, then click **Check
+again**. The doctor never installs anything itself.
+
+When the hub picks a runner for a task, it prefers one that has all the tools of the task's
+project.
+
+A runner older than the doctor shows "No checks reported yet (update the runner)". It keeps
+working as before.
 
 ### Windows runners
 

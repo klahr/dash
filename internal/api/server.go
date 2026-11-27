@@ -27,6 +27,7 @@ import (
 	"github.com/klahr/dash/internal/deploy"
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/dispatch"
+	"github.com/klahr/dash/internal/doctor"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/httpjson"
 	"github.com/klahr/dash/internal/hub"
@@ -140,6 +141,9 @@ type Server struct {
 	// this binary and restarts on it once the hub has its answer (nil: it
 	// can't update itself).
 	SelfUpdate func(ctx context.Context, version string) error
+	// Doctor, on a runner, runs its setup checks now (runnerctl.Doctor.Run)
+	// for the hub's Check again (nil: it has none to run).
+	Doctor func(ctx context.Context) doctor.Report
 	// DiskRoom, on a runner, is nil when it has the disk space to start a
 	// task under the hub's thresholds s (nil: the runner's last ones), or
 	// why it hasn't (disk.Monitor.CanStart; nil: not checked).

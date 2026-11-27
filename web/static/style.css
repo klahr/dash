@@ -1539,6 +1539,8 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
   .runner-rail-os { margin-left: auto; }
   .runner-rail-warn { margin-left: auto; }
   .runner-rail-os + .runner-rail-warn { margin-left: 0; }
+  .runner-rail-text + .runner-doctor-dot { margin-left: auto; }
+  .runner-doctor-dot + .runner-rail-warn { margin-left: 0; }
   #runners-nav .rail-group:last-child { margin-top: auto; }
 }
 .runners-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -1689,6 +1691,24 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .runner-agent-feature.off .ico { color: var(--muted); }
 .runner-agent-warn { margin: 0; padding-left: 18px; overflow-wrap: anywhere; }
 .runner-claude-warn ul { margin: 4px 0 0; padding-left: 18px; font-size: var(--fs-s); overflow-wrap: anywhere; }
+/* A runner's Doctor: its setup checks by group, each with a coloured status, what was found and the fix to copy. */
+.runner-doctor-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--running); }
+.runner-doctor-dot.error { background: var(--failed); }
+.runner-row-doctor { display: inline-flex; align-items: center; gap: 6px; }
+.runner-doctor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+.runner-doctor-head .hint { margin: 0; }
+.runner-doctor-group { margin: 12px 0 6px; font-size: var(--fs-s); color: var(--muted); font-weight: 600; }
+.runner-doctor-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.runner-doctor-check { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r-m); min-width: 0; }
+.runner-doctor-check.warning { border-left: 3px solid var(--running); }
+.runner-doctor-check.error { border-left: 3px solid var(--failed); }
+.runner-doctor-icon { flex: none; display: inline-flex; margin-top: 2px; }
+.runner-doctor-icon .ico { width: 16px; height: 16px; }
+.runner-doctor-check.ok .runner-doctor-icon { color: var(--merged); }
+.runner-doctor-check.warning .runner-doctor-icon { color: var(--running); }
+.runner-doctor-check.error .runner-doctor-icon { color: var(--failed); }
+.runner-doctor-text { flex: 1; min-width: 0; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.runner-doctor-text .copy-row { margin-top: 4px; }
 /* A runner's repositories to add, or projects to link: a raised box with a list of choice cards (.choice-card, below). */
 .runner-repos { margin-top: 12px; padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); }
 .runner-repos h4 { margin: 0; font-size: var(--fs-body); }

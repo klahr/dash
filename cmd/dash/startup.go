@@ -1077,6 +1077,11 @@ func (a *app) setupRunner() {
 	apiSrv.Shared, a.todos.Shared, merges.Shared = shared, shared, shared
 	reporter := a.newReporter(creds, disks, &hubShared)
 	disks.Changed = reporter.Nudge
+	// The doctor's setup checks, now, hourly and on the hub's Check again;
+	// every report carries the latest.
+	doc := a.newDoctor(creds, disks)
+	apiSrv.Doctor, reporter.Doctor = doc.Run, doc.Last
+	go doc.Loop(ctx, reporter.Nudge)
 	go disks.Run(ctx)
 	a.reporter = reporter
 	a.storeEvents.chain(reporter.Observe)
@@ -1198,6 +1203,22 @@ func (a *app) newReporter(creds tunnel.Credentials, disks *disk.Monitor, hubShar
 				hubShared.Store(reply.Shared != nil && *reply.Shared)
 			}
 			return err
+		}}
+}
+
+// newDoctor checks this runner's setup (runnerctl.Doctor): what it needs,
+// the features it would lose, and the tools of the hub's projects it serves.
+func (a *app) newDoctor(creds tunnel.Credentials, disks *disk.Monitor) *runnerctl.Doctor {
+	return &runnerctl.Doctor{Server: creds.Server, ClaudeBin: a.o.claudeBin,
+		Disk: func() (disk.Status, disk.Settings) { return disks.Status(), disks.Settings() },
+		Projects: func() []runnerctl.DoctorProject {
+			var out []runnerctl.DoctorProject
+			for _, p := range a.st.ListProjects() {
+				if p.HubProjectID != "" {
+					out = append(out, runnerctl.DoctorProject{ID: p.HubProjectID, Name: p.Name, TestCommand: p.TestCommand, RunCommand: p.RunCommand})
+				}
+			}
+			return out
 		}}
 }
 

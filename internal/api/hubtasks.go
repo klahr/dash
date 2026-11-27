@@ -70,6 +70,21 @@ func (s *Server) hubTaskRoutes(mux routeMux) {
 	mux.HandleFunc("GET "+dispatch.ScanPath, s.hubScan)
 	mux.HandleFunc("POST /api/hub/github/{hpid}", s.hubGitHub)
 	mux.HandleFunc("POST "+tunnel.UpdatePath, s.hubUpdate)
+	mux.HandleFunc("POST "+tunnel.DoctorPath, s.hubDoctor)
+}
+
+// hubDoctor runs this runner's setup checks now, for the hub's Check
+// again, and answers with them (doctor.Report). They only look: nothing is
+// installed or changed.
+func (s *Server) hubDoctor(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.fromHub(w, r); !ok {
+		return
+	}
+	if s.Doctor == nil {
+		writeError(w, http.StatusNotImplemented, "this runner has no doctor checks")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Doctor(r.Context()))
 }
 
 // hubUpdate updates this runner to the release its hub names, once none

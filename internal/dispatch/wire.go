@@ -31,6 +31,7 @@ import (
 
 	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/disk"
+	"github.com/klahr/dash/internal/doctor"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/usage"
@@ -229,8 +230,11 @@ type Report struct {
 	Disk *disk.Status `json:"disk,omitempty"`
 	// EnvFiles are the environments the runner has a secrets file for
 	// (~/.dash/env/<name>.env): their names, never what is in them.
-	EnvFiles []string    `json:"env_files,omitempty"`
-	Tasks    []TaskState `json:"tasks,omitempty"`
+	EnvFiles []string `json:"env_files,omitempty"`
+	// Doctor is the runner's latest setup checks (nil from a runner older
+	// than this field, or before its first run ends).
+	Doctor *doctor.Report `json:"doctor,omitempty"`
+	Tasks  []TaskState    `json:"tasks,omitempty"`
 	// Procs are the hub's projects whose processes (run/test/deploy
 	// commands, terminals) on the runner changed since the last report: the
 	// hub tells their dashboards to list them again.

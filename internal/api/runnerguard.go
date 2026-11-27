@@ -134,6 +134,8 @@ func init() {
 		"GET /api/hub/github-repos", "POST /api/hub/github-repos",
 		// The hub updates the runner to its release; checked in hubtasks.go.
 		"POST " + tunnel.UpdatePath,
+		// Its setup checks, run again for the Runners sheet's Check again (doctor).
+		"POST " + tunnel.DoctorPath,
 	} {
 		hubRoutes[p] = true
 	}

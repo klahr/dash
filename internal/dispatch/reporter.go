@@ -12,6 +12,7 @@ import (
 
 	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/disk"
+	"github.com/klahr/dash/internal/doctor"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
@@ -44,6 +45,9 @@ type Reporter struct {
 	// EnvFiles lists the environments the runner has a secrets file for
 	// (deploy.EnvFiles; optional): the names go in every report.
 	EnvFiles func() []string
+	// Doctor is the runner's latest setup checks (runnerctl.Doctor.Last;
+	// optional): they go in every report.
+	Doctor func() *doctor.Report
 	// Send posts the report (tunnel.Report with the runner's credentials).
 	Send func(ctx context.Context, r Report) error
 	// Every is the heartbeat (default 30s).
@@ -273,6 +277,9 @@ func (r *Reporter) Build(now time.Time) Report {
 	}
 	if r.EnvFiles != nil {
 		rep.EnvFiles = r.EnvFiles()
+	}
+	if r.Doctor != nil {
+		rep.Doctor = r.Doctor()
 	}
 	live := r.takeLive()
 	rep.Pushes = r.takePushes()

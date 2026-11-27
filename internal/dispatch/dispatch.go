@@ -466,7 +466,16 @@ func prefer(cands []tunnel.Runner, t model.Todo, parent *model.Todo, load map[st
 			return &cands[i]
 		}
 	}
+	// A runner whose doctor found a tool of the project's commands missing
+	// comes last: its tasks would fail when they run it (tunnel/doctor.go).
+	lacks := func(r tunnel.Runner) bool { return len(r.MissingFor(t.ProjectID)) > 0 }
 	best := slices.MinFunc(cands, func(a, b tunnel.Runner) int {
+		if la, lb := lacks(a), lacks(b); la != lb {
+			if la {
+				return 1
+			}
+			return -1
+		}
 		if c := cmp.Compare(level[a.ID], level[b.ID]); c != 0 {
 			return c // the account with spare usage
 		}

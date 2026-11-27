@@ -27,6 +27,7 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/disk"
+	"github.com/klahr/dash/internal/doctor"
 	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/httpjson"
 	"github.com/klahr/dash/internal/model"
@@ -115,6 +116,9 @@ type Runner struct {
 	Disk     disk.Settings `json:"disk"`
 	DiskLow  string        `json:"disk_low,omitempty"`
 	DiskFull bool          `json:"disk_full,omitempty"`
+	// Doctor is its latest setup checks, with when they ran (nil: a runner
+	// too old to run them, or that hasn't reported them yet). See doctor.go.
+	Doctor *doctor.Report `json:"doctor,omitempty"`
 }
 
 // OrgID is the org the runner works for (0: nobody's; it gets no work).
@@ -288,6 +292,8 @@ type record struct {
 	LastUpdate *UpdateResult `json:"last_update,omitempty"`
 	// Disk: its disk thresholds (Runner.Disk).
 	Disk disk.Settings `json:"disk,omitzero"`
+	// Doctor: its latest setup checks (Runner.Doctor), kept across restarts.
+	Doctor *doctor.Report `json:"doctor,omitempty"`
 }
 
 // regCode is a registration code, made by Owner: the runner registered with
@@ -682,6 +688,11 @@ func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runne
 		v.UpdateError = r.LastUpdate.Error
 	}
 	v.Disk = r.Disk
+	if r.Doctor != nil {
+		cp := *r.Doctor
+		cp.Checks = slices.Clone(r.Doctor.Checks)
+		v.Doctor = &cp
+	}
 	if rep := h.reported[r.ID]; rep != nil {
 		cp := *rep
 		v.Reported = &cp
@@ -1084,6 +1095,7 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		Agents       []AgentStatus     `json:"agents"`
 		Disk         *disk.Status      `json:"disk"`
 		EnvFiles     []string          `json:"env_files"`
+		Doctor       *doctor.Report    `json:"doctor"`
 	}
 	if err := json.Unmarshal(body, &self); err != nil {
 		httpjson.Error(w, http.StatusBadRequest, "bad request")
@@ -1110,8 +1122,9 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		nl, nf := diskState(rec.Name, rec.Disk, self.Disk)
 		diskChanged = (pl == "") != (nl == "") || pf != nf || diskKey(prev.Disk) != diskKey(self.Disk)
 	}
+	doctorChanged := self.Doctor != nil && h.setDoctorLocked(rec.ID, *self.Doctor)
 	h.mu.Unlock()
-	if prev == nil || prev.Parallel != self.Parallel || prev.Terminals != self.Terminals || prev.ChatCommands != self.ChatCommands || paused(prev.Usage) != paused(self.Usage) ||
+	if doctorChanged || prev == nil || prev.Parallel != self.Parallel || prev.Terminals != self.Terminals || prev.ChatCommands != self.ChatCommands || paused(prev.Usage) != paused(self.Usage) ||
 		claudeKey(prev.Claude) != claudeKey(self.Claude) || agentsKey(prev.Agents) != agentsKey(self.Agents) || diskChanged || !slices.Equal(prevEnvFiles(prev), cleanEnvFiles(self.EnvFiles)) {
 		h.changed()
 	}

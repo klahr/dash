@@ -20,6 +20,10 @@ On each runner:
   ([Codex](docs/codex.md)).
 - Optional: **[`gh`](https://cli.github.com)**, logged in, to open pull requests.
 
+Each runner checks these itself, with the tools its projects need, and shows what is missing in
+**Runners → the runner → Doctor**, with the command to fix it
+([details](docs/several-computers.md#the-runners-doctor)).
+
 To build from source you need Go (the version in [`go.mod`](go.mod)).
 
 ## Quick start

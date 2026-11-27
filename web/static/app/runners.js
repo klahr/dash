@@ -1,6 +1,6 @@
 import { $, docsLink, fill, h, ib, ico, plural, sizeText } from "./dom.js";
 import { api } from "./api.js";
-import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
+import { art, ask, attempt, busy, fail, reduceMotion, toast } from "./dialogs.js";
 import { checked, saveField } from "./autosave.js";
 import { changed } from "./routes.js";
 import { state } from "./state.js";
@@ -188,6 +188,69 @@ const pacedWith = (r) => {
 };
 // runnerClaudeWarnings is what runner r found changed about its Claude Code CLI.
 const runnerClaudeWarnings = (r) => r.reported?.claude?.warnings || [];
+
+// The doctor: runner r's setup checks (internal/doctor), as it last ran them
+// (r.doctor; none from a runner too old to run them). Each failed check says
+// what is wrong and the command to fix it, for the runner's system.
+const doctorNames = { git: "git", bash: "bash", claude: "Claude Code", hub: "Hub", disk: "Disk space", gh: "GitHub CLI (gh)", chrome: "Chrome" };
+const doctorBad = (r) => (r.doctor?.checks || []).filter((c) => c.status !== "ok");
+// doctorTone is "error" or "warning" when something on r needs fixing ("": nothing, or no checks).
+const doctorTone = (r) => {
+  const bad = doctorBad(r);
+  return bad.some((c) => c.status === "error") ? "error" : bad.length ? "warning" : "";
+};
+const doctorText = (r) => {
+  const n = doctorBad(r).length;
+  return n ? `Doctor: ${plural(n, "check")} to fix` : "";
+};
+// doctorDot is the small dot a runner with something to fix gets in the lists.
+const doctorDot = (r) => doctorTone(r)
+  ? h("span", { class: `runner-doctor-dot ${doctorTone(r)}`, role: "img", title: doctorText(r), "aria-label": doctorText(r) })
+  : null;
+
+// runnerDoctor is runner r's Doctor section: its checks by group (required,
+// features, then each project's tools), each with its status, what was found
+// and the command to fix it, when they ran, and Check again.
+function runnerDoctor(r) {
+  const d = r.doctor;
+  const again = ib({ class: "btn small", type: "button", disabled: !r.online,
+    title: r.online ? `Run ${r.name}'s checks again` : `${r.name} is offline`,
+    onclick: attempt(async (e) => {
+      await busy(e.currentTarget, () => api("POST", `/api/runners/${encodeURIComponent(r.id)}/doctor`), { label: "Checking…" });
+      toast(`${r.name} checked`);
+      await renderRunners();
+    }) }, "reload", "Check again");
+  const head = h("div", { class: "runner-doctor-head" },
+    h("p", { class: "hint" }, d ? `Checked ${agoText(d.at)}${d.system ? ` · fixes for ${d.system}` : ""}` : "No checks reported yet (update the runner)."),
+    again);
+  if (!d) return h("div", { class: "runner-doctor" }, head);
+  const icon = { ok: "check", warning: "alert", error: "x" };
+  const row = (c, name) => h("li", { class: `runner-doctor-check ${c.status}` },
+    h("span", { class: "runner-doctor-icon", role: "img", "aria-label": c.status }, ico(icon[c.status] || "alert")),
+    h("div", { class: "runner-doctor-text" },
+      h("strong", {}, name),
+      c.message ? h("span", { class: "hint" }, c.message) : null,
+      c.status !== "ok" && c.fix ? copyBlock(c.fix, "Command copied") : null));
+  const checks = d.checks || [];
+  const group = (title, list) => list.length ? [h("h5", { class: "runner-doctor-group" }, title),
+    h("ul", { class: "runner-doctor-list" }, ...list)] : [];
+  const named = (g) => checks.filter((c) => c.group === g).map((c) => row(c, doctorNames[c.name] || c.name));
+  // Per project: its missing tools each, and those it has on one line.
+  const projects = [];
+  for (const c of checks) if (c.group === "project" && !projects.includes(c.project)) projects.push(c.project);
+  const perProject = projects.flatMap((id) => {
+    const list = checks.filter((c) => c.group === "project" && c.project === id);
+    const have = list.filter((c) => c.status === "ok").map((c) => c.name);
+    return group(`Project: ${list[0].project_name || id}`, [
+      ...list.filter((c) => c.status !== "ok").map((c) => row(c, c.name)),
+      have.length ? row({ status: "ok", message: "found" }, have.join(", ")) : null,
+    ].filter(Boolean));
+  });
+  return h("div", { class: "runner-doctor" }, head,
+    ...group("Required", named("required")),
+    ...group("Features", named("features")),
+    ...perProject);
+}
 
 // Disk space. The runner reports its free space with its heartbeat; the hub
 // works out under the runner's thresholds (r.disk) whether it is low
@@ -445,9 +508,10 @@ function paintRunnerNav(list) {
         h("span", { class: "runner-rail-name" }, r.name),
         h("span", { class: "runner-rail-state" }, st.text)),
       osLogo(r, "runner-rail-os"),
+      doctorDot(r),
       runnerWarned(r) ? h("span", { class: "runner-rail-warn", title: runnerWarnText(r) }, ico("alert")) : null);
     b.classList.add("runner-rail", `tone-${st.tone}`);
-    b.title = [`${r.name}: ${st.text}`, runnerOS(r)?.label].filter(Boolean).join("\n");
+    b.title = [`${r.name}: ${st.text}`, runnerOS(r)?.label, doctorText(r)].filter(Boolean).join("\n");
     return b;
   };
   const group = (head, ...items) => h("div", { class: "rail-group" }, head ? h("span", { class: "rail-head" }, head) : null, ...items);
@@ -489,6 +553,7 @@ function runnerStats(list) {
   const outdated = list.filter((r) => runnerOutdated(r) && !r.update).length;
   const claudeWarn = list.filter((r) => runnerClaudeWarnings(r).length).length;
   const diskLow = list.filter((r) => r.disk_low).length;
+  const doctor = list.filter((r) => doctorTone(r)).length;
   return [
     stat(online, `of ${list.length} online`, online ? "on" : "off"),
     stat(running, running === 1 ? "task running" : "tasks running", running ? "busy" : ""),
@@ -497,6 +562,7 @@ function runnerStats(list) {
     outdated ? stat(outdated, "out of date", "paused") : null,
     claudeWarn ? stat(claudeWarn, "with Claude Code warnings", "paused") : null,
     diskLow ? stat(diskLow, "low on disk space", "off") : null,
+    doctor ? stat(doctor, "with setup checks to fix", list.some((r) => doctorTone(r) === "error") ? "off" : "paused") : null,
   ].filter(Boolean);
 }
 
@@ -532,7 +598,8 @@ function paintOverview(list) {
           showOwner && r.owner ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
           accountChip(r),
           h("span", {}, n ? plural(n, "project") : "No projects"),
-          runnerWarned(r) ? h("span", { class: "runner-row-warn" }, ico("alert"), runnerWarnText(r)) : null)),
+          runnerWarned(r) ? h("span", { class: "runner-row-warn" }, ico("alert"), runnerWarnText(r)) : null,
+          doctorTone(r) ? h("span", { class: "runner-row-doctor" }, doctorDot(r), doctorText(r)) : null)),
       runnerUsageMeters(r),
       ico("chevron-right")));
   };
@@ -586,6 +653,8 @@ function paintRunner(r) {
     claudeWarns.length ? h("div", { class: "runner-update runner-claude-warn", role: "status" },
       h("p", { class: "hint warn" }, `Claude Code${claude.version ? ` ${claude.version}` : ""} looks different from what Dash expects. Updating Dash may help:`),
       h("ul", {}, ...claudeWarns.map((w) => h("li", {}, w)))) : null,
+    h("h4", { class: "section-head" }, "Doctor"),
+    runnerDoctor(r),
     h("h4", { class: "section-head" }, "Agents"),
     runnerAgents(r),
     usage ? h("h4", { class: "section-head" }, "Claude usage") : null,
