@@ -418,6 +418,7 @@ func (c Codex) Run(ctx context.Context, req ExecRequest, emit func(model.RunEven
 	}
 	<-stderrDone
 	waitErr := cmd.Wait()
+	localrun.Reap(cmd)
 	res := ExecResult{SessionID: tr.Thread, Turns: 0, Model: codexModel(req.Model), Usage: tr.Usage, Result: tr.Last}
 	// Codex reports tokens, never a cost: Dash estimates it from them
 	// (none reported: no cost, and nothing counts toward spending caps).
@@ -494,6 +495,7 @@ func (c Codex) Prompt(ctx context.Context, req PromptRequest) (string, error) {
 	cmd.Stderr = &stderr
 	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
 	out, err := cmd.Output()
+	localrun.Reap(cmd)
 	if err != nil && ctx.Err() == nil {
 		return string(out), fmt.Errorf("codex exec: %w: %s", err, textutil.LastLine(stderr.String()))
 	}

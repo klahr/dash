@@ -96,6 +96,7 @@ func RunShell(ctx context.Context, dir, command string, timeout time.Duration, e
 
 	started := time.Now()
 	err := cmd.Run()
+	localrun.Reap(cmd)
 	res.DurationMS = time.Since(started).Milliseconds()
 	res.Output, res.Truncated = out.result()
 	var exit *exec.ExitError

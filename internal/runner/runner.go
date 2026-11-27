@@ -385,7 +385,7 @@ func (m *Manager) wait(p *proc, r io.Closer) {
 	// &) goes with it, however it ended; Stop only reaches running processes.
 	// p.info.PID is set for terminals too (p.cmd is nil for them) and never
 	// changes, so it is read without the lock.
-	reapGroup(p.info.PID, leftoverGrace)
+	localrun.ReapGroup(p.info.PID, leftoverGrace)
 	code := 0
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

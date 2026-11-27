@@ -177,6 +177,9 @@ it runs as a shell command where the chat runs, as in Claude Code.
 - **What you see**: the command streams its output (stdout and stderr together) into a block in
   the chat, with a Stop button (the composer's send button) while it runs and its exit code when
   it ends. While its text starts with `!`, the composer shows a `$` and an accent border.
+- **What it leaves running**: on macOS and Linux, what the command starts in the background
+  (`./server &`) gets `SIGTERM` when it ends, and `SIGKILL` 5 seconds later if still running. A
+  process that detaches itself with `setsid` (most daemons) keeps running.
 - **Claude sees it**: the command and its output are saved in the conversation as your message,
   so on your next message Claude reads them as a command you ran yourself (not one it ran).
   Long output keeps its first and last 16 KB, with a note of how much was left out between them;

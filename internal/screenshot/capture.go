@@ -415,6 +415,7 @@ func runSetup(ctx context.Context, j Job, dir string, port int, base string) ([]
 	cmd.Stdout = &out
 	cmd.Stderr = &tail{max: 4 << 10}
 	err := cmd.Run()
+	localrun.Reap(cmd)
 	if err != nil {
 		if code, ok := localrun.ExitStatus(err); ok {
 			err = fmt.Errorf("exited %d: %s", code, firstLine(cmd.Stderr.(*tail).last()))
@@ -454,7 +455,7 @@ func startServer(dir, script string, env []string, port int) (*server, error) {
 		return nil, err
 	}
 	s := &server{cmd: cmd, exited: make(chan struct{}), log: log, cancel: cancel}
-	go func() { _ = cmd.Wait(); close(s.exited) }()
+	go func() { _ = cmd.Wait(); localrun.Reap(cmd); close(s.exited) }()
 	return s, nil
 }
 

@@ -97,6 +97,7 @@ func (c CodexChat) Stream(ctx context.Context, dir string, history []ChatMessage
 		}
 	})
 	waitErr := cmd.Wait()
+	localrun.Reap(cmd)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}

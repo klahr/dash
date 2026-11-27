@@ -190,6 +190,7 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	}
 	<-stderrDone
 	waitErr := cmd.Wait()
+	localrun.Reap(cmd)
 	if res.CostUSD == 0 && cost.total > 0 {
 		// Stopped before its result event (a cap, a time limit, a crash):
 		// what its messages' tokens cost, as an estimate.

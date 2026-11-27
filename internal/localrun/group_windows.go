@@ -14,12 +14,19 @@ const createNewProcessGroup = 0x00000200
 // ending) ends everything it started, not just the direct child. Windows has
 // no signals to send, so sig is ignored and the whole tree is killed. wait
 // bounds how long Wait then waits for output pipes a leftover grandchild may
-// still hold (see exec.Cmd.WaitDelay). Call it before cmd.Start.
+// still hold (see exec.Cmd.WaitDelay). Call it before cmd.Start, and Reap
+// after cmd.Wait.
 func Group(cmd *exec.Cmd, _ syscall.Signal, wait time.Duration) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNewProcessGroup}
 	cmd.Cancel = func() error { return KillTree(cmd.Process.Pid) }
 	cmd.WaitDelay = wait
 }
+
+// ReapGroup does nothing on Windows: once the main process has exited, its
+// tree can't be found by its pid any more (taskkill /T follows parent pids,
+// and the pid may already belong to something else). Ending a finished
+// command's leftovers there would need a job object.
+func ReapGroup(int, time.Duration) {}
 
 // Detach starts cmd in a process group of its own, so it outlives the
 // request (or console) that started it. Call it before cmd.Start.

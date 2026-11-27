@@ -59,6 +59,7 @@ func runShell(ctx context.Context, dir, command string, timeout time.Duration, e
 		_, _ = io.Copy(io.Discard, pr)
 	}()
 	werr := cmd.Wait()
+	localrun.Reap(cmd) // a server it started with & (and forgot) goes too
 	pw.Close()
 	<-done
 

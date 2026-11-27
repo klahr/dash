@@ -193,5 +193,6 @@ func (c ClaudeCode) Prompt(ctx context.Context, req PromptRequest) (string, erro
 	// Don't wait on a grandchild that keeps stdout open past the timeout.
 	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
 	out, err := cmd.Output()
+	localrun.Reap(cmd)
 	return string(out), err
 }

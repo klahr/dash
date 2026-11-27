@@ -362,7 +362,9 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 			usage = &u
 		}
 	})
-	if err := cmd.Wait(); err != nil {
+	err = cmd.Wait()
+	localrun.Reap(cmd)
+	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

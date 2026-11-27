@@ -149,5 +149,6 @@ func Run(ctx context.Context, env []string, bin string, args ...string) (string,
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()
+	localrun.Reap(cmd)
 	return strings.TrimSpace(out.String()), err
 }

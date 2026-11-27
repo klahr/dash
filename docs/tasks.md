@@ -27,7 +27,9 @@ when Claude finishes, and again in the task's worktree before Dash merges it, un
 passed on exactly that code. Claude runs it through Dash (the `run_tests` tool), so tests that
 passed in Claude's session aren't run a second time. A task whose tests fail there goes back to
 Claude instead of onto the default branch. Make it run what your CI runs (formatting, linters,
-tests), so a red build never reaches the default branch.
+tests), so a red build never reaches the default branch. On macOS and Linux, what the Test command
+starts in the background (`./server &`) gets `SIGTERM` when it ends, and `SIGKILL` 5 seconds later
+if still running.
 
 A run of the Test command that takes more than 20 minutes is stopped and counts as failed. If your
 tests take longer, for example on a runner busy with many tasks at once, raise **Project settings →
