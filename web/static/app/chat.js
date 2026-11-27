@@ -16,7 +16,6 @@ import { loadTodoChat, renderChatBadge, renderChatDots, renderChatHead, renderCh
 import { timeline } from "./timeline.js";
 import { fmtTokens } from "./runstats.js";
 import { confirmRunAs } from "./people.js";
-import { projectWhere } from "./projects.js";
 import { dictation } from "./dictation.js";
 import { speakApproval, speakButton, speakReply, stopSpeaking } from "./speech.js";
 
@@ -62,9 +61,7 @@ const savedEnd = (m) => (m.at && m.usage?.duration_ms ? Date.parse(m.at) + m.usa
 // head each message with who it's from; merge(nodes, saved) places a saved
 // conversation's messages among other nodes. With shell (project and task
 // chats), a message starting with "!" runs as a shell command where the
-// chat runs instead of going to Claude (see shellRunner). cwd is the bar
-// that shows where the chat runs, from the start: where() says what's known
-// before a turn (see chatPlace).
+// chat runs instead of going to Claude (see shellRunner).
 //
 // After a reply, the server may suggest the user's next message (with the
 // Account → General preference on): it shows as the empty composer's
@@ -85,10 +82,10 @@ const savedEnd = (m) => (m.at && m.usage?.duration_ms ? Date.parse(m.at) + m.usa
 // of c and of the options it uses: chatView (rendering), chatComposer (the
 // composer: chatSendButton, chatSuggestion, chatRecall with its keys,
 // chatQueue), chatTurns (sending and settling turns), shellRunner, and
-// chatSocket with chatStreamHandler (the connection, where the chat runs and
-// on which runner), chatEdits (with edit: taking back the last turn to edit
+// chatSocket with chatStreamHandler (the connection, and which runner the
+// chat runs on), chatEdits (with edit: taking back the last turn to edit
 // or retry it) and chatJump (the button to the end of the conversation).
-export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false, mode = () => null, tasks = null, edit = false, where = () => null }) {
+export function makeChat({ log, empty, form, target, actions, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false, mode = () => null, tasks = null, edit = false }) {
   // waiting: ids of the permission requests the current turn waits on an answer to.
   // queue: messages written while a reply streams ({q, files}), sent together
   // as one message once it's done.
@@ -99,7 +96,6 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   shellRunner(c);
   chatEdits(c, edit);
   chatJump(c);
-  chatPlace(c, cwd, where);
   c.socket = chatSocket(c, { saved, resume, onRunner, onStream: chatStreamHandler(c) });
   // post sends q as a message without the composer (what is written or
   // attached there stays, and so does the mode): queued while a reply streams.
@@ -109,7 +105,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     c.send(q, []);
     return "sent";
   };
-  return { ...turns, ...composer, post, toEnd: c.toEnd, place: c.place.render, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
+  return { ...turns, ...composer, post, toEnd: c.toEnd, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
 }
 
 // chatView renders the conversation in log (empty: what shows while it has
@@ -173,7 +169,6 @@ function chatView(c, { log, empty, labels, actions, scroller, merge, tasks }) {
     return el;
   };
   c.show = (saved) => {
-    c.place.reset();
     const nodes = merge(saved.map((m) => m.role === "user" ? user(m) : assistant(m)), saved);
     empty.hidden = nodes.length > 0;
     log.replaceChildren(empty, ...nodes);
@@ -472,7 +467,6 @@ function chatTurns(c, { stale, onState }) {
     c.current ? c.current.el.replaceWith(el) : c.log.append(el);
     c.toEnd(true);
     c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), tasks: [], images: [], target: { prefix, ...fields }, at: new Date().toISOString() };
-    c.place.render();
     c.suggest();
     c.busyButton();
     c.onState();
@@ -559,47 +553,10 @@ function chatSuggestion(c, input, form, att, mode) {
   return { show, shown };
 }
 
-// Permission modes as the place bar shows them (Project settings' chat_permission_mode).
-const MODE_LABEL = { "": "Ask", auto: "Auto", acceptEdits: "Accept edits" };
-const baseName = (p) => String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop();
-
-// chatPlace shows in el where the chat runs, compactly: the folder's name
-// and the computer ("app · laptop", with the full path as its title), and
-// the chat's permission mode. where() is what's known before a turn: {name,
-// machine, path, mode, runnerMenu} (mode undefined: none shown; runnerMenu:
-// the runner menu names the computer, so the bar doesn't), or null for no bar. A
-// turn's cwd and runner messages fill in the rest. It sets c.place:
-// render(), dir(path) and runner(name) (from a turn), and reset() (another
-// conversation: what a turn said is forgotten).
-function chatPlace(c, el, where) {
-  let dir = "", runner = "";
-  const place = h("span", { class: "chat-place" }), mode = h("span", { class: "chat-mode" });
-  el?.replaceChildren(place, mode);
-  const render = () => {
-    if (!el) return;
-    const w = where();
-    el.hidden = !w;
-    if (!w) return;
-    const path = dir || w.path || "";
-    place.textContent = [w.name || baseName(path), !w.runnerMenu && (runner || w.machine)].filter(Boolean).join(" · ");
-    place.title = path;
-    mode.hidden = w.mode === undefined || w.mode === null;
-    mode.textContent = MODE_LABEL[w.mode] ?? w.mode ?? "";
-    mode.dataset.mode = w.mode || "ask";
-  };
-  c.place = {
-    render,
-    dir: (p) => { dir = p; render(); },
-    runner: (name) => { runner = name; render(); },
-    reset: () => { dir = runner = ""; render(); },
-  };
-  render();
-}
-
 // chatSocket returns c.socket(prefix): the chat's websocket to the Dash at
 // prefix, opened anew when there's none (or it's to another Dash). Messages
-// from it go to onStream; where the chat runs to c.place, and which runner
-// it runs on to onRunner(name) as well. An abandoned socket (one reset left
+// from it go to onStream, and which runner it runs on to onRunner(name) as
+// well. An abandoned socket (one reset left
 // streaming) finishes its reply on its own, and saved(fields) is told when it
 // has. With resume, a turn cut off by a lost connection is sent again.
 function chatSocket(c, { saved, resume, onRunner, onStream }) {
@@ -625,8 +582,7 @@ function chatSocket(c, { saved, resume, onRunner, onStream }) {
         if (!c.current && !c.composing() && chatSuggestOn() && d.text) c.suggest(d.text);
         return;
       }
-      if (d.kind === "cwd") c.place.dir(d.text);
-      if (d.kind === "runner") { c.place.runner(d.text); onRunner(d.text); }
+      if (d.kind === "runner") onRunner(d.text);
       onStream(ws, d);
     };
     ws.onclose = (e) => {
@@ -1260,17 +1216,6 @@ export function runnerPicker(bar, { key, path = () => "/api/claude", prefix = ()
       const pick = rs.find((r) => r.id === this.picked && r.online);
       return pick ? pick.id : "";
     },
-    // Whether the bar shows the runner menu (two or more online). Then the
-    // menu alone names the runner: the place line leaves it out.
-    menu() {
-      const info = this.info;
-      return !!info && !info.local && (info.runners || []).filter((r) => r.online).length > 1;
-    },
-    // The one runner online, by name, which the next turn runs on ("" with none or a menu).
-    sole() {
-      const online = (this.info?.runners || []).filter((r) => r.online);
-      return online.length === 1 ? online[0].name : "";
-    },
     async load() {
       this.info = await api("GET", path(), null, prefix());
       this.render();
@@ -1302,7 +1247,7 @@ export function runnerPicker(bar, { key, path = () => "/api/claude", prefix = ()
   sel.addEventListener("change", (e) => { p.picked = e.target.value; p.render(); });
   return p;
 }
-export const chatRunner = runnerPicker($("#chat-runner"), { key: "dash.chatRunner", changed: () => chat.place() });
+export const chatRunner = runnerPicker($("#chat-runner"), { key: "dash.chatRunner" });
 chatRunner.load().catch(() => {}); // an older Dash without /api/claude: the bar stays hidden
 
 // Each project chat's runner menu (see chatpane.js), loaded again with the
@@ -1358,9 +1303,6 @@ export const chat = makeChat({
     renderChatHead();
   },
   actions: chatActions,
-  cwd: $("#chat-cwd"),
-  // In the home directory of this computer; on a hub, the runner bar says where.
-  where: () => (chatRunner.info && !chatRunner.info.local ? null : { name: "Home", machine: state.machines?.[0]?.name }),
   resume: true,
   edit: true,
   onState: paneChatState("general", () => chat),
@@ -1459,11 +1401,6 @@ export const todoChat = makeChat({
   scroller: () => $("#detail .detail-body"),
   shell: true,
   edit: true,
-  cwd: $("#d-chat-cwd"),
-  where: () => {
-    const t = state.todos.get(state.detail), p = state.project;
-    return t && p ? { name: p.name, machine: projectWhere(p), path: p.path, mode: p.chat_permission_mode || "" } : null;
-  },
   mode: () => TODO_MODES[todoMode],
   // A turn left streaming when its todo was closed is saved when it finishes.
   saved: ({ todo }) => { if (todo === state.detail && !todoChat.busy) loadTodoChat().catch(fail); },

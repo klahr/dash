@@ -788,13 +788,6 @@ button.shot-img { cursor: crosshair; }
 .chat-note .md p { margin: 0; }
 .perm-status { color: var(--muted); font-weight: 600; }
 /* Where a chat runs ("app · laptop") and its permission mode (chatPlace in app/chat.js). */
-.chat-cwd { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
-.chat-cwd[hidden] { display: none; }
-.chat-place { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.chat-mode { flex: none; padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: var(--fs-2xs); line-height: 1.5; }
-.chat-mode[hidden] { display: none; }
-.chat-mode:is([data-mode="auto"], [data-mode="acceptEdits"]) { color: var(--running); border-color: color-mix(in srgb, var(--running) 40%, var(--line)); }
-.chat-cwd-bar { padding: 5px 16px; border-bottom: 1px solid var(--line); }
 /* A project chat's turn running in another of the user's windows or devices. */
 .chat-remote { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 16px; color: var(--muted); font-size: var(--fs-xs); border-top: 1px solid var(--line); }
 /* The runner a chat runs on, on a hub that doesn't run Claude itself (runnerPicker in app/chat.js) */
