@@ -14,6 +14,19 @@ screen.
 The pane's first tab is the selected project's chat, named after the project, with its icon
 ringed. **General** is next, then any chats you added with **+**.
 
+## Which runner a project chat runs on
+
+On a hub, a project chat runs on one of your runners that works on the project: one with the
+labels in **Project settings → Agent & runners → Runs on**. When two or more of them are online,
+a runner menu shows at the top of the chat. Pick one there. The next turn, and `!` commands, run
+on it.
+
+- Each project remembers its own pick, apart from **General**'s.
+- If the runner you picked is offline, or no longer works on the project, the chat runs on another
+  of yours that does, as it would without a pick.
+- The line above the messages says which runner the last turn ran on.
+- With one runner or none, there is no menu.
+
 ## A planner's chat
 
 A [planner](users.md#planners) has the general chat only: **Chat** in their sidebar. It runs on

@@ -812,8 +812,10 @@ Where each kind of Claude work runs:
   labels of can't be scanned. Repository scans (`.dash/scans/`) are used only by a runner's own
   projects; hub projects use built-in and Dash scans.
 - **Project and task chats**: on one of your runners that works on the project (a task's chat on the
-  runner that ran it). Shell commands typed in them with a leading `!` run there too, in the same
-  folder, never on the hub: see [Chat](chat.md#shell-commands-with-).
+  runner that ran it). With two or more of them online, a project chat shows a runner menu at its
+  top: pick one there (see [Chat](chat.md#which-runner-a-project-chat-runs-on)). Shell commands
+  typed in them with a leading `!` run there too, in the same folder, never on the hub: see
+  [Chat](chat.md#shell-commands-with-).
 
 - **Goals' coordinators**: a [goal](goals.md)'s wake-ups run on its owner's runner that works on the
   project, read-only in its clone; its chat on yours. With none online the goal's events wait,

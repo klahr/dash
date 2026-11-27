@@ -1228,43 +1228,68 @@ export const chatActions = (answer) => h("div", { class: "msg-actions" }, copyIc
 // one of your own runners (your Claude login, your subscription). The bar
 // says which, lets you pick when you have several, and says how to start one
 // when none is online. (A runner's own dashboard answers itself: no bar.)
-export const chatRunner = {
-  info: null, // GET /api/claude: {local, runners: [{id, name, online}]}
-  get picked() { return store.get("dash.chatRunner", ""); },
-  set picked(id) { store.set("dash.chatRunner", id); },
-  // The runner the next turn asks for ("" = the hub picks the first online).
-  choice() {
-    const rs = this.info?.runners || [];
-    const pick = rs.find((r) => r.id === this.picked && r.online);
-    return pick ? pick.id : "";
-  },
-  async load() {
-    this.info = await api("GET", "/api/claude");
-    this.render();
-  },
-  render(running = "") {
-    const bar = $("#chat-runner"), text = $("#chat-runner-text"), sel = $("#chat-runner-pick");
-    const info = this.info;
-    if (!info || info.local) { bar.hidden = true; return; }
-    bar.hidden = false;
-    const online = info.runners.filter((r) => r.online);
-    const current = running || online.find((r) => r.id === this.choice())?.name || online[0]?.name;
-    bar.classList.toggle("online", !!current);
-    bar.classList.toggle("offline", !current);
-    if (current) text.textContent = `Runs on ${current}, with its Claude login`;
-    else if (info.runners.length) text.textContent = `Your runner${info.runners.length > 1 ? "s are" : ` ${info.runners[0].name} is`} offline: run \`dash runner\` on it to chat`;
-    else text.textContent = "Chat needs a runner of yours: use Runners → Add a runner";
-    text.title = text.textContent;
-    sel.hidden = online.length < 2;
-    if (!sel.hidden) {
-      sel.replaceChildren(...online.map((r) => h("option", { value: r.id }, r.name)));
-      sel.value = this.choice() || online[0].id;
-    }
-    chat.place();
-  },
-};
-$("#chat-runner-pick").addEventListener("change", (e) => { chatRunner.picked = e.target.value; chatRunner.render(); });
+//
+// runnerPicker makes such a bar out of bar (a .chat-runner with a
+// .chat-runner-text and a select), for the general chat and each project
+// chat. key is the localStorage key of the runner picked; path() is what
+// to GET for the runners (/api/claude, ?project=… for a project's, which
+// lists only the runners that work on it), from the Dash at prefix(). A
+// project chat's bar (menuOnly) shows only when there's a choice: two or
+// more of its runners online. changed() follows a new pick or new runners.
+export function runnerPicker(bar, { key, path = () => "/api/claude", prefix = () => undefined, menuOnly = false, changed = () => {} }) {
+  const text = bar.querySelector(".chat-runner-text"), sel = bar.querySelector("select");
+  const p = {
+    info: null, // GET /api/claude: {local, runners: [{id, name, online}]}
+    get picked() { return store.get(key, ""); },
+    set picked(id) { store.set(key, id); },
+    // The runner the next turn asks for ("" = the hub picks the first online).
+    choice() {
+      const rs = this.info?.runners || [];
+      const pick = rs.find((r) => r.id === this.picked && r.online);
+      return pick ? pick.id : "";
+    },
+    // The runner's name the next turn is expected to run on ("" with no choice to make).
+    current() {
+      const online = (this.info?.runners || []).filter((r) => r.online);
+      return online.length > 1 ? (online.find((r) => r.id === this.choice()) || online[0]).name : "";
+    },
+    async load() {
+      this.info = await api("GET", path(), null, prefix());
+      this.render();
+    },
+    render(running = "") {
+      const info = this.info;
+      const online = (info?.runners || []).filter((r) => r.online);
+      if (!info || info.local || (menuOnly && online.length < 2)) { bar.hidden = true; changed(); return; }
+      bar.hidden = false;
+      const current = running || online.find((r) => r.id === this.choice())?.name || online[0]?.name;
+      bar.classList.toggle("online", !!current);
+      bar.classList.toggle("offline", !current);
+      if (current) text.textContent = `Runs on ${current}, with its Claude login`;
+      else if (info.runners.length) text.textContent = `Your runner${info.runners.length > 1 ? "s are" : ` ${info.runners[0].name} is`} offline: run \`dash runner\` on it to chat`;
+      else text.textContent = "Chat needs a runner of yours: use Runners → Add a runner";
+      text.title = text.textContent;
+      sel.hidden = online.length < 2;
+      if (!sel.hidden) {
+        sel.replaceChildren(...online.map((r) => h("option", { value: r.id }, r.name)));
+        sel.value = this.choice() || online[0].id;
+      }
+      changed();
+    },
+  };
+  sel.addEventListener("change", (e) => { p.picked = e.target.value; p.render(); });
+  return p;
+}
+export const chatRunner = runnerPicker($("#chat-runner"), { key: "dash.chatRunner", changed: () => chat.place() });
 chatRunner.load().catch(() => {}); // an older Dash without /api/claude: the bar stays hidden
+
+// Each project chat's runner menu (see chatpane.js), loaded again with the
+// general chat's when your runners change.
+export const projectRunnerPickers = new Set();
+export function loadChatRunners({ general = true } = {}) {
+  if (general) chatRunner.load().catch(() => {});
+  for (const p of projectRunnerPickers) p.load().catch(() => {});
+}
 
 // Pane chats with a reply nobody has looked at yet, by chat key ("general" or a
 // projectKey). Kept in localStorage so a reload still shows them.

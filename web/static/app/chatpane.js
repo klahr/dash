@@ -8,7 +8,7 @@ import { chatPage, renderNavActive } from "./nav.js";
 import { baseBranch, projectKey } from "./events.js";
 import { grouped, projectDot, projectIcon, projectWhere, selectProject, sharedMark } from "./projects.js";
 import { openDetail } from "./detail.js";
-import { chat, chatActions, chatDismissed, chatUnread, makeChat, paneChatState, saveChatUnread, todoChat } from "./chat.js";
+import { chat, chatActions, chatDismissed, chatUnread, makeChat, paneChatState, projectRunnerPickers, runnerPicker, saveChatUnread, todoChat } from "./chat.js";
 import { addWorkerEvent, worker } from "./timeline.js";
 import { fitTerm } from "./terminal.js";
 import { fitTryTerm } from "./try.js";
@@ -75,11 +75,21 @@ export function projectChatFor(p) {
     h("span", { class: "act-spin", "aria-hidden": "true" }), " Claude is answering on another of your devices…");
   panel.querySelector("form").before(remote);
   const pc = { panel, loaded: false, remote, remoteBusy: false, dirty: false, seq: 0, proj };
+  // Which of your runners that work on the project the chat runs on, when
+  // there's a choice; kept per project, apart from General's.
+  pc.runner = runnerPicker(panel.querySelector(".chat-runner"), {
+    key: `dash.chatRunner.${key}`, menuOnly: true,
+    path: () => `/api/claude?project=${encodeURIComponent(proj().id)}`,
+    prefix: () => proj().prefix || "",
+    changed: () => pc.chat?.place(),
+  });
+  projectRunnerPickers.add(pc.runner);
   const paneState = paneChatState(key, () => pc.chat);
   let wasBusy = false;
   pc.chat = makeChat({
     log: panel.querySelector(".chat-log"), empty: panel.querySelector(".chat-empty"), form: panel.querySelector("form"),
-    target: () => ({ prefix: proj().prefix || "", project: proj().id }),
+    target: () => { const runner = pc.runner.choice(); return { prefix: proj().prefix || "", project: proj().id, ...(runner && { runner }) }; },
+    onRunner: (name) => pc.runner.render(name),
     // New chat (and /clear): the server keeps the conversation as a past chat.
     clear: async () => {
       if (!pc.chat.history.length) return;
@@ -88,7 +98,8 @@ export function projectChatFor(p) {
       renderChatHead();
     },
     cwd: panel.querySelector(".chat-cwd"),
-    where: () => ({ name: proj().name, machine: projectWhere(proj()), path: proj().path, mode: proj().chat_permission_mode || "" }),
+    // With a runner picked, the place says that one until a turn says where it ran.
+    where: () => ({ name: proj().name, machine: pc.runner.current() || projectWhere(proj()), path: proj().path, mode: proj().chat_permission_mode || "" }),
     // A turn left streaming when the chat was cleared is saved when it finishes.
     saved: () => { if (!pc.chat.busy) loadProjectChat(proj(), true).catch(fail); },
     // Sent from an out-of-date copy: the server's is the one to show.
@@ -142,6 +153,8 @@ const sameChat = (history, saved) => history.length === saved.length &&
 async function loadProjectChat(p, force = false) {
   const pc = projectChatFor(p);
   if ((pc.loaded && !force) || pc.chat.busy) return;
+  // The runner menu loads with the chat, and again when your runners change (loadChatRunners).
+  if (!pc.loaded) pc.runner.load().catch(() => {});
   pc.loaded = true;
   pc.dirty = false;
   const seq = ++pc.seq;

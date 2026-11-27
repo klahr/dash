@@ -25,7 +25,7 @@ const permLine = (p) => isQuestion(p) ? describePerm(p).detail.split("\n")[0] ||
 import { loadUsage, renderUsage } from "./usage.js";
 import { releaseNews, renderCI } from "./actions.js";
 import { loadCheckouts, renderCheckouts, renderRemote } from "./origin.js";
-import { chatRunner, chatTaskEvent, loadChat, todoChat } from "./chat.js";
+import { chatRunner, chatTaskEvent, loadChat, loadChatRunners, todoChat } from "./chat.js";
 import { loadTodoChat } from "./chatpane.js";
 import { addWorkerEvent } from "./timeline.js";
 import { renderPane } from "./drawmode.js";
@@ -176,7 +176,7 @@ function onEvent(ev, m = { name: "" }) {
   if (ev.type.startsWith("planning.")) { if (m.local) onPlanningEvent(ev); return; }
   switch (ev.type) {
     case "runners":
-      if (m.local) { refreshMachines().catch(fail); chatRunner.load().catch(() => {}); }
+      if (m.local) { refreshMachines().catch(fail); loadChatRunners(); }
       break;
     case "project.updated":
     case "project.deleted":
@@ -184,6 +184,7 @@ function onEvent(ev, m = { name: "" }) {
       // runner's Projects screen shows on both sides.
       loadProjects().then(async () => {
         syncSettingsRunners();
+        loadChatRunners({ general: false }); // its runs-on labels may have changed which runners its chat can pick
         if ($("#runners-sheet").open) { await renderRunners({ background: true }); await refreshRunnerLinks(); }
       }).catch(fail);
       break;

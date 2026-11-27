@@ -412,6 +412,12 @@
       <!-- One per project chat, cloned on first use -->
       <template id="project-chat-tpl">
         <section class="chat-panel" role="tabpanel" hidden>
+          <!-- On a hub, with two or more of your runners online that work on the project: which one the chat runs on. -->
+          <div class="chat-runner" role="status" hidden>
+            <span class="chat-runner-dot" aria-hidden="true"></span>
+            <span class="chat-runner-text"></span>
+            <select aria-label="Runner the project chat runs on" hidden></select>
+          </div>
           <p class="chat-cwd chat-cwd-bar" hidden></p>
           <div class="chat-log">
             <div class="empty chat-empty">

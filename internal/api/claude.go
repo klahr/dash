@@ -55,11 +55,19 @@ var errNoClaudeRunner = errors.New("no runner of yours is online: this hub runs 
 // run c's chat and short calls on.
 func (s *Server) claudeRunners(c Caller) []tunnel.Runner {
 	fl := s.fleet()
-	if fl == nil || c.User == 0 {
+	if fl == nil {
+		return nil
+	}
+	return ownRunners(fl.List(), c)
+}
+
+// ownRunners are those of all that are c's own, in c's org.
+func ownRunners(all []tunnel.Runner, c Caller) []tunnel.Runner {
+	if c.User == 0 {
 		return nil
 	}
 	var out []tunnel.Runner
-	for _, r := range fl.List() {
+	for _, r := range all {
 		if ownedBy(r, c) && r.OrgID() == c.Org {
 			out = append(out, r)
 		}
@@ -258,11 +266,22 @@ func writeClaudeErr(w http.ResponseWriter, err error) {
 }
 
 // claudeInfo handles GET /api/claude: where the caller's chat runs, for the
-// chat's header. local: this Dash runs it; else on one of runners.
+// chat's header. local: this Dash runs it; else on one of runners. With
+// ?project=<id>, runners are only those that may run that project's chat
+// (projectChatRunners), for the project chat's runner menu.
 func (s *Server) claudeInfo(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
 		return
+	}
+	rs := s.claudeRunners(sv.c)
+	if id := r.URL.Query().Get("project"); id != "" {
+		p, err := sv.data.GetProject(id)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		rs = projectChatRunners(rs, p)
 	}
 	type runner struct {
 		ID     string `json:"id"`
@@ -276,7 +295,7 @@ func (s *Server) claudeInfo(w http.ResponseWriter, r *http.Request) {
 		// one of the caller's runners).
 		Commands bool `json:"commands"`
 	}{Local: !s.hub(), Runners: []runner{}, Commands: s.chatCommands()}
-	for _, x := range s.claudeRunners(sv.c) {
+	for _, x := range rs {
 		out.Runners = append(out.Runners, runner{ID: x.ID, Name: x.Name, Online: x.Online})
 		if x.Reported != nil && x.Reported.ChatCommands {
 			out.Commands = true
@@ -290,19 +309,36 @@ func (s *Server) claudeInfo(w http.ResponseWriter, r *http.Request) {
 // runner runs the chats it is asked for itself.
 func (s *Server) projectChatOnRunner(model.Project) bool { return s.hub() }
 
-// projectChatRunner picks c's runner to run p's chat on: want if it is one
-// of c's linked to p, else the first of those online. Only a runner p is
-// linked to has a clone of it. The chat runs on Claude Code whatever agent
-// p's tasks run on, so it needs a runner with Claude Code's label
-// (model.Project.OnDefaultAgent).
+// projectChatRunner picks c's runner to run p's chat on (see
+// pickProjectChatRunner).
 func (s *Server) projectChatRunner(c Caller, p model.Project, want string) (tunnel.Runner, error) {
+	return pickProjectChatRunner(s.claudeRunners(c), p, want)
+}
+
+// projectChatRunners are those of rs (the caller's own runners, see
+// claudeRunners) that may run p's chat: those p is linked to, which have a
+// clone of it. The chat runs on Claude Code whatever agent p's tasks run
+// on, so it needs a runner with Claude Code's label
+// (model.Project.OnDefaultAgent).
+func projectChatRunners(rs []tunnel.Runner, p model.Project) []tunnel.Runner {
 	p = p.OnDefaultAgent()
 	var linked []tunnel.Runner
-	for _, r := range s.claudeRunners(c) {
+	for _, r := range rs {
 		if r.Serves(p) {
 			linked = append(linked, r)
 		}
 	}
+	return linked
+}
+
+// pickProjectChatRunner picks of rs (the caller's own runners) the one to
+// run p's chat on: want (the chat's runner menu) if it is one of those
+// that may (projectChatRunners) and online, else the first of those
+// online. A want that is offline, someone else's or not linked to p is
+// passed over, not refused: the turn runs where it would without it, and
+// never on a runner outside p.
+func pickProjectChatRunner(rs []tunnel.Runner, p model.Project, want string) (tunnel.Runner, error) {
+	linked := projectChatRunners(rs, p)
 	if len(linked) == 0 {
 		return tunnel.Runner{}, fmt.Errorf("no runner of yours works on %s: this hub runs Claude only on its users' own runners. "+
 			"Give one of yours the labels it runs on (%s) in Runners, or change them in Project settings → Agent & runners", p.Name, strings.Join(p.RunnerLabels(), ", "))
