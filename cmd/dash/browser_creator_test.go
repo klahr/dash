@@ -48,9 +48,17 @@ func TestBrowserTaskCreatorAndMine(t *testing.T) {
 	b.waitJS("each card shows its creator's face", fmt.Sprintf(`document.querySelector(%q)?.title === "Created by ana" && document.querySelector(%q)?.title === "Created by admin"`,
 		cardSel(theirs.ID)+" .todo-creator", cardSel(mine.ID)+" .todo-creator"))
 	b.waitJS("Mine, off", `document.querySelector("#mine-filter")?.offsetWidth > 0 && document.querySelector("#mine-filter").getAttribute("aria-pressed") === "false"`)
-	b.until("turn Mine on", fmt.Sprintf(`document.querySelector("#mine-filter").getAttribute("aria-pressed") === "true" && !document.querySelector(%q)`, cardSel(theirs.ID)),
+	// The board head still reflows as the page loads (Mine and the faces
+	// appearing): click only once the button has settled, or the click can
+	// land on a card and open it, and the reload below opens it again.
+	b.waitJS("Mine settled", mineSettled)
+	b.until("turn Mine on", fmt.Sprintf(`(() => {
+		if (!document.querySelector("#detail").hidden) document.querySelector("#d-close")?.click();
+		return document.querySelector("#mine-filter").getAttribute("aria-pressed") === "true" && !document.querySelector(%q);
+	})()`, cardSel(theirs.ID)),
 		chromedp.Click(chromedp.CSS(`#mine-filter`)))
 	b.waitCard(mine.ID, "draft")
+	b.waitJS("no task open", `document.querySelector("#detail").hidden && !location.pathname.includes("/tasks/")`)
 
 	b.do("reload", chromedp.Reload())
 	b.waitCard(mine.ID, "draft")
@@ -59,18 +67,8 @@ func TestBrowserTaskCreatorAndMine(t *testing.T) {
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("the one-lane layout", `!matchMedia("(min-width: 1024px)").matches && [...document.querySelectorAll("#board .col")].filter((c) => c.offsetWidth).length === 1`)
 	// The switch reflows the board head (a taller button for touch, the
-	// filters row wrapping): click only once the button stays put between two
-	// checks and is what a click at its centre hits, or the click can land on
-	// a card where the button was.
-	b.waitJS("Mine shown and settled on a phone", `(() => {
-		const el = document.querySelector("#mine-filter");
-		const r = el?.getBoundingClientRect();
-		if (!r || !r.width) return false;
-		const at = [r.left, r.top, r.width, r.height].join();
-		const settled = window.__e2eMineRect === at;
-		window.__e2eMineRect = at;
-		return settled && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
-	})()`)
+	// filters row wrapping): wait for Mine to settle again before the click.
+	b.waitJS("Mine shown and settled on a phone", mineSettled)
 	// Should a click still miss and open a task, its pane covers the board on
 	// a phone: close it before the next try.
 	b.until("turn Mine off", fmt.Sprintf(`(() => {
@@ -83,3 +81,16 @@ func TestBrowserTaskCreatorAndMine(t *testing.T) {
 	b.openTask(theirs.ID)
 	b.waitJS("the pane names the other member", `document.querySelector("#d-meta .created-by")?.textContent.endsWith("Created by ana")`)
 }
+
+// mineSettled is true once the board's Mine button stays put between two
+// checks and is what a click at its centre hits; before that, a click can
+// land on a card where the button was.
+const mineSettled = `(() => {
+	const el = document.querySelector("#mine-filter");
+	const r = el?.getBoundingClientRect();
+	if (!r || !r.width) return false;
+	const at = [r.left, r.top, r.width, r.height].join();
+	const settled = window.__e2eMineRect === at;
+	window.__e2eMineRect = at;
+	return settled && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+})()`
