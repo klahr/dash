@@ -83,6 +83,12 @@ export async function loadDeploys() {
   if (dp.open && !dp.list.some((d) => d.id === dp.open)) closeDeploy();
 }
 
+// refreshDeploys reads the environments and deploys again when History →
+// Deploys shows: Project settings → Deploy changed the environments.
+export function refreshDeploys() {
+  if (state.view === "deploys" && state.project) loadDeploys().catch(() => {});
+}
+
 export function resetDeploys() {
   closeDeploy();
   dp.project = state.project;

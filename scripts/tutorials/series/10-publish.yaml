@@ -25,9 +25,6 @@ steps:
         into: "#settings-envs .env-edit input[type=url]"
       - key: Enter
       - click: "#settings-form button[value=cancel]"
-      # The page doesn't show a new environment until it is opened again.
-      - click: "#view-deploys .page-tabs button[data-tab=history]"
-      - click: "#view-history .page-tabs button[data-tab=deploys]"
       - wait: "#env-cards .env-card[data-env=production]"
 
   - say: >

@@ -13,6 +13,7 @@ import { loadClaudeFiles } from "./claudefiles.js";
 import { changed } from "./routes.js";
 import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
+import { refreshDeploys } from "./deploys.js";
 import { agentRunners, missingLabels, parseLabels, projectAgent, servesProject } from "../groups.js";
 import { FEATURES, NOTES, SETUP, agentTitle, loadAgents } from "./agents.js";
 import { docsLabels, labelPicker, matchList, setLabels } from "./labelpicker.js";
@@ -385,6 +386,7 @@ function saveEnvs() {
       renderProjectHeader();
       renderApprove();
       loadEnvHistory().catch(() => {});
+      refreshDeploys();
     });
   });
 }
