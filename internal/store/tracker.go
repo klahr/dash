@@ -25,21 +25,18 @@ func NewTrackerSecret() string { return TrackerSecretPrefix + rand.Text() }
 
 const trackerCols = `project_id, backend, config, status_map, credentials, webhook_secret, switched_at, cursor, last_sync_at, last_error, updated_at`
 
-func scanTracker(row scanner) (model.TrackerConfig, error) {
-	var c model.TrackerConfig
-	var cfg, smap, creds string
+// scanTrackerRow reads a row into c, the credentials (as stored) into creds.
+func scanTrackerRow(row scanner, c *model.TrackerConfig, creds *string) error {
+	var cfg, smap string
 	var switched, lastSync sql.NullInt64
 	var cursor, updated int64
-	if err := row.Scan(&c.ProjectID, &c.Backend, &cfg, &smap, &creds, &c.WebhookSecret, &switched, &cursor, &lastSync, &c.LastError, &updated); err != nil {
-		return c, err
+	if err := row.Scan(&c.ProjectID, &c.Backend, &cfg, &smap, creds, &c.WebhookSecret, &switched, &cursor, &lastSync, &c.LastError, &updated); err != nil {
+		return err
 	}
 	if cfg != "" && cfg != "{}" {
 		c.Config = json.RawMessage(cfg)
 	}
 	_ = json.Unmarshal([]byte(smap), &c.StatusMap)
-	_ = json.Unmarshal([]byte(creds), &c.Credentials)
-	c.HasCredentials = len(c.Credentials) > 0
-	c.HasWebhookSecret = c.WebhookSecret != ""
 	if switched.Valid {
 		c.SwitchedAt = time.Unix(0, switched.Int64).UTC()
 	}
@@ -48,6 +45,29 @@ func scanTracker(row scanner) (model.TrackerConfig, error) {
 	}
 	c.LastSyncAt = nullUnix(lastSync)
 	c.UpdatedAt = time.Unix(updated, 0).UTC()
+	return nil
+}
+
+// scanTracker reads a board backend, its credentials and webhook secret
+// opened. If they don't open (the secret key changed) it comes back without
+// them, its last error saying why: syncing fails and its webhook is refused
+// until they're entered again.
+func (s *Store) scanTracker(row scanner) (model.TrackerConfig, error) {
+	var c model.TrackerConfig
+	var creds string
+	if err := scanTrackerRow(row, &c, &creds); err != nil {
+		return c, err
+	}
+	creds, err := s.open(creds, trackerCredsContext(c.ProjectID))
+	secret, serr := s.open(c.WebhookSecret, trackerSecretContext(c.ProjectID))
+	if err = errors.Join(err, serr); err != nil {
+		creds, secret = "", ""
+		c.LastError = "Dash can't read this board's credentials or webhook secret: enter them again (" + err.Error() + ")"
+	}
+	c.WebhookSecret = secret
+	_ = json.Unmarshal([]byte(creds), &c.Credentials)
+	c.HasCredentials = len(c.Credentials) > 0
+	c.HasWebhookSecret = c.WebhookSecret != ""
 	return c, nil
 }
 
@@ -58,7 +78,7 @@ func (s *Store) TrackerConfig(projectID string) (model.TrackerConfig, error) {
 	if _, err := s.GetProject(projectID); err != nil {
 		return model.TrackerConfig{}, err
 	}
-	c, err := scanTracker(s.db.QueryRow("SELECT "+trackerCols+" FROM tracker_projects WHERE project_id = ?", projectID))
+	c, err := s.scanTracker(s.db.QueryRow("SELECT "+trackerCols+" FROM tracker_projects WHERE project_id = ?", projectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.TrackerConfig{ProjectID: projectID, Backend: model.NativeTracker}, nil
 	}
@@ -75,7 +95,7 @@ func (s *Store) TrackerConfigs() ([]model.TrackerConfig, error) {
 	defer rows.Close()
 	var out []model.TrackerConfig
 	for rows.Next() {
-		c, err := scanTracker(rows)
+		c, err := s.scanTracker(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -102,12 +122,23 @@ func (s *Store) PutTrackerConfig(c model.TrackerConfig) error {
 		cfg = string(c.Config)
 	}
 	smap, _ := json.Marshal(nonNil(c.StatusMap))
-	creds, _ := json.Marshal(nonNil(c.Credentials))
+	creds := noCreds
+	if len(c.Credentials) > 0 {
+		b, _ := json.Marshal(c.Credentials)
+		var err error
+		if creds, err = s.seal(string(b), trackerCredsContext(c.ProjectID)); err != nil {
+			return err
+		}
+	}
+	secret, err := s.seal(c.WebhookSecret, trackerSecretContext(c.ProjectID))
+	if err != nil {
+		return err
+	}
 	var switched any
 	if !c.SwitchedAt.IsZero() {
 		switched = c.SwitchedAt.UnixNano()
 	}
-	_, err := s.db.Exec(`INSERT INTO tracker_projects (project_id, backend, config, status_map, credentials, webhook_secret, switched_at, updated_at)
+	_, err = s.db.Exec(`INSERT INTO tracker_projects (project_id, backend, config, status_map, credentials, webhook_secret, switched_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (project_id) DO UPDATE SET
 			cursor = CASE WHEN backend = excluded.backend AND config = excluded.config THEN cursor ELSE 0 END,
@@ -116,7 +147,7 @@ func (s *Store) PutTrackerConfig(c model.TrackerConfig) error {
 			backend = excluded.backend, config = excluded.config, status_map = excluded.status_map,
 			credentials = excluded.credentials, webhook_secret = excluded.webhook_secret,
 			switched_at = excluded.switched_at, updated_at = excluded.updated_at`,
-		c.ProjectID, c.Backend, cfg, string(smap), string(creds), c.WebhookSecret, switched, time.Now().Unix())
+		c.ProjectID, c.Backend, cfg, string(smap), creds, secret, switched, time.Now().Unix())
 	return err
 }
 

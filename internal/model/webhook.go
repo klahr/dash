@@ -75,9 +75,12 @@ type Webhook struct {
 	Secret string `json:"-"`
 	// Token is an optional access token sent as "Authorization: Bearer"
 	// (ntfy servers that need one). Write-only: HasToken tells it is set.
-	Token     string    `json:"-"`
-	HasToken  bool      `json:"has_token"`
-	CreatedAt time.Time `json:"created_at"`
+	Token    string `json:"-"`
+	HasToken bool   `json:"has_token"`
+	// Unreadable: the stored secret or token didn't open with the hub's
+	// secret key; Secret and Token are empty and nothing is sent.
+	Unreadable bool      `json:"-"`
+	CreatedAt  time.Time `json:"created_at"`
 
 	// The last delivery: when, of what event, and its error ("" = it
 	// went through).

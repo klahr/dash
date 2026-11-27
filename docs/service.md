@@ -80,6 +80,12 @@ blocking its writes, and checked before it is given its name. It is safe to run 
 systemd timer instead of `DASH_BACKUP_DIR`. The copy holds password hashes and tokens, so it is
 readable only by you; keep it that way.
 
+**Back up the secret key too**: `~/.local/share/dash/secret.key`, or `DASH_SECRET_KEY` if you set
+it. It encrypts the secrets in the database (two-factor secrets, webhook secrets and tokens, board
+credentials; see [Secrets are encrypted](privacy.md#secrets-are-encrypted)). A backup restored
+without it can't read them. Keep it apart from the database backups, so one copy doesn't give
+away both.
+
 **Restore.** Stop Dash, put the backup in place as `dash.db`, and remove the old database's
 write-ahead log (`dash.db-wal`, `dash.db-shm`): left beside a different database, SQLite could
 apply it to the restored one.

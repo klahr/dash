@@ -101,6 +101,9 @@ type Store struct {
 	// SlugReserved, if set, reports whether a slug is reserved for org
 	// subdomains (default: DefaultReservedSlugs). Set it before serving.
 	SlugReserved func(slug string) bool
+	// sealer seals the secrets kept in the database (secrets.go); nil
+	// without a key. Set before serving (SetSealer).
+	sealer SecretSealer
 
 	// planLinks indexes the planning cards' links by what they link to
 	// (linkKey), so a change to a linked task or goal is announced to

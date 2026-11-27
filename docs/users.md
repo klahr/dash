@@ -108,6 +108,10 @@ admin of their org to turn it off (see
 That turns it off for the account (it works while Dash runs). If an org requires it,
 they set it up again at their next sign-in.
 
+Authenticator secrets are encrypted with the hub's secret key. If that key is lost or changed,
+codes from the app stop working and sign-in says the secret can't be read: use a recovery code,
+or turn two-factor sign-in off as above.
+
 ## Helping a member who can't sign in
 
 Owners and admins help members of their org from **Organization → Members**. Each member has:
@@ -334,8 +338,9 @@ is no button, and `/auth/google/*` answers 404.
 Client secrets entered in Dash are encrypted (AES-256-GCM) with the hub's secret key before they
 reach the database, and the API never returns them: it says whether one is set. The key is
 `DASH_SECRET_KEY` (64 hex digits, e.g. `openssl rand -hex 32`), or else `<data>/secret.key`, made
-on first start. Back it up with the database: without it, stored client secrets can't be read and
-have to be entered again.
+on first start. It encrypts the hub's other stored secrets too (see
+[Secrets are encrypted](privacy.md#secrets-are-encrypted)). Back it up with the database: without
+it, stored client secrets can't be read and have to be entered again.
 
 ### Org settings (owners and admins)
 

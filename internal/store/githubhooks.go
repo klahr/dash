@@ -13,7 +13,8 @@ import (
 //
 // One row per organization and repository whose webhook the hub registered
 // (or tried to): each org has its own webhook and secret. In the database only: the hook manager and the webhook endpoint read
-// them. The secret is kept here and nowhere else.
+// them. The secret is kept here and nowhere else, sealed with the hub's
+// secret key (secrets.go).
 
 const githubHookCols = `org_id, repo, hook_id, secret, url, state, reason, registered, last_delivery, last_ping, checked`
 
@@ -41,10 +42,20 @@ func scanGitHubHook(row scanner) (model.GitHubHook, error) {
 	return h, nil
 }
 
+// scanGitHubHook reads a hook, its secret opened.
+func (s *Store) scanGitHubHook(row scanner) (model.GitHubHook, error) {
+	h, err := scanGitHubHook(row)
+	if err != nil {
+		return h, err
+	}
+	h.Secret, err = s.open(h.Secret, githubHookContext(h.OrgID, h.Repo))
+	return h, err
+}
+
 // GitHubHook is the webhook org saved for repo (OWNER/REPO, any case), or
 // ErrNotFound.
 func (s *Store) GitHubHook(org int64, repo string) (model.GitHubHook, error) {
-	h, err := scanGitHubHook(s.db.QueryRow("SELECT "+githubHookCols+" FROM github_hooks WHERE org_id = ? AND repo = ?", org, strings.ToLower(repo)))
+	h, err := s.scanGitHubHook(s.db.QueryRow("SELECT "+githubHookCols+" FROM github_hooks WHERE org_id = ? AND repo = ?", org, strings.ToLower(repo)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return h, ErrNotFound
 	}
@@ -53,7 +64,7 @@ func (s *Store) GitHubHook(org int64, repo string) (model.GitHubHook, error) {
 
 // GitHubHooks are all the saved webhooks.
 func (s *Store) GitHubHooks() ([]model.GitHubHook, error) {
-	return queryAll(s.db, scanGitHubHook, "SELECT "+githubHookCols+" FROM github_hooks ORDER BY org_id, repo")
+	return queryAll(s.db, s.scanGitHubHook, "SELECT "+githubHookCols+" FROM github_hooks ORDER BY org_id, repo")
 }
 
 // PutGitHubHook saves h, replacing what was saved for its org and repository,
@@ -67,11 +78,15 @@ func (s *Store) PutGitHubHook(h model.GitHubHook) error {
 	if len(h.Reason) > 500 {
 		h.Reason = h.Reason[:500]
 	}
-	_, err := s.db.Exec(`INSERT INTO github_hooks (`+githubHookCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	secret, err := s.seal(h.Secret, githubHookContext(h.OrgID, h.Repo))
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO github_hooks (`+githubHookCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (org_id, repo) DO UPDATE SET hook_id = excluded.hook_id, secret = excluded.secret, url = excluded.url,
 		state = excluded.state, reason = excluded.reason, registered = excluded.registered,
 		last_delivery = MAX(github_hooks.last_delivery, excluded.last_delivery), last_ping = excluded.last_ping, checked = excluded.checked`,
-		h.OrgID, strings.ToLower(h.Repo), h.HookID, h.Secret, h.URL, h.State, h.Reason,
+		h.OrgID, strings.ToLower(h.Repo), h.HookID, secret, h.URL, h.State, h.Reason,
 		millis(h.Registered), millis(h.LastDelivery), millis(h.LastPing), millis(h.Checked))
 	return err
 }

@@ -349,6 +349,7 @@ func start(o *options) *selfUpdate {
 	defer a.st.Close()
 	a.configureOrgDomain()
 	a.resolveProjectRoot()
+	a.configureSecretKey()
 	a.configureGoogle()
 	a.configureOAuthTLS()
 
@@ -528,9 +529,43 @@ func (a *app) resolveProjectRoot() {
 	}
 }
 
-// configureGoogle sets up Sign in with Google (docs/users.md) and the hub's
-// secret key: the instance's client from the environment; orgs' own clients
-// and one set in settings are sealed in the database with the secret key.
+// configureSecretKey loads the hub's secret key (DASH_SECRET_KEY, else
+// <data>/secret.key, made on first start), which seals the secrets kept in
+// the database (docs/security.md), and seals those still in plaintext. A
+// runner has none: it keeps its few secrets as they are.
+func (a *app) configureSecretKey() {
+	o := a.o
+	if o.runnerMode {
+		return
+	}
+	key, err := auth.LoadSecretKey(os.Getenv("DASH_SECRET_KEY"), filepath.Join(o.dataDir, "secret.key"))
+	if err == nil {
+		err = a.authn.SetSecretKey(key)
+	}
+	var sealer *auth.Sealer
+	if err == nil {
+		sealer, err = auth.NewSealer(key)
+	}
+	if err != nil {
+		fatal("secret key", "err", err)
+	}
+	a.st.SetSealer(sealer)
+	n, bad, err := a.st.SealSecrets()
+	if err != nil {
+		fatal("encrypt the secrets in the database", "err", err)
+	}
+	if n > 0 {
+		slog.Info("encrypted secrets stored in plaintext with the secret key", "count", n)
+	}
+	if bad > 0 {
+		slog.Error("secrets in the database don't open with this secret key: was DASH_SECRET_KEY or secret.key changed? "+
+			"Restore the old key, or enter those secrets again (docs/privacy.md#secrets-are-encrypted)", "count", bad)
+	}
+}
+
+// configureGoogle sets up Sign in with Google (docs/users.md): the
+// instance's client from the environment; orgs' own clients and one set in
+// settings are sealed in the database with the secret key.
 func (a *app) configureGoogle() {
 	o, authn := a.o, a.authn
 	if o.runnerMode {
@@ -540,13 +575,6 @@ func (a *app) configureGoogle() {
 	authn.Google = auth.GoogleConfig{ClientID: os.Getenv("DASH_GOOGLE_CLIENT_ID"), ClientSecret: os.Getenv("DASH_GOOGLE_CLIENT_SECRET")}
 	if (authn.Google.ClientID == "") != (authn.Google.ClientSecret == "") {
 		fatal("DASH_GOOGLE_CLIENT_ID and DASH_GOOGLE_CLIENT_SECRET go together")
-	}
-	key, err := auth.LoadSecretKey(os.Getenv("DASH_SECRET_KEY"), filepath.Join(o.dataDir, "secret.key"))
-	if err == nil {
-		err = authn.SetSecretKey(key)
-	}
-	if err != nil {
-		fatal("secret key", "err", err)
 	}
 	if authn.Google.ClientID != "" && o.publicURL != "" {
 		slog.Info("google sign-in", "redirect_uri", strings.TrimRight(o.publicURL, "/")+auth.GoogleCallbackPath)

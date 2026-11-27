@@ -336,6 +336,15 @@ tasks are being written, and it checks the copy before naming it. To copy the re
 too (logs, uploads), stop the hub for a moment: `docker compose stop dash`,
 `docker compose cp dash:/data ./dash-data-$(date +%F)`, `docker compose start dash`.
 
+**Back up the secret key too**: `/data/secret.key`, or `DASH_SECRET_KEY` if you set it in
+`docker.env`. It encrypts the secrets in the database (two-factor secrets, webhook secrets and
+tokens, board credentials; see [Secrets are encrypted](privacy.md#secrets-are-encrypted)). A
+backup restored without it can't read them. Keep it apart from the database backups:
+
+```sh
+docker compose cp dash:/data/secret.key ./dash-secret.key
+```
+
 **Restore.** Stop the hub, put the backup in place as `dash.db` and remove the old database's
 write-ahead log (`dash.db-wal`, `dash.db-shm`): left beside a different database, SQLite could
 apply it to the restored one. The image has no shell, so do it from a throwaway container. For a
@@ -368,6 +377,7 @@ a runner at it, and stop it when you're done.
 ```sh
 mkdir /tmp/dash-drill
 cp /srv/backups/dash/dash-20260131T030000Z.db /tmp/dash-drill/dash.db
+cp ./dash-secret.key /tmp/dash-drill/secret.key
 sudo chown -R 65532:65532 /tmp/dash-drill
 docker run --rm -d --name dash-drill -p 127.0.0.1:7799:7788 -v /tmp/dash-drill:/data \
   -e DASH_USERNAME -e DASH_PASSWORD ghcr.io/klahr/dash

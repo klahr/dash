@@ -7,14 +7,15 @@ import (
 )
 
 // singletonKey returns the col of table's one row (id = 1), made with gen
-// and saved the first time. table and col are code constants, never user
-// input: they are put into the SQL as they are.
+// and saved (sealed, secrets.go) the first time. table and col are code
+// constants, never user input: they are put into the SQL as they are.
 func (s *Store) singletonKey(table, col string, gen func() (string, error)) (string, error) {
 	sel := "SELECT " + col + " FROM " + table + " WHERE id = 1"
+	ctx := singletonContext(table, col)
 	var key string
 	err := s.db.QueryRow(sel).Scan(&key)
 	if err == nil {
-		return key, nil
+		return s.open(key, ctx)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return "", err
@@ -22,13 +23,19 @@ func (s *Store) singletonKey(table, col string, gen func() (string, error)) (str
 	if key, err = gen(); err != nil {
 		return "", err
 	}
-	// Another process may have won the race: keep whichever is stored.
-	if _, err := s.db.Exec("INSERT INTO "+table+" (id, "+col+", created_at) VALUES (1, ?, ?) ON CONFLICT (id) DO NOTHING",
-		key, time.Now().Unix()); err != nil {
+	sealed, err := s.seal(key, ctx)
+	if err != nil {
 		return "", err
 	}
-	err = s.db.QueryRow(sel).Scan(&key)
-	return key, err
+	// Another process may have won the race: keep whichever is stored.
+	if _, err := s.db.Exec("INSERT INTO "+table+" (id, "+col+", created_at) VALUES (1, ?, ?) ON CONFLICT (id) DO NOTHING",
+		sealed, time.Now().Unix()); err != nil {
+		return "", err
+	}
+	if err = s.db.QueryRow(sel).Scan(&key); err != nil {
+		return "", err
+	}
+	return s.open(key, ctx)
 }
 
 // scanner is a row to scan: *sql.Row or *sql.Rows.

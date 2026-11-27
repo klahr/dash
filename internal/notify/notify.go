@@ -703,6 +703,10 @@ func (e errPermanent) Unwrap() error { return e.error }
 // deliver sends note to w, trying up to attempts times on network errors,
 // 5xx and 429, with exponential backoff, and records the outcome in w's
 // history. Errors never carry the URL (Slack's and ntfy's URLs are secrets).
+// errUnreadableSecret is sending to a webhook whose signing secret the
+// store couldn't open: never unsigned.
+var errUnreadableSecret = errors.New("this webhook's signing secret can't be read (was the hub's secret key changed?): rotate the secret, or delete the webhook and add it again")
+
 func (n *Notifier) deliver(ctx context.Context, w model.Webhook, note Notification, attempts int) error {
 	d := model.WebhookDelivery{WebhookID: w.ID, Event: note.Type, Delivery: note.ID,
 		ProjectID: note.Project.ID, Project: note.Project.Name}
@@ -719,12 +723,17 @@ func (n *Notifier) deliver(ctx context.Context, w model.Webhook, note Notificati
 		d.Subject = note.Message
 	}
 	start := time.Now()
-	err := n.retry(ctx, attempts, func() error {
-		d.Attempts++
-		var err error
-		d.Status, err = n.send(ctx, w, note)
-		return err
-	})
+	var err error
+	if w.Unreadable { // it didn't open with the hub's secret key (store.scanWebhook)
+		err = errUnreadableSecret
+	} else {
+		err = n.retry(ctx, attempts, func() error {
+			d.Attempts++
+			var err error
+			d.Status, err = n.send(ctx, w, note)
+			return err
+		})
+	}
 	d.DurationMS = time.Since(start).Milliseconds()
 	msg := ""
 	if err == nil {

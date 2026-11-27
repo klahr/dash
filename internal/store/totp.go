@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 )
 
 var (
@@ -32,7 +33,11 @@ func (a *Accounts) Requires2FA(uid int64) (bool, error) {
 // BeginTOTP keeps secret as uid's enrolment in progress, replacing any
 // earlier one, until ConfirmTOTP.
 func (a *Accounts) BeginTOTP(uid int64, secret string) error {
-	return execOne(a.db, ErrTOTPEnabled, "UPDATE users SET totp_pending = ? WHERE id = ? AND totp_secret IS NULL", secret, uid)
+	sealed, err := a.s.seal(secret, totpContext(uid))
+	if err != nil {
+		return err
+	}
+	return execOne(a.db, ErrTOTPEnabled, "UPDATE users SET totp_pending = ? WHERE id = ? AND totp_secret IS NULL", sealed, uid)
 }
 
 // PendingTOTP is the secret of uid's enrolment in progress.
@@ -42,15 +47,33 @@ func (a *Accounts) PendingTOTP(uid int64) (string, error) {
 	if errors.Is(err, sql.ErrNoRows) || err == nil && !s.Valid {
 		return "", ErrNoPendingTOTP
 	}
-	return s.String, err
+	if err != nil {
+		return "", err
+	}
+	return a.s.open(s.String, totpContext(uid))
 }
 
 // ConfirmTOTP turns two-factor sign-in on with the pending secret (which
 // must still be secret), marks step used, and gives uid the recovery codes.
 func (a *Accounts) ConfirmTOTP(uid int64, secret string, step int64, codes []string) error {
 	return inTx(a.db, func(tx *sql.Tx) error {
-		err := execOne(tx, ErrNoPendingTOTP, `UPDATE users SET totp_secret = totp_pending, totp_pending = NULL, totp_last_step = ?
-			WHERE id = ? AND totp_secret IS NULL AND totp_pending = ?`, step, uid, secret)
+		// The pending secret is sealed (a fresh nonce each time): compare
+		// it opened, then move the stored value as it is.
+		var stored sql.NullString
+		err := tx.QueryRow("SELECT totp_pending FROM users WHERE id = ? AND totp_secret IS NULL", uid).Scan(&stored)
+		if errors.Is(err, sql.ErrNoRows) || err == nil && !stored.Valid {
+			return ErrNoPendingTOTP
+		}
+		if err != nil {
+			return err
+		}
+		if pending, err := a.s.open(stored.String, totpContext(uid)); err != nil {
+			return err
+		} else if pending != secret {
+			return ErrNoPendingTOTP
+		}
+		err = execOne(tx, ErrNoPendingTOTP, `UPDATE users SET totp_secret = totp_pending, totp_pending = NULL, totp_last_step = ?
+			WHERE id = ? AND totp_secret IS NULL AND totp_pending = ?`, step, uid, stored.String)
 		if err != nil {
 			return err
 		}
@@ -77,7 +100,14 @@ func (a *Accounts) TOTPSecret(uid int64) (string, error) {
 	if errors.Is(err, sql.ErrNoRows) || err == nil && !s.Valid {
 		return "", ErrTOTPNotSetUp
 	}
-	return s.String, err
+	if err != nil {
+		return "", err
+	}
+	secret, err := a.s.open(s.String, totpContext(uid))
+	if err != nil {
+		return "", fmt.Errorf("this account's two-factor secret can't be read: sign in with a recovery code, or have an admin turn two-factor sign-in off (%w)", err)
+	}
+	return secret, nil
 }
 
 // UseTOTPStep records that uid signed in with the code of step, and reports

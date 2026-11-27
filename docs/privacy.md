@@ -142,7 +142,8 @@ DASH_AUTH_LOG_DAYS=90
 Backups (`-backup-dir`, `dash backup`) are copies of the database from before a deletion. A
 deleted account stays in them until they are removed: with `DASH_BACKUP_KEEP=7` and daily backups,
 for a week. Restoring an old backup brings deleted accounts back, so delete them again after a
-restore.
+restore. Backups hold the [secrets](#secrets-are-encrypted) encrypted: keep the secret key to
+restore them.
 
 ## API
 
@@ -178,6 +179,47 @@ Everything is on the hub's own disk, in its data directory (`-data`, by default
 | Attachments and drawings (`uploads/`)   | with what uses them; unused ones are removed after a day                      |
 | Billing (with [Stripe](billing.md)): the Stripe customer and subscription ids, plan and period | while the org exists. Card, address and tax id stay at Stripe |
 | Backups (`dash backup`, `-backup-dir`)  | scheduled ones in `-backup-dir`: the last 7 by default (`-backup-keep`, `DASH_BACKUP_KEEP`); `dash backup` keeps all unless given `-keep`. Copies made before an upgrade (`dash.db.pre-migration-*`) are kept until you delete them |
+
+### Secrets are encrypted
+
+Secrets the hub must use in the clear are encrypted (AES-256-GCM) with the hub's secret key
+before they reach the database:
+
+- two-factor (authenticator) secrets
+- notification webhooks' signing secrets and bearer tokens
+- GitHub webhook secrets
+- board backends' credentials and webhook secrets
+- Google client secrets entered in Dash
+- the Web Push (VAPID) private key and the key that signs unsubscribe links
+
+Passwords, recovery codes, sessions and API tokens are stored only as hashes. So a copy of
+`dash.db` alone gives none of these away.
+
+The key is `DASH_SECRET_KEY` (64 hex digits) if set, else `<data>/secret.key`, which the hub makes
+on first start. Make your own with:
+
+```sh
+openssl rand -hex 32
+```
+
+At start, the hub encrypts any of these still stored in plaintext (from an older version) and logs
+how many. Values already encrypted are left as they are.
+
+**Back up the key with the database**, but not next to its backups. Without it, a restored
+database starts, but the secrets above can't be read. The hub logs at start how many don't open
+with its key. Then:
+
+- Two-factor sign-in says the secret can't be read. Sign in with a recovery code, or have an
+  admin turn two-factor sign-in off (`dash reset-2fa`, see
+  [Two-factor sign-in](users.md#two-factor-sign-in)), then turn it on again.
+- A notification webhook is turned off and its last error says why. Rotate its secret, enter its
+  token again (if it had one) and turn it on, or delete it and add it again.
+- A board backend stops syncing and its last error says why. Enter its credentials again.
+- Dash registers a new GitHub webhook for each repository. Delete the old one in the repository's
+  **Settings → Webhooks**.
+- Google client secrets have to be entered again.
+
+Runners have no secret key: the few secrets a runner keeps stay as they are.
 
 Not stored in the database:
 

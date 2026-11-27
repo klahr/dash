@@ -24,7 +24,28 @@ func newWebhookSecret() string { return WebhookSecretPrefix + rand.Text() }
 
 const webhookCols = `id, project_id, user_id, org_id, name, url, format, events, enabled, secret, token, created_at, last_at, last_event, last_error`
 
-func scanWebhook(row scanner) (model.Webhook, error) {
+// scanWebhook reads a webhook, its secret and token opened. One that
+// doesn't open (the secret key changed) comes back off, without them, its
+// last error saying why: the others still list and send, and it can be
+// rotated, edited or deleted.
+func (s *Store) scanWebhook(row scanner) (model.Webhook, error) {
+	w, err := scanWebhookRow(row)
+	if err != nil {
+		return w, err
+	}
+	secret, err := s.open(w.Secret, webhookSecretContext(w.ID))
+	token, terr := s.open(w.Token, webhookTokenContext(w.ID))
+	if err = errors.Join(err, terr); err != nil {
+		w.Secret, w.Token, w.Enabled, w.Unreadable = "", "", false, true
+		w.LastError = "Dash can't read this webhook's secret or token: rotate the secret and enter the token again, or delete it and add it again (" + err.Error() + ")"
+	} else {
+		w.Secret, w.Token = secret, token
+	}
+	w.HasToken = w.Token != ""
+	return w, nil
+}
+
+func scanWebhookRow(row scanner) (model.Webhook, error) {
 	var w model.Webhook
 	var events string
 	var enabled int
@@ -82,12 +103,12 @@ func (s *Store) WebhooksFor(projectID string) ([]model.Webhook, error) {
 }
 
 func (s *Store) queryWebhooks(q string, args ...any) ([]model.Webhook, error) {
-	return queryAll(s.db, scanWebhook, q, args...)
+	return queryAll(s.db, s.scanWebhook, q, args...)
 }
 
 // GetWebhook returns a webhook, secret included.
 func (s *Store) GetWebhook(id string) (model.Webhook, error) {
-	w, err := scanWebhook(s.db.QueryRow("SELECT "+webhookCols+" FROM webhooks WHERE id = ?", id))
+	w, err := s.scanWebhook(s.db.QueryRow("SELECT "+webhookCols+" FROM webhooks WHERE id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return w, ErrNotFound
 	}
@@ -118,9 +139,17 @@ func (s *Store) CreateWebhook(w model.Webhook) (model.Webhook, error) {
 	w.CreatedAt = time.Now().UTC().Truncate(time.Second)
 	w.LastAt, w.LastEvent, w.LastError = time.Time{}, "", ""
 	ev, _ := json.Marshal(w.Events)
-	_, err := s.db.Exec(`INSERT INTO webhooks (id, project_id, user_id, org_id, name, url, format, events, enabled, secret, token, created_at)
+	secret, err := s.seal(w.Secret, webhookSecretContext(w.ID))
+	if err != nil {
+		return w, err
+	}
+	token, err := s.seal(w.Token, webhookTokenContext(w.ID))
+	if err != nil {
+		return w, err
+	}
+	_, err = s.db.Exec(`INSERT INTO webhooks (id, project_id, user_id, org_id, name, url, format, events, enabled, secret, token, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		w.ID, w.ProjectID, user, org, w.Name, w.URL, w.Format, string(ev), boolInt(w.Enabled), w.Secret, w.Token, w.CreatedAt.Unix())
+		w.ID, w.ProjectID, user, org, w.Name, w.URL, w.Format, string(ev), boolInt(w.Enabled), secret, token, w.CreatedAt.Unix())
 	return w, err
 }
 
@@ -129,7 +158,7 @@ func (s *Store) CreateWebhook(w model.Webhook) (model.Webhook, error) {
 func (s *Store) UpdateWebhook(id string, fn func(*model.Webhook) error) (model.Webhook, error) {
 	var out model.Webhook
 	err := inTx(s.db, func(tx *sql.Tx) error {
-		w, err := scanWebhook(tx.QueryRow("SELECT "+webhookCols+" FROM webhooks WHERE id = ?", id))
+		w, err := s.scanWebhook(tx.QueryRow("SELECT "+webhookCols+" FROM webhooks WHERE id = ?", id))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -145,8 +174,12 @@ func (s *Store) UpdateWebhook(id string, fn func(*model.Webhook) error) (model.W
 			return err
 		}
 		ev, _ := json.Marshal(cp.Events)
+		token, err := s.seal(cp.Token, webhookTokenContext(id))
+		if err != nil {
+			return err
+		}
 		if _, err := tx.Exec(`UPDATE webhooks SET name = ?, url = ?, format = ?, events = ?, enabled = ?, token = ? WHERE id = ?`,
-			cp.Name, cp.URL, cp.Format, string(ev), boolInt(cp.Enabled), cp.Token, id); err != nil {
+			cp.Name, cp.URL, cp.Format, string(ev), boolInt(cp.Enabled), token, id); err != nil {
 			return err
 		}
 		cp.ID, cp.ProjectID, cp.UserID, cp.OrgID, cp.Secret = w.ID, w.ProjectID, w.UserID, w.OrgID, w.Secret
@@ -161,7 +194,11 @@ func (s *Store) UpdateWebhook(id string, fn func(*model.Webhook) error) (model.W
 // it; the old one stops working at once.
 func (s *Store) RotateWebhookSecret(id string) (string, error) {
 	secret := newWebhookSecret()
-	if err := execOne(s.db, ErrNotFound, "UPDATE webhooks SET secret = ? WHERE id = ?", secret, id); err != nil {
+	sealed, err := s.seal(secret, webhookSecretContext(id))
+	if err != nil {
+		return "", err
+	}
+	if err := execOne(s.db, ErrNotFound, "UPDATE webhooks SET secret = ? WHERE id = ?", sealed, id); err != nil {
 		return "", err
 	}
 	return secret, nil
@@ -171,7 +208,7 @@ func (s *Store) RotateWebhookSecret(id string) (string, error) {
 // summary destinations.
 func (s *Store) DeleteWebhook(id string) error {
 	return inTx(s.db, func(tx *sql.Tx) error {
-		w, err := scanWebhook(tx.QueryRow("SELECT "+webhookCols+" FROM webhooks WHERE id = ?", id))
+		w, err := s.scanWebhook(tx.QueryRow("SELECT "+webhookCols+" FROM webhooks WHERE id = ?", id))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}

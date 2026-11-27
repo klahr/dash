@@ -13,12 +13,12 @@ import (
 )
 
 // A Sealer encrypts the secrets Dash keeps in its database but must use in
-// the clear (Google client secrets), with AES-256-GCM under the hub's secret
-// key. Each value is bound to where it is stored (its context), so a sealed
+// the clear (Google client secrets here; the store's others through
+// store.SetSealer), with AES-256-GCM under the hub's secret key. Each value is bound to where it is stored (its context), so a sealed
 // value copied to another row or org doesn't open there.
 type Sealer struct{ aead cipher.AEAD }
 
-const sealPrefix = "v1:"
+const sealPrefix = "v1:" // store.IsSealed looks for it too
 
 // SecretKeySize is the length of the hub's secret key.
 const SecretKeySize = 32
