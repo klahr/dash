@@ -232,12 +232,12 @@ func (a *Accounts) AuthenticateHash(hash string, now time.Time, kinds ...TokenKi
 	var changed int64
 	var required, orgRequires bool
 	t, err := scanToken(&prefixScanner{a.db.QueryRow(`SELECT u.username, COALESCE(u.email, ''), u.is_platform_admin,
-			u.totp_secret IS NOT NULL, u.avatar_at, `+requires2FA+`, o.require_2fa, u.password_changed_at,
+			u.totp_secret IS NOT NULL, u.avatar_at, `+requires2FA+`, `+needsPassword+`, o.require_2fa, u.password_changed_at,
 			m.role, t.expires_at, `+strings.TrimPrefix(tokenCols, "SELECT ")+`
 			JOIN users u ON u.id = t.user_id
 			JOIN org_memberships m ON m.user_id = t.user_id AND m.org_id = t.org_id
 			WHERE t.token_hash = ? AND `+enabled("u.id"), hash),
-		[]any{&s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP, &s.User.Avatar, &required, &orgRequires, &changed, &role, &expires}})
+		[]any{&s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP, &s.User.Avatar, &required, &s.NeedsPassword, &orgRequires, &changed, &role, &expires}})
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			err = ErrTokenInvalid

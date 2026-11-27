@@ -463,7 +463,7 @@ func pushContact(origin string) string {
 
 // sendPush makes one attempt to push payload to sub.
 func (n *Notifier) sendPush(ctx context.Context, sub model.PushSubscription, payload []byte, projectID string, ttl time.Duration, urgent bool) error {
-	req, err := pushRequest(ctx, n.VAPID, sub, pushContact(n.origin(projectID)), payload, ttl, urgent, n.now())
+	req, err := pushRequest(ctx, n.vapid(), sub, pushContact(n.origin(projectID)), payload, ttl, urgent, n.now())
 	if err != nil {
 		return errPermanent{err}
 	}
@@ -493,7 +493,31 @@ func (n *Notifier) sendPush(ctx context.Context, sub model.PushSubscription, pay
 }
 
 // PushEnabled reports whether this notifier pushes to browsers.
-func (n *Notifier) PushEnabled() bool { return n != nil && n.Push != nil && n.VAPID != nil }
+func (n *Notifier) PushEnabled() bool { return n != nil && n.Push != nil && n.vapid() != nil }
+
+// vapid is the VAPID key pushes are signed with.
+func (n *Notifier) vapid() *VAPIDKey {
+	n.vapidMu.RLock()
+	defer n.vapidMu.RUnlock()
+	return n.VAPID
+}
+
+// SetVAPID replaces the VAPID key (incident response made a new one): the
+// browsers subscribed with the old one must subscribe again.
+func (n *Notifier) SetVAPID(k *VAPIDKey) {
+	n.vapidMu.Lock()
+	n.VAPID = k
+	n.vapidMu.Unlock()
+}
+
+// VAPIDPublic is the public VAPID key browsers subscribe with ("" when
+// push is off).
+func (n *Notifier) VAPIDPublic() string {
+	if k := n.vapid(); k != nil {
+		return k.Public
+	}
+	return ""
+}
 
 // push sends note to the browsers subscribed to its project's org, if it
 // is one of PushEvents.

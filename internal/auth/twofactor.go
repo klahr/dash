@@ -67,7 +67,7 @@ func (a *Auth) twoFactorRoutes(mux Mux) {
 // twoFactorFree are the paths someone who must still set up two-factor
 // sign-in may use: those of someone with no org, and setting it up.
 func twoFactorFree(path string) bool {
-	return orgFree(path) || strings.HasPrefix(path, "/api/account/2fa") || public[path]
+	return orgFree(path) || strings.HasPrefix(path, "/api/account/2fa") || path == "/api/password/change" || public[path]
 }
 
 // newTicketFor keeps t, waiting for its second factor, and returns its token.
@@ -239,7 +239,7 @@ func (a *Auth) loginTOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "sign-in failed")
 		return
 	}
-	resp := map[string]any{"ok": true}
+	resp := map[string]any{"ok": true, "change_password": a.needsPassword(t.user)}
 	if method == store.MethodGoogle {
 		a.audit(r, store.AuthEvent{OrgID: t.org, UserID: t.user, Kind: "signin.google", Detail: "with two-factor code"})
 	}

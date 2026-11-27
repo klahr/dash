@@ -171,6 +171,10 @@ invitations, chats, planning boards, sign-in settings, the tokens that act in it
 sign-in log. Its members' accounts stay. An org with projects or a subscription can't be
 deleted until they are gone, and neither can the org Dash keeps records without an org in.
 
+**Incident response** does what a breach calls for in one step: signs everyone out, asks for new
+passwords and two-factor setups, makes new secrets and tells everyone. See
+[Responding to a breach](breach.md).
+
 Every change asks for your password, and goes in the sign-in log and the server log.
 
 ## Invitations

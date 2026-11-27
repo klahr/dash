@@ -37,6 +37,11 @@ export async function request(method, path, { body, raw = false, prefix = here()
   }
   const ct = res.headers.get("content-type") || "";
   const data = ct.includes("json") ? await res.json() : await res.text();
+  if (res.status === 403 && data.code === "password_change_required") {
+    // An administrator's incident response asked for a new password.
+    location.replace("/login.html?change=1");
+    throw new Error(data.error);
+  }
   if (res.status === 403 && data.code === "2fa_required") {
     // An org now requires two-factor sign-in: set it up on the login page.
     location.replace("/login.html?enrol=1");

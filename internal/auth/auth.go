@@ -123,6 +123,15 @@ type Auth struct {
 	// Lockout limits failed sign-ins; set it before serving.
 	Lockout Lockout
 
+	// OnLockdown is told what an incident response did (lockdown.go), so
+	// what keeps secrets in memory (the VAPID key, board syncs, GitHub
+	// webhooks, runner registration codes) can follow (optional).
+	OnLockdown func(store.LockdownResult)
+	// NoticeEvery is how long the notice's emails wait between one and the
+	// next (0: noticeEvery).
+	NoticeEvery time.Duration
+	notices     noticeMailing // the notice's emails going out
+
 	// AuditRetention is how long the sign-in log keeps an entry (0:
 	// forever). Older ones are deleted as new ones are written.
 	AuditRetention time.Duration
@@ -288,6 +297,9 @@ func (a *Auth) tokenIdentity(tok string, kinds ...store.TokenKind) (*Identity, e
 	}
 	// Like a session, a person's token does nothing until they set up the
 	// two-factor sign-in an org of theirs requires. Runners carry on.
+	if s.NeedsPassword && t.Kind != store.TokenRunner {
+		return nil, errTokenNeedsPassword
+	}
 	if s.Needs2FA && t.Kind != store.TokenRunner {
 		return nil, errTokenNeeds2FA
 	}
@@ -295,6 +307,13 @@ func (a *Auth) tokenIdentity(tok string, kinds ...store.TokenKind) (*Identity, e
 }
 
 var errTokenNeeds2FA = errors.New("set up two-factor sign-in in Dash to use your tokens")
+
+// errTokenNeedsPassword: an incident response asked the token's user for a
+// new password, which they haven't chosen yet.
+var errTokenNeedsPassword = errors.New("choose a new password in Dash to use your tokens")
+
+// errNeedsPassword is what a session asked for a new password gets.
+var errNeedsPassword = errors.New("choose a new password to continue")
 
 // scopeFor is the scope r needs: read for GET and HEAD requests (and the
 // read-only event stream), write for everything else, including the
@@ -747,7 +766,8 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("login", "err", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "enrol_2fa": enrol, "google_linked": a.redeemLink(r, req.Link, u.ID)})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "enrol_2fa": enrol, "google_linked": a.redeemLink(r, req.Link, u.ID),
+		"change_password": a.needsPassword(u.ID)})
 }
 
 // Logout handles POST /api/logout. It signs out the session's whole
@@ -936,6 +956,16 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 // serveSession passes a request with a valid session on to next as id, once
 // id has set up the second factor an org requires and has an org to work in.
 func (a *Auth) serveSession(w http.ResponseWriter, r *http.Request, id *Identity, api bool, next http.Handler) {
+	if id.NeedsPassword && !passwordFree(r.URL.Path) {
+		// An incident response asked for a new password: nothing else
+		// works until they choose one (password.go).
+		if api {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": errNeedsPassword.Error(), "code": codeNeedsPassword})
+			return
+		}
+		http.Redirect(w, r, "/login.html?change=1", http.StatusSeeOther)
+		return
+	}
 	if id.Needs2FA && !twoFactorFree(r.URL.Path) {
 		// An org of theirs requires two-factor sign-in: set it up first.
 		if api {
@@ -976,6 +1006,10 @@ func (a *Auth) serveToken(w http.ResponseWriter, r *http.Request, tok string, ap
 	id, err := a.tokenIdentity(tok, store.TokenAPI)
 	if errors.Is(err, errTokenNeeds2FA) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "2fa_required"})
+		return
+	}
+	if errors.Is(err, errTokenNeedsPassword) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": codeNeedsPassword})
 		return
 	}
 	if err != nil || !a.pinned(r, id) { // on an org's subdomain, only that org's tokens
@@ -1026,7 +1060,7 @@ func (a *Auth) stillValid(id *Identity, admin bool) bool {
 		return err == nil && (!admin || s.User.PlatformAdmin)
 	}
 	s, err := a.acc.Session(id.key, a.now())
-	if err != nil || s.Needs2FA || admin && !s.User.PlatformAdmin {
+	if err != nil || s.Needs2FA || s.NeedsPassword || admin && !s.User.PlatformAdmin {
 		return false
 	}
 	if id.Org == nil {

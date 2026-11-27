@@ -165,11 +165,14 @@ type Invitation struct {
 
 // Session is who a browser session belongs to and the org they are working
 // in. Org is nil when the user belongs to no org. Needs2FA is set when an org
-// of theirs requires two-factor sign-in and they haven't set it up.
+// of theirs requires two-factor sign-in and they haven't set it up (or an
+// incident response reset theirs). NeedsPassword is set when an incident
+// response asked them for a new password, which they haven't chosen yet.
 type Session struct {
-	User     User
-	Org      *Membership
-	Needs2FA bool
+	User          User
+	Org           *Membership
+	Needs2FA      bool
+	NeedsPassword bool
 	// Family is shared by the sessions one sign-in made on the base domain
 	// and the org subdomains it was handed to ("" for older sessions).
 	Family string
@@ -179,6 +182,12 @@ type Session struct {
 	// family's); zero for sessions from before it was recorded.
 	AuthAt time.Time
 }
+
+// needsPassword is an SQL expression: whether the user u must choose a new
+// password before doing anything else (an incident response asked;
+// accounts without a password, and the DASH_PASSWORD one, aren't asked).
+const needsPassword = `(u.has_password = 1 AND u.env_managed = 0
+	AND EXISTS (SELECT 1 FROM user_lockdown ul WHERE ul.user_id = u.id AND ul.new_password = 1))`
 
 // Sign-in methods (Session.Method).
 const (
@@ -506,12 +515,12 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 	var name, slug, folder, role, family sql.NullString
 	var require2FA, personal, required sql.NullBool
 	err := a.db.QueryRow(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL, u.avatar_at,
-			s.expires_at, s.active_org_id, o.id, o.name, o.slug, COALESCE(o.folder, o.slug), o.require_2fa, o.personal_user_id IS NOT NULL, m.role, s.family, s.method, s.auth_at, `+requires2FA+`
+			s.expires_at, s.active_org_id, o.id, o.name, o.slug, COALESCE(o.folder, o.slug), o.require_2fa, o.personal_user_id IS NOT NULL, m.role, s.family, s.method, s.auth_at, `+requires2FA+`, `+needsPassword+`
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = s.user_id AND m.org_id = s.active_org_id
 		LEFT JOIN organizations o ON o.id = m.org_id
 		WHERE s.key = ? AND `+enabled("u.id"), key).Scan(&s.User.ID, &s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP, &s.User.Avatar,
-		&expires, &active, &orgID, &name, &slug, &folder, &require2FA, &personal, &role, &family, &s.Method, &authAt, &required)
+		&expires, &active, &orgID, &name, &slug, &folder, &require2FA, &personal, &role, &family, &s.Method, &authAt, &required, &s.NeedsPassword)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
 	}

@@ -87,9 +87,11 @@ type Notifier struct {
 	Actions *Actions
 	// Push and VAPID, both set, push PushEvents to the browsers of the
 	// project's org's members that turned notifications on (webpush.go).
-	Push  PushStore
-	VAPID *VAPIDKey
-	Now   func() time.Time
+	// Set VAPID before Start; SetVAPID replaces it later.
+	Push    PushStore
+	VAPID   *VAPIDKey
+	vapidMu sync.RWMutex
+	Now     func() time.Time
 
 	once   sync.Once
 	queue  chan model.Event

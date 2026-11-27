@@ -371,6 +371,10 @@ func (a *Accounts) ResetPassword(tok, password string, now time.Time) (User, err
 		if _, err := tx.Exec("DELETE FROM email_tokens WHERE user_id = ? AND purpose = 'reset'", uid); err != nil {
 			return err
 		}
+		// A new password is what an incident response asked for.
+		if _, err := tx.Exec("UPDATE user_lockdown SET new_password = 0 WHERE user_id = ?", uid); err != nil {
+			return err
+		}
 		u, err = scanUser(tx.QueryRow(userCols+" WHERE id = ?", uid))
 		return err
 	})

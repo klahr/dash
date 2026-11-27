@@ -16,8 +16,8 @@ var (
 
 // requires2FA is an SQL expression: whether any org the user u belongs to
 // requires two-factor sign-in.
-const requires2FA = `EXISTS (SELECT 1 FROM org_memberships rm JOIN organizations ro ON ro.id = rm.org_id
-	WHERE rm.user_id = u.id AND ro.require_2fa = 1)`
+const requires2FA = `(EXISTS (SELECT 1 FROM user_lockdown ur WHERE ur.user_id = u.id AND ur.totp_reenroll = 1) OR EXISTS (SELECT 1 FROM org_memberships rm JOIN organizations ro ON ro.id = rm.org_id
+	WHERE rm.user_id = u.id AND ro.require_2fa = 1))`
 
 // Requires2FA reports whether an org uid belongs to requires two-factor
 // sign-in.
@@ -75,6 +75,9 @@ func (a *Accounts) ConfirmTOTP(uid int64, secret string, step int64, codes []str
 		err = execOne(tx, ErrNoPendingTOTP, `UPDATE users SET totp_secret = totp_pending, totp_pending = NULL, totp_last_step = ?
 			WHERE id = ? AND totp_secret IS NULL AND totp_pending = ?`, step, uid, stored.String)
 		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec("UPDATE user_lockdown SET totp_reenroll = 0 WHERE user_id = ?", uid); err != nil {
 			return err
 		}
 		return replaceCodes(tx, uid, codes)

@@ -245,7 +245,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 	} else {
 		f.Usage = func() {
 			fmt.Fprintf(f.Output(), "usage: dash [flags]          run the hub, the dashboard (see dash runner -h for a runner's flags)\n"+
-				"       dash version|healthcheck|backup|reset-2fa\n\nflags:\n")
+				"       dash version|healthcheck|backup|reset-2fa|lockdown\n\nflags:\n")
 			printFlags(f, func(name string) bool {
 				return slices.Contains(runnerFlags, name) || slices.Contains(removedFlags, name) || name == "pause-at"
 			})
@@ -1212,6 +1212,40 @@ func (a *app) wireOwners() {
 		if t.Kind == store.TokenRunner && apiSrv.Peers.Runners != nil {
 			_ = apiSrv.Peers.Runners.Revoke(t.RunnerID)
 		}
+	}
+	a.authn.OnLockdown = a.afterLockdown
+}
+
+// afterLockdown makes what keeps secrets in memory follow an incident
+// response: the new VAPID key, the board backends' new credentials and
+// webhook secrets, GitHub webhooks to register again, and no registration
+// codes. (Revoked tokens went through OnRevoke.)
+func (a *app) afterLockdown(res store.LockdownResult) {
+	apiSrv := a.apiSrv
+	if res.Steps.Sessions && apiSrv.Peers.Runners != nil {
+		apiSrv.Peers.Runners.DropCodes()
+	}
+	if res.VAPID && apiSrv.Notify != nil {
+		key, err := a.st.PushVAPIDKey(notify.NewVAPIDPrivateKey)
+		var k *notify.VAPIDKey
+		if err == nil {
+			k, err = notify.ParseVAPIDKey(key)
+		}
+		if err != nil {
+			slog.Warn("web push: the new VAPID key", "err", err)
+		} else {
+			apiSrv.Notify.SetVAPID(k)
+		}
+	}
+	if a.boards != nil {
+		for _, t := range res.Trackers {
+			if err := a.boards.Reconfigure(t.ProjectID); err != nil {
+				slog.Info("board backend after incident response", "project", t.ProjectID, "err", err)
+			}
+		}
+	}
+	if len(res.GitHubHooks) > 0 && apiSrv.GitHubHooks != nil {
+		apiSrv.GitHubHooks.Kick()
 	}
 }
 

@@ -55,7 +55,7 @@ func (s *Server) pushInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	res := map[string]any{"enabled": s.Notify.PushEnabled(), "events": notify.PushEvents}
 	if s.Notify.PushEnabled() {
-		res["key"] = s.Notify.VAPID.Public
+		res["key"] = s.Notify.VAPIDPublic()
 	}
 	writeJSON(w, http.StatusOK, res)
 }

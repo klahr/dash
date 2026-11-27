@@ -451,6 +451,15 @@ func (h *Hub) NewCode(owner model.Owner) (code string, expires time.Time, err er
 	return code, expires, nil
 }
 
+// DropCodes cancels every registration code not used yet (incident
+// response: one may have leaked).
+func (h *Hub) DropCodes() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.codes = nil
+	h.saveLocked()
+}
+
 func (h *Hub) pruneCodesLocked(now time.Time) {
 	h.codes = slices.DeleteFunc(h.codes, func(c regCode) bool { return !now.Before(c.Expires) })
 }

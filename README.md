@@ -113,6 +113,7 @@ Running a public hub:
 - [Billing](docs/billing.md)
 - [Branding and the landing page](docs/branding.md)
 - [Your data, terms and privacy](docs/privacy.md)
+- [Responding to a breach](docs/breach.md)
 
 All flags: `./bin/dash -h`.
 

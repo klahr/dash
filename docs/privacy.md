@@ -221,6 +221,9 @@ with its key. Then:
 
 Runners have no secret key: the few secrets a runner keeps stay as they are.
 
+If the database (or the key) may have leaked, see [Responding to a breach](breach.md): it signs
+everyone out, asks for new passwords and two-factor setups, and makes new secrets.
+
 Not stored in the database:
 
 - **IP addresses** for sign-in lockouts and signup rate limits are kept in memory only,

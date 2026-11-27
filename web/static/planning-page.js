@@ -18,6 +18,7 @@ import { desktop, wsURL } from "./app/viewport.js";
 import { cardError, cardId, claudeChanged, closeCard, loadPlanning, mountPlanning, onPlanningEvent, openCard, pickBoard, planningFilters, setPlanningFilters } from "./app/planning.js";
 import { askAbout, chatShown, claudeNeeded, loadClaude, onClaudeChange, openRunners } from "./app/plannerclaude.js";
 import { openFeatureBrief } from "./app/planner.js";
+import "./app/notice.js";
 import { accountSection, openAccount } from "./app/accountsheet.js";
 import { pushSubscribe, pushSupported, pushTest, pushUnsubscribe } from "./app/pushsub.js";
 import { accountHooks, logout, showAccountMenu } from "./app/myaccount.js";

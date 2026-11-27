@@ -60,6 +60,8 @@ busyForm(loginForm, async () => {
       totpForm.reset();
       $("#totp-error").textContent = "";
       show(totpForm);
+    } else if (data.change_password) {
+      changePassword();
     } else if (data.enrol_2fa) {
       await enrol();
     } else {
@@ -103,7 +105,8 @@ busyForm(totpForm, async () => {
       totpForm.querySelector("button").focus();
       return;
     }
-    go();
+    if (data.change_password) changePassword();
+    else go();
     return;
   }
   if (data.code === "ticket_expired") {
@@ -119,6 +122,29 @@ $("#enrol-logout").addEventListener("click", async () => {
   await fetch("/api/logout", { method: "POST" }).catch(() => {});
   location.replace("/login.html");
 });
+
+// An administrator's incident response asked everyone for a new password:
+// the sign-in worked, and only lets this account choose one. It reuses the
+// reset form, but posts to /api/password/change with the session.
+let changeMode = false;
+function changePassword() {
+  changeMode = true;
+  resetForm.reset();
+  resetForm.querySelector("p").textContent = "An administrator of this Dash asks everyone to choose a new password. Choose one you haven't used here before. You'll be signed out everywhere else.";
+  resetForm.querySelector(".login-error").textContent = "";
+  show(resetForm);
+}
+
+// Sent here by the server to choose a new password (signed in already).
+if (new URLSearchParams(location.search).has("change")) {
+  fetch("/api/me").then(async (res) => {
+    if (!res.ok) return;
+    const me = await res.json();
+    if (me.needs_password) changePassword();
+    else if (me.needs_2fa) await enrol();
+    else go();
+  }).catch(() => {});
+}
 
 // Sent here by the server to set up two-factor sign-in (signed in already).
 if (new URLSearchParams(location.search).has("enrol")) {
@@ -175,6 +201,13 @@ verifyForm.addEventListener("submit", async (e) => {
 let resetToken = "";
 resetForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (changeMode) {
+    const data = await busy(formParts(resetForm), () => post("/api/password/change", { password: resetForm.password.value }));
+    if (!data) { resetForm.password.select(); return; }
+    if (data.enrol_2fa) await enrol();
+    else go();
+    return;
+  }
   const data = await submit(resetForm, "/api/password/reset", { token: resetToken, password: resetForm.password.value });
   if (!data) return;
   resetForm.reset();

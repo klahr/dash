@@ -1758,6 +1758,9 @@
             <button type="button" class="rail-item" data-rail="users">Users</button>
             <button type="button" class="rail-item" data-rail="orgs">Organizations</button>
           </div>
+          <div class="rail-group"><span class="rail-head">Security</span>
+            <button type="button" class="rail-item" data-rail="lockdown">Incident response</button>
+          </div>
         </nav>
         <div class="rail-main">
           <section class="rail-section" data-section="users">
@@ -1783,6 +1786,11 @@
               </div>
               <div class="admin-detail" id="admin-org-detail" role="region" aria-label="Organization" hidden></div>
             </div>
+          </section>
+          <!-- After a breach: sign everyone out, new passwords and two-factor setups, new secrets,
+               a notice to everyone (app/lockdown.js; dash lockdown on the server does the same). -->
+          <section class="rail-section" data-section="lockdown">
+            <div class="lockdown" id="admin-lockdown"></div>
           </section>
         </div>
       </div>

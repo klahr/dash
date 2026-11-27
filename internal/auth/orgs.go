@@ -76,6 +76,7 @@ func (a *Auth) Routes(mux Mux) {
 	a.erasureRoutes(mux)
 	a.avatarRoutes(mux)
 	a.adminRoutes(mux)
+	a.lockdownRoutes(mux)
 	if a.Domains != nil {
 		mux.HandleFunc("GET /go/{slug}", a.goOrg)
 	}
@@ -120,7 +121,8 @@ func accountError(w http.ResponseWriter, err error) {
 		errors.Is(err, store.ErrIdentityTaken), errors.Is(err, store.ErrIdentityLinked), errors.Is(err, store.ErrNoPassword),
 		errors.Is(err, store.ErrDomainTaken), errors.Is(err, store.ErrAccountInUse), errors.Is(err, store.ErrEnvAccount),
 		errors.Is(err, store.ErrLastAdmin), errors.Is(err, store.ErrEnvPassword), errors.Is(err, store.ErrSSOOnly),
-		errors.Is(err, store.ErrAlreadyMember), errors.Is(err, store.ErrOrgInUse), errors.Is(err, store.ErrUnverified):
+		errors.Is(err, store.ErrAlreadyMember), errors.Is(err, store.ErrOrgInUse), errors.Is(err, store.ErrUnverified),
+		errors.Is(err, store.ErrNoPasswordChange), errors.Is(err, store.ErrNoSealer):
 		code = http.StatusConflict
 	case errors.Is(err, store.ErrAccountDisabled):
 		code = http.StatusForbidden
@@ -129,7 +131,8 @@ func accountError(w http.ResponseWriter, err error) {
 		errors.Is(err, store.ErrNoOrg), errors.Is(err, store.ErrBadScopes), errors.Is(err, store.ErrBadTokenName),
 		errors.Is(err, store.ErrTOTPNotSetUp), errors.Is(err, store.ErrNoPendingTOTP), errors.Is(err, store.ErrEmailLink),
 		errors.Is(err, store.ErrBadSlug), errors.Is(err, store.ErrSlugReserved),
-		errors.Is(err, store.ErrBadDomain), errors.Is(err, store.ErrBadJoinRole), errors.Is(err, store.ErrBadAvatar):
+		errors.Is(err, store.ErrBadDomain), errors.Is(err, store.ErrBadJoinRole), errors.Is(err, store.ErrBadAvatar),
+		errors.Is(err, store.ErrSamePassword), errors.Is(err, store.ErrBadNotice), errors.Is(err, errLockdownConfirm):
 		code = http.StatusBadRequest
 	case errors.Is(err, ErrReauthGoogle):
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "reauth_google"})
@@ -186,6 +189,8 @@ func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 		// An org requires two-factor sign-in and they haven't set it up:
 		// nothing else works until they do.
 		"needs_2fa": id.Needs2FA,
+		// An incident response asked for a new password (lockdown.go).
+		"needs_password": id.NeedsPassword,
 		// Platform admins create orgs; with open signup, everyone does.
 		"can_create_orgs": a.canCreateOrgs(id.User),
 	}

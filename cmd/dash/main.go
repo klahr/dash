@@ -50,6 +50,9 @@ func main() {
 	if len(args) > 0 && args[0] == "reset-2fa" {
 		os.Exit(resetTwoFactor(args[1:]))
 	}
+	if len(args) > 0 && args[0] == "lockdown" {
+		os.Exit(lockdownCmd(args[1:], os.Stdin, os.Stdout, os.Stderr))
+	}
 	runnerMode := len(args) > 0 && args[0] == "runner"
 	runnerctl.Supervised = runnerMode && os.Getenv(runnerctl.SupervisedEnv) != ""
 	os.Unsetenv(runnerctl.SupervisedEnv) // not for the programs the runner starts

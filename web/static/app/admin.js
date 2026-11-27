@@ -5,6 +5,7 @@ import { askPassword } from "./myaccount.js";
 import { copyBlock } from "./prefs.js";
 import { state } from "./state.js";
 import { ROLES, ROLE_LABEL, roleSelect } from "./roles.js";
+import { loadLockdown } from "./lockdown.js";
 
 // The Admin sheet (account menu → Admin, platform admins only): every
 // account and organization on this Dash, a list with the chosen one's
@@ -88,14 +89,15 @@ export async function openAdmin(section) {
 }
 
 const current = () => railOf("admin-sheet")?.current || "users";
-const loadSection = () => (current() === "orgs" ? loadOrgs() : loadUsers());
+const loadSection = () => ({ orgs: loadOrgs, lockdown: loadLockdown }[current()] || loadUsers)();
 sheet?.addEventListener("railchange", attempt(() => {
-  sheet.classList.toggle("pane-open", !detailOf(current()).hidden);
+  sheet.classList.toggle("pane-open", detailOf(current())?.hidden === false);
   return sheet.open && loadSection();
 }));
 
 const splitOf = (k) => $(k === "orgs" ? "#admin-orgs" : "#admin-users");
-const detailOf = (k) => $(k === "orgs" ? "#admin-org-detail" : "#admin-user-detail");
+// Users and Organizations have a detail pane; Incident response has none.
+const detailOf = (k) => (k === "lockdown" ? null : $(k === "orgs" ? "#admin-org-detail" : "#admin-user-detail"));
 
 function openDetail(k) {
   splitOf(k).classList.add("open");
@@ -112,7 +114,7 @@ function closeDetail(k, refocus = true) {
   const was = admin[k].sel;
   split.classList.remove("open");
   detailOf(k).hidden = true;
-  sheet.classList.toggle("pane-open", !detailOf(current()).hidden);
+  sheet.classList.toggle("pane-open", detailOf(current())?.hidden === false);
   admin[k].sel = 0;
   for (const b of split.querySelectorAll(".admin-row[aria-current]")) b.removeAttribute("aria-current");
   if (refocus && was) split.querySelector(`.admin-row[data-id="${was}"]`)?.focus();
@@ -121,7 +123,7 @@ function closeDetail(k, refocus = true) {
 // Esc closes the pane first, then the sheet.
 sheet?.addEventListener("cancel", (e) => {
   const k = current();
-  if (!detailOf(k).hidden) { e.preventDefault(); closeDetail(k); }
+  if (detailOf(k)?.hidden === false) { e.preventDefault(); closeDetail(k); }
 });
 
 // Back on a phone and in a narrow sheet; Close where the pane is beside the list (style.css).

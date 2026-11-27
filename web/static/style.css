@@ -1856,6 +1856,31 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .admin-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .admin-detail .item-list { margin: 0; }
 .admin-detail .item-row select { width: auto; flex: none; min-height: 36px; }
+/* Admin → Incident response (app/lockdown.js): one form, no list and pane. */
+.lockdown { max-width: 760px; }
+.lockdown h3 { margin: 0 0 4px; font-size: var(--fs-l); }
+.lockdown h3:focus { outline: none; }
+.lockdown h4 { margin: 16px 0 6px; font-size: var(--fs-m); }
+.lockdown-steps { display: grid; gap: 4px; margin: 12px 0 0; padding: 0; border: 0; }
+.lockdown-steps legend { padding: 0; margin-bottom: 4px; font-weight: 600; }
+.lockdown-step { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--raised); cursor: pointer; }
+.lockdown-step input { flex: none; margin-top: 3px; }
+.lockdown-step > span { display: grid; gap: 2px; min-width: 0; }
+.lockdown-step .hint { font-size: var(--fs-s); }
+.lockdown-notice { padding: 0 12px 4px 34px; }
+.lockdown-notice textarea { width: 100%; resize: vertical; }
+.lockdown-summary { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.lockdown-error { margin: 8px 0; color: var(--failed); }
+.lockdown-error:empty { display: none; }
+.lockdown-current { margin: 12px 0; padding: 10px 12px; border-left: 3px solid var(--running); border-radius: 0 var(--r-s) var(--r-s) 0; background: color-mix(in srgb, var(--running) 10%, transparent); }
+.lockdown-current p { margin: 0 0 6px; }
+.lockdown-current blockquote { margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lockdown-emails { margin: 12px 0; }
+.lockdown-checklist { margin: 0 0 12px; padding-left: 22px; display: grid; gap: 10px; overflow-wrap: anywhere; }
+.lockdown-checklist .copy-row { margin-top: 6px; }
+.lockdown-history { margin: 20px 0 0; }
+.lockdown-history ul { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: var(--fs-s); overflow-wrap: anywhere; }
+
 @media (max-width: 759px) {
   /* On a phone the pane takes the whole sheet below its header. */
   #admin-sheet.pane-open .rail-nav { display: none; }
@@ -4367,3 +4392,12 @@ html:has(.planning-app #chat-main:not([hidden])) body > .toasts { top: calc(var(
 .pl-start-kind .radio { flex: 1 1 8em; margin-bottom: 0; align-items: center; }
 .pl-start-kind .radio > input { margin-top: 0; }
 .pl-start-sheet .pl-start-text { width: 100%; min-height: 10em; resize: vertical; font-size: var(--fs-m); line-height: 1.45; }
+
+/* The platform admins' message (app/notice.js), at the top of the page after
+   sign-in until dismissed. */
+.site-notice { flex: none; display: flex; align-items: flex-start; gap: 8px; margin: 8px 12px; padding: 10px 8px 10px 12px;
+  border-left: 3px solid var(--running); border-radius: 0 var(--r-s) var(--r-s) 0; background: color-mix(in srgb, var(--running) 12%, var(--surface)); }
+.site-notice-body { flex: 1; min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.site-notice-body strong { color: var(--running); }
+.site-notice-body p { margin: 0; white-space: pre-wrap; }
+.site-notice .icon-btn { flex: none; }
