@@ -118,7 +118,10 @@ func (w *Watcher) follow(rel Release) {
 		rel, ok := w.followed(projectID)
 		return rel, ok && rel.Tag == tag && rel.State == ReleaseBuilding
 	}
+	stop := w.stopping()
+	w.bg.Add(1)
 	go func() {
+		defer w.bg.Done()
 		for time.Now().Before(deadline) {
 			rel, ok := building()
 			if !ok {
@@ -132,7 +135,13 @@ func (w *Watcher) follow(rel Release) {
 					hook = w.hookActive(p)
 				}
 			}
-			time.Sleep(releaseWait(hook, rel, time.Now(), every, slow, noBuild))
+			t := time.NewTimer(releaseWait(hook, rel, time.Now(), every, slow, noBuild))
+			select {
+			case <-stop:
+				t.Stop()
+				return
+			case <-t.C:
+			}
 			if _, ok := building(); !ok {
 				return
 			}
@@ -141,6 +150,31 @@ func (w *Watcher) follow(rel Release) {
 			}
 		}
 	}()
+}
+
+// stopping is closed by stop: the release polls end then.
+func (w *Watcher) stopping() <-chan struct{} {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stopped == nil {
+		w.stopped = make(chan struct{})
+	}
+	return w.stopped
+}
+
+// stop ends the release polls follow started and waits for them, so that
+// nothing reads the store after it (tests close it, and on Windows can't
+// remove an open dash.db).
+func (w *Watcher) stop() {
+	w.stopping()
+	w.mu.Lock()
+	select {
+	case <-w.stopped:
+	default:
+		close(w.stopped)
+	}
+	w.mu.Unlock()
+	w.bg.Wait()
 }
 
 // save stores rel's build, stamped now. Once it ended (published, failed,

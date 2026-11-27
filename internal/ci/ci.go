@@ -95,6 +95,8 @@ type Watcher struct {
 	busy     map[string]bool
 	releases map[string]Release // project ID → the release being followed (saved in Store too)
 	polls    map[string]*pollTimes
+	stopped  chan struct{}  // closed by stop (tests)
+	bg       sync.WaitGroup // the release polls follow started
 }
 
 // pollTimes is when a project's timed poll is due.

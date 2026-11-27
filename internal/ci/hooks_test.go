@@ -150,6 +150,7 @@ func newHookWatcher(t *testing.T) (*Watcher, *Hooks, *fakeGH, model.Project, *ti
 	now := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
 	clock := func() time.Time { return now }
 	w := &Watcher{Store: st, Git: gh, Pub: nopPub{}}
+	t.Cleanup(w.stop) // before st.Close (cleanups run last first)
 	h := &Hooks{Store: st, API: gh, PublicURL: "https://dash.example.com/", Watcher: w, Now: clock, inline: true}
 	w.Hooks = h
 	return w, h, gh, p, &now
