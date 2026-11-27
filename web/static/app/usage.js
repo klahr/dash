@@ -4,7 +4,7 @@ import { attempt, toast } from "./dialogs.js";
 import { saveField } from "./autosave.js";
 import { state } from "./state.js";
 import { setStatus } from "./status.js";
-import { aheadOfPace, paceMs, paceStateText, paceText } from "../usagetime.js";
+import { aheadOfPace, paceMs, paceStateText, paceText, waitText } from "../usagetime.js";
 import { HOUR, resetText } from "../time.js";
 
 // ------------------------------------------------------------------ usage & queue
@@ -40,8 +40,12 @@ function shownPace(u) {
   return accts.find((a) => a.account === paceAccount).pace;
 }
 
+// When the shown snapshot came in: its pace gap counts down from then.
+let snap = null, snapAt = 0;
+
 export function renderUsage() {
   const u = state.usage;
+  if (u !== snap) { snap = u; snapAt = Date.now(); }
   if (!u || (!u.known && !u.manual_pause)) { setStatus("usage", null); return; }
   const accts = shownAccounts(u);
   const live = accts ? accts.flatMap(liveWindows) : liveWindows(u);
@@ -52,12 +56,15 @@ export function renderUsage() {
   const tone = stopped ? "bad" : u.pacing || (top && (top.utilization >= 0.7 || overPace(top))) ? "warn" : "ok";
 
   const until = (x) => (x.until && !x.manual_pause ? ` until ${whenText(x.until)}` : "");
+  // A wait for the pace counts down to its until, live.
+  const why = (x) => (x.pacing && x.until && !x.manual_pause
+    ? `Waiting ${waitText(new Date(x.until) - Date.now())} to stay on pace` : x.reason);
   const reason = u.paused
-    ? `${u.reason}. No new tasks start${until(u)}; running ones finish.`
+    ? `${why(u)}. No new tasks start${until(u)}; running ones finish.`
     : accts ? "Tasks start normally. A new task goes to a runner on the account with the most usage left." : "Tasks start normally.";
   // One account's wait, under its name, while another still runs tasks.
   const accountReason = (a) => (a.paused && !u.paused
-    ? h("p", { class: `usage-reason${a.pacing ? " pacing" : ""}` }, `${a.reason}: no new tasks on this account${until(a)}.`) : null);
+    ? h("p", { class: `usage-reason${a.pacing ? " pacing" : ""}` }, `${why(a)}: no new tasks on this account${until(a)}.`) : null);
   // What a window's figures say, in words and in exact numbers for tooltips.
   const describe = (w) => {
     const pct = Math.round(w.utilization * 100);
@@ -140,7 +147,8 @@ function renderPace(p, accts) {
       : "Paces every runner on your Claude account as one budget: no new tasks while ahead of the pace line, more at once while behind.";
   const acct = $("#pace-account");
   acct.hidden = !hub;
-  if (hub) {
+  // Not under the user's hand (an open account pick) on a live tick.
+  if (hub && !acct.contains(document.activeElement)) {
     const rs = p.runners || [];
     const on = rs.length ? h("span", {}, `on ${rs.join(", ")}`) : null;
     const pick = () => h("label", { class: "pace-pick" }, h("span", {}, "Settings for"),
@@ -152,7 +160,7 @@ function renderPace(p, accts) {
         ? [h("span", {}, "Claude account ", h("strong", {}, p.account)), on]
         : [h("span", {}, "Your runners haven't said which Claude account they're logged in to. Update Dash on them to pace them here.")]));
   }
-  const text = paceStateText(p);
+  const text = paceStateText(p, Date.now() - snapAt);
   const st = $("#pace-state");
   st.hidden = !text;
   st.textContent = text || "";
@@ -191,6 +199,23 @@ const savePace = (e) => saveField(e.target, async () => {
 $("#pace-follow").addEventListener("change", savePace);
 $("#pace-max").addEventListener("change", savePace);
 $("#pace-boost").addEventListener("change", savePace);
+
+// Live: what the meters and waits say moves with the clock between
+// snapshots (the share of each window elapsed, the pace gap, the countdowns),
+// so they redraw every second while the Status popover or the usage sheet is
+// open, and every half minute otherwise for the status dot. A wait for the
+// pace that has run out asks for a fresh snapshot (at most every 30s).
+let ticks = 0, refetched = 0;
+setInterval(() => {
+  ticks++;
+  if (document.hidden || !state.usage) return;
+  const open = $("#status-pop")?.open || $("#usage-sheet")?.open;
+  if (!open && ticks % 30) return;
+  renderUsage();
+  const u = state.usage;
+  const due = [u, ...(u.accounts || [])].some((x) => x.pacing && x.until && new Date(x.until) <= Date.now());
+  if (due && Date.now() - refetched > 30000) { refetched = Date.now(); loadUsage().catch(() => {}); }
+}, 1000);
 
 export function openUsage() { renderUsage(); $("#usage-sheet").showModal(); }
 $("#pm-queue").addEventListener("click", attempt(async () => {

@@ -2,7 +2,7 @@
 // as time ahead or behind (the reset countdown is resetText in time.js).
 // Pure, so usagetime_test.mjs can cover it.
 
-import { MIN, durationText } from "./time.js";
+import { HOUR, MIN, SECOND, durationText } from "./time.js";
 
 // Time ahead (>0) or behind (<0) of an even pace, in ms: the gap between the
 // share used and the share of the window elapsed, as window time.
@@ -17,13 +17,21 @@ export function paceText(ms) {
   return `${durationText(Math.abs(ms))} ${ms > 0 ? "ahead" : "behind"}`;
 }
 
-// The queue's place on the weekly pace (the snapshot's pace), in words, or
-// null when it isn't following it.
-export function paceStateText(p) {
+// A wait that counts down live: to the second under an hour ("12m 5s"),
+// else to the minute ("1h 20m").
+export const waitText = (ms) => durationText(ms, ms < HOUR ? SECOND : MIN);
+
+// The pace gap in seconds sinceMs after the snapshot was taken: usage holds
+// still between snapshots while the pace line moves on with the clock.
+export const liveGapS = (p, sinceMs = 0) => (p?.gap_s || 0) - Math.max(0, sinceMs) / SECOND;
+
+// The queue's place on the weekly pace (the snapshot's pace, sinceMs after
+// it was taken), in words, or null when it isn't following it.
+export function paceStateText(p, sinceMs = 0) {
   if (!p || !p.follow) return null;
   const n = (k) => `${k} task${k === 1 ? "" : "s"} at once`;
   switch (p.state) {
-    case "waiting": return `Ahead of pace: waiting ${durationText(p.gap_s * 1000)} for the line to catch up`;
+    case "waiting": return `Ahead of pace: waiting ${waitText(liveGapS(p, sinceMs) * SECOND)} for the line to catch up`;
     case "on_pace": return `On pace: ${n(p.slots)}`;
     case "catching_up": return `Behind pace: catching up with ${n(p.slots)}`;
   }
