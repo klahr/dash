@@ -3,18 +3,18 @@ module github.com/klahr/dash
 go 1.27.4
 
 require (
-	github.com/anthropics/anthropic-sdk-go/v2 v2.7.0
-	github.com/chromedp/cdproto v0.159.2
-	github.com/chromedp/chromedp v0.23.0
+	github.com/anthropics/anthropic-sdk-go/v2 v2.14.0
+	github.com/chromedp/cdproto v0.160.8
+	github.com/chromedp/chromedp v0.24.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/yeqown/go-qrcode/v2 v2.3.0
 	go.yaml.in/yaml/v3 v3.0.6
-	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2
+	golang.org/x/crypto v0.59.0
 	golang.org/x/oauth2 v0.38.0
-	golang.org/x/sys v0.49.0
-	modernc.org/sqlite v1.62.0
+	golang.org/x/sys v0.50.0
+	modernc.org/sqlite v1.63.0
 )
 
 require (
@@ -42,9 +42,9 @@ require (
 	go.opentelemetry.io/otel/metric v1.33.0 // indirect
 	go.opentelemetry.io/otel/trace v1.33.0 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
-	golang.org/x/net v0.60.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
