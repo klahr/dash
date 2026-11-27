@@ -469,7 +469,7 @@ func (s *server) wait(ctx context.Context, port int, limit time.Duration) error 
 		case <-ctx.Done():
 			return errors.New("ran out of time while the server started")
 		case <-timer.C:
-			return fmt.Errorf("the server didn't answer on its port within %s%s", limit, s.lastLog())
+			return fmt.Errorf("the server didn't answer on port %d within %s%s", port, limit, s.lastLog())
 		case <-s.exited:
 			code := s.cmd.ProcessState.ExitCode()
 			return fmt.Errorf("the server exited with code %d%s", code, s.lastLog())

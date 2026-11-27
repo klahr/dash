@@ -85,7 +85,7 @@ func TestBrowserBoardHeaderAndPane(t *testing.T) {
 		b.waitJS(fmt.Sprintf("the review card beside the pane at %d", w), beside(rv.ID))
 		shot(b, fmt.Sprintf("board-pane-%d", w))
 		b.until("another card swaps the pane", beside(alpha.ID)+` && document.querySelector("#d-title")?.textContent.includes("Alpha draft") && !document.querySelector(".todo.selected[data-id='`+rv.ID+`']")`,
-			chromedp.Click(chromedp.CSS(cardSel(alpha.ID)+" .todo-title")))
+			clickCard(alpha.ID))
 		b.until("Esc closes it", `document.querySelector("#detail").hidden && !document.querySelector(".app").classList.contains("detail-beside") && !document.querySelector(".todo.selected")`,
 			chromedp.KeyEvent(kb.Escape))
 	}

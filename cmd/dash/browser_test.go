@@ -1089,7 +1089,30 @@ func (b *browser) waitCard(id, lane string) {
 func (b *browser) openTask(id string) {
 	b.t.Helper()
 	open := fmt.Sprintf(`!document.querySelector("#detail").hidden && document.querySelector("#board .todo.selected")?.dataset.id === %q`, id)
-	b.until("open task "+id, open, chromedp.Click(chromedp.CSS(cardSel(id)+" .todo-title")))
+	b.until("open task "+id, open, clickCard(id))
+}
+
+// clickCard clicks the start of a card's title. Not its centre, as a click on
+// the title node does: on a narrow card a draft's Queue chip, at the top right
+// over the title's end and shown only on hover, may lie over the centre, and
+// the click would queue the draft instead of opening it.
+func clickCard(id string) chromedp.Action[chromedp.Void] {
+	return chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+		pt, err := chromedp.Evaluate[[]float64](fmt.Sprintf(`(() => {
+			const e = document.querySelector(%q);
+			if (!e || !e.offsetWidth) throw new Error("no card title");
+			e.scrollIntoView({ block: "center" });
+			const r = document.createRange();
+			r.selectNodeContents(e);
+			const l = r.getClientRects()[0];
+			return [l.left + Math.min(8, l.width / 2), l.top + l.height / 2];
+		})()`, cardSel(id)+" .todo-title"))(ctx, t)
+		if err != nil {
+			return err
+		}
+		_, err = chromedp.MouseClickXY(pt[0], pt[1])(ctx, t)
+		return err
+	})
 }
 
 // drag drags a task's card from one lane to another until it leaves the
