@@ -97,7 +97,10 @@ func TestBrowserFindingDrafts(t *testing.T) {
 		[...document.querySelectorAll(%q)].some((e) => e.textContent === "urgent")`, cardSel(high)+" .todo-tags .tag-chip"))
 	b.until("remove it", `![...document.querySelectorAll("#d-tags .tag-chip")].some((e) => e.textContent.startsWith("urgent"))`,
 		chromedp.Click(chromedp.CSS(`#d-tags .tag-x[aria-label="Remove tag urgent"]`)))
-	b.do("close the task", chromedp.Click(chromedp.CSS(`#d-close`)))
+	// Wait for the address to leave the task as well (closing goes Back, a
+	// moment later), or the reload below can open it again over the board.
+	b.until("close the task", `document.querySelector("#detail").hidden && !location.pathname.includes("/tasks/")`,
+		chromedp.Click(chromedp.CSS(`#d-close`)))
 
 	// A phone: Select at the foot of Drafts shows the pick boxes, the bar fits the screen.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))

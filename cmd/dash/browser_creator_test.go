@@ -26,7 +26,12 @@ func TestBrowserTaskCreatorAndMine(t *testing.T) {
 	b.waitJS("no face and no Mine in an org of one", fmt.Sprintf(`!document.querySelector(%q) && document.querySelector("#mine-filter").hidden && document.querySelector("#goal-filter").hidden`, cardSel(mine.ID)+" .todo-creator"))
 	b.openTask(mine.ID)
 	b.waitJS("the pane names its creator", `document.querySelector("#d-meta .created-by")?.textContent.endsWith("Created by admin")`)
-	b.do("close the task", chromedp.Click(chromedp.CSS(`#d-close`)))
+	// Closing goes Back in the page's history, which lands a moment later:
+	// wait for the address to leave the task too, or the reload below can
+	// come first and open the task again (on a phone its pane then covers
+	// the board, Mine and all).
+	b.until("close the task", fmt.Sprintf(`document.querySelector("#detail").hidden && !location.pathname.includes("/tasks/%s")`, mine.ID),
+		chromedp.Click(chromedp.CSS(`#d-close`)))
 
 	// A second member, who creates a task of their own.
 	var me struct{ Org struct{ ID int64 } }
