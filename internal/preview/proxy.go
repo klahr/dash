@@ -313,7 +313,7 @@ func (m *Manager) proxy(addr string, port int, origin string, transport http.Rou
 			// Dash's own cookies are none of the app's business.
 			var keep []string
 			for _, c := range pr.In.Cookies() {
-				if c.Name != cookieName && c.Name != auth.CookieName && c.Name != auth.PlainCookieName {
+				if c.Name != cookieName && !auth.IsSessionCookie(c.Name) {
 					keep = append(keep, c.Name+"="+c.Value)
 				}
 			}

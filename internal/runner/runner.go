@@ -1,6 +1,7 @@
 // Package runner starts and supervises project processes: web servers, one-off
 // tasks (tests, deploys) and interactive PTY sessions. Every process gets its
-// own process group so Stop kills the whole tree.
+// own process group so Stop kills the whole tree, and what is left of the
+// group when its main process exits is ended too (not on Windows).
 package runner
 
 import (
@@ -32,6 +33,10 @@ var ErrNotFound = errors.New("process not found")
 var ErrNoTerminals = errors.New("terminals aren't supported on this runner's operating system yet")
 
 const scrollbackSize = 256 * 1024
+
+// leftoverGrace is how long what a finished process left in its group gets
+// after SIGTERM before it is killed.
+const leftoverGrace = 5 * time.Second
 
 type proc struct {
 	mu   sync.Mutex
@@ -376,6 +381,11 @@ func (m *Manager) wait(p *proc, r io.Closer) {
 	} else {
 		err = p.cmd.Wait()
 	}
+	// Whatever the command left running in its group (a server started with
+	// &) goes with it, however it ended; Stop only reaches running processes.
+	// p.info.PID is set for terminals too (p.cmd is nil for them) and never
+	// changes, so it is read without the lock.
+	reapGroup(p.info.PID, leftoverGrace)
 	code := 0
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

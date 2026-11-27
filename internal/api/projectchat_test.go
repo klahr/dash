@@ -247,10 +247,7 @@ func TestProjectChatBusyEventsGoToItsUser(t *testing.T) {
 	dial := func(name, password string) *websocket.Conn {
 		w := httptest.NewRecorder()
 		routes.ServeHTTP(w, httptest.NewRequest("POST", "/api/login", strings.NewReader(`{"username":"`+name+`","password":"`+password+`"}`)))
-		hdr := http.Header{}
-		for _, c := range w.Result().Cookies() {
-			hdr.Add("Cookie", c.Name+"="+c.Value)
-		}
+		hdr := cookieHeader(srv.URL, w.Result().Cookies())
 		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws/events", hdr)
 		if err != nil {
 			t.Fatal(err)

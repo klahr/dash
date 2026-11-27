@@ -185,8 +185,10 @@ out the base domain and every org subdomain that browser was handed to.
 
 Over HTTPS the session cookie is `__Host-dash_session`: browsers refuse such a cookie from
 another host or with a `Domain`, so a preview's page can't sign you into another account. Over
-plain HTTP it is `dash_session`. Upgrading from a Dash that used `dash_session` over HTTPS signs
-everyone out once.
+plain HTTP it is `dash_session_<port>`, named after the port Dash listens on (for example
+`dash_session_8080`). Browsers don't keep cookies apart by port, so this lets several Dash servers
+on one host (a test copy a task starts on `127.0.0.1`, say) keep their own sign-ins instead of
+signing each other out. Upgrading from a Dash that used `dash_session` signs everyone out once.
 
 On every host, requests that change something (and WebSockets) must come from a page on the same
 host (`Origin`): an org's pages can't drive another org's API, and previews can't drive any.

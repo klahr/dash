@@ -86,6 +86,11 @@ A web project with a start server command has the same button, with a
 A web project on another computer's Dash has no commit previews: its **Run** runs the command in
 its checkout, and is **Stop** while the server runs.
 
+**Stop** ends a command with everything it started. A command that ends by itself takes its
+leftovers with it too: on macOS and Linux, what it started in the background (`./server &`) gets
+`SIGTERM` when it exits, and `SIGKILL` 5 seconds later if still running. A process that detaches
+itself with `setsid` (most daemons) isn't reached and keeps running.
+
 **▾** also holds the project's other actions, with their keys:
 
 - **Run tests** (`T` on **Code → Shell**) runs the project's **Test command** in its checkout. It

@@ -255,7 +255,7 @@ Dash has no analytics or tracking, and loads no fonts or scripts from other site
 
 | Cookie                 | What for                                     | Kept        |
 |------------------------|----------------------------------------------|-------------|
-| `__Host-dash_session`  | staying signed in (`dash_session` over HTTP) | 7 days      |
+| `__Host-dash_session`  | staying signed in (`dash_session_<port>` over HTTP) | 7 days |
 | `dash_google_…`, `dash_glink_…` | a Google sign-in in progress        | 10 minutes  |
 | `dash_preview`         | opening [live previews](previews.md)         | 12 hours    |
 

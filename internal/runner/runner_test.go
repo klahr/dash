@@ -4,6 +4,8 @@ package runner
 
 import (
 	"bytes"
+	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -70,6 +72,56 @@ func TestTaskExitCode(t *testing.T) {
 	if got.Running || got.ExitCode == nil || *got.ExitCode != 3 {
 		t.Fatalf("want exited with 3, got %+v", got)
 	}
+}
+
+// A task that starts something in the background and then exits normally
+// doesn't leave it running.
+func TestTaskLeftoversEndWithIt(t *testing.T) {
+	t.Parallel()
+
+	m := NewManager(nopPub{})
+	p, err := m.StartTask("proj", t.TempDir(), "sleep 300 & echo leftover=$!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Attach(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readUntil(t, s, "\n")
+	for range s.Output {
+	}
+	_, rest, _ := strings.Cut(out, "leftover=")
+	pid, err := strconv.Atoi(strings.TrimSpace(rest))
+	if err != nil {
+		t.Fatalf("no pid in %q", out)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	if got, _ := m.Get(p.ID); got.Running || got.ExitCode == nil || *got.ExitCode != 0 {
+		t.Fatalf("want exited with 0, got %+v", got)
+	}
+	deadline := time.Now().Add(3 * time.Second) // SIGTERM ends sleep at once
+	for time.Now().Before(deadline) {
+		if gone(pid) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("background sleep (pid %d) still running after its task ended", pid)
+}
+
+// gone reports whether pid has ended: no such process, or a zombie its new
+// parent hasn't reaped yet (in a container without an init, never).
+func gone(pid int) bool {
+	if syscall.Kill(pid, 0) == syscall.ESRCH {
+		return true
+	}
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return false
+	}
+	i := strings.LastIndex(string(b), ") ") // the name may hold spaces and parentheses
+	return i >= 0 && strings.HasPrefix(string(b)[i+2:], "Z")
 }
 
 func TestKeepRestoresLastRuns(t *testing.T) {

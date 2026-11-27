@@ -428,7 +428,10 @@ func openSocket(t *testing.T, h http.Handler, c *client, path string) testSocket
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	req, _ := http.NewRequest("GET", srv.URL+path, nil)
-	req.AddCookie(c.c)
+	// c signed in without a listener; this server's cookie is named after
+	// its port.
+	_, port, _ := net.SplitHostPort(srv.Listener.Addr().String())
+	req.AddCookie(&http.Cookie{Name: PlainCookieNameFor(port), Value: c.c.Value})
 	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)

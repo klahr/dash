@@ -3,6 +3,7 @@ package runner
 import (
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/klahr/dash/internal/localrun"
 )
@@ -28,3 +29,9 @@ func killGroup(pid int) { _ = localrun.KillTree(pid) }
 
 // hangUpGroup does nothing: there is no SIGHUP, and Stop kills the tree.
 func hangUpGroup(int) {}
+
+// reapGroup does nothing on Windows: once the main process has exited, its
+// tree can't be found by its pid any more (taskkill /T follows parent pids,
+// and the pid may already belong to something else). Ending a finished
+// run's leftovers there would need a job object.
+func reapGroup(int, time.Duration) {}

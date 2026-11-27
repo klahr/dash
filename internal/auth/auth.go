@@ -41,7 +41,8 @@ const (
 	// for Dash's host (cookie tossing), signing someone into its account.
 	CookieName = "__Host-dash_session"
 	// PlainCookieName is the session cookie over plain HTTP, where browsers
-	// don't take __Host- cookies.
+	// don't take __Host- cookies. A request that came in on a TCP port uses
+	// PlainCookieName + "_" + port instead (see PlainCookieNameFor).
 	PlainCookieName = "dash_session"
 	sessionTTL      = 7 * 24 * time.Hour
 
@@ -346,12 +347,57 @@ func (a *Auth) session(r *http.Request) (*Identity, bool) {
 }
 
 // cookieName is the session cookie's name on r's answer: CookieName when
-// cookies are Secure, else PlainCookieName.
+// cookies are Secure, else PlainCookieNameFor the port r came in on.
 func (a *Auth) cookieName(r *http.Request) string {
 	if a.secureCookie(r) {
 		return CookieName
 	}
-	return PlainCookieName
+	return PlainCookieNameFor(localPort(r))
+}
+
+// PlainCookieNameFor is the session cookie over plain HTTP for a Dash
+// listening on port: "dash_session_<port>". Browsers don't keep cookies apart
+// by port, so without it every Dash on 127.0.0.1 (a task's test copy, the
+// browser tests' servers) would sign the others out by replacing their
+// cookie. An empty port (a request that didn't come over TCP): PlainCookieName.
+func PlainCookieNameFor(port string) string {
+	if port == "" {
+		return PlainCookieName
+	}
+	return PlainCookieName + "_" + port
+}
+
+// IsSessionCookie reports whether name is one of Dash's session cookies,
+// over HTTPS or plain HTTP on any port.
+func IsSessionCookie(name string) bool {
+	if name == CookieName || name == PlainCookieName {
+		return true
+	}
+	port, ok := strings.CutPrefix(name, PlainCookieName+"_")
+	if !ok || port == "" {
+		return false
+	}
+	for _, c := range port {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// localPort is the port of the server's address r was accepted on (its
+// actual listen address, also when it listens on :0), or "" when that isn't
+// known.
+func localPort(r *http.Request) string {
+	addr, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	if !ok || addr == nil {
+		return ""
+	}
+	_, port, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return ""
+	}
+	return port
 }
 
 // sessionCookie returns r's session cookie. More than one is refused: a

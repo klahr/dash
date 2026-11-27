@@ -186,9 +186,7 @@ func loginAs(t *testing.T, h http.Handler, name, password string) http.Handler {
 		t.Fatalf("login %s: %d %s", name, w.Code, w.Body)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		for _, c := range cookies {
-			r.AddCookie(c)
-		}
+		addCookies(r, cookies)
 		h.ServeHTTP(w, r)
 	})
 }
@@ -484,10 +482,7 @@ func TestEventsAreScopedToTheOrg(t *testing.T) {
 	dial := func(name, password string) *websocket.Conn {
 		w := httptest.NewRecorder()
 		o.h.ServeHTTP(w, httptest.NewRequest("POST", "/api/login", strings.NewReader(fmt.Sprintf(`{"username":%q,"password":%q}`, name, password))))
-		hdr := http.Header{}
-		for _, c := range w.Result().Cookies() {
-			hdr.Add("Cookie", c.Name+"="+c.Value)
-		}
+		hdr := cookieHeader(srv.URL, w.Result().Cookies())
 		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws/events", hdr)
 		if err != nil {
 			t.Fatal(err)

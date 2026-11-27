@@ -335,10 +335,7 @@ func TestPlannerEventsArePlanningOnly(t *testing.T) {
 	t.Cleanup(srv.Close)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/login", strings.NewReader(`{"username":"pat","password":"pat-password"}`)))
-	hdr := http.Header{}
-	for _, c := range w.Result().Cookies() {
-		hdr.Add("Cookie", c.Name+"="+c.Value)
-	}
+	hdr := cookieHeader(srv.URL, w.Result().Cookies())
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws/events", hdr)
 	if err != nil {
 		t.Fatal(err)

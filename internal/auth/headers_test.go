@@ -116,6 +116,90 @@ func TestPlantedSessionCookieRefused(t *testing.T) {
 	}
 }
 
+// Browsers don't keep cookies apart by port, so over plain HTTP each Dash on
+// a host names its session cookie after the port it listens on: signing in
+// to one doesn't sign the browser out of another.
+func TestPlainCookieNamedAfterPort(t *testing.T) {
+	t.Parallel()
+
+	_, h := newServer(t)
+	one, two := httptest.NewServer(h), httptest.NewServer(h)
+	t.Cleanup(one.Close)
+	t.Cleanup(two.Close)
+	send := func(srv *httptest.Server, method, path, body string, cs ...*http.Cookie) *http.Response {
+		t.Helper()
+		r, _ := http.NewRequest(method, srv.URL+path, strings.NewReader(body))
+		for _, c := range cs {
+			r.AddCookie(c)
+		}
+		res, err := srv.Client().Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res
+	}
+	login := func(srv *httptest.Server) *http.Cookie {
+		t.Helper()
+		res := send(srv, "POST", "/api/login", `{"username":"admin","password":"s3cret"}`)
+		for _, c := range res.Cookies() {
+			if IsSessionCookie(c.Name) {
+				return c
+			}
+		}
+		t.Fatalf("login on %s: %d, no session cookie", srv.URL, res.StatusCode)
+		return nil
+	}
+	port := func(srv *httptest.Server) string {
+		return strings.TrimPrefix(srv.URL[strings.LastIndex(srv.URL, ":"):], ":")
+	}
+
+	c1, c2 := login(one), login(two)
+	if want := PlainCookieName + "_" + port(one); c1.Name != want {
+		t.Fatalf("cookie on %s = %s, want %s", one.URL, c1.Name, want)
+	}
+	if c1.Name == c2.Name {
+		t.Fatalf("two servers share the cookie name %s", c1.Name)
+	}
+	// The browser sends both servers both cookies; each takes its own.
+	for _, srv := range []*httptest.Server{one, two} {
+		if res := send(srv, "GET", "/api/me", "", c1, c2); res.StatusCode != http.StatusOK {
+			t.Errorf("%s with both cookies: %d", srv.URL, res.StatusCode)
+		}
+	}
+	if res := send(two, "GET", "/api/me", "", c1); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("%s with the other server's cookie: %d", two.URL, res.StatusCode)
+	}
+	old := &http.Cookie{Name: PlainCookieName, Value: c1.Value}
+	if res := send(one, "GET", "/api/me", "", old); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("the old %s name: %d", PlainCookieName, res.StatusCode)
+	}
+	// Signing out clears the same name.
+	res := send(one, "POST", "/api/logout", "", c1)
+	var cleared bool
+	for _, c := range res.Cookies() {
+		cleared = cleared || (c.Name == c1.Name && c.MaxAge < 0)
+	}
+	if !cleared {
+		t.Errorf("logout didn't clear %s: %v", c1.Name, res.Header.Values("Set-Cookie"))
+	}
+}
+
+func TestIsSessionCookie(t *testing.T) {
+	t.Parallel()
+	for name, want := range map[string]bool{
+		CookieName: true, PlainCookieName: true, "dash_session_8080": true, PlainCookieNameFor("61176"): true,
+		"dash_session_": false, "dash_session_x": false, "dash_session_80a": false, "dash_preview": false, "theme": false,
+	} {
+		if got := IsSessionCookie(name); got != want {
+			t.Errorf("IsSessionCookie(%q) = %v, want %v", name, got, want)
+		}
+	}
+	if got := PlainCookieNameFor(""); got != PlainCookieName {
+		t.Errorf("PlainCookieNameFor(\"\") = %s", got)
+	}
+}
+
 // Without org subdomains, too, a page of another origin can't use the
 // session cookie to change anything: SameSite lets it through from a
 // sibling subdomain or another port of the same host.

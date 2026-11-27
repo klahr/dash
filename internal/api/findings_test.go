@@ -24,9 +24,7 @@ func loggedIn(t *testing.T, h http.Handler) http.Handler {
 		t.Fatalf("login: %d %s", w.Code, w.Body)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		for _, c := range cookies {
-			r.AddCookie(c)
-		}
+		addCookies(r, cookies)
 		h.ServeHTTP(w, r)
 	})
 }
