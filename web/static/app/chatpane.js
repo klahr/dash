@@ -98,8 +98,9 @@ export function projectChatFor(p) {
       renderChatHead();
     },
     cwd: panel.querySelector(".chat-cwd"),
-    // With a runner picked, the place says that one until a turn says where it ran.
-    where: () => ({ name: proj().name, machine: pc.runner.current() || projectWhere(proj()), path: proj().path, mode: proj().chat_permission_mode || "" }),
+    // With a runner menu, the menu names the runner and the place doesn't;
+    // without, the place does: the one runner online, until a turn says where it ran.
+    where: () => ({ name: proj().name, machine: pc.runner.sole() || projectWhere(proj()), runnerMenu: pc.runner.menu(), path: proj().path, mode: proj().chat_permission_mode || "" }),
     // A turn left streaming when the chat was cleared is saved when it finishes.
     saved: () => { if (!pc.chat.busy) loadProjectChat(proj(), true).catch(fail); },
     // Sent from an out-of-date copy: the server's is the one to show.

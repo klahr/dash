@@ -566,7 +566,8 @@ const baseName = (p) => String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/).po
 // chatPlace shows in el where the chat runs, compactly: the folder's name
 // and the computer ("app · laptop", with the full path as its title), and
 // the chat's permission mode. where() is what's known before a turn: {name,
-// machine, path, mode} (mode undefined: none shown), or null for no bar. A
+// machine, path, mode, runnerMenu} (mode undefined: none shown; runnerMenu:
+// the runner menu names the computer, so the bar doesn't), or null for no bar. A
 // turn's cwd and runner messages fill in the rest. It sets c.place:
 // render(), dir(path) and runner(name) (from a turn), and reset() (another
 // conversation: what a turn said is forgotten).
@@ -580,7 +581,7 @@ function chatPlace(c, el, where) {
     el.hidden = !w;
     if (!w) return;
     const path = dir || w.path || "";
-    place.textContent = [w.name || baseName(path), runner || w.machine].filter(Boolean).join(" · ");
+    place.textContent = [w.name || baseName(path), !w.runnerMenu && (runner || w.machine)].filter(Boolean).join(" · ");
     place.title = path;
     mode.hidden = w.mode === undefined || w.mode === null;
     mode.textContent = MODE_LABEL[w.mode] ?? w.mode ?? "";
@@ -1237,8 +1238,8 @@ export const chatActions = (answer) => h("div", { class: "msg-actions" }, copyIc
 
 // Where the general chat runs. The hub never runs Claude: the chat runs on
 // one of your own runners (your Claude login, your subscription). The bar
-// says which, lets you pick when you have several, and says how to start one
-// when none is online. (A runner's own dashboard answers itself: no bar.)
+// says which, or (with several online) is a "Runs on" menu that picks it and
+// alone names it, and says how to start one when none is online. (A runner's own dashboard answers itself: no bar.)
 //
 // runnerPicker makes such a bar out of bar (a .chat-runner with a
 // .chat-runner-text and a select), for the general chat and each project
@@ -1259,10 +1260,16 @@ export function runnerPicker(bar, { key, path = () => "/api/claude", prefix = ()
       const pick = rs.find((r) => r.id === this.picked && r.online);
       return pick ? pick.id : "";
     },
-    // The runner's name the next turn is expected to run on ("" with no choice to make).
-    current() {
+    // Whether the bar shows the runner menu (two or more online). Then the
+    // menu alone names the runner: the place line leaves it out.
+    menu() {
+      const info = this.info;
+      return !!info && !info.local && (info.runners || []).filter((r) => r.online).length > 1;
+    },
+    // The one runner online, by name, which the next turn runs on ("" with none or a menu).
+    sole() {
       const online = (this.info?.runners || []).filter((r) => r.online);
-      return online.length > 1 ? (online.find((r) => r.id === this.choice()) || online[0]).name : "";
+      return online.length === 1 ? online[0].name : "";
     },
     async load() {
       this.info = await api("GET", path(), null, prefix());
@@ -1274,16 +1281,20 @@ export function runnerPicker(bar, { key, path = () => "/api/claude", prefix = ()
       if (!info || info.local || (menuOnly && online.length < 2)) { bar.hidden = true; changed(); return; }
       bar.hidden = false;
       const current = running || online.find((r) => r.id === this.choice())?.name || online[0]?.name;
+      const menu = online.length > 1;
       bar.classList.toggle("online", !!current);
       bar.classList.toggle("offline", !current);
-      if (current) text.textContent = `Runs on ${current}, with its Claude login`;
+      bar.classList.toggle("has-menu", menu);
+      // With a menu, it names the runner (the one a turn ran on, when it said).
+      if (menu) text.textContent = "Runs on";
+      else if (current) text.textContent = `Runs on ${current}, with its Claude login`;
       else if (info.runners.length) text.textContent = `Your runner${info.runners.length > 1 ? "s are" : ` ${info.runners[0].name} is`} offline: run \`dash runner\` on it to chat`;
       else text.textContent = "Chat needs a runner of yours: use Runners → Add a runner";
-      text.title = text.textContent;
-      sel.hidden = online.length < 2;
-      if (!sel.hidden) {
+      text.title = menu ? "" : text.textContent;
+      sel.hidden = !menu;
+      if (menu) {
         sel.replaceChildren(...online.map((r) => h("option", { value: r.id }, r.name)));
-        sel.value = this.choice() || online[0].id;
+        sel.value = online.find((r) => running && r.name === running)?.id || this.choice() || online[0].id;
       }
       changed();
     },

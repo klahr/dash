@@ -761,14 +761,16 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .chat-cwd-bar { padding: 5px 16px; border-bottom: 1px solid var(--line); }
 /* A project chat's turn running in another of the user's windows or devices. */
 .chat-remote { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 16px; color: var(--muted); font-size: var(--fs-xs); border-top: 1px solid var(--line); }
-/* The general chat's runner, on a hub that doesn't run Claude itself */
+/* The runner a chat runs on, on a hub that doesn't run Claude itself (runnerPicker in app/chat.js) */
 .chat-runner { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--fs-s); }
 .chat-runner-dot { background: var(--muted); }
 .chat-runner.online .chat-runner-dot { background: var(--merged); }
 .chat-runner.offline { color: var(--text); }
 .chat-runner.offline .chat-runner-dot { background: var(--failed); }
 .chat-runner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.chat-runner select { width: auto; flex: none; min-height: 30px; padding: 0 8px; font-size: var(--fs-s); }
+.chat-runner select { width: auto; flex: 0 1 auto; min-width: 0; min-height: 30px; padding: 0 8px; font-size: var(--fs-s); }
+/* With a menu: "Runs on [laptop]", the menu naming the runner. */
+.chat-runner.has-menu .chat-runner-text { flex: none; }
 /* One "Thinking…", on the reply still to come; earlier empty ones say nothing.
    A soft highlight sweeps across the word until the first text arrives. */
 .msg.pending .reply:empty:not(:last-of-type) { display: none; }
