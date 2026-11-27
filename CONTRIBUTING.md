@@ -26,7 +26,6 @@ You need git and Go (the version in [`go.mod`](go.mod)). Node is not needed to b
 ```sh
 cp .env.example .env          # set DASH_USERNAME and DASH_PASSWORD
 go build -o bin/dash ./cmd/dash
-go build -o bin/dash-tui ./cmd/dash-tui
 go build -o bin/dash-mcp ./cmd/dash-mcp
 ./bin/dash
 ```

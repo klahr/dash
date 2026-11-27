@@ -18,7 +18,7 @@ func TestWindowsReleaseAsset(t *testing.T) {
 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	for name, body := range map[string]string{"README.md": "hi", "dash-tui.exe": "tui", "dash.exe": "MZ dash"} {
+	for name, body := range map[string]string{"README.md": "hi", "dash-mcp.exe": "mcp", "dash.exe": "MZ dash"} {
 		w, err := zw.Create(name)
 		if err != nil {
 			t.Fatal(err)

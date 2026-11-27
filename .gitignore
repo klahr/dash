@@ -4,4 +4,3 @@ bin/
 !.env.example
 dist/
 /dash
-/dash-tui

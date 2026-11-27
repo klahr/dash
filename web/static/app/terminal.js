@@ -39,7 +39,7 @@ export function procTerminal(el, { observe = el, visible = () => true } = {}) {
   };
   new ResizeObserver(fit).observe(observe);
   term.onData((data) => send({ type: "input", data }));
-  // Ctrl-] leaves the terminal and returns to normal mode, like detaching in the TUI.
+  // Ctrl-] leaves the terminal and returns to normal mode.
   term.attachCustomKeyEventHandler((e) => {
     if (e.type === "keydown" && e.ctrlKey && e.key === "]") { term.blur(); setMode(); return false; }
     return true;

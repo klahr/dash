@@ -69,7 +69,7 @@ func TestCommandRefusesOnHub(t *testing.T) {
 // exec.Command/CommandContext, and what they run. None of them runs git or
 // gh: those go through Command, so the hub's policy covers them. Each of
 // these checks localrun (or agent's guard, for Claude) itself, or only runs
-// in `dash runner` / the TUI client, never on the hub.
+// in `dash runner`, never on the hub.
 var execAllowed = map[string]string{
 	"internal/runner/runner.go":       "bash for project commands and terminals (localrun.Check)",
 	"internal/queue/shell.go":         "bash for project commands (localrun.Check)",
@@ -86,7 +86,6 @@ var execAllowed = map[string]string{
 	"internal/runnerctl/preflight.go": "claude auth status (`dash runner` setup)",
 	"internal/runnerctl/service.go":   "systemctl/launchctl (`dash runner` setup)",
 	"internal/runnerctl/update.go":    "the downloaded dash's version check (runners updating themselves)",
-	"internal/tui/app.go":             "xdg-open/open (the TUI client)",
 	"internal/testbin/testbin.go":     "sh writing tests' stand-in executables (tests only)",
 	"cmd/dash/exec_windows.go":        "the updated dash, restarting `dash runner` in place (Windows; runners only)",
 	"cmd/dash/console_windows.go":     "dash runner itself, under its scheduled task's supervisor (Windows; runners only)",

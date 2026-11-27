@@ -3,7 +3,7 @@
 Every `X.Y.Z` tag (e.g. `1.2.0`, no `v`) pushed to GitHub builds Dash for Linux, macOS and Windows (amd64 and arm64) and attaches
 the archives to a [GitHub release](https://github.com/klahr/dash/releases), together with a
 `checksums.txt`: a `.tar.gz` for Linux and macOS, a `.zip` for Windows (whose binaries end in
-`.exe`; Windows is for [runners](several-computers.md#windows-runners), not hubs). Each archive holds `dash`, `dash-tui` and `dash-mcp`, plus the license, the
+`.exe`; Windows is for [runners](several-computers.md#windows-runners), not hubs). Each archive holds `dash` and `dash-mcp`, plus the license, the
 README, `.env.example` and `deploy/dash.service`. The builds are static (CGO off), so they run on
 a machine without Go.
 
@@ -28,12 +28,11 @@ curl -fLO "https://github.com/klahr/dash/releases/download/$VERSION/dash_${VERSI
 curl -fLO "https://github.com/klahr/dash/releases/download/$VERSION/checksums.txt"
 sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-missing -c checksums.txt
 mkdir dash && tar -xzf "dash_${VERSION}_${OS}_${ARCH}.tar.gz" -C dash
-cd dash && mkdir bin && mv dash dash-tui dash-mcp bin/
+cd dash && mkdir bin && mv dash dash-mcp bin/
 cp .env.example .env
 ```
 
-Then go on with the [Quick start](../README.md#quick-start) from editing `.env`. The terminal
-client is `./bin/dash-tui`.
+Then go on with the [Quick start](../README.md#quick-start) from editing `.env`.
 
 ## Cut a release
 
@@ -70,7 +69,7 @@ goreleaser release --snapshot --clean
 The version is stamped into the binaries at link time:
 
 ```sh
-dash version        # or dash -version; dash-tui -version, dash-mcp -version
+dash version        # or dash -version; dash-mcp -version
 ```
 
 A release prints its tag, e.g. `dash 1.2.0`; a build from source without the linker flag prints

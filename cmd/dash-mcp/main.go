@@ -11,8 +11,8 @@ import (
 
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/buildinfo"
+	"github.com/klahr/dash/internal/dashclient"
 	"github.com/klahr/dash/internal/mcptools"
-	"github.com/klahr/dash/internal/tui"
 )
 
 func main() {
@@ -32,7 +32,7 @@ func main() {
 	if user == "" || pass == "" {
 		fail(errors.New("set DASH_USERNAME and DASH_PASSWORD (environment or -env file)"))
 	}
-	c, err := tui.NewClient(*server)
+	c, err := dashclient.NewClient(*server)
 	if err != nil {
 		fail(err)
 	}
@@ -45,7 +45,7 @@ func main() {
 		Instructions: mcptools.FleetInstructions,
 		Tools:        tools(c),
 		// Log in again once if the session expired.
-		Retry: func(err error) bool { return errors.Is(err, tui.ErrUnauthorized) && login() == nil },
+		Retry: func(err error) bool { return errors.Is(err, dashclient.ErrUnauthorized) && login() == nil },
 	}
 	if err := s.ServeStdio(os.Stdin, os.Stdout); err != nil {
 		fail(err)
@@ -65,26 +65,26 @@ func fail(err error) {
 }
 
 // api is the Dash server's REST API for mcptools.Fleet.
-type api struct{ c *tui.Client }
+type api struct{ c *dashclient.Client }
 
 func (a api) Call(method, path string, body, out any) error {
 	err := a.c.Call(method, path, body, out)
-	if errors.Is(err, tui.ErrUnauthorized) {
+	if errors.Is(err, dashclient.ErrUnauthorized) {
 		return fmt.Errorf("%w (%w)", err, mcptools.ErrUnauthorized)
 	}
 	return err
 }
 
-func tools(c *tui.Client) []mcptools.Tool {
+func tools(c *dashclient.Client) []mcptools.Tool {
 	return append(mcptools.FleetTools(mcptools.Fleet{API: api{c}}), []mcptools.Tool{
 		tool("list_permissions", "Tool calls Claude is waiting for permission to run, on every computer.", nil,
 			func(a mcptools.Args) (any, error) {
 				type row struct {
 					Machine string `json:"machine"`
-					tui.PermRequest
+					dashclient.PermRequest
 				}
 				out := []row{}
-				err := eachMachine(c, func(m tui.Machine) error {
+				err := eachMachine(c, func(m dashclient.Machine) error {
 					ps, err := c.Permissions("")
 					for _, p := range ps {
 						out = append(out, row{m.Name, p})
@@ -102,7 +102,7 @@ func tools(c *tui.Client) []mcptools.Tool {
 					return nil, errors.New("decision must be allow, always or deny")
 				}
 				found := false
-				err := eachMachine(c, func(m tui.Machine) error {
+				err := eachMachine(c, func(m dashclient.Machine) error {
 					ps, err := c.Permissions("")
 					for _, p := range ps {
 						if p.ID == id && !found {
@@ -134,7 +134,7 @@ func param(name, typ, desc string, required bool) mcptools.Param {
 }
 
 // eachMachine points the client at every reachable computer in turn.
-func eachMachine(c *tui.Client, fn func(tui.Machine) error) error {
+func eachMachine(c *dashclient.Client, fn func(dashclient.Machine) error) error {
 	ms, err := c.Machines()
 	if err != nil {
 		return err

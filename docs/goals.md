@@ -127,13 +127,6 @@ in a colour of its own that stays the same for that goal.
 - The task's timeline shows what the coordinator did in the goal's colour.
 - The review count and the tab title still count every task, filtered or not.
 
-In `dash-tui`, a task in a goal shows `◆ <goal>` under its title, and the task's detail names
-the goal. To show only one goal's tasks:
-
-- `gf` on a task filters to its goal; `gf` again shows every task.
-- `:goal <name>` filters to the goal with that name (or the start of it); `:goal` shows every
-  task again.
-
 ## How a goal runs
 
 1. **Planning.** When you make a goal, the coordinator reads the code and proposes a plan:

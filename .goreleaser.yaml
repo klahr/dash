@@ -20,10 +20,6 @@ builds:
       - -s -w -X github.com/klahr/dash/internal/buildinfo.Version={{ .Tag }}
     mod_timestamp: "{{ .CommitTimestamp }}"
   - <<: *build
-    id: dash-tui
-    main: ./cmd/dash-tui
-    binary: dash-tui
-  - <<: *build
     id: dash-mcp
     main: ./cmd/dash-mcp
     binary: dash-mcp
