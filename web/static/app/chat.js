@@ -802,7 +802,18 @@ function chatStreamHandler(c) {
   return (ws, d) => {
     const cur = c.current;
     if (!cur) return;
-    if (cur.shell) return c.shell.delta(cur, d);
+    const sc = c.scroller();
+    if (cur.shell) {
+      // A command's output and result grow its block: a log at its end
+      // (measured before it grows) follows them, as it follows a reply. So
+      // does one showing the block's start: a quick command answers while
+      // the glide to the new block (see run) is still on its way.
+      const end = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120 ||
+        cur.b.el.getBoundingClientRect().top < sc.getBoundingClientRect().bottom;
+      c.shell.delta(cur, d);
+      if (end) c.toEnd();
+      return;
+    }
     switch (d.kind) {
       case "thinking":
         cur.think = (cur.think || "") + d.text;
@@ -867,7 +878,6 @@ function chatStreamHandler(c) {
         c.settleTurn(cur);
         break;
     }
-    const sc = c.scroller();
     if (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120) c.toEnd();
   };
 }
