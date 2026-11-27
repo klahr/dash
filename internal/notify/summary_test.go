@@ -609,3 +609,50 @@ func TestIssueNewOncePerFingerprint(t *testing.T) {
 		t.Fatalf("activity %+v", acts)
 	}
 }
+
+// A digest scan's run puts its headline items in the summaries of the
+// project, once, each linking to the digest in the Scans sheet, whatever
+// the summary's boxes ticked.
+func TestDigestInSummary(t *testing.T) {
+	e := summaryEnv(t)
+	set := model.DefaultNotifySettings()
+	set.Summary, set.Time, set.TimeZone, set.Email = model.SummaryDaily, "08:00", "UTC", true
+	set.Include = model.SummaryInclude{MinSeverity: model.SevMedium} // nothing ticked
+	set, _, err := e.st.SaveNotifySettings(e.user, e.org, set, e.clock.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := e.clock.Now().Add(-time.Minute)
+	run := func(headline ...string) {
+		t.Helper()
+		r, err := e.st.CreateScanRun(model.ScanRun{ProjectID: e.shop.ID, Scan: "architecture-digest", Status: model.ScanRunning, StartedAt: start})
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := e.clock.Now()
+		if _, err := e.st.UpdateScanRun(r.ID, true, func(x *model.ScanRun) {
+			x.Status, x.FinishedAt = model.ScanSucceeded, &done
+			x.Digest = &model.ScanDigest{Headline: headline, Text: "## What changed\n\n- …"}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		// A later update of the same run adds nothing.
+		_, _ = e.st.UpdateScanRun(r.ID, false, func(x *model.ScanRun) { x.Activity = "" })
+	}
+	run("New package internal/digest", "Routes under /api/v2")
+	run() // nothing notable: nothing to tell
+	settle(e.n)
+	acts, _ := e.st.ListActivity([]string{e.shop.ID}, t0, e.clock.Now().Add(time.Second))
+	want := "https://dash.example.com/p/" + e.shop.ID + "?sheet=scans&section=architecture-digest"
+	if len(acts) != 2 || acts[0].Kind != model.SummaryDigest || acts[0].Title != "New package internal/digest" || acts[0].URL != want || acts[1].Ref == acts[0].Ref {
+		t.Fatalf("activity %+v", acts)
+	}
+	sum, _, _, err := e.sum.build(e.user, e.org, set, start, e.clock.Now().Add(time.Second))
+	if err != nil || len(sum.Projects) != 1 || len(sum.Projects[0].Items) != 2 || sum.CountText() != "2 digest items" {
+		t.Fatalf("summary %+v, %v", sum, err)
+	}
+	text := summaryEmail{Sum: sum, Brand: e.sum.Brand.WithDefaults(), Loc: time.UTC}.text()
+	if !strings.Contains(text, "- Digest: Routes under /api/v2\n  "+want) {
+		t.Fatalf("email:\n%s", text)
+	}
+}

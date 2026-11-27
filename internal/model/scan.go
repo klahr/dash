@@ -28,7 +28,10 @@ const (
 	ScanKindBreakingChanges = "breaking_changes"
 	ScanKindMaintainability = "maintainability"
 	ScanKindSupplyChain     = "supply_chain"
-	ScanKindCustom          = "custom"
+	// ScanKindDigest writes a digest of what changed (ScanRun.Digest) rather
+	// than a list of problems; it files a finding only for a clear bug.
+	ScanKindDigest = "digest"
+	ScanKindCustom = "custom"
 )
 
 // ScanKinds are the scan kinds, custom last.
@@ -36,7 +39,7 @@ func ScanKinds() []string {
 	return []string{
 		ScanKindSecurity, ScanKindCodeReview, ScanKindDependencies, ScanKindTests, ScanKindDocs,
 		ScanKindPerformance, ScanKindDeadCode, ScanKindFlakyTests, ScanKindAccessibility,
-		ScanKindBreakingChanges, ScanKindMaintainability, ScanKindSupplyChain, ScanKindCustom,
+		ScanKindBreakingChanges, ScanKindMaintainability, ScanKindSupplyChain, ScanKindDigest, ScanKindCustom,
 	}
 }
 
@@ -56,6 +59,7 @@ var scanKindAliases = map[string]string{
 	"duplication": ScanKindMaintainability, "duplicate_code": ScanKindMaintainability, "duplicates": ScanKindMaintainability,
 	"complexity": ScanKindMaintainability, "refactor": ScanKindMaintainability, "refactoring": ScanKindMaintainability,
 	"supplychain": ScanKindSupplyChain, "ci": ScanKindSupplyChain, "ci_cd": ScanKindSupplyChain, "cicd": ScanKindSupplyChain,
+	"architecture": ScanKindDigest, "architecture_digest": ScanKindDigest, "what_changed": ScanKindDigest, "changes": ScanKindDigest,
 }
 
 // NormalizeScanKind is a scan kind's canonical name: lower case, '-' and
@@ -144,7 +148,24 @@ type ScanRun struct {
 	Critical int `json:"critical,omitempty"`
 	High     int `json:"high,omitempty"`
 	Urgent   int `json:"urgent,omitempty"`
+	// Digest is what a digest scan (ScanKindDigest) wrote about the changes
+	// it looked at; nil for other scans.
+	Digest *ScanDigest `json:"digest,omitempty"`
 }
+
+// ScanDigest is a digest scan's read of what changed on the default branch:
+// the full text, and its few headline items for the summaries.
+type ScanDigest struct {
+	// Headline are its most notable items, one plain line each (at most
+	// MaxDigestHeadline); none when nothing notable changed.
+	Headline []string `json:"headline,omitempty"`
+	// Text is the digest, in Markdown. Tasks are linked by their app path
+	// (/p/<project>/tasks/<id>).
+	Text string `json:"text"`
+}
+
+// MaxDigestHeadline is how many headline items a digest keeps.
+const MaxDigestHeadline = 5
 
 // ScanSetting is what a user changed about a scan in the UI: its schedule,
 // and what they approved of a repository template. A repository template is

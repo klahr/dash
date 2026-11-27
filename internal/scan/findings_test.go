@@ -3,6 +3,7 @@ package scan
 import (
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -161,5 +162,36 @@ func TestIssuesDropsInvalidAndDuplicates(t *testing.T) {
 	}
 	if issues[0].Type != model.IssueVuln || issues[0].Source != "scan:sec" || issues[1].Type != model.IssueBug {
 		t.Fatalf("issues: %+v", issues)
+	}
+}
+
+func TestParseAnswerDigest(t *testing.T) {
+	t.Parallel()
+
+	// In a fenced block, and as a bare object in prose.
+	for _, answer := range []string{
+		"Done.\n```json\n{\"digest\": {\"headline\": [\"a\"], \"text\": \"Nothing notable.\"}, \"findings\": []}\n```",
+		`Done: {"digest": {"headline": ["a"], "text": "Nothing notable."}, "findings": []} and that's it.`,
+	} {
+		a, err := ParseAnswer(answer)
+		if err != nil || a.Digest == nil || a.Digest.Text != "Nothing notable." || len(a.Findings) != 0 {
+			t.Errorf("%q: %+v, %v", answer, a, err)
+		}
+	}
+	// Other scans' answers have none.
+	if a, err := ParseAnswer(`{"findings": []}`); err != nil || a.Digest != nil {
+		t.Errorf("findings only: %+v, %v", a, err)
+	}
+	var none *Digest
+	if _, err := none.Model(); !errors.Is(err, ErrNoDigest) {
+		t.Errorf("no digest: %v", err)
+	}
+	if _, err := (&Digest{Headline: []string{"x"}, Text: "  "}).Model(); !errors.Is(err, ErrNoDigest) {
+		t.Errorf("empty text: %v", err)
+	}
+	// Headline items are plain lines, at most five.
+	d, err := (&Digest{Headline: []string{"1 [a](/p/x)", "2\nwraps", "3", "", "4", "5", "6"}, Text: "t"}).Model()
+	if err != nil || !slices.Equal(d.Headline, []string{"1 a", "2 wraps", "3", "4", "5"}) {
+		t.Errorf("headline: %+v, %v", d, err)
 	}
 }

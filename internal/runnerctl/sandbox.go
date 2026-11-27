@@ -36,7 +36,8 @@ func SandboxScript(goos string, lookPath func(string) (string, error)) (script, 
 
 // FindSandboxScript is where script is beside the dash binary bin: in its
 // folder (where the install script puts it) or in deploy/sandbox there (an
-// unpacked release archive). "" when it is in neither.
+// unpacked release archive). "" when it is in neither. It must be
+// executable, except where files have no executable bit (Windows).
 func FindSandboxScript(bin, script string) string {
 	dir := filepath.Dir(bin)
 	for _, p := range []string{filepath.Join(dir, script), filepath.Join(dir, "deploy", "sandbox", script)} {

@@ -280,7 +280,7 @@ async function openSheet(k, section) {
     } else if (k === "runners") {
       if (!d.open) await openRunners(section || undefined);
     } else if (k === "scans") {
-      if (!d.open) await openScans();
+      if (!d.open || section) await openScans(section || undefined);
     }
   } catch (e) {
     fail(e);

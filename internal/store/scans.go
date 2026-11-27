@@ -175,6 +175,11 @@ func cloneRun(r model.ScanRun) model.ScanRun {
 		t := *r.FinishedAt
 		r.FinishedAt = &t
 	}
+	if r.Digest != nil {
+		d := *r.Digest
+		d.Headline = slices.Clone(d.Headline)
+		r.Digest = &d
+	}
 	return r
 }
 

@@ -247,7 +247,9 @@ once it has a time, somewhere to go and its projects; until then, the field stil
   [SMTP](signup.md#email-smtp) set up.
 - **What goes in it**: drafts for new problems (from the severity you choose up), tasks ready for review,
   failed tasks, merged tasks, your goals waiting for you, and failing builds. Task items
-  follow [whose tasks](#whose-tasks) you chose.
+  follow [whose tasks](#whose-tasks) you chose. A [digest scan](scans.md#digests) of a project
+  the summary covers, such as the weekly **Architecture digest**, adds its headline items, each
+  with a link to the full digest; there is no box for them.
 
 **Send the summary now** saves the page and sends what happened since the last summary to
 each destination right away, and says how each went.
@@ -308,8 +310,9 @@ summary stops after 40 items (or about 3,500 characters) with "and N more" and a
 }
 ```
 
-An item's `kind` is `issue`, `review`, `failed`, `merged`, `goal` or `build`. A summary has no
-`project`.
+An item's `kind` is `issue`, `review`, `failed`, `merged`, `goal`, `build` or `digest`. A
+`digest` item is one headline item of a digest scan's run; its `url` opens the digest in the
+project's **Scans** sheet. A summary has no `project`.
 
 ## API
 

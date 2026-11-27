@@ -35,60 +35,118 @@ type Finding struct {
 // ErrNoFindings is returned when the agent's answer holds no findings JSON.
 var ErrNoFindings = errors.New(`the scan's answer has no findings JSON ({"findings": [...]})`)
 
-// ParseFindings finds the findings JSON in the agent's final message. It
+// ErrNoDigest is returned when a digest scan's answer holds no digest.
+var ErrNoDigest = errors.New(`the digest scan's answer has no digest ({"digest": {"headline": [...], "text": "..."}, "findings": [...]})`)
+
+// Digest is what a digest scan (KindDigest) answers next to its findings.
+type Digest struct {
+	Headline []string `json:"headline"`
+	Text     string   `json:"text"`
+}
+
+// Answer is the JSON a scan ends its final message with.
+type Answer struct {
+	Findings []Finding `json:"findings"`
+	Digest   *Digest   `json:"digest,omitempty"`
+}
+
+// ParseFindings finds the findings JSON in the agent's final message (see
+// ParseAnswer).
+func ParseFindings(answer string) ([]Finding, error) {
+	a, err := ParseAnswer(answer)
+	return a.Findings, err
+}
+
+// ParseAnswer finds the answer JSON in the agent's final message. It
 // tries, in order: the fenced code blocks (json or untagged, last first),
 // the whole message, and every balanced JSON object in the message holding
-// a "findings" key (last first). A candidate is {"findings": [...]} or a
-// bare array.
-func ParseFindings(answer string) ([]Finding, error) {
+// a "findings" key (last first). A candidate is {"findings": [...]}, with a
+// digest scan's "digest" beside it, or a bare array of findings.
+func ParseAnswer(answer string) (Answer, error) {
 	var firstErr error
-	try := func(c string) ([]Finding, bool) {
+	try := func(c string) (Answer, bool) {
 		c = strings.TrimSpace(c)
 		if c == "" {
-			return nil, false
+			return Answer{}, false
 		}
 		if strings.HasPrefix(c, "[") {
 			var arr []Finding
 			if err := json.Unmarshal([]byte(c), &arr); err == nil {
-				return arr, true
+				return Answer{Findings: arr}, true
 			} else if firstErr == nil {
 				firstErr = err
 			}
-			return nil, false
+			return Answer{}, false
 		}
-		var obj struct {
-			Findings *[]Finding `json:"findings"`
-		}
+		var obj answerObject
 		if err := json.Unmarshal([]byte(c), &obj); err != nil {
 			if firstErr == nil && strings.HasPrefix(c, "{") {
 				firstErr = err
 			}
-			return nil, false
+			return Answer{}, false
 		}
-		if obj.Findings == nil {
-			return nil, false
-		}
-		return *obj.Findings, true
+		return obj.answer()
 	}
 	blocks := fencedBlocks(answer)
 	for i := len(blocks) - 1; i >= 0; i-- {
 		switch strings.ToLower(blocks[i].lang) {
 		case "", "json", "jsonc", "json5":
-			if fs, ok := try(blocks[i].body); ok {
-				return fs, nil
+			if a, ok := try(blocks[i].body); ok {
+				return a, nil
 			}
 		}
 	}
-	if fs, ok := try(answer); ok {
-		return fs, nil
+	if a, ok := try(answer); ok {
+		return a, nil
 	}
-	if fs, ok := lastFindingsObject(answer); ok {
-		return fs, nil
+	if a, ok := lastFindingsObject(answer); ok {
+		return a, nil
 	}
 	if firstErr != nil {
-		return nil, fmt.Errorf("%w: %v", ErrNoFindings, firstErr)
+		return Answer{}, fmt.Errorf("%w: %v", ErrNoFindings, firstErr)
 	}
-	return nil, ErrNoFindings
+	return Answer{}, ErrNoFindings
+}
+
+// answerObject is a candidate answer: it counts if it has "findings".
+type answerObject struct {
+	Findings *[]Finding `json:"findings"`
+	Digest   *Digest    `json:"digest"`
+}
+
+func (o answerObject) answer() (Answer, bool) {
+	if o.Findings == nil {
+		return Answer{}, false
+	}
+	return Answer{Findings: *o.Findings, Digest: o.Digest}, true
+}
+
+// maxDigest bounds a digest's text (a page is a few KB).
+const maxDigest = 64 << 10
+
+var mdLinkRE = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+
+// Model checks a digest and makes it a run's: the text trimmed and capped,
+// and at most model.MaxDigestHeadline headline items, each one line of
+// plain text (Markdown links become their text, ` and * go).
+func (d *Digest) Model() (*model.ScanDigest, error) {
+	if d == nil || strings.TrimSpace(d.Text) == "" {
+		return nil, ErrNoDigest
+	}
+	out := &model.ScanDigest{Text: textutil.Clip(strings.TrimSpace(d.Text), maxDigest)}
+	for _, h := range d.Headline {
+		h = mdLinkRE.ReplaceAllString(h, "$1")
+		h = strings.NewReplacer("`", "", "**", "", "__", "").Replace(h)
+		h = strings.TrimLeft(oneLine(h), "-*• ")
+		if h == "" {
+			continue
+		}
+		out.Headline = append(out.Headline, textutil.Clip(h, maxTitle))
+		if len(out.Headline) == model.MaxDigestHeadline {
+			break
+		}
+	}
+	return out, nil
 }
 
 type fencedBlock struct{ lang, body string }
@@ -148,9 +206,9 @@ func fenceRun(t string) (byte, int) {
 // lastFindingsObject finds the last balanced JSON object in s that has a
 // "findings" array, whatever surrounds it. Objects nested in one that
 // matched are not looked at on their own.
-func lastFindingsObject(s string) ([]Finding, bool) {
+func lastFindingsObject(s string) (Answer, bool) {
 	var (
-		found []Finding
+		found Answer
 		ok    bool
 	)
 	for i := 0; i < len(s); {
@@ -160,11 +218,9 @@ func lastFindingsObject(s string) ([]Finding, bool) {
 		}
 		i += j
 		dec := json.NewDecoder(strings.NewReader(s[i:]))
-		var obj struct {
-			Findings *[]Finding `json:"findings"`
-		}
+		var obj answerObject
 		if dec.Decode(&obj) == nil && obj.Findings != nil {
-			found, ok = *obj.Findings, true
+			found, ok = Answer{Findings: *obj.Findings, Digest: obj.Digest}, true
 			i += int(dec.InputOffset())
 			continue
 		}

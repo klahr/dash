@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/applink"
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/gitops"
@@ -272,6 +273,9 @@ type target struct {
 	files         []string // changed files, for incremental scopes
 	skip          string   // why there is nothing to scan
 	note          string
+	// tasks are the merged tasks whose commits are in the range, for a
+	// digest scan (KindDigest) to name.
+	tasks []MergedTask
 }
 
 // resolve works out the commits a run scans for its template's scope. A
@@ -336,6 +340,21 @@ func (r *Runner) resolve(ctx context.Context, p model.Project, job Job) (target,
 		switch {
 		case job.Full != "":
 			tg.note = job.Full
+		case job.LastCommit == "" && t.FirstRunDays > 0:
+			// A first run of a scan about what changed (a digest) looks at
+			// the last days, not at all of history.
+			days := t.FirstRunDays
+			base, err := r.Git.CommitBefore(ctx, p.ID, p.Path, tg.commit, r.now().AddDate(0, 0, -days))
+			switch {
+			case err != nil || base == "":
+				tg.note = fmt.Sprintf("First run, and the history is shorter than %d days: looked at everything", days)
+			case base == tg.commit:
+				tg.skip = fmt.Sprintf("Nothing changed in the last %d days", days)
+				return tg, nil
+			default:
+				tg.since, tg.incremental = base, true
+				tg.note = fmt.Sprintf("First run: looked at the last %d days", days)
+			}
 		case job.LastCommit == "":
 			tg.note = "First run: scanned everything"
 		case job.LastCommit == tg.commit:
@@ -453,6 +472,9 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 		logLine(fmt.Sprintf("⚠ the template asks for tools that are not approved in Dash (%s): running with read-only tools", strings.Join(t.Tools, ", ")))
 	}
 	job := Job{RunID: run.ID, Template: t, Tools: tools, SandboxTools: sandboxTools, Timeout: r.runTimeout(), Known: r.scanIssues(p.ID, t), For: run.StartedBy, Account: account}
+	if t.Kind == KindDigest {
+		job.Merged = r.mergedTasks(p.ID)
+	}
 	if from != nil {
 		job.From = &Resume{Commit: from.Commit, Since: from.Since, Incremental: from.Incremental, Note: from.Note}
 	}
@@ -512,13 +534,17 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 		fail(err)
 		return
 	}
-	found, err := ParseFindings(out.Result)
+	ans, err := ParseAnswer(out.Result)
+	var digest *model.ScanDigest
+	if err == nil && t.Kind == KindDigest {
+		digest, err = ans.Digest.Model()
+	}
 	if err != nil {
 		run, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Answer = textutil.Clip(out.Result, maxAnswer) })
 		fail(err)
 		return
 	}
-	issues, invalid := Issues(t, out.Dir, found)
+	issues, invalid := Issues(t, out.Dir, ans.Findings)
 	for _, e := range invalid {
 		logLine("dropped finding: " + e.Error())
 	}
@@ -530,10 +556,46 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 	}
 	finish(func(x *model.ScanRun) {
 		*x = rec
-		x.Status = model.ScanSucceeded
+		x.Status, x.Digest = model.ScanSucceeded, digest
 	})
+	if digest != nil {
+		logLine(fmt.Sprintf("✔ digest: %d headline items, %d characters", len(digest.Headline), len(digest.Text)))
+	}
 	logLine(fmt.Sprintf("✔ %d findings: %d new, %d updated, %d known, %d reopened",
 		run.Findings, run.Counts.New, run.Counts.Updated, run.Counts.Known, run.Counts.Reopened))
+}
+
+// maxMerged is how many merged tasks a digest scan's job carries.
+const maxMerged = 300
+
+// mergedTasks are the project's tasks merged in the last 90 days, newest
+// first, for a digest scan to name the tasks behind what changed (the
+// runner keeps those whose commits it looks at: tasksIn).
+func (r *Runner) mergedTasks(projectID string) []MergedTask {
+	after := r.now().AddDate(0, 0, -90)
+	var tds []model.Todo
+	for _, td := range r.Store.ListTodos(projectID, model.StatusMerged) {
+		if td.NoChanges || td.FinishedAt != nil && td.FinishedAt.Before(after) {
+			continue
+		}
+		tds = append(tds, td)
+	}
+	slices.SortStableFunc(tds, func(a, b model.Todo) int { return finished(b).Compare(finished(a)) })
+	var out []MergedTask
+	for _, td := range tds {
+		if len(out) == maxMerged {
+			break
+		}
+		out = append(out, MergedTask{ID: td.ID, Title: td.Name(120), Commit: td.MergedCommit, Link: applink.Task(projectID, td.ID)})
+	}
+	return out
+}
+
+func finished(td model.Todo) time.Time {
+	if td.FinishedAt != nil {
+		return *td.FinishedAt
+	}
+	return td.UpdatedAt
 }
 
 // fullPass is why a since_last_scan run scans everything ("": it looks
@@ -965,9 +1027,12 @@ func BuildPrompt(t Template, tools []string, tg target, known []Known) string {
 		where = "`" + t.Path + "`"
 	}
 	if tg.incremental {
-		fmt.Fprintf(&b, "Only look at what changed in %s between commit %s and HEAD (the git_diff tool with from %s). "+
-			"Report problems in the changed code, or that the change causes elsewhere; read other code only for context.\n",
-			where, gitops.ShortSHA(tg.since), tg.since)
+		report := "Report problems in the changed code, or that the change causes elsewhere; read other code only for context."
+		if t.Kind == KindDigest {
+			report = "Read other code only for context."
+		}
+		fmt.Fprintf(&b, "Only look at what changed in %s between commit %s and HEAD (the git_diff tool with from %s). %s\n",
+			where, gitops.ShortSHA(tg.since), tg.since, report)
 		if len(tg.files) > 0 {
 			b.WriteString("\nChanged files:\n")
 			for i, f := range tg.files {
@@ -992,9 +1057,29 @@ func BuildPrompt(t Template, tools []string, tg target, known []Known) string {
 			fmt.Fprintf(&b, "- fingerprint `%s` · %s · %s · %s\n", is.Rule, is.Status, loc, is.Title)
 		}
 	}
+	if t.Kind == KindDigest {
+		b.WriteString("\n## Tasks\n\n")
+		if len(tg.tasks) == 0 {
+			b.WriteString("No Dash task's work is in these commits. Name a change by its commit's short SHA.\n")
+		} else {
+			b.WriteString("These Dash tasks' work is in these commits. Name the tasks behind each item as Markdown links, " +
+				"exactly as given here; name a change no task made by its commit's short SHA.\n\n")
+			for _, m := range tg.tasks {
+				fmt.Fprintf(&b, "- [%s](%s)", strings.NewReplacer("[", "(", "]", ")").Replace(m.Title), m.Link)
+				if m.Commit != "" {
+					fmt.Fprintf(&b, " · commit %s", gitops.ShortSHA(m.Commit))
+				}
+				b.WriteString("\n")
+			}
+		}
+	}
 	b.WriteString("\n## Answer\n\n")
 	b.WriteString(toolRules(tools))
-	b.WriteString(answerFormat)
+	if t.Kind == KindDigest {
+		b.WriteString(digestAnswerFormat)
+	} else {
+		b.WriteString(answerFormat)
+	}
 	return b.String()
 }
 
@@ -1083,6 +1168,24 @@ One scale for every scan. Only critical and high findings show on the team's Boa
 - "info": a note with nothing to fix.
 
 When torn between two, pick the lower and say why in the details. A scan's own rules above say how this scale applies to what it looks for.
+`
+
+// digestAnswerFormat is a digest scan's answer: the digest, and findings
+// only for clear bugs.
+const digestAnswerFormat = `
+End your final message with the digest as one JSON code block, and nothing after it:
+
+` + "```json" + `
+{"digest": {
+  "headline": ["One plain line per most notable item"],
+  "text": "The whole digest, in Markdown"
+},
+ "findings": []}
+` + "```" + `
+
+- "text" is the digest as the team reads it. Keep it to about a page.
+- "headline" repeats its most notable items (at most 5), one plain line each with no links, for the team's summary email. Leave it empty when nothing notable changed.
+- "findings" stays empty unless something is clearly a bug. Then add one per bug: {"title", "type": "bug", "severity", "file", "line", "details", "fix", "fingerprint"}. Severity "high" if it breaks a main feature or crashes on ordinary input, "medium" for an edge case, "low" otherwise; "fingerprint" is a short stable id such as "nil-deref:Store.Find".
 `
 
 func scanKey(projectID, scan string) string { return projectID + "/" + scan }

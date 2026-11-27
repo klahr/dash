@@ -115,6 +115,8 @@ type Notifier struct {
 	diskTold map[string]time.Time
 	// deploys: the deploys not done yet, by id, with their status.
 	deploys map[string]model.DeployStatus
+	// digests: the digest scan runs whose headline was recorded.
+	digests map[string]bool
 
 	wg sync.WaitGroup
 }
@@ -128,6 +130,7 @@ func (n *Notifier) init() {
 		n.stuck, n.told = map[[2]string]bool{}, map[[2]string]time.Time{}
 		n.diskLow, n.diskTold = map[string]bool{}, map[string]time.Time{}
 		n.deploys = map[string]model.DeployStatus{}
+		n.digests = map[string]bool{}
 		n.client = newClient(n.timeout(), n.AllowPrivate)
 	})
 }
@@ -167,6 +170,11 @@ func (n *Notifier) Observe(ev model.Event) {
 	switch ev.Type {
 	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts, model.EvRunnerDisk, model.EvGoalUpdated,
 		model.EvGoalDeleted, model.EvDeployUpdated, model.EvSpendWarning:
+	case model.EvScanRun:
+		// Only a digest's finished run, of the many updates a run has.
+		if r, ok := ev.Data.(model.ScanRun); !ok || r.Status != model.ScanSucceeded || r.Digest == nil || len(r.Digest.Headline) == 0 {
+			return
+		}
 	default:
 		return
 	}
@@ -233,6 +241,10 @@ func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 	}
 	if ev.Type == model.EvGoalUpdated {
 		n.goal(ctx, ev)
+		return
+	}
+	if ev.Type == model.EvScanRun {
+		n.digest(ev)
 		return
 	}
 	if ev.Type == model.EvGoalDeleted {
@@ -414,6 +426,41 @@ func (n *Notifier) issue(ctx context.Context, t model.Todo) {
 	n.record(note, 0)
 	n.push(ctx, note)
 	n.toWebhooks(ctx, note, []string{t.ProjectID})
+}
+
+// digest keeps a digest scan's headline items for the summaries, once per
+// run: each links to the scan in the Scans sheet, where its full text is.
+// A digest notifies nothing by itself.
+func (n *Notifier) digest(ev model.Event) {
+	r, ok := ev.Data.(model.ScanRun)
+	if !ok || r.Digest == nil || n.digests[r.ID] {
+		return
+	}
+	n.digests[r.ID] = true
+	rec, ok := n.Store.(activityRecorder)
+	if !ok {
+		return
+	}
+	u := ""
+	if o := n.origin(r.ProjectID); o != "" {
+		u = o + DigestPath(r.ProjectID, r.Scan)
+	}
+	at := n.now().UTC().Truncate(time.Second)
+	if r.FinishedAt != nil {
+		at = r.FinishedAt.UTC().Truncate(time.Second)
+	}
+	for i, h := range r.Digest.Headline {
+		a := model.Activity{ProjectID: r.ProjectID, At: at, Kind: model.SummaryDigest, Ref: fmt.Sprintf("%s#%d", r.ID, i), Title: h, URL: u}
+		if err := rec.RecordActivity(a); err != nil {
+			slog.Error("notifications: record activity", "project", a.ProjectID, "kind", a.Kind, "err", err)
+		}
+	}
+}
+
+// DigestPath opens the Scans sheet at scan, whose last run's digest it
+// shows.
+func DigestPath(projectID, scan string) string {
+	return applink.Project(projectID) + "?sheet=scans&section=" + url.QueryEscape(scan)
 }
 
 // deploy notifies of a deploy that failed: one seen on its way (queued or

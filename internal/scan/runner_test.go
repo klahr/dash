@@ -757,3 +757,95 @@ func findingDrafts(st *store.Store, pid string) []model.Todo {
 	}
 	return out
 }
+
+// gitOld runs git with the commit dated days ago, as rev-list --before
+// reads it (the committer date).
+func gitOld(t *testing.T, dir string, days int, args ...string) {
+	t.Helper()
+	at := time.Now().AddDate(0, 0, -days).Format(time.RFC3339)
+	cmd := exec.Command("git", append([]string{"-c", "user.name=T", "-c", "user.email=t@t"}, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+at, "GIT_COMMITTER_DATE="+at)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+const digestTemplate = "---\nkind: digest\nscope: since_last_scan\nfirst_run_days: 7\n---\nWhat changed in {{path}}?"
+
+// A digest scan's first run looks at the last week; its answer's digest is
+// kept on the run, its prompt names the merged tasks in that range as
+// links, and a finding it reports is a bug draft.
+func TestRunDigest(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t, "digest", digestTemplate)
+	gitOld(t, fx.repo, 30, "commit", "-q", "--amend", "--no-edit", "--reset-author")
+	old := gitRun(t, fx.repo, "rev-parse", "HEAD")
+	sha := commitFile(t, fx.repo, "pkg/new.go", "package pkg\n")
+	td := mergedTask(t, fx.st, fx.p.ID, "Add the pkg package", sha)
+	mergedTask(t, fx.st, fx.p.ID, "Older work", old)
+	fx.exec.setAnswer("Here it is.\n```json\n" + `{"digest": {"headline": ["- New package ` + "`pkg`" + ` from [Add the pkg package](/p/x/tasks/y)", "", "**Bold** two"],
+		"text": "## What changed\n\n- New package pkg ([Add the pkg package](/p/x/tasks/y))"},
+	"findings": [{"title": "Nil map write", "severity": "high", "file": "pkg/new.go", "fingerprint": "nil-map:pkg"}]}` + "\n```")
+	r := fx.run(t, "digest")
+	if r.Status != model.ScanSucceeded || !r.Incremental || r.Since != old || r.Note != "First run: looked at the last 7 days" {
+		t.Fatalf("first run: %+v", r)
+	}
+	if r.Digest == nil || !strings.HasPrefix(r.Digest.Text, "## What changed") ||
+		!slices.Equal(r.Digest.Headline, []string{"New package pkg from Add the pkg package", "Bold two"}) {
+		t.Fatalf("digest: %+v", r.Digest)
+	}
+	if r.Counts.New != 1 {
+		t.Fatalf("counts: %+v", r.Counts)
+	}
+	if d := findingDrafts(fx.st, fx.p.ID); len(d) != 1 || d[0].Finding.Issues[0].Type != model.IssueBug || d[0].Finding.Issues[0].ScanKind != KindDigest {
+		t.Fatalf("drafts: %+v", d)
+	}
+	p := fx.exec.lastPrompt()
+	link := "- [Add the pkg package](/p/" + fx.p.ID + "/tasks/" + td.ID + ") · commit " + gitops.ShortSHA(sha)
+	for _, want := range []string{"What changed in .?", link, `"digest"`, `"headline"`, "Read other code only for context."} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, p)
+		}
+	}
+	if strings.Contains(p, "Older work") || strings.Contains(p, "Report problems") {
+		t.Errorf("prompt names work outside the range, or asks for problems:\n%s", p)
+	}
+
+	// An answer without a digest fails the run, keeping the answer.
+	commitFile(t, fx.repo, "pkg/more.go", "package pkg\n")
+	fx.exec.setAnswer(`{"findings": []}`)
+	if r := fx.run(t, "digest"); r.Status != model.ScanFailed || !strings.Contains(r.Error, "no digest") || r.Answer == "" {
+		t.Fatalf("no digest: %+v", r)
+	}
+}
+
+// A digest's first run with nothing merged in the last week is skipped.
+func TestRunDigestQuietWeek(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t, "digest", digestTemplate)
+	gitOld(t, fx.repo, 30, "commit", "-q", "--amend", "--no-edit", "--reset-author")
+	calls := len(fx.exec.reqs)
+	if r := fx.run(t, "digest"); r.Status != model.ScanSkipped || r.Note != "Nothing changed in the last 7 days" || len(fx.exec.reqs) != calls {
+		t.Fatalf("quiet week: %+v", r)
+	}
+}
+
+// mergedTask adds a task merged at sha (through queued: a draft can't be).
+func mergedTask(t *testing.T, st *store.Store, pid, prompt, sha string) model.Todo {
+	t.Helper()
+	td, err := st.CreateTodo(model.Todo{ProjectID: pid, Prompt: prompt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateTodo(td.ID, func(x *model.Todo) error { x.Status = model.StatusQueued; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	td, err = st.UpdateTodo(td.ID, func(x *model.Todo) error { x.Status, x.MergedCommit = model.StatusMerged, sha; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	return td
+}

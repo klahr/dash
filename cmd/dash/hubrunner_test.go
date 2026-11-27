@@ -557,15 +557,17 @@ func (c *client) scanName(pid string) string {
 	var res struct {
 		Scans []struct {
 			Name          string
+			Kind          string
 			Scope         string
 			RequiresFiles []string `json:"requires_files"`
 		}
 	}
 	c.must("GET", "/api/projects/"+pid+"/scans", nil, http.StatusOK, &res)
 	// A since_main scan is skipped in a checkout of the default branch, and
-	// one that requires files in repositories without them.
+	// one that requires files in repositories without them. A digest scan
+	// answers with a digest, which the fake claude doesn't write.
 	for _, s := range res.Scans {
-		if s.Scope != model.ScopeSinceMain && len(s.RequiresFiles) == 0 {
+		if s.Scope != model.ScopeSinceMain && len(s.RequiresFiles) == 0 && s.Kind != model.ScanKindDigest {
 			return s.Name
 		}
 	}

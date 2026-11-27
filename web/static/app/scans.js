@@ -12,6 +12,7 @@ import { notifyOn } from "./notifications.js";
 import { openDetail } from "./detail.js";
 import { pickDrafts, worstSeverity } from "./tags.js";
 import { sheetDraft } from "./sheetdraft.js";
+import { renderMarkdown } from "../markdown.js";
 
 // ------------------------------------------------------------------ scans
 // Preconfigured, read-only reviews of the project (security, code review,
@@ -24,7 +25,7 @@ import { sheetDraft } from "./sheetdraft.js";
 export const SCAN_KINDS = {
   security: "Security", code_review: "Code review", dependencies: "Dependencies", tests: "Tests", docs: "Docs",
   performance: "Performance", dead_code: "Dead code", flaky_tests: "Flaky tests", accessibility: "Accessibility",
-  breaking_changes: "Breaking changes", maintainability: "Duplication & complexity", supply_chain: "CI/CD & supply chain", custom: "Custom",
+  breaking_changes: "Breaking changes", maintainability: "Duplication & complexity", supply_chain: "CI/CD & supply chain", digest: "Digest", custom: "Custom",
 };
 const SCAN_SCOPES = { repo: "Whole repository", since_last_scan: "Changes since the last scan", since_main: "Branch vs. main", path: "One path" };
 export const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map(), open: new Set() };
@@ -108,7 +109,19 @@ function scanSummary(r) {
     case "interrupted": return r.note || "Dash stopped during the scan";
   }
   const c = counts(r);
+  if (r.digest && !r.findings) return digestLine(r.digest);
   return r.findings ? `${c.added} added, ${c.there} already there` : "No issues found";
+}
+
+// digestLine sums a digest scan's run up: its headline items, or nothing
+// notable.
+const digestLine = (d) => d.headline?.length ? `Digest: ${plural(d.headline.length, "headline item")}` : "Digest: nothing notable";
+
+// digestBody is a digest's text as HTML. Its task links are app paths
+// (/p/…/tasks/…), made full URLs so the Markdown keeps them as links.
+function digestBody(d) {
+  const text = (d.text || "").replace(/\]\((\/p\/[^)\s]*)\)/g, (_, path) => `](${location.origin}${path})`);
+  return h("div", { class: "md scan-digest-text", innerHTML: renderMarkdown(text) });
 }
 
 // counts sums up a run's findings: added (new drafts, including issues a
@@ -167,15 +180,19 @@ function describeCron(expr) {
 }
 
 // openScans opens the Scans sheet over the page, and reads the scans again.
-export async function openScans() {
+// With scan (a link to a digest, from the summary), that scan's details
+// open and it is scrolled to.
+export async function openScans(scan) {
   const d = $("#scans-sheet");
   if (!state.project) return;
+  if (scan) scans.open.add(scan);
   if (!d.open) {
     renderScans();
     d.showModal();
     changed("push");
   }
   await loadScans();
+  if (scan) $("#scan-list").querySelector(`[data-scan="${CSS.escape(scan)}"]`)?.scrollIntoView({ block: "start" });
 }
 $("#pm-scans").addEventListener("click", attempt(() => openScans()));
 
@@ -233,7 +250,7 @@ function scanLine(s) {
     const label = { skipped: "Skipped", canceled: "Canceled", interrupted: "Interrupted" }[r.status] || r.status;
     return h("div", { class: "scan-line" }, text(r.status === "canceled" ? `${label} ${ago}` : `${label} ${ago} · ${scanSummary(r)}`));
   }
-  if (!r.findings) return h("div", { class: "scan-line" }, text(`Last run ${ago} · No issues found`));
+  if (!r.findings) return h("div", { class: "scan-line" }, text(`Last run ${ago} · ${r.digest ? digestLine(r.digest) : "No issues found"}`));
   const { st, badge } = runResult(r);
   const added = counts(r).added;
   return h("div", { class: "scan-line" }, text(`Last run ${ago} ·${st.open ? "" : ` ${added ? `${added} added, none still drafts` : "Nothing new"}`}`),
@@ -583,12 +600,20 @@ function scanReport(r, compact = false, lead = false) {
   } else if (!lead || r.status === "failed") {
     body = h("p", { class: `scan-msg${r.status === "failed" ? " error" : ""}` }, r.status === "running" ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, scanSummary(r));
   }
+  let digest = null;
+  if (r.status === "succeeded" && r.digest) {
+    // The lead run's digest shows open; earlier ones a click away. (Not an
+    // h() prop: h() takes props starting with "on" for event handlers.)
+    digest = h("details", { class: "scan-digest" }, h("summary", {}, compact ? digestLine(r.digest) : "Digest"), digestBody(r.digest));
+    digest.open = !compact;
+  }
   return h("div", { class: `scan-report st-${r.status}${compact ? " compact" : ""}` },
     h("div", { class: "scan-report-head" },
       h("span", { class: "scan-status" }, icon ? ico(icon) : null, label),
       h("span", { class: "scan-when", title: r.invalid ? "Dropped: findings the scan returned that were not valid; see the log" : null }, bits.join(" · ")),
       h("a", { class: "link scan-log", href: on(here(), `/api/scan-runs/${r.id}/log`), target: "_blank", rel: "noopener" }, "Log")),
     body,
+    digest,
     r.answer ? h("details", { class: "scan-answer" }, h("summary", {}, "The agent's answer"), h("pre", {}, r.answer)) : null,
     r.note && r.status === "succeeded" ? h("p", { class: "scan-note" }, r.note) : null,
     r.resumed_as ? h("p", { class: "scan-note" }, `↻ Resumed as ${r.resumed_as}`) : null,

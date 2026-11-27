@@ -3851,6 +3851,10 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .scan-msg { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: var(--fs-m); color: var(--muted); overflow-wrap: anywhere; }
 .scan-msg.error { color: var(--failed); white-space: pre-wrap; }
 .scan-note, .scan-never { margin: 6px 0 0; font-size: var(--fs-s); color: var(--faint); }
+/* A digest scan's text (Architecture digest): Markdown, a page at most. */
+.scan-digest { margin: 8px 0 0; }
+.scan-digest summary { cursor: pointer; font-size: var(--fs-s); color: var(--faint); }
+.scan-digest-text { margin: 6px 0 0; padding: 10px 12px; font-size: var(--fs-s); overflow-wrap: anywhere; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-s); }
 .scan-answer { margin: 6px 0 0; font-size: var(--fs-s); }
 .scan-answer summary { cursor: pointer; color: var(--faint); }
 .scan-answer pre { max-height: 320px; overflow: auto; margin: 6px 0 0; padding: 8px; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: var(--fs-xs); background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-s); }

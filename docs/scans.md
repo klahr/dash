@@ -24,8 +24,8 @@ Scans come from three places, marked on each card:
   interactive elements) and breaking changes (`breaking-changes`: what the checkout's branch
   changes compared with the default branch that breaks callers or users: public API and HTTP
   endpoint changes, schema changes with no migration or a destructive one, removed or renamed
-  flags, config keys and environment variables, and changed file formats) and CI/CD and supply
-  chain (`supply-chain`), in every project.
+  flags, config keys and environment variables, and changed file formats), CI/CD and supply
+  chain (`supply-chain`) and architecture digest (`architecture-digest`), in every project.
   Breaking changes has scope `since_main` and no suggested schedule: run it with "Run now" while
   the project's folder has the branch to check out. The security scan (suggested daily at
   06:00) traces untrusted input from where it enters to where it is used. It covers injection,
@@ -110,6 +110,15 @@ Scans come from three places, marked on each card:
   current code is critical; one only in history is high. Its fingerprint is the file, the kind
   of secret and the commit that added it, so a leak stays one task after it is removed. It
   runs with the read-only default tools: no shell and no network.
+  The architecture digest (suggested weekly, Fridays at 15:00) helps you keep the big picture
+  while agents write most of the code. It reads what was merged to the default branch since
+  its last run (the last 7 days on its first run; skipped when nothing was) and writes a short
+  digest, not a changelog: packages and modules added or removed, new dependencies, changed
+  public APIs, routes, flags, config and data formats, new patterns or a pattern used in a new
+  way, and code that grew a lot. Each item links the tasks that caused it. It ends with up to
+  three **Worth a look** notes: design drift, the same thing built twice by different tasks, or
+  a big change that got a quick review. If nothing notable changed, it says so in one line.
+  See [Digests](#digests).
 - **Repository:** markdown files in `.dash/scans/<name>.md`, versioned and shared with your team.
   Only a runner's own projects read them: on the hub, a project has the built-in scans and the
   Dash scans, since the hub has no checkout.
@@ -147,6 +156,8 @@ tools: Read, Grep, Glob
 requires_files: *.html, src/**/*.{ts,tsx}
 # full_scan_days: optional, for since_last_scan: scan everything again after this many days
 full_scan_days: 30
+# first_run_days: optional, for since_last_scan: the first run looks at the last this many days
+first_run_days: 7
 ---
 Look for vulnerabilities in {{path}} …
 ```
@@ -176,6 +187,7 @@ Look for vulnerabilities in {{path}} …
   | `breaking_changes` | `breaking`, `breaking_change`, `breaks`                   | bug          |
   | `maintainability`  | `duplication`, `duplicate_code`, `complexity`, `refactor` | issue        |
   | `supply_chain`     | `supplychain`, `ci`, `ci_cd`, `cicd`                      | vuln         |
+  | `digest`           | `architecture`, `what_changed`, `changes`                 | bug          |
   | `custom` (default) |                                                           | issue        |
 
   Kinds are case-insensitive and `-` or a space works for `_` (`dead-code`, `Flaky Tests`); the
@@ -200,6 +212,10 @@ Look for vulnerabilities in {{path}} …
 
   The run's note says why it scanned everything ("Periodic full scan (every 30 days)", "Full
   scan, asked for"). A failed full pass is tried again on the next run.
+- **First run.** A `since_last_scan` scan looks at everything on its first run. With
+  `first_run_days` it looks at what the default branch got in the last that many days instead,
+  and is skipped when it got nothing. The architecture digest has `first_run_days: 7`. The
+  setting is for template files.
 - **Findings.** The scan answers with JSON findings (title, type, severity, file and line,
   details, fix and a fingerprint). Invalid findings are dropped and noted in the run's log. Each
   valid one becomes a draft task, as described in [Findings on the Board](#findings-on-the-board).
@@ -244,6 +260,22 @@ Look for vulnerabilities in {{path}} …
 - **Reports.** Each run shows what it found, e.g. "2 added, 3 already there". A
   red badge counts the critical and high drafts the run added, e.g. "1 critical · 2 high". A
   scheduled run that adds critical or high drafts sends a notification.
+
+## Digests
+
+A scan of kind `digest`, such as the built-in architecture digest, writes a digest instead of a
+list of problems:
+
+- **In the Scans sheet.** Open **Details** on the scan: its last run shows the digest, with links
+  to the tasks it names. Earlier runs keep theirs under **Earlier runs**.
+- **In your summary.** When your daily or weekly summary (**Account → Notifications**, see
+  [notifications](notifications.md#summary)) covers the project, it lists the digest's headline
+  items, each with a link to the full text. They come with the project; there is no box to tick.
+- **Bugs.** Its notes are not draft tasks. Only something that is clearly a bug becomes a draft,
+  as with other scans.
+
+To write your own, give a repository or Dash scan `kind: digest`. Dash adds the answer format:
+the digest's text in Markdown, up to five headline items, and findings for clear bugs only.
 
 ## Shell commands
 
@@ -357,7 +389,8 @@ To keep the Board usable when scans find a lot:
   run's `trigger` is `manual`, `schedule`, `early` or `resume`.
 
 A run's `counts` are `new`, `updated` and `known` (already there), and `reopened`.
-Its `new_tasks` and `reopened_tasks` are the ids of the drafts it added.
+Its `new_tasks` and `reopened_tasks` are the ids of the drafts it added. A digest scan's run
+has `digest`: its `headline` items and its Markdown `text`.
 
 ## Upgrading from Issues
 

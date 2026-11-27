@@ -1243,6 +1243,14 @@ func (g *Git) Commit(ctx context.Context, projectID, repo, ref string) (string, 
 	return g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "--quiet", ref+"^{commit}")
 }
 
+// CommitBefore is the commit ref pointed at as of before: the newest
+// commit on its first-parent line committed at or before it ("" if none,
+// e.g. a repository younger than that).
+func (g *Git) CommitBefore(ctx context.Context, projectID, repo, ref string, before time.Time) (string, error) {
+	return g.run(ctx, false, projectID, repo, "git", "rev-list", "-1", "--first-parent",
+		"--before="+strconv.FormatInt(before.Unix(), 10), ref, "--")
+}
+
 // MergeBase is the best common ancestor of two commits.
 func (g *Git) MergeBase(ctx context.Context, projectID, repo, a, b string) (string, error) {
 	return g.run(ctx, false, projectID, repo, "git", "merge-base", a, b)

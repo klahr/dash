@@ -116,6 +116,8 @@ func TestKinds(t *testing.T) {
 		{"refactor", KindMaintainability, model.IssueOther},
 		{"supply_chain", KindSupplyChain, model.IssueVuln},
 		{"supply-chain", KindSupplyChain, model.IssueVuln},
+		{"digest", KindDigest, model.IssueBug},
+		{"architecture", KindDigest, model.IssueBug},
 		{"Supply Chain", KindSupplyChain, model.IssueVuln},
 		{"ci-cd", KindSupplyChain, model.IssueVuln},
 		{"custom", KindCustom, model.IssueOther},
@@ -134,7 +136,7 @@ func TestKinds(t *testing.T) {
 			t.Errorf("%s: round trip %q %v", c.kind, back.Kind, err)
 		}
 	}
-	if got := len(model.ScanKinds()); got != 13 {
+	if got := len(model.ScanKinds()); got != 14 {
 		t.Errorf("Kinds: %d %v", got, model.ScanKinds())
 	}
 	// The error names every kind.
@@ -206,7 +208,7 @@ func TestBuiltins(t *testing.T) {
 			t.Errorf("%s: builtin %v schedule %q", b.Name, b.Builtin, b.Schedule)
 		}
 	}
-	for _, n := range []string{"security", "secrets", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility", "breaking-changes", "maintainability", "supply-chain"} {
+	for _, n := range []string{"security", "secrets", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility", "breaking-changes", "maintainability", "supply-chain", "architecture-digest"} {
 		if _, ok := names[n]; !ok {
 			t.Errorf("no built-in %s (have %v)", n, names)
 		}
@@ -228,6 +230,10 @@ func TestBuiltins(t *testing.T) {
 	for _, b := range bs {
 		if (len(b.RequiresFiles) > 0) != (b.Name == "accessibility" || b.Name == "supply-chain") {
 			t.Errorf("%s: requires_files %v", b.Name, b.RequiresFiles)
+		}
+		// Only the digest's first run looks at the last days, not everything.
+		if (b.FirstRunDays > 0) != (b.Name == "architecture-digest") {
+			t.Errorf("%s: first_run_days %d", b.Name, b.FirstRunDays)
 		}
 	}
 	a11y := names["accessibility"]
@@ -348,6 +354,45 @@ func TestBuiltins(t *testing.T) {
 	} {
 		if !strings.Contains(scp, want) {
 			t.Errorf("supply-chain prompt lacks %q", want)
+		}
+	}
+	// The architecture digest looks at what was merged since its last run
+	// (the last week on its first), weekly on Fridays at 15:00, with
+	// read-only tools; its finding is a clear bug.
+	ad := names["architecture-digest"]
+	if ad.Title != "Architecture digest" || ad.Kind != KindDigest || ad.Scope != model.ScopeSinceLastScan ||
+		ad.Schedule != "0 15 * * 5" || ad.FirstRunDays != 7 || len(ad.Tools) != 0 || ad.FindingType() != model.IssueBug {
+		t.Errorf("architecture-digest: %+v", ad)
+	}
+	adp := ad.Render("", "")
+	for _, want := range []string{
+		"not a changelog", "packages", "dependencies", "public APIs", "HTTP routes", "CLI flags", "config keys", "file or wire formats",
+		"new pattern", "grew a lot", "tasks that caused it", "Worth a look", "at most three", "drifted", "built twice", "quick review",
+		"clearly a bug", "Nothing notable", "Ten items", "Do not change any files",
+	} {
+		if !strings.Contains(adp, want) {
+			t.Errorf("architecture-digest prompt lacks %q", want)
+		}
+	}
+}
+
+func TestFirstRunDays(t *testing.T) {
+	t.Parallel()
+
+	tm, err := ParseTemplate("d", []byte("---\nscope: since_last_scan\nfirst_run_days: 7\n---\nWhat changed?"))
+	if err != nil || tm.FirstRunDays != 7 {
+		t.Fatalf("parse: %+v, %v", tm, err)
+	}
+	if !strings.Contains(tm.Markdown(), "first_run_days: 7\n") {
+		t.Errorf("markdown:\n%s", tm.Markdown())
+	}
+	for _, bad := range []string{
+		"---\nfirst_run_days: 7\n---\nx", // needs since_last_scan
+		"---\nscope: since_last_scan\nfirst_run_days: -1\n---\nx",
+		"---\nscope: since_last_scan\nfirst_run_days: week\n---\nx",
+	} {
+		if _, err := ParseTemplate("d", []byte(bad)); err == nil {
+			t.Errorf("%q parsed", bad)
 		}
 	}
 }

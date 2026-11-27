@@ -52,6 +52,10 @@ type Job struct {
 	// Known are the issues this scan reported before; the prompt lists
 	// those in the scanned scope.
 	Known []Known `json:"known,omitempty"`
+	// Merged are the project's recently merged tasks, for a digest scan
+	// (KindDigest): its prompt lists those whose commits it looks at, so
+	// it can name and link the tasks behind each change.
+	Merged []MergedTask `json:"merged,omitempty"`
 	// Ref is the default branch's ref ("": refs/heads/<default>). A runner
 	// scans origin's, which it fetched, rather than its clone's.
 	Ref string `json:"-"`
@@ -65,6 +69,48 @@ type Job struct {
 	// another member than its owner: Claude runs with the runner's API key
 	// alone (claudecli.SharedEnv). "": its owner's.
 	Shared string `json:"-"`
+}
+
+// MergedTask is a task merged to the default branch, as a digest scan
+// names it: Link is its path in the app (/p/<project>/tasks/<id>), Commit
+// the commit that landed it.
+type MergedTask struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Commit string `json:"commit,omitempty"`
+	Link   string `json:"link"`
+}
+
+// tasksIn are the tasks of merged whose work is in tg's commits: their
+// merge commit is one of them, or one of them names the task (a
+// "Dash-Todo: <id>" trailer). A target that isn't incremental looks at the
+// last 90 days of history.
+func (r *Runner) tasksIn(ctx context.Context, p model.Project, tg target, merged []MergedTask) []MergedTask {
+	if len(merged) == 0 {
+		return nil
+	}
+	var after time.Time
+	if !tg.incremental {
+		after = r.now().AddDate(0, 0, -90)
+	}
+	cs, err := r.Git.CommitsBetween(ctx, p.ID, p.Path, tg.since, tg.commit, after)
+	if err != nil {
+		return nil
+	}
+	in := map[string]bool{}
+	for _, c := range cs {
+		in[c.SHA] = true
+		for _, id := range c.Todos {
+			in[id] = true
+		}
+	}
+	var out []MergedTask
+	for _, m := range merged {
+		if in[m.ID] || m.Commit != "" && in[m.Commit] {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // Resume is what a run that starts over an interrupted one keeps of it.
@@ -206,6 +252,9 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 		return out, nil
 	}
 
+	if t.Kind == KindDigest {
+		tg.tasks = r.tasksIn(ctx, p, tg, job.Merged)
+	}
 	tools := job.Tools
 	if len(job.SandboxTools) > 0 && r.Sandboxed {
 		tools = job.SandboxTools

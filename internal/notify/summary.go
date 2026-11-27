@@ -67,6 +67,7 @@ var summaryLooks = map[string]struct{ head, one, many, slack string }{
 	model.SummaryMerged: {"Merged", "merged", "merged", ":white_check_mark:"},
 	model.SummaryGoal:   {"Goal waits for you", "goal waits for you", "goals wait for you", ":dart:"},
 	model.SummaryBuild:  {"Build failing", "build failing", "builds failing", ":rotating_light:"},
+	model.SummaryDigest: {"Digest", "digest item", "digest items", ":compass:"},
 }
 
 // Count is how many items the summary has.
@@ -641,6 +642,7 @@ var kindColour = map[string]string{
 	model.SummaryMerged: "#1f7a43",
 	model.SummaryGoal:   "#7b3fc4",
 	model.SummaryBuild:  "#c0322b",
+	model.SummaryDigest: "#4a5568",
 }
 
 type summaryHTMLItem struct {

@@ -28,10 +28,13 @@ const (
 	SummaryMerged = "merged" // a task's work landed
 	SummaryGoal   = "goal"   // one of the user's goals waits for them
 	SummaryBuild  = "build"  // GitHub Actions started failing on the default branch
+	// SummaryDigest is a headline item of a digest scan's run (ScanDigest):
+	// it comes with every project the summary covers, no box to tick.
+	SummaryDigest = "digest"
 )
 
 // SummaryKinds are the item kinds, in the order a summary lists them.
-var SummaryKinds = []string{SummaryIssue, SummaryReview, SummaryFailed, SummaryMerged, SummaryGoal, SummaryBuild}
+var SummaryKinds = []string{SummaryIssue, SummaryReview, SummaryFailed, SummaryMerged, SummaryGoal, SummaryBuild, SummaryDigest}
 
 // SummaryInclude is what goes in a summary.
 type SummaryInclude struct {
@@ -61,6 +64,8 @@ func (in SummaryInclude) Wants(kind string, sev Severity) bool {
 		return in.Goals
 	case SummaryBuild:
 		return in.Builds
+	case SummaryDigest:
+		return true
 	}
 	return false
 }

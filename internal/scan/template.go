@@ -1,7 +1,7 @@
 // Package scan runs preconfigured, read-only Claude Code scans of a project
 // (security, code review, dependency audit, tests, docs, performance, dead
 // code, flaky tests, accessibility, breaking changes, CI/CD and supply
-// chain, or the team's own) on demand or
+// chain, a digest of what changed, or the team's own) on demand or
 // on a schedule, and files what they find in the project's Issues.
 //
 // A scan template is a markdown file in the repository, .dash/scans/<name>.md:
@@ -56,6 +56,7 @@ const (
 	KindBreakingChanges = model.ScanKindBreakingChanges
 	KindMaintainability = model.ScanKindMaintainability
 	KindSupplyChain     = model.ScanKindSupplyChain
+	KindDigest          = model.ScanKindDigest
 	KindCustom          = model.ScanKindCustom
 )
 
@@ -84,7 +85,11 @@ type Template struct {
 	// FullScanDays, for ScopeSinceLastScan, makes a run scan everything
 	// again when the scan's last full pass is older than this many days
 	// (0: only the first run does), so old code is looked at again.
-	FullScanDays int    `json:"full_scan_days,omitempty"`
+	FullScanDays int `json:"full_scan_days,omitempty"`
+	// FirstRunDays, for ScopeSinceLastScan, makes the first run look at
+	// what the default branch got in the last this many days, instead of
+	// at everything (0: everything).
+	FirstRunDays int    `json:"first_run_days,omitempty"`
 	Prompt       string `json:"prompt"`
 	// File is the template's path in the repository; "" for a built-in.
 	File    string `json:"file,omitempty"`
@@ -235,8 +240,14 @@ func (t *Template) setFields(front string) error {
 				return fmt.Errorf("frontmatter line %d: full_scan_days %q: want a number of days", n, val)
 			}
 			t.FullScanDays = d
+		case "first_run_days":
+			d, err := strconv.Atoi(val)
+			if err != nil || d < 0 {
+				return fmt.Errorf("frontmatter line %d: first_run_days %q: want a number of days", n, val)
+			}
+			t.FirstRunDays = d
 		default:
-			return fmt.Errorf("frontmatter line %d: unknown setting %q (name, title, kind, scope, path, model, effort, schedule, tools, requires_files or full_scan_days)", n, key)
+			return fmt.Errorf("frontmatter line %d: unknown setting %q (name, title, kind, scope, path, model, effort, schedule, tools, requires_files, full_scan_days or first_run_days)", n, key)
 		}
 	}
 	return nil
@@ -278,6 +289,9 @@ func (t *Template) normalize() error {
 	if t.FullScanDays > 0 && t.Scope != model.ScopeSinceLastScan {
 		return fmt.Errorf("full_scan_days needs scope %s", model.ScopeSinceLastScan)
 	}
+	if t.FirstRunDays > 0 && t.Scope != model.ScopeSinceLastScan {
+		return fmt.Errorf("first_run_days needs scope %s", model.ScopeSinceLastScan)
+	}
 	if t.Effort != "" && !slices.Contains(efforts, t.Effort) {
 		return fmt.Errorf("unknown effort %q (%s)", t.Effort, strings.Join(efforts, ", "))
 	}
@@ -300,13 +314,13 @@ func (t *Template) normalize() error {
 // FindingType is the type of a finding that names none: a vulnerability
 // for security, dependency and supply chain scans; a bug where what is found is wrong
 // behaviour (code review, a flaky test, a change that breaks callers, a UI
-// some users can't use); otherwise an issue (a missing test or doc, slow,
+// some users can't use, the clear bug a digest files); otherwise an issue (a missing test or doc, slow,
 // dead, duplicated or overly complex code, a custom scan's finding).
 func (t Template) FindingType() model.IssueType {
 	switch t.Kind {
 	case KindSecurity, KindDependencies, KindSupplyChain:
 		return model.IssueVuln
-	case KindCodeReview, KindFlakyTests, KindBreakingChanges, KindAccessibility:
+	case KindCodeReview, KindFlakyTests, KindBreakingChanges, KindAccessibility, KindDigest:
 		return model.IssueBug
 	}
 	return model.IssueOther
@@ -471,6 +485,9 @@ func (t Template) Markdown() string {
 	line("requires_files", strings.Join(t.RequiresFiles, ", "))
 	if t.FullScanDays > 0 {
 		line("full_scan_days", strconv.Itoa(t.FullScanDays))
+	}
+	if t.FirstRunDays > 0 {
+		line("first_run_days", strconv.Itoa(t.FirstRunDays))
 	}
 	b.WriteString("---\n")
 	b.WriteString(t.Prompt)
