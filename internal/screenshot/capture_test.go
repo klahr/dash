@@ -135,6 +135,16 @@ func TestServerThatDoesntStart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A login shell can take a while to read its profile (on CI longer
+	// than the limit below): wait until the script runs, so the limit is
+	// spent on the server not answering.
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(srv.log.last(), strconv.Itoa(port)); {
+		if time.Now().After(deadline) {
+			srv.stop()
+			t.Fatalf("the script didn't start: %q", srv.log.last())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	start := time.Now()
 	err = srv.wait(context.Background(), port, 500*time.Millisecond)
 	srv.stop()
@@ -181,7 +191,7 @@ func TestCaptureBeforeAndAfter(t *testing.T) {
 	}
 	git := func(d string, args ...string) string {
 		t.Helper()
-		out, err := exec.Command("git", append([]string{"-C", d}, args...)...).CombinedOutput()
+		out, err := exec.Command("git", append([]string{"-C", d, "-c", "user.name=T", "-c", "user.email=t@example.com"}, args...)...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
