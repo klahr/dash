@@ -2105,7 +2105,8 @@ func TestBrowserShellHeader(t *testing.T) {
 	}
 
 	openShell()
-	b.waitJS("the shell's header", `!document.querySelector("#shell-head").hidden && document.querySelector("#shell-runner-name").textContent === "laptop" && document.querySelector("#shell-dir").textContent.endsWith("/app")`)
+	// The folder is the runner's own path: C:\…\app on Windows.
+	b.waitJS("the shell's header", `!document.querySelector("#shell-head").hidden && document.querySelector("#shell-runner-name").textContent === "laptop" && document.querySelector("#shell-dir").textContent.endsWith(`+fmt.Sprintf("%q", string(filepath.Separator)+"app")+`)`)
 	b.waitJS("no menu of one runner", `document.querySelector("#shell-runner-wrap").hidden`)
 	b.waitJS("the terminal below it", `!document.querySelector("#term-wrap").hidden && !!document.querySelector("#term .xterm")`)
 
