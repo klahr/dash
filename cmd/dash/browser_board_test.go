@@ -134,7 +134,8 @@ func TestBrowserBoardRiskyActions(t *testing.T) {
 	b.waitJS("no labels after the drop", `!document.querySelector(".drop-label")`)
 	b.waitCard(rv.ID, "draft")
 	b.waitJS("Undo in the toast", `[...document.querySelectorAll(".toast")].some((e) => e.textContent.includes("Moved to drafts") && e.querySelector(".toast-action")?.textContent === "Undo")`)
-	b.clickText(".toast .toast-action", "Undo")
+	// Until it is back, as for Approve's Undo above: the stack can move it under the click.
+	b.clickTextUntil(".toast .toast-action", "Undo", fmt.Sprintf(`!!document.querySelector('#board .col[data-lane="review"] .todo[data-id=%q]')`, rv.ID))
 	b.waitCard(rv.ID, "review")
 	time.Sleep(6 * time.Second)
 	if s := status(); s != "review" {
