@@ -205,5 +205,18 @@ func TestBrowserBoardRiskyActions(t *testing.T) {
 			[...c.querySelectorAll(".enqueue-chip")].some((e) => e.textContent.trim() === "Queue both");
 	})()`, cardSel(waiter.ID)))
 	shot(b, "board-waits-for-draft")
+
+	// A paused queued task on the same draft says Paused, without Queue both,
+	// and the board keeps rendering (its wait was false, and wait?.drafts.length threw).
+	var held struct{ ID string }
+	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Held on groundwork", "prompt": "add another later file", "depends_on": []string{dep.ID}, "enqueue": true}, http.StatusCreated, &held)
+	b.waitCard(held.ID, "queued")
+	api.must("POST", "/api/todos/"+held.ID+"/pause", nil, http.StatusOK, nil)
+	b.waitJS("the paused card, no Queue both", fmt.Sprintf(`(() => {
+		const c = document.querySelector(%q);
+		return c?.querySelector(".todo-sub")?.textContent === "Paused" && !!c.querySelector(".paused-tag") &&
+			!c.querySelector(".enqueue-chip") && !!document.querySelector(%q);
+	})()`, cardSel(held.ID), cardSel(waiter.ID)+" .enqueue-chip"))
+
 	b.clickTextUntil(cardSel(waiter.ID)+" .enqueue-chip", "Queue both", fmt.Sprintf(`!document.querySelector('#board .col[data-lane="draft"] .todo[data-id=%q]')`, dep.ID))
 }

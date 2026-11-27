@@ -859,7 +859,8 @@ export function todoRow(t, li = -1, ri = -1) {
   if (t.reviewing) { sub = "Claude is reviewing…"; subClass = "todo-sub progress"; }
   const asks = state.perms.filter((p) => p.todo_id === t.id);
   if (asks.length) { sub = asks.every(isQuestion) ? "Waiting for your answer" : "Waiting for your approval"; subClass = "todo-sub waiting"; }
-  const wait = !t.paused && !t.error && depWait(t);
+  // Null, not false, when nothing is shown: the row below reads wait?.drafts.
+  const wait = !t.paused && !t.error ? depWait(t) : null;
   if (wait) { sub = depLine(wait); subClass = `todo-sub deps${wait.failed.length ? " failed" : ""}`; }
   // Held back only by the weekly pace: it says so, with Start now beside it.
   const paced = canStartNow(t) && !t.error && !wait && pacing(t) && (!t.waiting || /to stay on pace/.test(t.waiting))
@@ -915,7 +916,7 @@ export function todoRow(t, li = -1, ri = -1) {
       unpushed(t) ? h("span", { class: "unpushed-tag" }, "Not pushed") : null,
       t.status === "review" && t.finished_at ? h("span", { class: "card-ago", title: dateTimeText(t.finished_at) }, agoText(t.finished_at)) : null,
       creatorEl(t),
-      wait?.drafts.length && !wait.failed.length ? h("span", { class: "card-actions" }, queueDepsChip(wait.drafts)) : null,
+      wait?.drafts?.length && !wait.failed?.length ? h("span", { class: "card-actions" }, queueDepsChip(wait.drafts)) : null,
       paced || after ? h("span", { class: "card-actions" }, startNowChip(t)) : null),
     t.status === "review" && !t.reviewing ? reviewActions(t) : null);
 }
