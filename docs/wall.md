@@ -22,8 +22,7 @@ Each number is in one place: merges and lines landed are in Today, failed tasks 
 ## The overall status
 
 The header says in one line how things stand, e.g. "● All good · 5 running" or "▲ Waiting on
-people · 5 running · 2 waiting on people", with the reasons below it. The screen gets an edge
-in the same colour. Each state has a word and a symbol as well as a colour:
+people · 5 running · 2 waiting on people", with the reasons below it. Each state has a word and a symbol as well as a colour:
 
 | Status | When |
 | --- | --- |

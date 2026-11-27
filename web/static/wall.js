@@ -253,8 +253,7 @@ function renderHeader(d) {
   const scope = d.project ? d.project : "all projects";
   setText($("scope"), (d.org ? d.org + " · " : "") + scope + (d.privacy ? " · public view" : ""));
 
-  // The overall status: a symbol and words, in its colour, and the screen's
-  // edge in the same colour (wall.html .tv::after).
+  // The overall status: a symbol and words, in its colour.
   const st = headline(d.status);
   setText($("status-sym"), st.symbol);
   setText($("status-text"), st.text);
