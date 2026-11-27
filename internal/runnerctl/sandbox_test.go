@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -28,9 +30,24 @@ func TestReleaseArchivesHoldTheSandboxScripts(t *testing.T) {
 	var found []string
 	for _, e := range entries {
 		found = append(found, e.Name())
+		if runtime.GOOS == "windows" {
+			continue // no executable bits on disk: git's are checked below
+		}
 		st, err := os.Stat(filepath.Join(root, "deploy", "sandbox", e.Name()))
 		if err != nil || st.Mode()&0o111 == 0 {
 			t.Errorf("deploy/sandbox/%s isn't executable: %v", e.Name(), err)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		// The release is built from git, whose modes are what count.
+		out, err := exec.Command("git", "-C", root, "ls-files", "--stage", "--", "deploy/sandbox").Output()
+		if err != nil {
+			t.Logf("can't ask git for the scripts' modes: %v", err)
+		}
+		for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if f := strings.Fields(l); len(f) == 4 && f[0] != "100755" {
+				t.Errorf("%s isn't executable in git: mode %s", f[3], f[0])
+			}
 		}
 	}
 	slices.Sort(found)
@@ -94,12 +111,14 @@ func TestSandboxHint(t *testing.T) {
 	none := func(string) string { return "" }
 
 	got := SandboxHint("darwin", bin, data, true, none, lookPathOf())
-	want := "To sandbox it: echo DASH_CLAUDE_SANDBOX=" + filepath.Join(dir, "claude-seatbelt") + " >> '" + filepath.Join(data, "runner.env") +
-		"' && dash runner install --data '" + data + "'"
+	// Paths are quoted for the shell: data has a space (and, on Windows,
+	// every path a backslash).
+	want := "To sandbox it: echo " + ShellQuote("DASH_CLAUDE_SANDBOX="+filepath.Join(dir, "claude-seatbelt")) + " >> " + ShellQuote(filepath.Join(data, "runner.env")) +
+		" && dash runner install --data " + ShellQuote(data)
 	if !strings.Contains(got, "unsandboxed") || !strings.HasSuffix(got, want) {
 		t.Errorf("macOS hint:\n%s\nwant it to end with\n%s", got, want)
 	}
-	if got := SandboxHint("linux", bin, data, false, none, lookPathOf("bwrap")); !strings.Contains(got, "DASH_CLAUDE_SANDBOX="+filepath.Join(dir, "claude-bwrap")) ||
+	if got := SandboxHint("linux", bin, data, false, none, lookPathOf("bwrap")); !strings.Contains(got, ShellQuote("DASH_CLAUDE_SANDBOX="+filepath.Join(dir, "claude-bwrap"))) ||
 		strings.Contains(got, "dash runner install") || !strings.Contains(got, "restart the runner") {
 		t.Errorf("Linux hint without the service: %s", got)
 	}
@@ -151,7 +170,7 @@ func TestSetupSaysHowToSandboxClaude(t *testing.T) {
 		t.Fatalf("setup exited %d", code)
 	}
 	data := filepath.Join(tc.Home, ".local", "share", "dash-runner")
-	want := "To sandbox it: echo DASH_CLAUDE_SANDBOX=" + filepath.Join(filepath.Dir(bin), "claude-bwrap") + " >> " + filepath.Join(data, "runner.env") + " && dash runner install"
+	want := "To sandbox it: echo " + ShellQuote("DASH_CLAUDE_SANDBOX="+filepath.Join(filepath.Dir(bin), "claude-bwrap")) + " >> " + ShellQuote(filepath.Join(data, "runner.env")) + " && dash runner install"
 	if !strings.Contains(tc.out.String(), want) {
 		t.Errorf("setup output lacks %q", want)
 	}
@@ -182,7 +201,7 @@ func TestDoctorSandbox(t *testing.T) {
 	d := m.doctor(t, "linux")
 	d.Bin, d.Data, d.Service = bin, data, true
 	c := byName(d.Run(context.Background()))[doctor.CheckSandbox]
-	fix := "sudo apt install -y bubblewrap && echo DASH_CLAUDE_SANDBOX=" + filepath.Join(dir, "claude-bwrap") + " >> " + EnvPath(data) + " && dash runner install --data " + data
+	fix := "sudo apt install -y bubblewrap && echo " + ShellQuote("DASH_CLAUDE_SANDBOX="+filepath.Join(dir, "claude-bwrap")) + " >> " + ShellQuote(EnvPath(data)) + " && dash runner install --data " + ShellQuote(data)
 	if c.Status != doctor.Warning || c.Group != doctor.GroupFeatures || !strings.HasPrefix(c.Message, "Claude runs unsandboxed") || c.Fix != fix {
 		t.Errorf("Linux without bubblewrap: %+v\nwant fix %s", c, fix)
 	}
@@ -190,10 +209,14 @@ func TestDoctorSandbox(t *testing.T) {
 	d = m.doctor(t, "darwin")
 	d.Bin, d.Data = bin, data // started by hand
 	c = byName(d.Run(context.Background()))[doctor.CheckSandbox]
-	if fix := "echo DASH_CLAUDE_SANDBOX=" + filepath.Join(dir, "claude-seatbelt") + " >> " + EnvPath(data); c.Status != doctor.Warning || c.Fix != fix || !strings.Contains(c.Message, "Restart the runner") {
+	if fix := "echo " + ShellQuote("DASH_CLAUDE_SANDBOX="+filepath.Join(dir, "claude-seatbelt")) + " >> " + ShellQuote(EnvPath(data)); c.Status != doctor.Warning || c.Fix != fix || !strings.Contains(c.Message, "Restart the runner") {
 		t.Errorf("macOS: %+v", c)
 	}
 
+	// A fresh doctor: Run reuses a report from the same instant, which a
+	// coarse clock (Windows) gives two runs in a row.
+	d = m.doctor(t, "darwin")
+	d.Bin, d.Data = bin, data
 	d.Sandbox = filepath.Join(dir, "claude-seatbelt")
 	if c := byName(d.Run(context.Background()))[doctor.CheckSandbox]; c.Status != doctor.OK || !strings.Contains(c.Message, "claude-seatbelt") {
 		t.Errorf("sandboxed: %+v", c)

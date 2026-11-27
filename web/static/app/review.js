@@ -1,6 +1,6 @@
 import { $, h, ib, ico, plural } from "./dom.js";
 import { api, here } from "./api.js";
-import { ask, attempt, toast } from "./dialogs.js";
+import { ask, attempt, busy, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import * as store from "./store.js";
 import { baseBranch } from "./events.js";
@@ -12,7 +12,8 @@ import { myID } from "./people.js";
 
 // ------------------------------------------------------------------ diff comments
 // Comments on lines of a task's diff (Changes), stored with the task until
-// Rework sends them all in one note (reworkTodo) or they are discarded.
+// Rework sends them all in one note (reworkTodo) or they are discarded. On
+// a task with an open pull request each is posted there too (c.github).
 export function commentsFor(id) { return state.todos.get(id)?.comments || []; }
 // canComment: t takes comments on its diff, and files marked viewed.
 export const canComment = (t) => !!t && ["review", "failed"].includes(t.status);
@@ -128,12 +129,37 @@ export function commentRow(c) {
   return h("div", { class: "comment", "data-id": c.id },
     h("div", { class: "comment-body" },
       c.end_line > c.line || c.side === "old" ? h("span", { class: "comment-where" }, linesLabel(c)) : null,
-      h("span", { class: "comment-text" }, c.text)),
+      h("span", { class: "comment-text" }, c.text),
+      githubNote(c, t)),
     h("span", { class: "comment-tools" },
       ib({ class: "link", type: "button", "aria-label": `Edit comment on ${c.file} ${linesLabel(c)}`, onclick: edit }, "edit", "Edit"),
       ib({ class: "link", type: "button", "aria-label": `Delete comment on ${c.file} ${linesLabel(c)}`, onclick: attempt(async () => {
         applyTodo(await api("DELETE", `/api/todos/${t.id}/comments/${c.id}`));
       }) }, "trash", "Delete")));
+}
+
+// A comment being posted on GitHub this long without an answer was cut
+// short (Dash stopped): it can be retried.
+const postingFor = 2 * 60 * 1000;
+
+// githubNote says where comment c is on the task's pull request: a link to
+// it, that it is being posted, or that it isn't there, with Retry.
+function githubNote(c, t) {
+  const g = c.github;
+  if (!g) return null;
+  if (g.id && !g.error) {
+    return h("a", { class: "comment-gh", href: g.url, target: "_blank", rel: "noopener", title: `This comment on pull request #${g.pr}` },
+      ico("external"), "On GitHub");
+  }
+  if (!g.id && !g.error && Date.now() - Date.parse(g.since) < postingFor) {
+    return h("span", { class: "comment-gh" }, "Posting to GitHub…");
+  }
+  const what = g.id ? "Edit not on GitHub" : "Not posted to GitHub";
+  return h("span", { class: "comment-gh failed", title: g.error || "Posting didn't finish" },
+    ico("alert"), what, " · ",
+    ib({ class: "link", type: "button", "aria-label": `${what}: retry, for the comment on ${c.file} ${linesLabel(c)}`, onclick: attempt((ev) => busy(ev.currentTarget, async () => {
+      applyTodo(await api("POST", `/api/todos/${t.id}/comments/${c.id}/github`));
+    }, { label: "Posting…" })) }, "redo", "Retry"));
 }
 
 function editRow(c, t) {

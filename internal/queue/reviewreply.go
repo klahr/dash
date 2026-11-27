@@ -101,10 +101,10 @@ func (m *MergeQueue) takeReply(todoID string, n int) *model.PRReply {
 		}
 		// Comments it answers are sent once (PR.CommentID), and Reply is
 		// cleared here: claiming it is what posts it at most once.
-		if x.PR.Reply.ReviewID > x.PR.RepliedID || x.PR.Reply.CommentID > 0 {
+		if x.PR.Reply.ReviewID > x.PR.RepliedID || x.PR.Reply.CommentID > 0 || x.PR.Reply.Dash {
 			c := *x.PR.Reply
 			r = &c
-			x.PR.RepliedID = c.ReviewID
+			x.PR.RepliedID = max(x.PR.RepliedID, c.ReviewID)
 		}
 		x.PR.Reply = nil
 		return nil
@@ -159,7 +159,8 @@ func (m *MergeQueue) replyToReview(ctx context.Context, t model.Todo, p model.Pr
 		if body == "" {
 			continue // Claude didn't answer it
 		}
-		if err := m.Git.ReplyToReviewComment(ctx, p.ID, p.Path, n, root, textutil.NoMentions(body)); err != nil {
+		// Marked as Dash's: the watcher never sends it back to Claude.
+		if err := m.Git.ReplyToReviewComment(ctx, p.ID, p.Path, n, root, textutil.NoMentions(body)+"\n\n"+dashMark); err != nil {
 			warn("reply to a comment", err)
 			continue
 		}

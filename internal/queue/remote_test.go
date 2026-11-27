@@ -189,6 +189,15 @@ func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 		"\"pr comment\") [ ! -f " + file("down") + " ] ;;\n" +
 		"\"api \"*) case \"$*\" in\n" +
 		"  \"api user\"*) echo octocat ;;\n" +
+		// A line comment posted from Dash is #501 in review #601 (unless the
+		// test made a file "notdiff": then its lines aren't in the diff); one
+		// in the conversation is #701.
+		"  *\"-X POST repos/{owner}/{repo}/pulls/\"*\"/comments -f body=\"*) [ ! -f " + file("down") + " ] || exit 1; " +
+		"if [ -f " + file("notdiff") + " ]; then echo 'gh: Validation Failed (HTTP 422)' >&2; exit 1; fi; " +
+		"echo '{\"id\":501,\"pull_request_review_id\":601,\"html_url\":\"https://github.com/o/r/pull/7#discussion_r501\"}' ;;\n" +
+		"  *\"-X POST repos/{owner}/{repo}/issues/\"*) [ ! -f " + file("down") + " ] || exit 1; " +
+		"echo '{\"id\":701,\"html_url\":\"https://github.com/o/r/pull/7#issuecomment-701\"}' ;;\n" +
+		"  *\"-X PATCH\"*|*\"-X DELETE\"*) [ ! -f " + file("down") + " ] ;;\n" +
 		"  *resolveReviewThread*|*\"-X POST\"*) [ ! -f " + file("down") + " ] ;;\n" +
 		"  *graphql*) cat " + file("threads.json") + " 2>/dev/null || echo '{}' ;;\n" +
 		"  */reviews*) cat " + file("reviews.json") + " 2>/dev/null || echo '[]' ;;\n" +

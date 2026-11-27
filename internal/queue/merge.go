@@ -88,6 +88,13 @@ type MergeQueue struct {
 	// the files again (default 5 seconds; shortened in tests).
 	dirtyPoll time.Duration
 
+	// commentMu holds a *sync.Mutex per task: its comments' posts, edits
+	// and deletes on GitHub, one at a time (dashcomments.go).
+	commentMu sync.Map
+	// postedNow: comment id → the model.PostedComment it was just posted
+	// as, for a delete made in Dash while it was being posted.
+	postedNow sync.Map
+
 	capacity int
 	pending  atomic.Int64
 	running  sync.WaitGroup // Run and the lanes' workers, while they run (see Wait)

@@ -705,7 +705,13 @@ func (sv *service) reworkWith(id, feedback string, atts []model.Attachment, comm
 			if len(t.Comments) == 0 && fb == "" && len(atts) == 0 {
 				return fmt.Errorf("%w: there are no comments to send (sent already?)", errBadRequest)
 			}
-			fb, t.Comments = agent.ReviewNote(t.Comments, fb), nil
+			note := agent.ReviewNote(t.Comments, fb)
+			// Those posted on the pull request are answered there once the
+			// fix is pushed: Claude is asked to answer each one.
+			if ask := queue.OweDashReply(t, t.Comments); ask != "" {
+				note += "\n\n" + ask
+			}
+			fb, t.Comments = note, nil
 		}
 		if len(atts) > 0 {
 			if fb == "" {

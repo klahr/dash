@@ -670,6 +670,9 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 		if r.ID <= t.PR.ReviewID || r.User.Bot() || (r.State != "CHANGES_REQUESTED" && r.State != "COMMENTED") {
 			continue
 		}
+		if t.PR.DashReview(r.ID) {
+			continue // holds a comment Dash posted from its Changes view
+		}
 		if !gitops.Trusted(r.Association) {
 			outsider(r.User.Login)
 			skippedReview = max(skippedReview, r.ID)
@@ -681,7 +684,7 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 	var said []gitops.IssueComment
 	var newestComment, skippedComment int64
 	for _, c := range talk {
-		if c.ID <= t.PR.CommentID || !asksClaude(c) {
+		if c.ID <= t.PR.CommentID || !asksClaude(c) || t.PR.DashPosted(c.ID, true) {
 			continue
 		}
 		if !gitops.Trusted(c.Association) {
@@ -708,7 +711,12 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 			slog.Warn("pull request review comments", "todo", t.ID, "pr", n, "err", err)
 			return false, false // try again at the next poll rather than send half of it
 		}
-		comments = cs
+		// Dash's own line comments (posted from its Changes view, or its
+		// answers in threads) aren't a reviewer's: by their ids, or by
+		// Dash's mark for one whose id isn't recorded yet (being posted).
+		comments = slices.DeleteFunc(cs, func(c gitops.PRComment) bool {
+			return t.PR.DashPosted(c.ID, false) || strings.Contains(c.Body, dashMark)
+		})
 	}
 	// Items of a reply still owed (its fix not pushed yet) keep their numbers.
 	first := 1

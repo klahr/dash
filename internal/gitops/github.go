@@ -292,6 +292,93 @@ func (g *Git) ReplyToReviewComment(ctx context.Context, projectID, dir string, n
 	return err
 }
 
+// LineComment is a new line comment on a pull request (PostLineComment).
+type LineComment struct {
+	Commit string // the commit it is on: the pull request's head
+	Path   string
+	// Old: the lines are removed ones, numbered as the file was before (the
+	// diff's left side); else as the file is at Commit.
+	Old       bool
+	StartLine int // the range's first line; 0 or Line for one line
+	Line      int
+	Body      string
+}
+
+// ErrNotInDiff is GitHub refusing a line comment on lines that aren't in
+// the pull request's diff (e.g. its head is behind the task's branch).
+var ErrNotInDiff = errors.New("the lines aren't in the pull request's diff")
+
+// PostLineComment posts c as a single line comment on pull request number
+// (GitHub holds it in a review of its own, ReviewID). Lines GitHub can't
+// place in the diff are ErrNotInDiff.
+func (g *Git) PostLineComment(ctx context.Context, projectID, dir string, number int, c LineComment) (PRComment, error) {
+	side := "RIGHT"
+	if c.Old {
+		side = "LEFT"
+	}
+	args := []string{"api", "-X", "POST", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", number),
+		"-f", "body=" + c.Body, "-f", "commit_id=" + c.Commit, "-f", "path=" + c.Path,
+		"-F", "line=" + strconv.Itoa(c.Line), "-f", "side=" + side}
+	if c.StartLine > 0 && c.StartLine < c.Line {
+		args = append(args, "-F", "start_line="+strconv.Itoa(c.StartLine), "-f", "start_side="+side)
+	}
+	out, err := g.gh(ctx, projectID, dir, args...)
+	var ce *CmdError
+	if errors.As(err, &ce) && strings.Contains(ce.Output, "HTTP 422") {
+		return PRComment{}, fmt.Errorf("%w: %w", ErrNotInDiff, err)
+	}
+	if err != nil {
+		return PRComment{}, err
+	}
+	var pc PRComment
+	if err := json.Unmarshal([]byte(jsonPart(out)), &pc); err != nil || pc.ID == 0 {
+		return PRComment{}, fmt.Errorf("gh api: no comment in the answer: %s", strings.TrimSpace(out))
+	}
+	return pc, nil
+}
+
+// PostIssueComment posts body in pull request number's conversation and
+// returns the comment (CommentPR doesn't say which it is).
+func (g *Git) PostIssueComment(ctx context.Context, projectID, dir string, number int, body string) (IssueComment, error) {
+	out, err := g.gh(ctx, projectID, dir, "api", "-X", "POST",
+		fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments", number), "-f", "body="+body)
+	if err != nil {
+		return IssueComment{}, err
+	}
+	var ic IssueComment
+	if err := json.Unmarshal([]byte(jsonPart(out)), &ic); err != nil || ic.ID == 0 {
+		return IssueComment{}, fmt.Errorf("gh api: no comment in the answer: %s", strings.TrimSpace(out))
+	}
+	return ic, nil
+}
+
+// commentPath is the REST path of line comment (issue false) or
+// conversation comment (issue true) id.
+func commentPath(id int64, issue bool) string {
+	if issue {
+		return fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", id)
+	}
+	return fmt.Sprintf("repos/{owner}/{repo}/pulls/comments/%d", id)
+}
+
+// EditComment replaces the text of a line comment (issue false) or a
+// conversation comment (issue true).
+func (g *Git) EditComment(ctx context.Context, projectID, dir string, id int64, issue bool, body string) error {
+	_, err := g.gh(ctx, projectID, dir, "api", "-X", "PATCH", commentPath(id, issue), "-f", "body="+body)
+	return err
+}
+
+// DeleteComment deletes a line comment (issue false) or a conversation
+// comment (issue true). One already gone is no error.
+func (g *Git) DeleteComment(ctx context.Context, projectID, dir string, id int64, issue bool) error {
+	_, err := g.gh(ctx, projectID, dir, "api", "-X", "DELETE", commentPath(id, issue))
+	var ce *CmdError
+	if errors.As(err, &ce) && strings.Contains(ce.Output, "HTTP 404") {
+		return nil
+	}
+	return err
+}
+
 // RequestReview asks logins to review pull request number (again).
 func (g *Git) RequestReview(ctx context.Context, projectID, dir string, number int, logins []string) error {
 	if len(logins) == 0 {

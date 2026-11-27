@@ -203,6 +203,9 @@ comment** (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>).
 - After you send them, the comments are in the task's history: in the timeline, as that round's
   message to the agent, and under the prompt with the other rework notes.
 - A message sent from the task chat in **Rework** mode takes the waiting comments along too.
+- When the task has an open pull request on GitHub, each comment is also posted there as you add
+  it, and a link **On GitHub** shows under it. See
+  [Line comments from Dash](github.md#line-comments-from-dash).
 
 ### Mark files viewed
 

@@ -2196,6 +2196,12 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .diff-lines .comment .comment-where { margin: 0; }
 .diff-lines .comment .comment-text { white-space: pre-wrap; }
 .comment-tools { display: flex; gap: 10px; flex: none; }
+/* Where a comment is on the task's pull request: a link, or not posted, with Retry. */
+.comment-gh { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: var(--fs-s); color: var(--muted); }
+.comment-gh .ico { width: 14px; height: 14px; }
+a.comment-gh { color: var(--muted); text-decoration: none; }
+a.comment-gh:hover { color: var(--text); text-decoration: underline; }
+.comment-gh.failed { color: var(--failed); }
 /* Above the diff while comments wait: how many, Discard, Send rework. */
 .comments-bar {
   position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

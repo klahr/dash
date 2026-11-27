@@ -1013,6 +1013,12 @@ func clone(t model.Todo) model.Todo {
 	cp := t
 	cp.Feedback = append([]string(nil), t.Feedback...)
 	cp.Comments = slices.Clone(t.Comments)
+	for i, c := range cp.Comments {
+		if c.GitHub != nil {
+			g := *c.GitHub
+			cp.Comments[i].GitHub = &g
+		}
+	}
 	cp.ReviewFiles = slices.Clone(t.ReviewFiles)
 	cp.Viewed = slices.Clone(t.Viewed)
 	cp.Reviews = slices.Clone(t.Reviews)
@@ -1041,6 +1047,7 @@ func clone(t model.Todo) model.Todo {
 	if t.PR != nil {
 		pr := *t.PR
 		pr.Checks = append([]model.PRCheck(nil), t.PR.Checks...)
+		pr.Posted = slices.Clone(t.PR.Posted)
 		if t.PR.Reply != nil {
 			r := *t.PR.Reply
 			r.Reviewers = append([]string(nil), r.Reviewers...)

@@ -24,9 +24,9 @@ func ReviewNote(comments []model.ReviewComment, note string) string {
 			b.WriteString("Review comments on your changes. Each names the file and lines it is about and quotes them as the diff shows them (+ added, - removed):\n")
 		}
 		n++
-		fmt.Fprintf(&b, "\n### %d. %s, %s\n\n", n, c.File, commentLines(c))
+		fmt.Fprintf(&b, "\n### %d. %s, %s\n\n", n, c.File, CommentLines(c))
 		if code := strings.TrimRight(c.Code, "\n"); code != "" {
-			fence := codeFence(code)
+			fence := CodeFence(code)
 			fmt.Fprintf(&b, "%sdiff\n%s\n%s\n\n", fence, code, fence)
 		}
 		b.WriteString(text)
@@ -41,9 +41,9 @@ func ReviewNote(comments []model.ReviewComment, note string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// commentLines says which lines comment c is on: "line 12", "lines 12–14",
+// CommentLines says which lines comment c is on: "line 12", "lines 12–14",
 // or for removed lines "removed lines 7–9 (as numbered before the change)".
-func commentLines(c model.ReviewComment) string {
+func CommentLines(c model.ReviewComment) string {
 	s := fmt.Sprintf("line %d", c.Line)
 	if c.EndLine > c.Line {
 		s = fmt.Sprintf("lines %d–%d", c.Line, c.EndLine)
@@ -54,9 +54,9 @@ func commentLines(c model.ReviewComment) string {
 	return s
 }
 
-// codeFence is a backtick fence longer than any run of backticks in code,
+// CodeFence is a backtick fence longer than any run of backticks in code,
 // so the quoted lines can't close it early.
-func codeFence(code string) string {
+func CodeFence(code string) string {
 	longest, run := 0, 0
 	for _, r := range code {
 		if r == '`' {

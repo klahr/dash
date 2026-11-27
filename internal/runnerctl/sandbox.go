@@ -3,6 +3,7 @@ package runnerctl
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -39,12 +40,16 @@ func SandboxScript(goos string, lookPath func(string) (string, error)) (script, 
 func FindSandboxScript(bin, script string) string {
 	dir := filepath.Dir(bin)
 	for _, p := range []string{filepath.Join(dir, script), filepath.Join(dir, "deploy", "sandbox", script)} {
-		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Mode()&0o111 != 0 {
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && executable(st.Mode()) {
 			return p
 		}
 	}
 	return ""
 }
+
+// executable reports a file mode that may be run. Windows keeps no
+// executable bits: there any file may.
+func executable(m os.FileMode) bool { return runtime.GOOS == "windows" || m&0o111 != 0 }
 
 // SandboxSet reports whether a runner with data directory data has a
 // -claude-sandbox: DASH_CLAUDE_SANDBOX in its environment (getenv) or in

@@ -910,7 +910,34 @@ type ReviewComment struct {
 	Code      string    `json:"code"`
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
+	// Author is the Dash user who wrote it, named on GitHub when it is
+	// posted to the task's pull request ("" when Dash can't tell).
+	Author string `json:"author,omitempty"`
+	// GitHub is the comment's copy on the task's open pull request: nil for a
+	// task without one, when it isn't posted.
+	GitHub *PostedComment `json:"github,omitempty"`
 }
+
+// PostedComment is a Dash comment (ReviewComment) as Dash posted it on a
+// task's pull request: a line comment, or, for lines not in the pull
+// request's diff, a comment in its conversation (Issue).
+type PostedComment struct {
+	PR int `json:"pr"` // the pull request's number
+	// ID is GitHub's id of the comment, 0 until it is posted (or when
+	// posting failed: Error says why).
+	ID int64 `json:"id,omitempty"`
+	// ReviewID is the review GitHub made to hold a line comment.
+	ReviewID int64  `json:"review_id,omitempty"`
+	Issue    bool   `json:"issue,omitempty"`
+	URL      string `json:"url,omitempty"`
+	Error    string `json:"error,omitempty"`
+	// Since is when posting started: one never finished (Dash stopped) can
+	// be retried after a while.
+	Since time.Time `json:"since"`
+}
+
+// Posted reports a comment that is on GitHub.
+func (p *PostedComment) Posted() bool { return p != nil && p.ID != 0 }
 
 // DiffFile is one file of a task's diff: its path (a rename's old name,
 // as the diff's "a/" side names it), the lines it adds and removes, and
@@ -1022,6 +1049,30 @@ type PullRequest struct {
 	// posted twice.
 	Reply     *PRReply `json:"reply,omitempty"`
 	RepliedID int64    `json:"replied_id,omitempty"`
+	// Posted are the comments Dash itself posted on it from the line
+	// comments in Changes (ReviewComment.GitHub), and the reviews GitHub made
+	// to hold them: never sent back to Claude as a reviewer's, even when
+	// Dash's gh account also reviews. They stay after the comments are sent.
+	Posted []PostedID `json:"posted,omitempty"`
+}
+
+// PostedID is one comment Dash posted on a pull request (PullRequest.Posted).
+type PostedID struct {
+	ID       int64 `json:"id"`
+	ReviewID int64 `json:"review_id,omitempty"`
+	Issue    bool  `json:"issue,omitempty"`
+}
+
+// DashPosted reports whether Dash posted the line comment (issue false) or
+// conversation comment (issue true) with GitHub id id.
+func (pr *PullRequest) DashPosted(id int64, issue bool) bool {
+	return pr != nil && slices.ContainsFunc(pr.Posted, func(p PostedID) bool { return p.ID == id && p.Issue == issue })
+}
+
+// DashReview reports whether review id is one GitHub made to hold a line
+// comment Dash posted.
+func (pr *PullRequest) DashReview(id int64) bool {
+	return pr != nil && id != 0 && slices.ContainsFunc(pr.Posted, func(p PostedID) bool { return p.ReviewID == id })
 }
 
 // PRReply is what Dash answers on GitHub to reviews sent back to Claude.
@@ -1035,6 +1086,9 @@ type PRReply struct {
 	Items []PRReplyItem `json:"items,omitempty"`
 	// Report is Claude's final message on the fix.
 	Report string `json:"report,omitempty"`
+	// Dash: Items include line comments from Dash's Changes view that Dash
+	// posted on the pull request, sent with a rework.
+	Dash bool `json:"dash,omitempty"`
 }
 
 // PRReplyItem is one review's text or one line comment, as numbered for

@@ -350,6 +350,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/todos/{tid}/rework", s.reworkTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/comments", s.addComment)
 	mux.HandleFunc("PATCH /api/todos/{tid}/comments/{cid}", s.editComment)
+	mux.HandleFunc("POST /api/todos/{tid}/comments/{cid}/github", s.retryComment)
 	mux.HandleFunc("DELETE /api/todos/{tid}/comments/{cid}", s.deleteComments)
 	mux.HandleFunc("DELETE /api/todos/{tid}/comments", s.deleteComments)
 	mux.HandleFunc("PUT /api/todos/{tid}/viewed", s.setViewed)

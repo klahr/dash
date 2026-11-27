@@ -46,7 +46,8 @@ In pull request mode the pull request is where a task is reviewed:
    with its file and line. Claude's fix is pushed to the same pull request, and the task returns
    to Review. Each review is sent once. Reviews by apps (CI, coverage or CLA bots) and approvals
    aren't sent. You can still **Rework** from Dash as well; that also ends up on the same pull
-   request.
+   request. Line comments you write in Dash are posted on the pull request as you add them; see
+   [Line comments from Dash](#line-comments-from-dash).
 
    **Comments in the conversation tab** go back to Claude the same way, when they have the
    command `/dash` (e.g. "`/dash` also update the docs"); `/claude` works too. It counts as a
@@ -132,6 +133,36 @@ Tasks that were already in Review without a pull request when Dash started openi
 finishing keep working: **Approve** opens their pull request, which is then reviewed on GitHub
 like the others. Pull requests opened by an approval in Dash before then are followed the same
 way: they move back to Review and wait for a person to merge them too.
+
+### Line comments from Dash
+
+When a task has an open pull request (draft or ready), each comment you add on its lines in
+**Changes** ([Comment on lines](tasks.md#comment-on-lines)) is also posted on the pull request
+right away. Other reviewers on GitHub see it, and later see why the code changed.
+
+- **Where.** It is a line comment on the same file and lines, on the pull request's current head.
+  When GitHub can't place those lines in the pull request's diff (for example, the pull request's
+  head is behind the task's branch), Dash posts it in the pull request's conversation instead,
+  naming the file and lines and quoting the code.
+- **Who.** Dash posts with the `gh` account of the computer running the task, which may not be
+  yours. Each comment starts with *From* and the name of the Dash user who wrote it.
+- **Edit and Delete.** Editing a comment in Dash edits it on GitHub. Deleting it, or
+  **Discard**, deletes it there too.
+- **In Dash.** A posted comment shows **On GitHub**, a link to it. *Posting to GitHub…* shows while
+  it is being posted.
+- **When posting fails** (no `gh`, no network, an error from GitHub), the comment stays in Dash
+  with *Not posted to GitHub* and **Retry**. Nothing else waits for it: you can still send the
+  rework.
+- **Send rework…** works as without a pull request: Claude gets all the comments in one note.
+  They aren't posted again. Claude is also asked to answer each posted comment, and once its fix
+  is pushed Dash replies in each comment's thread, *Addressed* or *Not changed*, and resolves the
+  addressed ones, as it does for a review from GitHub (step 4 above).
+- **No loop.** Dash keeps the ids of the comments it posted, also across restarts, so its review
+  watcher never sends them back to Claude as a reviewer's, even when the `gh` account is a person
+  who also reviews. That person's own reviews still go to Claude.
+
+Tasks without a pull request keep their comments in Dash only, as before. On a hub, comments on a
+task that a runner runs also stay in Dash only.
 
 Dash checks open pull requests on GitHub once a minute. Set `DASH_PR_POLL` on the computer that
 follows them (the runner, or a Dash of your own) to check more or less often, e.g. `30s`.

@@ -2,6 +2,7 @@ package gitops
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,6 +121,64 @@ func TestReviewReplyCalls(t *testing.T) {
 		"api -X POST repos/{owner}/{repo}/pulls/5/requested_reviewers -f reviewers[]=alice -f reviewers[]=bob\n" +
 		"api graphql -f query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}} -f id=T1\n" +
 		"pr comment 5 --body hi\n"
+	if string(b) != want {
+		t.Fatalf("calls:\n%s\nwant:\n%s", b, want)
+	}
+}
+
+// Dash's line comments: posted on a line or a range of the head, in the
+// conversation, edited and deleted with the calls GitHub expects; lines not
+// in the diff are ErrNotInDiff, and deleting one already gone is no error.
+func TestLineCommentCalls(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	g := fakeGh(t, `echo "$*" >> `+log+`
+case "$*" in
+*"line=99"*) echo 'gh: Validation Failed (HTTP 422)' >&2; exit 1 ;;
+*"-X DELETE"*"/404"*) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
+*"-X DELETE"*"/500"*) echo 'gh: Server Error (HTTP 500)' >&2; exit 1 ;;
+*pulls/5/comments*) echo '{"id":11,"pull_request_review_id":12,"html_url":"https://example.com/c11"}' ;;
+*issues/5/comments*) echo '{"id":21,"html_url":"https://example.com/c21"}' ;;
+esac
+`)
+	ctx := context.Background()
+	c, err := g.PostLineComment(ctx, "p", dir, 5, LineComment{Commit: "abc", Path: "a.go", StartLine: 3, Line: 4, Body: "hi"})
+	if err != nil || c.ID != 11 || c.ReviewID != 12 || c.HTMLURL != "https://example.com/c11" {
+		t.Fatalf("line comment %+v, %v", c, err)
+	}
+	if _, err := g.PostLineComment(ctx, "p", dir, 5, LineComment{Commit: "abc", Path: "a.go", Old: true, Line: 2, Body: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.PostLineComment(ctx, "p", dir, 5, LineComment{Commit: "abc", Path: "a.go", Line: 99, Body: "x"}); !errors.Is(err, ErrNotInDiff) {
+		t.Fatalf("want ErrNotInDiff, got %v", err)
+	}
+	ic, err := g.PostIssueComment(ctx, "p", dir, 5, "talk")
+	if err != nil || ic.ID != 21 || ic.HTMLURL != "https://example.com/c21" {
+		t.Fatalf("issue comment %+v, %v", ic, err)
+	}
+	if err := g.EditComment(ctx, "p", dir, 11, false, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.EditComment(ctx, "p", dir, 21, true, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.DeleteComment(ctx, "p", dir, 404, false); err != nil {
+		t.Fatalf("a comment already gone: %v", err)
+	}
+	if err := g.DeleteComment(ctx, "p", dir, 500, true); err == nil {
+		t.Fatal("want GitHub's error")
+	}
+	b, _ := os.ReadFile(log)
+	want := "api -X POST repos/{owner}/{repo}/pulls/5/comments -f body=hi -f commit_id=abc -f path=a.go -F line=4 -f side=RIGHT -F start_line=3 -f start_side=RIGHT\n" +
+		"api -X POST repos/{owner}/{repo}/pulls/5/comments -f body=old -f commit_id=abc -f path=a.go -F line=2 -f side=LEFT\n" +
+		"api -X POST repos/{owner}/{repo}/pulls/5/comments -f body=x -f commit_id=abc -f path=a.go -F line=99 -f side=RIGHT\n" +
+		"api -X POST repos/{owner}/{repo}/issues/5/comments -f body=talk\n" +
+		"api -X PATCH repos/{owner}/{repo}/pulls/comments/11 -f body=new\n" +
+		"api -X PATCH repos/{owner}/{repo}/issues/comments/21 -f body=new\n" +
+		"api -X DELETE repos/{owner}/{repo}/pulls/comments/404\n" +
+		"api -X DELETE repos/{owner}/{repo}/issues/comments/500\n"
 	if string(b) != want {
 		t.Fatalf("calls:\n%s\nwant:\n%s", b, want)
 	}
