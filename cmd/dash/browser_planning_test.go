@@ -57,6 +57,7 @@ func TestBrowserPlanningBoard(t *testing.T) {
 	b.menuPick("#pl-filter", "wiki", `document.querySelector("#pl-tag-filter .pl-project-on .pl-tag-name")?.textContent === "wiki" && !document.querySelector("#view-planning .pl-card")`,
 		`(() => { const m = document.querySelector(".pop-menu"); const heads = [...m.querySelectorAll(".pop-menu-head")].map((x) => x.textContent);
 			return heads.join() === "Filter,Project,Tags,Targets" && [...m.querySelectorAll("[role=menuitemcheckbox]")].filter((x) => x.querySelector(".side-project-icon")).length >= 2; })()`)
+	b.until("close the filter menu", `!document.querySelector(".pop-menu")`, chromedp.KeyEvent(kb.Escape))
 	b.until("all projects again", `document.querySelector("#view-planning .pl-card") && document.querySelector("#pl-tag-filter").hidden`,
 		chromedp.Click(chromedp.CSS(`#pl-tag-filter .pl-project-on .icon-btn`)))
 
@@ -351,10 +352,13 @@ func TestBrowserPlanningTags(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`#pl-tag-filter .icon-btn`)))
 
 	// Filter picks tags, more than one: the cards with all of them show.
-	// Filter counts them.
-	b.menuPick("#pl-filter", "Q3", `document.querySelectorAll("#view-planning .pl-card").length === 1 && document.querySelectorAll("#pl-tag-filter .pl-tag").length === 1`, "")
-	b.menuPick("#pl-filter", "ux", `document.querySelectorAll("#view-planning .pl-card").length === 1 && [...document.querySelectorAll("#pl-tag-filter .pl-tag-name")].map((e) => e.textContent).join() === "Q3,ux" && location.search.includes("tag=Q3&tag=ux") && document.querySelector("#pl-filter-n").textContent === "2"`,
-		`document.querySelector('.pop-menu [aria-checked=true]')?.textContent.includes("Q3")`)
+	// Filter counts them. The menu stays open after a pick, to pick more.
+	b.menuPick("#pl-filter", "Q3", `document.querySelectorAll("#view-planning .pl-card").length === 1 && document.querySelectorAll("#pl-tag-filter .pl-tag").length === 1 &&
+		document.querySelector('.pop-menu [aria-checked=true]')?.textContent.includes("Q3")`, "")
+	b.clickText(`.pop-menu [role^=menuitem]`, "ux")
+	b.waitJS("picked ux too", `document.querySelectorAll("#view-planning .pl-card").length === 1 && [...document.querySelectorAll("#pl-tag-filter .pl-tag-name")].map((e) => e.textContent).join() === "Q3,ux" && location.search.includes("tag=Q3&tag=ux") && document.querySelector("#pl-filter-n").textContent === "2" &&
+		document.querySelectorAll('.pop-menu [aria-checked=true]').length === 2`)
+	b.until("close the menu", `!document.querySelector(".pop-menu")`, chromedp.KeyEvent(kb.Escape))
 	// Mine shows only the cards you are on: none yet.
 	b.until("Mine", `document.querySelector("#pl-mine").getAttribute("aria-pressed") === "true" && document.querySelectorAll("#view-planning .pl-card").length === 0 && location.search.includes("mine=1")`,
 		chromedp.Click(chromedp.CSS(`#pl-mine`)))

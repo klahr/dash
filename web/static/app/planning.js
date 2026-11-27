@@ -338,27 +338,33 @@ function planningIcon(p) {
   return el;
 }
 
+// pickFilter shows the cards of project id ("": every project's); it
+// resolves once they're in.
 function pickFilter(id) {
   if (id === pl.filter) return;
   pl.filter = id;
   store.set("dash.planning.project", pl.filter);
   renderFilter();
   changed("replace");
-  loadPlanning().catch(fail);
+  return loadPlanning().catch(fail);
 }
 
 // filterMenu lists what the cards can be filtered by, in groups: projects,
-// tags, targets (Mine too, on a phone); a pick puts a filter on or off.
+// tags, targets (Mine too, on a phone); a pick puts a filter on or off and
+// leaves the menu open, to pick more.
 function filterMenu(anchor) {
   const group = (heading, items) => Object.assign(items, { heading });
-  const projects = pl.projects.length > 1 || pl.filter ? group("Project", [
-    ["repo", "All projects", () => pickFilter(""), { checked: !pl.filter }],
-    ...pl.projects.map((p) => [planningIcon(p), p.name, () => pickFilter(p.id === pl.filter ? "" : p.id), { checked: p.id === pl.filter }])]) : [];
-  const tags = group("Tags", allTags().map((t) => ["tag", t, () => pickTag(t, !tagPicked(t)), { checked: tagPicked(t) }]));
-  const targets = group("Targets", allTargets().map((t) => ["flag", t, () => pickTarget(sameTag(t, pl.target) ? "" : t), { checked: sameTag(t, pl.target) }]));
-  const mine = !desktop.matches && meId() ? [["user", "Mine", () => pickMine(!pl.mine), { checked: pl.mine }]] : [];
-  const any = pl.filter || pl.tags.length || pl.target || (pl.mine && mine.length);
-  return popMenu(anchor, [mine, projects, tags, targets, any ? [["x", "Clear filters", clearFilters]] : []], { heading: "Filter" });
+  const keep = (checked) => ({ checked, keep: true });
+  return popMenu(anchor, () => {
+    const projects = pl.projects.length > 1 || pl.filter ? group("Project", [
+      ["repo", "All projects", () => pickFilter(""), keep(!pl.filter)],
+      ...pl.projects.map((p) => [planningIcon(p), p.name, () => pickFilter(p.id === pl.filter ? "" : p.id), keep(p.id === pl.filter)])]) : [];
+    const tags = group("Tags", allTags().map((t) => ["tag", t, () => pickTag(t, !tagPicked(t)), keep(tagPicked(t))]));
+    const targets = group("Targets", allTargets().map((t) => ["flag", t, () => pickTarget(sameTag(t, pl.target) ? "" : t), keep(sameTag(t, pl.target))]));
+    const mine = !desktop.matches && meId() ? [["user", "Mine", () => pickMine(!pl.mine), keep(pl.mine)]] : [];
+    const any = pl.filter || pl.tags.length || pl.target || (pl.mine && mine.length);
+    return [mine, projects, tags, targets, any ? [["x", "Clear filters", clearFilters]] : []];
+  }, { heading: "Filter" });
 }
 
 function clearFilters() {

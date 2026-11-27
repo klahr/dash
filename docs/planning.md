@@ -65,6 +65,8 @@ It looks like a project's **Board**: on a phone, tap a column's name at the top 
   - Pick more tags to narrow it: a card must have all of them. Clicking a tag in an open card
     picks it too.
   - One target at a time, such as `1.4`, so a target works as a milestone.
+  - The list stays open as you pick, so you can set several filters at once. `Esc` or a click
+    outside closes it.
   - Pick a ticked one again to take it off, or **Clear filters**.
 - **Mine** at the top shows only the cards you are a member of: your cards. Click it again to
   show everyone's.
