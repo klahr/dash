@@ -68,7 +68,9 @@ These don't work with Codex:
 - **Usage limits.** Codex doesn't report them: Dash can't pause the queue before Codex reaches
   a limit, and the usage meter shows Claude only.
 - **Turn limit.** **Turn limit per run** doesn't apply. **Time limit per run** still does.
-- **Cost.** Task logs show tokens, but no turns or cost.
+- **Cost.** Codex reports tokens, not cost. Dash estimates the cost from the tokens, shows it
+  with ≈ and "(estimate)" in **Token use**, and counts it toward [spending caps](spending.md).
+  Task logs show no turns.
 - **Claude models.** A task's model is passed only if it isn't a Claude one (`opus`,
   `claude-…`). Otherwise Codex uses its default model.
 - **Editing from the chat.** The project and task chats run on Codex too, but read only. They

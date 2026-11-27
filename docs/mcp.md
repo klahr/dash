@@ -187,6 +187,10 @@ status except running or merging.
   as it was. It needs the same rights as **Project settings**: a planner, or a member who may not
   change a command or an environment, gets the same error as there. A goal's coordinator and a
   task's run don't have it.
+- Both read and set a project's spending caps as `spending`:
+  `{"task_usd": 5, "day_usd": 50, "month_usd": 500, "zone": "Europe/Stockholm"}`. It replaces all
+  of them; `0` is no cap, `{}` turns caps off. `get_project` also shows `spend_hold` while a cap
+  holds the project's tasks back. See [Spending caps](spending.md).
 - `combine_todos(todos)` combines two or more drafts of one project into the first, like
   **Combine** on the board. The other drafts are removed; their reported problems and scan
   findings stay linked to the combined task. It returns the combined task. Only drafts, all in

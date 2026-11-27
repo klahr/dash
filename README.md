@@ -93,6 +93,7 @@ Using Dash:
 
 - [Tasks](docs/tasks.md)
 - [Goals](docs/goals.md)
+- [Spending caps](docs/spending.md): per task, per day and per month, and the spend trend
 - [Write a project brief](docs/plan-project.md)
 - [Planning](docs/planning.md)
 - [Chat](docs/chat.md)

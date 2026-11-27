@@ -178,6 +178,10 @@ type Project struct {
 	// wherever they run (here or on its runners); 0 means no limit of its
 	// own. The others stay queued until one finishes.
 	MaxParallel int `json:"max_parallel,omitempty"`
+	// Spending are the project's spending caps (nil: none; see spending.go),
+	// and SpendHold, set by the queue, the cap that holds its tasks back now.
+	Spending  *Spending  `json:"spending,omitempty"`
+	SpendHold *SpendHold `json:"spend_hold,omitempty"`
 	// SyncError is set while the default branch can't be synced with or
 	// pushed to origin (e.g. it diverged); cleared on the next success.
 	SyncError string `json:"sync_error,omitempty"`
@@ -610,6 +614,14 @@ type Todo struct {
 	NoChanges bool    `json:"no_changes,omitempty"`
 	CostUSD   float64 `json:"cost_usd,omitempty"` // API-equivalent cost reported by Claude Code
 	Runs      int     `json:"runs,omitempty"`
+	// CapUSD is the task's own spending cap, in place of its project's
+	// Spending.TaskUSD (0: the project's); Retry raises it after the task
+	// was stopped at its cap (RaiseTaskCap). CapHit is the cap its latest
+	// run was stopped at (0: it wasn't), and CapWarned the cap it was
+	// warned about at 80% (so each cap warns once).
+	CapUSD    float64 `json:"cap_usd,omitempty"`
+	CapHit    float64 `json:"cap_hit,omitempty"`
+	CapWarned float64 `json:"cap_warned,omitempty"`
 	// RunStats has one record per Claude run, oldest first: its kind,
 	// tokens, turns and cost. Tasks from before it was kept have none.
 	RunStats []TodoRun `json:"run_stats,omitempty"`
@@ -1353,6 +1365,10 @@ type TodoRun struct {
 	ChatUsage
 	Turns   int     `json:"turns,omitempty"`
 	CostUSD float64 `json:"cost_usd,omitempty"`
+	// Estimated: CostUSD is Dash's estimate from the run's tokens (see
+	// internal/spend), not a cost the agent reported: a Codex run, or a
+	// run stopped before Claude Code reported its cost.
+	Estimated bool `json:"cost_estimated,omitempty"`
 	// Seconds is how long the run took (0: not recorded, a run from before
 	// Dash kept it).
 	Seconds int `json:"seconds,omitempty"`
@@ -1408,6 +1424,7 @@ const (
 	EvPlanningCard   EventType = "planning.card"      // a planning card was created, changed, moved, commented, linked or deleted; Data is {"card": id, "deleted": bool}
 	EvPlanningWork   EventType = "planning.work"      // a task or goal linked to planning cards changed; Data is {"cards": [ids]}
 	EvPlanningBoards EventType = "planning.boards"    // the org's planning boards were added, renamed, reordered or deleted (a deleted one's cards moved)
+	EvSpendWarning   EventType = "spend.warning"      // a task or project reached 80% of a spending cap; Data is SpendWarning
 )
 
 // PlanningEvent reports whether t is a Planning event: all a planner's

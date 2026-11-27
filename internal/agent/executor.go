@@ -71,12 +71,20 @@ type ExecRequest struct {
 	// (claudecli.SharedEnv), and the run stops if Claude Code says it signed
 	// in another way.
 	Shared string
+	// OnCost, if set, is told the run's cost so far as it streams, in US
+	// dollars, as Dash estimates it from the tokens the agent reports
+	// (internal/spend): a task's spending cap stops the run with it.
+	OnCost func(usd float64)
 }
 
 // ExecResult describes a finished run.
 type ExecResult struct {
 	SessionID string
 	CostUSD   float64
+	// Estimated: CostUSD is Dash's estimate from the run's tokens, not a
+	// cost the agent reported (Codex, or a run stopped before Claude Code
+	// reported one).
+	Estimated bool
 	Turns     int
 	// Model is the model Claude Code reported when the session started.
 	Model string

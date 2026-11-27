@@ -82,6 +82,7 @@ also pushes these to the browser, so they arrive while Dash is closed. Choose wh
 - GitHub Actions starts failing on the default branch
 - a [deploy](deploys.md#when-a-deploy-fails) fails
 - a runner's disk is nearly full ([Disk space on a runner](several-computers.md#disk-space-on-a-runner))
+- a task or a project reaches 80% of a [spending cap](spending.md)
 - a scan or Claude adds a draft for a new problem (off until you tick it)
 - you're mentioned or added to a [Planning card](#planning-cards), or its work needs a planner
 
@@ -136,6 +137,7 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | `build.failing`     | GitHub Actions starts failing on the default branch          |
 | `deploy.failed`     | a [deploy](deploys.md#when-a-deploy-fails) or rollback failed |
 | `runner.disk`       | a runner that works on the project is nearly out of disk space |
+| `spend.warning`     | a task, or the project in a day or month, reaches 80% of its [spending cap](spending.md); once per cap and period |
 | `checkout.behind`   | a runner's checkout was left behind origin (off by default)  |
 | `webhook.test`      | the Send test button (always sent, whatever is ticked)       |
 | `summary`           | your [summary](#summary), to the webhooks you chose for it    |

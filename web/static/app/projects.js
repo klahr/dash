@@ -27,6 +27,7 @@ import { loadUsage } from "./usage.js";
 import { ciBuilding, loadCI, renderCI } from "./actions.js";
 import { loadCheckouts, loadRemote, renderCheckouts, renderRemote } from "./origin.js";
 import { deployRunners, openSettings } from "./settings.js";
+import { renderSpendBanner } from "./spending.js";
 import { labelPicker, matchList, setLabels } from "./labelpicker.js";
 import { renderChatPane } from "./chatpane.js";
 import { loadProcs, loadTry, renderProcs, renderTryButton } from "./try.js";
@@ -182,6 +183,7 @@ export function renderProjectHeader() {
   $("#pm-project").hidden = !p; // the ⋮ menu's project items; Chat and Voice stay
   renderTryButton(); // Run, and its ▾ menu's Run tests, Push and Builds…
   renderPaused(p);
+  renderSpendBanner(p);
   // Syncing the base branch with GitHub failed: a row in the status popover,
   // with the Shell (which runs in the project's checkout) to fix it in.
   setStatus("sync", p?.sync_error ? {

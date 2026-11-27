@@ -63,8 +63,17 @@ func settingValues(p model.Project) map[string]any {
 		"auto_push": p.AutoPush, "auto_approve": p.AutoApprove, "auto_approve_rules": p.Rules(), "merge_mode": p.MergeMode, "investigate_ci": p.InvestigatesCI(),
 		"commit_previews": p.CommitPreviewsOn(),
 		"tag_format":      p.TagFormat, "max_run_minutes": p.MaxRunMinutes, "max_turns": p.MaxTurns, "max_parallel": p.MaxParallel,
-		"color": p.Color, "color_buttons": p.UsesColorForButtons(),
+		"color": p.Color, "color_buttons": p.UsesColorForButtons(), "spending": spendingValue(p.Spending),
 	}
+}
+
+// spendingValue is a project's caps as update_project takes them: without
+// the periods already warned about, which only Dash sets.
+func spendingValue(s *model.Spending) any {
+	if !s.On() {
+		return nil
+	}
+	return map[string]any{"task_usd": s.TaskUSD, "day_usd": s.DayUSD, "month_usd": s.MonthUSD, "zone": s.Zone}
 }
 
 // plain is v as JSON decodes it (strings, float64s, []any, map[string]any),

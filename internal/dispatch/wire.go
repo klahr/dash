@@ -185,6 +185,12 @@ type Task struct {
 	// (model.Todo.SharedWork); an older hub, which doesn't say, counts as
 	// someone else.
 	For []int64 `json:"for,omitempty"`
+	// CapUSD is the task's spending cap on the hub (model.TaskCap; 0:
+	// none), and SpentUSD what the hub counts it cost so far: the runner
+	// stops its run once it has cost CapUSD-SpentUSD more (an older runner
+	// doesn't, and the hub's day and month caps still hold).
+	CapUSD   float64 `json:"cap_usd,omitempty"`
+	SpentUSD float64 `json:"spent_usd,omitempty"`
 }
 
 // UploadPath is PUT on a runner: the hub sends one of a task's attachments
@@ -336,12 +342,14 @@ type TaskState struct {
 	DiffAdd   int              `json:"diff_add,omitempty"`
 	DiffDel   int              `json:"diff_del,omitempty"`
 	// NoChanges is model.Todo.NoChanges: the task changed no files.
-	NoChanges bool               `json:"no_changes,omitempty"`
-	CostUSD   float64            `json:"cost_usd,omitempty"`
-	Runs      int                `json:"runs,omitempty"`
-	RunStats  []model.TodoRun    `json:"run_stats,omitempty"`
-	Checks    *model.Checks      `json:"checks,omitempty"`
-	PR        *model.PullRequest `json:"pr,omitempty"`
+	NoChanges bool    `json:"no_changes,omitempty"`
+	CostUSD   float64 `json:"cost_usd,omitempty"`
+	// CapHit is model.Todo.CapHit: the spending cap its run stopped at.
+	CapHit   float64            `json:"cap_hit,omitempty"`
+	Runs     int                `json:"runs,omitempty"`
+	RunStats []model.TodoRun    `json:"run_stats,omitempty"`
+	Checks   *model.Checks      `json:"checks,omitempty"`
+	PR       *model.PullRequest `json:"pr,omitempty"`
 	// AutoApproval is model.Todo.AutoApproval: what the auto-approve rules
 	// made of the task on the runner.
 	AutoApproval *model.AutoApproval `json:"auto_approval,omitempty"`
@@ -374,7 +382,7 @@ type TaskState struct {
 func StateOf(t model.Todo) TaskState {
 	s := TaskState{
 		HubTodoID: t.HubTodoID, ID: t.ID, Status: t.Status, Paused: t.Paused, Error: t.Error, Summary: t.Summary,
-		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, NoChanges: t.NoChanges, CostUSD: t.CostUSD, Runs: t.Runs, RunStats: t.RunStats,
+		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, NoChanges: t.NoChanges, CostUSD: t.CostUSD, CapHit: t.CapHit, Runs: t.Runs, RunStats: t.RunStats,
 		Checks: t.Checks, PR: t.PR, AutoApproval: t.AutoApproval, Screenshots: t.Screenshots.Clone(), MergedCommit: t.MergedCommit, Revert: t.Revert, RevertConflict: t.RevertConflict,
 		Conflicts: t.Conflicts, Links: t.Links, Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
 	}

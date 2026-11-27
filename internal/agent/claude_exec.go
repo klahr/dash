@@ -123,7 +123,8 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	}()
 
 	var resultErr error
-	sawInit := false // Claude Code's system init message, which says how it signed in
+	var cost streamCost // the run's cost so far, estimated from its messages' tokens
+	sawInit := false    // Claude Code's system init message, which says how it signed in
 	skipped := pumpLines(stdout, func(l string) {
 		for _, w := range check.Line(l) {
 			emit(cliWarning(w))
@@ -161,6 +162,17 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 				}
 				stop(errNotAPIKey{source: src})
 			}
+		case "assistant":
+			if ev.Message.Usage != nil {
+				m := ev.Message.Model
+				if m == "" {
+					m = res.Model
+				}
+				usd := cost.add(ev.Message.ID, m, ev.Message.Usage.chatUsage())
+				if req.OnCost != nil {
+					req.OnCost(usd)
+				}
+			}
 		case "result":
 			res.CostUSD, res.Turns, res.Stop, res.Result = ev.Cost, ev.NumTurns, ev.Subtype, ev.Result
 			res.Usage = ev.Usage.chatUsage()
@@ -178,6 +190,14 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	}
 	<-stderrDone
 	waitErr := cmd.Wait()
+	if res.CostUSD == 0 && cost.total > 0 {
+		// Stopped before its result event (a cap, a time limit, a crash):
+		// what its messages' tokens cost, as an estimate.
+		res.CostUSD, res.Estimated = cost.total, true
+		if res.Usage == (model.ChatUsage{}) {
+			res.Usage = cost.usage()
+		}
+	}
 	// Dash runs git in the worktree next, outside the sandbox: a run that
 	// pointed .git (or its commondir) elsewhere would choose the config,
 	// and so the commands, that git runs then.
@@ -216,6 +236,9 @@ type streamEvent struct {
 	Usage         *cliUsage       `json:"usage"`        // result
 	RateLimitInfo json.RawMessage `json:"rate_limit_info"`
 	Message       struct {
+		ID      string         `json:"id"`
+		Model   string         `json:"model"`
+		Usage   *cliUsage      `json:"usage"`
 		Content []contentBlock `json:"content"`
 	} `json:"message"`
 }

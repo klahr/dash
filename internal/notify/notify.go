@@ -166,7 +166,7 @@ func (n *Notifier) now() time.Time {
 func (n *Notifier) Observe(ev model.Event) {
 	switch ev.Type {
 	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts, model.EvRunnerDisk, model.EvGoalUpdated,
-		model.EvGoalDeleted, model.EvDeployUpdated:
+		model.EvGoalDeleted, model.EvDeployUpdated, model.EvSpendWarning:
 	default:
 		return
 	}
@@ -225,6 +225,10 @@ const evFlush model.EventType = "notify.flush"
 func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 	if ev.Type == model.EvRunnerDisk {
 		n.runnerDisk(ctx, ev)
+		return
+	}
+	if ev.Type == model.EvSpendWarning {
+		n.spendWarning(ctx, ev)
 		return
 	}
 	if ev.Type == model.EvGoalUpdated {
@@ -319,6 +323,23 @@ func (n *Notifier) runnerDisk(ctx context.Context, ev model.Event) {
 	}
 	n.pushOrg(ctx, note, rd.OrgID)
 	n.toWebhooks(ctx, note, rd.Projects)
+}
+
+// spendWarning notifies that a task or project reached 80% of a spending
+// cap (the queue sends each once per cap and period): a task's to who
+// answers for the task, a project's to the org.
+func (n *Notifier) spendWarning(ctx context.Context, ev model.Event) {
+	w, ok := ev.Data.(model.SpendWarning)
+	if !ok || w.CapUSD <= 0 {
+		return
+	}
+	note, ok := n.build(model.NotifySpend, w.ProjectID, w.TodoID)
+	if !ok {
+		return
+	}
+	note.Message = w.Message()
+	n.push(ctx, note)
+	n.toWebhooks(ctx, note, []string{note.Project.ID})
 }
 
 // goalBlocked stands for a blocked goal (model.Goal.IsBlocked) among the

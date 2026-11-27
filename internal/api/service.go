@@ -278,6 +278,7 @@ func (sv *service) autoTitle(id, prompt string) {
 }
 
 func (sv *service) enqueue(id string) (model.Todo, error) {
+	sv.raiseTaskCap(id)
 	t, err := sv.data.SetStatus(id, model.StatusQueued, "")
 	if err == nil {
 		sv.s.Todos.Kick()

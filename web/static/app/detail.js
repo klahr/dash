@@ -340,6 +340,14 @@ function disableWhileBusy(box, btns, label) {
 // retryButton queues failed task t again. One its runner can resume
 // continues there, in the session that runner kept.
 function retryButton(t, b, post, project) {
+  if (t.cap_hit) {
+    // Stopped at its spending cap: Retry raises the cap for this task, once.
+    const step = project?.spending?.task_usd || t.cap_hit;
+    const next = Math.max(t.cost_usd || 0, t.cap_hit) + step;
+    const btn = b("redo", "Retry", post("enqueue", null, `Queued again, with a $${next.toFixed(2)} cap`), "primary grow");
+    btn.title = `Raises this task's spending cap to $${next.toFixed(2)}, once, and queues it again`;
+    return btn;
+  }
   const btn = b("redo", "Retry", post("enqueue", null, "Queued again"), "primary grow");
   if (!agentCan(project, "resume")) btn.title = `Starts over with the full task: ${cantSay(project, "resume")}`;
   else if (t.resumable && t.runner) btn.title = `Continues on ${runnerName(t.runner)}, where its session is kept`;

@@ -16,8 +16,8 @@ function runParts(r) {
   const parts = [`${fmtTokens(input)} in${input && cached ? ` (${Math.round(100 * cached / input)}% cached)` : ""}`,
     `${fmtTokens(r.output_tokens || 0)} out`];
   if (r.turns) parts.push(plural(r.turns, "turn"));
-  // An agent that reports neither (Codex) has no cost to show.
-  if (r.turns || r.cost_usd) parts.push(`$${(r.cost_usd || 0).toFixed(2)}`);
+  // An agent that reports no cost (Codex) gets Dash's estimate from its tokens, marked ≈.
+  if (r.turns || r.cost_usd) parts.push(`${r.cost_estimated ? "≈" : ""}$${(r.cost_usd || 0).toFixed(2)}${r.cost_estimated ? " (estimate)" : ""}`);
   return parts;
 }
 
@@ -28,6 +28,7 @@ const runNums = (r) => h("span", { class: "run-nums" },
 function total(runs) {
   const sum = { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0, turns: 0, cost_usd: 0 };
   for (const r of runs) for (const k in sum) sum[k] += r[k] || 0;
+  sum.cost_estimated = runs.some((r) => r.cost_estimated && r.cost_usd);
   return sum;
 }
 

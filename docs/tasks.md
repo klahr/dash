@@ -184,7 +184,8 @@ above the diff.
   branch, so approving merges it with the rest.
 - The task's prompt shows folded to its first line. Click **Show** to read all of it.
 - **Details**, folded above the tabs, holds the test results and **Token use**: each Claude run
-  on the task, with its tokens (and how many were cached), turns and cost. When the tests failed,
+  on the task, with its tokens (and how many were cached), turns and cost. A cost Dash estimated
+  from tokens (Codex, or a run stopped early) shows ≈ and "(estimate)". When the tests failed,
   **Details** has a **Tests fail** badge.
 
 ### Comment on lines
@@ -385,6 +386,8 @@ In **Project settings → Commands**, set **Tasks at once**. At most that many o
 tasks run at the same time, on this computer and on its runners together. The others stay queued,
 and say why, until one finishes. A new project starts at 5. Clear it for no limit of the
 project's own. The API field is `max_parallel` (`0` for no limit).
+
+To cap what a task, or the project in a day or month, may cost, see [Spending caps](spending.md).
 
 ## Weekly pace
 

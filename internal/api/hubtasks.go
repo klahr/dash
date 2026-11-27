@@ -837,6 +837,7 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 			if x.Status == model.StatusQueued {
 				x.StartNow = req.StartNow
 			}
+			x.CapUSD, x.CapHit = hubTaskCap(req, x.CostUSD), 0
 			return nil
 		})
 		if done != nil {
@@ -865,6 +866,7 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 		HubTodoID: req.HubTodoID, HubNotes: len(req.Feedback), StartNow: req.StartNow, BuildsOn: buildsOn,
 		SharedWork:  shared,
 		Attachments: atts,
+		CapUSD:      hubTaskCap(req, 0),
 	})
 	if err != nil {
 		writeErr(w, err)

@@ -17,6 +17,7 @@ import { refreshDeploys } from "./deploys.js";
 import { agentRunners, missingLabels, parseLabels, projectAgent, servesProject } from "../groups.js";
 import { FEATURES, NOTES, SETUP, agentTitle, loadAgents } from "./agents.js";
 import { docsLabels, labelPicker, matchList, setLabels } from "./labelpicker.js";
+import { loadSpendTrend, readSpending, showSpending, spendingHint } from "./spending.js";
 
 // ------------------------------------------------------------------ project settings
 export function openSettings() {
@@ -39,6 +40,7 @@ export function openSettings() {
   f.preview_command.value = p.preview_command || "";
   f.commit_previews.checked = p.commit_previews !== false;
   showShots(f, p);
+  showSpending(f, p);
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
   const rules = p.auto_approve_rules || {};
@@ -72,6 +74,7 @@ export function openSettings() {
   loadBoard().catch(fail);
   loadClaudeFiles().catch(fail);
   loadRepoInfo();
+  loadSpendTrend().catch(fail);
   markShown(f);
   for (const el of f.querySelectorAll(".field-error")) el.remove();
   for (const el of f.querySelectorAll("[aria-invalid]")) el.removeAttribute("aria-invalid");
@@ -562,6 +565,7 @@ const FIELDS = {
   preview_command: { read: (f) => f.preview_command.value.trim() },
   commit_previews: { read: (f) => f.commit_previews.checked },
   screenshots: { read: readShots, el: () => $("#settings-shots") },
+  spending: { read: readSpending, el: () => $("#settings-spending") },
   auto_push: { read: (f) => f.auto_push.checked },
   auto_approve: { read: (f) => f.auto_approve.checked },
   auto_approve_rules: {
@@ -593,6 +597,7 @@ const FIELD_OF = {
   color_pick: "color",
   aa_max_lines: "auto_approve_rules", aa_paths: "auto_approve_rules", aa_review: "auto_approve_rules",
   shots_on: "screenshots", shots_ui_paths: "screenshots", shots_pages: "screenshots", shots_setup: "screenshots",
+  spend_task: "spending", spend_day: "spending", spend_month: "spending",
 };
 const fieldEl = (f, key) => {
   if (FIELDS[key].el) return FIELDS[key].el(f);
@@ -646,6 +651,7 @@ function saveSetting(key) {
       if (key === "clear_merged_zone") clearMergedHint(saved.clear_merged_zone);
       if (key === "agent") { renderRunsOnPreview(); syncMergeHint(); }
       if (key === "screenshots" || key === "run_command" || key === "preview_kind") shotsHint(saved);
+      if (key === "spending") { spendingHint(saved); loadSpendTrend().catch(fail); }
     });
   });
 }

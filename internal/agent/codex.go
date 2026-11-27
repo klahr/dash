@@ -17,6 +17,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/spend"
 	"github.com/klahr/dash/internal/textutil"
 )
 
@@ -396,7 +397,14 @@ func (c Codex) Run(ctx context.Context, req ExecRequest, emit func(model.RunEven
 			}
 			return
 		}
-		for _, d := range tr.Translate(ev) {
+		turns := tr.Turns
+		ds := tr.Translate(ev)
+		if tr.Turns != turns && req.OnCost != nil {
+			if usd, ok := spend.Estimate(codexModel(req.Model), true, tr.Usage); ok {
+				req.OnCost(usd)
+			}
+		}
+		for _, d := range ds {
 			if d.Kind == codexStatus && strings.HasPrefix(d.Text, codexWarnPrefix) {
 				c.CLI.observed([]string{strings.TrimPrefix(d.Text, codexWarnPrefix)})
 			}
@@ -411,6 +419,9 @@ func (c Codex) Run(ctx context.Context, req ExecRequest, emit func(model.RunEven
 	<-stderrDone
 	waitErr := cmd.Wait()
 	res := ExecResult{SessionID: tr.Thread, Turns: 0, Model: codexModel(req.Model), Usage: tr.Usage, Result: tr.Last}
+	// Codex reports tokens, never a cost: Dash estimates it from them
+	// (none reported: no cost, and nothing counts toward spending caps).
+	res.CostUSD, res.Estimated = spend.Estimate(res.Model, true, tr.Usage)
 	res.Usage.DurationMS = time.Since(started).Milliseconds()
 	if len(c.Sandbox) > 0 && gitops.GitDirState(req.Dir) != gitState {
 		return res, fmt.Errorf("codex changed the worktree's git metadata (.git, commondir or config.worktree): Dash won't run git there")

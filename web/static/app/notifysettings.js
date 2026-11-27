@@ -24,6 +24,7 @@ const PUSH_LABELS = {
   "build.failing": "The build starts failing",
   "deploy.failed": "A deploy fails",
   "runner.disk": "A runner's disk is nearly full",
+  "spend.warning": "A task or project reaches 80% of a spending cap",
   "issue.new": "A scan or Claude adds a draft for a new issue",
 };
 // Card news (card.activity) is its own setting, not one of the push events.

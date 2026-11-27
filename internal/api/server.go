@@ -390,6 +390,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("PUT /api/projects/{pid}/scans/{name}", s.editScan)
 	mux.HandleFunc("DELETE /api/projects/{pid}/scans/{name}", s.deleteScan)
 	mux.HandleFunc("GET /api/projects/{pid}/scan-runs", s.listScanRuns)
+	mux.HandleFunc("GET /api/projects/{pid}/spending", s.getSpending)
 	mux.HandleFunc("GET /api/scan-runs/{rid}/log", s.scanRunLog)
 	mux.HandleFunc("POST /api/scan-runs/{rid}/cancel", s.cancelScanRun)
 	mux.HandleFunc("GET /api/todos/{tid}/chat", func(w http.ResponseWriter, r *http.Request) {

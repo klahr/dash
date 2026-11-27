@@ -74,6 +74,7 @@ import { loadUsage, renderUsage } from "./app/usage.js";
 import "./app/actions.js";
 import "./app/origin.js";
 import "./app/settings.js";
+import "./app/spending.js";
 import "./app/claudefiles.js";
 import "./app/webhooks.js";
 import "./app/notifysettings.js";

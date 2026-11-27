@@ -128,11 +128,11 @@ func (s NotifySettings) WantsTaskOf(user int64, owners []int64) bool {
 }
 
 // PushChoices are the events a user may have pushed to their browsers.
-var PushChoices = []NotifyEvent{NotifyReview, NotifyFailed, NotifyPermission, NotifyGoal, NotifyBuild, NotifyDeploy, NotifyDisk, NotifyIssue}
+var PushChoices = []NotifyEvent{NotifyReview, NotifyFailed, NotifyPermission, NotifyGoal, NotifyBuild, NotifyDeploy, NotifyDisk, NotifySpend, NotifyIssue}
 
 // DefaultPush are the events pushed to a user who hasn't chosen: all
 // but new issues (which can be many).
-var DefaultPush = []NotifyEvent{NotifyReview, NotifyFailed, NotifyPermission, NotifyGoal, NotifyBuild, NotifyDeploy, NotifyDisk}
+var DefaultPush = []NotifyEvent{NotifyReview, NotifyFailed, NotifyPermission, NotifyGoal, NotifyBuild, NotifyDeploy, NotifyDisk, NotifySpend}
 
 // DefaultNotifySettings are a user's settings until they save theirs:
 // no summary, every push but new issues.

@@ -669,6 +669,7 @@ var ProjectSettings = []Param{
 	{"max_run_minutes", "integer", "Time limit for one Claude run (0 for the default).", false},
 	{"max_turns", "integer", "Turn limit for one Claude run (0 for the default).", false},
 	{"max_parallel", "integer", "Most of the project's tasks in progress at once (0 for no limit of its own).", false},
+	{"spending", "object", "Spending caps in US dollars; replaces them: {\"task_usd\": 5 (a task's run stops when the task has cost this, and it fails; Retry raises it once), \"day_usd\": 50, \"month_usd\": 500 (once the project has spent this in the day or month, none of its queued tasks start until the next one), \"zone\": \"Europe/Stockholm\" (where days start; \"\" for the server's)}. 0 is no cap; all 0 turns caps off. Each warns at 80%.", false},
 	{"color", "string", "Color marking the project, like \"#3a7bd5\" (\"\" for none).", false},
 	{"color_buttons", "boolean", "Use the project's color for the web UI's buttons and highlights too, not only its top bar, dot and icon.", false},
 }

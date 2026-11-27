@@ -253,7 +253,7 @@ func (d *Dispatcher) send(ctx context.Context, p model.Project, t model.Todo, r 
 	ds := r.Disk
 	task := Task{Attachments: files, HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Model: t.Model, Feedback: t.Feedback,
 		Fresh: t.Runner != r.ID, Disk: &ds, StartNow: t.StartNow, Rejoin: t.Rejoin && t.Runner == r.ID, TakesDone: true,
-		For: t.WorkFor()}
+		For: t.WorkFor(), CapUSD: model.TaskCap(p, t), SpentUSD: t.CostUSD}
 	if parent != nil {
 		task.BuildsOn = parent.ID
 		if t.Runner == "" && parent.Runner != r.ID && d.Note != nil {
@@ -1048,6 +1048,7 @@ func copyReport(x *model.Todo, ts TaskState, to model.TodoStatus, runnerName str
 	from := x.Status
 	x.Status = to
 	x.Summary, x.CostUSD, x.Runs, x.Checks, x.PR = ts.Summary, ts.CostUSD, ts.Runs, ts.Checks, ts.PR
+	x.CapHit = ts.CapHit // stopped at its cap there: Retry raises it here
 	x.RunStats, x.AutoApproval = ts.RunStats, ts.AutoApproval
 	x.Screenshots = ts.Screenshots
 	x.DiffFiles, x.DiffAdd, x.DiffDel, x.NoChanges = ts.DiffFiles, ts.DiffAdd, ts.DiffDel, ts.NoChanges

@@ -22,6 +22,7 @@ export const WEBHOOK_EVENTS = {
   "build.failing": "Build failing",
   "deploy.failed": "Deploy failed",
   "runner.disk": "Runner disk nearly full",
+  "spend.warning": "Spending at 80% of a cap",
   "checkout.behind": "Checkout left behind origin",
   "webhook.test": "Test",
   "summary": "Summary",

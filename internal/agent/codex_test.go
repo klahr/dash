@@ -278,9 +278,15 @@ func TestCodexRun(t *testing.T) {
 	req := ExecRequest{Dir: t.TempDir(), Prompt: "fix the parser", Model: "opus",
 		MCPServers:    map[string]any{mcptools.ServerName: mcptools.ServerConfig("http://127.0.0.1:1", "s3cret")},
 		AllowMCPTools: map[string][]string{mcptools.ServerName: {"run_tests"}}}
+	var live []float64
+	req.OnCost = func(usd float64) { live = append(live, usd) }
 	res, err := c.Run(context.Background(), req, func(e model.RunEvent) { evs = append(evs, e) })
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Codex reports tokens only: its cost is Dash's estimate, as each turn ends.
+	if !res.Estimated || res.CostUSD <= 0 || len(live) == 0 || live[len(live)-1] != res.CostUSD {
+		t.Errorf("estimated cost %v (estimated %v), live %v", res.CostUSD, res.Estimated, live)
 	}
 	if res.SessionID != "0199a213-81c0-7800-8aa1-bbab2a035a53" || res.Result != "Fixed the parser; the tests pass." || res.Stop != "success" ||
 		res.Usage.CacheReadTokens != 24448 || res.Model != "" || res.ResumeFailed {

@@ -467,6 +467,9 @@ type projectUpdate struct {
 	// Screenshots replace model.Project.Screenshots (its setup command is
 	// a command like the others: model.CmdScreenshot).
 	Screenshots *model.ScreenshotSettings `json:"screenshots"`
+	// Spending replaces the project's spending caps (all 0: none); see
+	// spending.go.
+	Spending *model.Spending `json:"spending"`
 }
 
 func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
@@ -584,6 +587,12 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 	if req.RunsOn != nil || req.Agent != nil {
 		sv.s.Todos.Kick() // queued tasks may go elsewhere now
 	}
+	if req.Spending != nil {
+		sv.s.Todos.SpendingChanged(p.ID) // a raised cap lets held tasks start
+		if np, err := sv.data.GetProject(p.ID); err == nil {
+			p = np
+		}
+	}
 	return p, nil
 }
 
@@ -609,6 +618,11 @@ func (sv *service) normalizeProjectUpdate(ctx context.Context, req *projectUpdat
 		case "", model.ChatModeAuto, model.ChatModeAcceptEdits:
 		default:
 			return fmt.Errorf("%w: chat_permission_mode must be \"\", %q or %q", errBadRequest, model.ChatModeAuto, model.ChatModeAcceptEdits)
+		}
+	}
+	if req.Spending != nil {
+		if err := req.Spending.Check(); err != nil {
+			return fmt.Errorf("%w: %v", errBadRequest, err)
 		}
 	}
 	if req.PreviewKind != nil {
@@ -758,6 +772,9 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	}
 	if req.Screenshots != nil {
 		p.Screenshots = cleanScreenshotSettings(req.Screenshots)
+	}
+	if req.Spending != nil {
+		applySpending(p, *req.Spending)
 	}
 	if req.MergeMode != nil {
 		if err := applyMergeMode(p, *req.MergeMode); err != nil {

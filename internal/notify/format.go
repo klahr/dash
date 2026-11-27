@@ -146,6 +146,7 @@ var looks = map[model.NotifyEvent]struct {
 	model.NotifyBuild:      {"Build failing", ":rotating_light:", "rotating_light", false},
 	model.NotifyBehind:     {"Checkout behind origin", ":arrow_down:", "arrow_down", false},
 	model.NotifyDisk:       {"Disk nearly full", ":floppy_disk:", "floppy_disk", true},
+	model.NotifySpend:      {"Spending at 80% of its cap", ":money_with_wings:", "money_with_wings", false},
 	model.NotifyIssue:      {"New issue", ":beetle:", "beetle", false},
 	model.NotifyDeploy:     {"Deploy failed", ":boom:", "boom", true},
 	model.NotifyCard:       {"Planning", ":memo:", "memo", false},

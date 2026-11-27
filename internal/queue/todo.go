@@ -118,6 +118,7 @@ type TodoEngine struct {
 	runCtxs      map[string]context.Context
 	sessionTests map[string]bool
 	shots        map[string]*shotJob // task id → its screenshots being taken
+	spend        spendState          // projects' spending against their caps (spendcap.go)
 }
 
 // Remote hands a queued task to a runner. An error is why it can't now
@@ -208,6 +209,7 @@ func (e *TodoEngine) Run(ctx context.Context) {
 // dispatch starts queued tasks while there is room, and on the hub hands
 // them to runners, until no queued task can go now.
 func (e *TodoEngine) dispatch(ctx context.Context) {
+	e.checkSpending()
 	sent := map[string]bool{} // tasks offered to runners this round
 	for {
 		local, forced := e.capacity()
@@ -320,6 +322,9 @@ func (e *TodoEngine) projectWait(p model.Project, busy map[string]int) string {
 		if why := e.Hold(p.OrgID); why != "" {
 			return why
 		}
+	}
+	if h := e.projectSpend(p, false); h != nil {
+		return h.Note()
 	}
 	if p.MaxParallel > 0 {
 		n, ok := busy[p.ID]
@@ -1228,6 +1233,9 @@ func (e *TodoEngine) exec(p model.Project) agent.Executor {
 // and records the session, cost, the run's tokens (RunStats) and which notes
 // Claude has now seen. It returns Claude's final message.
 func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Project, wt model.Worktree, log func(string)) (string, error) {
+	if err := e.overTaskCap(t, p); err != nil {
+		return "", err
+	}
 	dir, err := e.Shared.claudeDir(*t)
 	if err != nil {
 		return "", err
@@ -1293,6 +1301,10 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	defer stop()
 	var overTime atomic.Bool
 	go e.watchdog(runCtx, t.ID, limit, func() { overTime.Store(true); stop() })
+	// And a spending cap: the run stops once the task's cost reaches it.
+	capUSD := model.TaskCap(p, *t)
+	capWatch := e.capWatch(*t, p, capUSD, stop)
+	req.OnCost = capWatch.seen
 
 	stat.At = time.Now()
 	res, err := exec.Run(runCtx, req, emit)
@@ -1310,9 +1322,12 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	if res.Model != "" {
 		stat.Model = res.Model
 	}
-	stat.ChatUsage, stat.Turns, stat.CostUSD = res.Usage, res.Turns, res.CostUSD
+	stat.ChatUsage, stat.Turns, stat.CostUSD, stat.Estimated = res.Usage, res.Turns, res.CostUSD, res.Estimated
 	stat.Seconds = max(1, int(time.Since(stat.At).Seconds()))
+	overCap := capWatch.over.Load() && ctx.Err() == nil
 	switch {
+	case overCap:
+		err = errors.New(model.TaskCapError(capUSD))
 	case overTime.Load() && ctx.Err() == nil:
 		err = fmt.Errorf("stopped: Claude worked longer than the %d-minute limit; rework it to let Claude continue, or raise the limit in the project settings", p.RunMinutes())
 	case res.Stop == agent.StopMaxTurns:
@@ -1328,6 +1343,11 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 			x.SessionID, x.LastSessionID = res.SessionID, res.SessionID
 		}
 		x.CostUSD += res.CostUSD
+		x.CapHit = 0
+		if overCap {
+			x.CapHit = capUSD
+		}
+		capWatch.record(x)
 		x.Runs++
 		x.RunStats = append(x.RunStats, stat)
 		x.FeedbackSent = min(given, len(x.Feedback))
@@ -1336,6 +1356,8 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	if uerr == nil {
 		*t = nt
 	}
+	capWatch.publish(*t)
+	e.spentChanged(t.ProjectID)
 	if err == nil {
 		e.summarize(t.ID, res.Result)
 	}
