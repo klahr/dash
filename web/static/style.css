@@ -1482,9 +1482,6 @@ html { scroll-padding: calc(var(--top-h) + 56px) 0 calc(var(--nav-h) + var(--saf
 .task-links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 4px -4px 0; }
 .task-links .task-bigger { margin-left: auto; }
 .task-links:not(:has(> :not([hidden]))) { display: none; }
-.key-hints { display: flex; flex-wrap: wrap; gap: 2px 14px; list-style: none; margin: 8px 0 0; padding: 0; }
-.key-hints li { white-space: nowrap; }
-@media (hover: none) { .key-hints { display: none; } }
 /* The full form: Model under Advanced; Clear set apart from the save buttons. */
 .todo-advanced { margin-top: 10px; }
 .todo-advanced > .field { margin-top: 6px; }
