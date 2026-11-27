@@ -14,7 +14,7 @@ import { closeDetail } from "./detail.js";
 import { previewTodo } from "./preview.js";
 import { revertTodo, reworkTodo } from "./drawmode.js";
 import { toggleInvisibles, toggleVim } from "./diffedit.js";
-import { openPrefs } from "./prefs.js";
+import { openPrefs, showTipsAgain } from "./prefs.js";
 import { openOrg } from "./account.js";
 import { logout } from "./myaccount.js";
 import { openAccount } from "./accountsheet.js";
@@ -239,6 +239,7 @@ export async function runCommand(line) {
     case "status": return openStatus();
     case "settings": need(); return openSettings();
     case "prefs": case "preferences": return openPrefs();
+    case "tips": return showTipsAgain();
     case "connector": case "connect": return openConnector();
     case "perms": case "permissions":
       if (!state.perms.length) return toast("No permission requests waiting");

@@ -84,6 +84,7 @@ func TestBrowserViewedFiles(t *testing.T) {
 		b.waitJS("no bar on the card before anything is viewed", "!"+cardBar(td.ID))
 
 		b.openTask(td.ID)
+		b.hideTips()
 		b.until("show the changes", `document.querySelector("#d-diff")?.textContent.includes("rework-by-runner.txt")`,
 			chromedp.Click(chromedp.CSS(`.pane-tabs button[data-pane=diff]`)))
 		// Back from a rework, Changes shows only what changed since the last

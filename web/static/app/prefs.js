@@ -1,7 +1,7 @@
 import { invisiblesOn, vimOn } from "../editor.js";
 import { $, applyClockPref, chatSuggestOn, clockPref, h, ico } from "./dom.js";
 import * as store from "./store.js";
-import { attempt } from "./dialogs.js";
+import { attempt, toast } from "./dialogs.js";
 import { saveField } from "./autosave.js";
 import { state } from "./state.js";
 import { toggleInvisibles, toggleVim } from "./diffedit.js";
@@ -13,6 +13,7 @@ import { accountSection, openAccount } from "./accountsheet.js";
 import { dictationOn, dictationSupported, setDictation } from "./dictation.js";
 import * as speech from "./speech.js";
 import { setVoice, voiceOn } from "./voice.js";
+import { resetHints } from "./hints.js";
 
 // ------------------------------------------------------------------ preferences (this browser only)
 export function syncPrefs() {
@@ -83,6 +84,12 @@ pref("speechRate", (el) => { speech.setSpeechRate(el.value); speech.speechSample
 pref("speechVoice", (el) => { speech.setSpeechVoice(el.value); speech.speechSample(); });
 pref("voice", (el) => setVoice(el.checked));
 $("#push-test").addEventListener("click", attempt(testPush));
+// Help: the first-review tips (app/hints.js) come back.
+export function showTipsAgain() {
+  resetHints();
+  toast("The review tips show again the next time you review a task");
+}
+$("#tips-reset").addEventListener("click", showTipsAgain);
 // Asking for permission needs this change event's user gesture.
 $("#prefs-form").notify.addEventListener("change", attempt(async (e) => {
   try { if (e.target.checked !== notifyOn()) await toggleNotifications(); } finally { syncPrefs(); }

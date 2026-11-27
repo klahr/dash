@@ -193,6 +193,15 @@ above the diff.
   from tokens (Codex, or a run stopped early) shows ≈ and "(estimate)". When the tests failed,
   **Details** has a **Tests fail** badge.
 
+### Review tips
+
+The first time you review a task, short tips show one at a time, each beside what it's about:
+what **Changes** shows, how to comment on a line, and what **Rework…** and **Approve** do. Click
+**Got it** to hide a tip, or **Hide all tips**. They don't come back.
+
+To see them again, open **Account → General** and click **Show review tips again**, or type
+`:tips`. Dash keeps which tips you've hidden in this browser, for each user.
+
 ### Comment on lines
 
 On the **Changes** tab, click a line of the diff (tap it on a phone) to comment on it. For a range,

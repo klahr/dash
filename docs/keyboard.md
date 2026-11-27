@@ -162,6 +162,7 @@ Type `:` and a command.
 | `:usage`                        | Claude usage                                              |
 | `:status`                       | the status popover                                        |
 | `:settings` `:prefs`            | **Project settings** / preferences                        |
+| `:tips`                         | show the first-review tips again                          |
 | `:connector`                    | connect Claude                                            |
 | `:runners` `:org` `:account`    | **Runners**, **Organization**, **Account**                |
 | `:perms`                        | permission requests                                       |

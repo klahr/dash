@@ -1111,6 +1111,19 @@ func (b *browser) openTask(id string) {
 	b.until("open task "+id, open, clickCard(id))
 }
 
+// hideTips dismisses the first-review tips (app/hints.js) for good, as Hide
+// all tips does, for a test about something else: they move the diff and the
+// action bar. Call it with a task open.
+func (b *browser) hideTips() {
+	b.t.Helper()
+	// Hide all tips, or Got it on the last one; a tip that waits for another
+	// view stays dismissed too, as Hide all tips dismisses every one.
+	b.until("hide the review tips", `!document.querySelector("#detail .tip")`, chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+		_, err := chromedp.Evaluate[bool](`(document.querySelector("#detail .tip .tip-skip") || document.querySelector("#detail .tip .tip-actions button"))?.click(), true`)(ctx, t)
+		return err
+	}))
+}
+
 // clickCard clicks the start of a card's title. Not its centre, as a click on
 // the title node does: on a narrow card a draft's Queue chip, at the top right
 // over the title's end and shown only on hover, may lie over the centre, and

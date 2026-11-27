@@ -15,6 +15,7 @@ import { runnerName } from "./runners.js";
 import { fetchChanges, renderChecks, renderPerms } from "./review.js";
 import { renderTodoChatMode, todoChat } from "./chat.js";
 import { renderRunStats } from "./runstats.js";
+import { renderHints } from "./hints.js";
 import { loadTodoChat } from "./chatpane.js";
 import { shellBlocked, startProc } from "./terminal.js";
 import { closeCommit } from "./history.js";
@@ -238,6 +239,7 @@ export function renderDetail() {
 
 export function renderActions(t) {
   fillActions($("#d-actions"), t);
+  renderHints();
 }
 
 // fillActions puts task t's buttons for where it stands (Approve, Rework…,

@@ -21,6 +21,7 @@ import { isTyping, openDialog } from "./vim.js";
 import { popMenu } from "./popmenu.js";
 import { askChat } from "./palette.js";
 import { shotsView } from "./screenshots.js";
+import { renderHints } from "./hints.js";
 
 // The chat pane (Attach to chat), loaded when first used: it draws itself as
 // it loads, so importing it here would change the order the modules start in.
@@ -634,6 +635,7 @@ export function renderPane() {
   const chatShown = $("#d-chat").hidden && state.pane === "timeline";
   $("#d-chat").hidden = state.pane !== "timeline";
   renderDiff(state.diff);
+  renderHints();
   if (chatShown) todoChat.toEnd();
 }
 

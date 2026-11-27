@@ -4623,3 +4623,20 @@ html:has(.planning-app #chat-main:not([hidden])) body > .toasts { top: calc(var(
 .auto-tag.ok { color: var(--merged); }
 .auto-note { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--muted); border-radius: var(--r-s); background: var(--surface); font-size: var(--fs-s); color: var(--text); overflow-wrap: anywhere; }
 .auto-note.ok { border-left-color: var(--merged); }
+
+/* First-review tips (app/hints.js): small notes in the flow beside what they are about, never over the diff.
+   One shows at a time: under the Changes tab, above the diff's files, or just above the action bar. */
+.tip { max-width: 72ch; margin: 0 0 12px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-left: 3px solid var(--accent); border-radius: var(--r-s); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); font-size: var(--fs-s); color: var(--text); overflow-wrap: anywhere; animation: fade-in .2s var(--ease); }
+.tip p { margin: 0; }
+.tip-label { font-weight: 700; color: var(--accent); text-transform: uppercase; font-size: var(--fs-xs); letter-spacing: .04em; }
+.tip-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tip-actions .btn.small { min-height: 30px; padding: 0 10px; font-size: var(--fs-s); }
+.tip-actions .tip-skip { background: none; border-color: transparent; color: var(--muted); }
+.tip-slot-actions { padding: 8px 12px 0; border-top: 1px solid var(--line); background: var(--surface); }
+.tip-slot-actions .tip { margin: 0 0 4px; }
+.tip-slot-actions + .actionbar { border-top: 0; }
+.tip-slot-actions:has(+ .actionbar:empty) { display: none; }
+@media (max-width: 1023px) {
+  /* With the keyboard up the action bar hides (above), and its tip with it. */
+  .detail:has(.composer textarea:focus) .tip-slot-actions { display: none; }
+}

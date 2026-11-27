@@ -516,6 +516,8 @@
             <button role="tab" data-pane="diff" aria-selected="false" data-icon="diff">Changes <span id="d-diffstat"></span></button>
           </div>
         </div>
+        <!-- First-review tips (app/hints.js): this one is about the Changes tab -->
+        <div class="tip-slot" id="d-tip-tabs" hidden></div>
         <div class="pane" id="d-diff" tabindex="-1" hidden></div>
         <div class="pane todo-chat" id="d-chat">
           <div class="chat-log" id="d-chat-log">
@@ -537,6 +539,8 @@
       </div>
       <!-- Rework notes with pictures from the preview's draw mode, sent together -->
       <section class="rework-box" id="d-rework" hidden aria-label="Rework notes"></section>
+      <!-- First-review tip on Rework… and Approve (app/hints.js) -->
+      <div class="tip-slot tip-slot-actions" id="d-tip-actions" hidden></div>
       <footer class="actionbar" id="d-actions"></footer>
       <!-- Live preview: beside the task on desktop, full screen on a phone -->
       <section class="preview" id="d-preview" hidden aria-label="Live preview">
@@ -1494,6 +1498,9 @@
             </label>
             <h3 class="section-head">Chat</h3>
             <label class="toggle"><input type="checkbox" name="chatSuggest" form="prefs-form"><span>Suggest what to say next</span></label>
+            <h3 class="section-head">Help</h3>
+            <p class="hint">The tips shown the first time you review a task, on the diff, line comments, Rework and Approve.</p>
+            <div class="board-actions"><button type="button" class="btn small" id="tips-reset">Show review tips again</button></div>
           </section>
           <!-- Voice: was Dictation and Spoken replies (old links to them come here).
                Spoken replies (app/speech.js) read aloud with the browser's speechSynthesis. -->
@@ -2204,6 +2211,7 @@
                 <tr><th scope="row"><code>:usage</code></th><td>Claude usage</td></tr>
                 <tr><th scope="row"><code>:status</code></th><td>Status: the connection, origin, runners, previews and what needs you</td></tr>
                 <tr><th scope="row"><code>:settings</code> <code>:prefs</code></th><td>Project settings / preferences</td></tr>
+                <tr><th scope="row"><code>:tips</code></th><td>Show the review tips again</td></tr>
                 <tr><th scope="row"><code>:connector</code></th><td>Connect Claude</td></tr>
                 <tr><th scope="row"><code>:runners</code> <code>:org</code> <code>:account</code></th><td>Runners, Organization, Account</td></tr>
                 <tr><th scope="row"><code>:perms</code></th><td>Permission requests</td></tr>
