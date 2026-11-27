@@ -16,10 +16,12 @@ import (
 	"github.com/klahr/dash/internal/testbin"
 )
 
-// waitUntil polls until ok, or fails saying what never happened.
+// waitUntil polls until ok, or fails saying what never happened. It waits
+// up to waitTimeout: the fake gh behind it answers at once alone, but has
+// taken over 10 seconds under a full, busy `go test ./...`.
 func waitUntil(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); !ok(); time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(waitTimeout); !ok(); time.Sleep(20 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("never: %s", what)
 		}
