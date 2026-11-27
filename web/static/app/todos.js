@@ -14,7 +14,7 @@ import { openFeatureBrief } from "./planner.js";
 import { tagChips } from "./tags.js";
 import { popMenu } from "./popmenu.js";
 import { addTag, quickTags } from "../tagtext.js";
-import { drafts } from "../editor.js";
+import { drafts } from "./sheetdraft.js";
 
 // ------------------------------------------------------------------ new / edit todo
 // A task's title, instructions and options can be edited while it is a draft,

@@ -17,6 +17,7 @@ import { fail } from "./app/dialogs.js";
 import "./app/lightbox.js";
 import "./app/attachments.js";
 import "./app/autosave.js";
+import "./app/sheetdraft.js";
 import "./app/todoform.js";
 import "./app/state.js";
 import "./app/nav.js";

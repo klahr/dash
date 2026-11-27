@@ -1,7 +1,6 @@
 // Markdown prompt editor and repo file editor (CodeMirror 6, optional vim
-// keys) on top of hidden textareas that stay the source of truth, plus
-// autosaved drafts in localStorage so a closed sheet, a reload or a crash
-// loses nothing.
+// keys) on top of hidden textareas that stay the source of truth. Their
+// drafts autosave with app/sheetdraft.js.
 
 import {
   EditorView, EditorState, Compartment, Prec, Transaction, keymap, placeholder, drawSelection,
@@ -358,50 +357,4 @@ export function codeEditor(textarea) {
   };
   editors.add(ed);
   return ed;
-}
-
-// ---- drafts
-
-const PREFIX = "dash.draft.";
-const draftStore = {
-  get: (k) => store.getJSON(PREFIX + k),
-  set: (k, v) => store.setJSON(PREFIX + k, v),
-  del: (k) => store.remove(PREFIX + k),
-};
-
-// drafts keeps the open form saved under a key while it is being edited.
-// read() returns the form's fields, write(d) fills them.
-export function drafts({ read, write, onStatus }) {
-  let key = null, timer = null, base = "";
-  const snapshot = () => JSON.stringify(read());
-  const save = () => {
-    clearTimeout(timer);
-    timer = null;
-    if (!key) return;
-    const now = snapshot();
-    if (now === base) { draftStore.del(key); return; } // back to what's saved on the server
-    if (draftStore.set(key, { ...JSON.parse(now), at: Date.now() })) onStatus("saved");
-  };
-  addEventListener("pagehide", save);
-  document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
-  return {
-    // open starts editing under key; returns the restored draft, if any.
-    open(k) {
-      key = k;
-      base = snapshot();
-      const d = draftStore.get(k);
-      if (!d) { onStatus(""); return null; }
-      write(d);
-      if (snapshot() === base) { draftStore.del(k); onStatus(""); return null; }
-      onStatus("restored", d.at);
-      return d;
-    },
-    changed() { clearTimeout(timer); timer = setTimeout(save, 300); onStatus("typing"); },
-    flush: save,
-    // done forgets the draft (after a successful save); close keeps it.
-    done() { clearTimeout(timer); if (key) draftStore.del(key); key = null; },
-    close() { save(); key = null; },
-    discard() { if (key) draftStore.del(key); },
-    has: (k) => !!draftStore.get(k),
-  };
 }

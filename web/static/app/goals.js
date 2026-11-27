@@ -19,6 +19,7 @@ import { linkToCard } from "./planning.js";
 import { changed, linkTo } from "./routes.js";
 import { projectDot, selectProject } from "./projects.js";
 import * as store from "./store.js";
+import { draftHash, sheetDraft } from "./sheetdraft.js";
 
 // ------------------------------------------------------------------ goals
 // A goal is something bigger than one task: a coordinator (Claude) plans its
@@ -892,8 +893,12 @@ export function openGoalSheet({ goal = null, title: t = "", description = "" } =
   $("#goal-sheet").returnValue = "";
   gp.formWas = goalFormValues(f);
   $("#goal-sheet").showModal();
+  // What is typed is kept in this browser until the goal is saved: per goal,
+  // or for a new one per project and the text it started from.
+  goalDraft.open(goal ? `goal/${goal.id}` : `new/${projectKey(state.project)}/${draftHash(f.description.value)}`);
   f.description.focus();
 }
+const goalDraft = sheetDraft($("#goal-sheet"), { keep: true });
 
 const goalFormValues = (f) => JSON.stringify([f.title.value, f.description.value, f.max_tasks.value, f.mode.value]);
 guardDiscard($("#goal-sheet"), $("#goal-form"), () => goalFormValues($("#goal-form")) !== gp.formWas,
@@ -927,11 +932,13 @@ $("#goal-sheet").addEventListener("close", attempt(async () => {
   try {
     if (goal) {
       const saved = await api("PATCH", goalAPI(goal.id), body, p.prefix || "");
+      goalDraft.done();
       if (gp.open === goal.id) { gp.detail = saved; renderGoal(); }
       toast("Goal saved");
       return;
     }
     const g = await api("POST", "/api/goals", { ...body, project: p.id }, p.prefix || "");
+    goalDraft.done();
     if (projectKey(state.project) !== projectKey(p)) return;
     gp.project = p;
     if (!state.goals.has(g.id)) state.goals.set(g.id, { ...g, log: undefined });

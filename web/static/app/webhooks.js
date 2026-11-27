@@ -5,6 +5,7 @@ import { state } from "./state.js";
 import { accountSection } from "./accountsheet.js";
 import { copyBlock } from "./prefs.js";
 import { agoText } from "../time.js";
+import { sheetDraft } from "./sheetdraft.js";
 
 // ------------------------------------------------------------------ notification webhooks
 // Outgoing webhooks: a project's, in its settings, and the user's personal
@@ -185,7 +186,10 @@ function editWebhook(w = null, sc = hookScopes.project) {
   syncWebhookForm();
   $("#webhook-sheet").returnValue = "";
   $("#webhook-sheet").showModal();
+  // Its URL and name are kept in this browser until saved (never the token).
+  webhookDraft.open(`${sc.personal ? "me" : state.project ? state.project.id : ""}/${w?.id || "new"}`);
 }
+const webhookDraft = sheetDraft($("#webhook-sheet"), { keep: true });
 
 function syncWebhookForm() {
   const f = $("#webhook-form");
@@ -233,6 +237,7 @@ $("#webhook-sheet").addEventListener("close", attempt(async () => {
       if (res.webhook.format === "json") showWebhookSecret(res.secret, sc);
       toast("Webhook added: try Send test", { tone: "ok" });
     }
+    webhookDraft.done();
   } catch (e) {
     // Keep what was typed; only Save saves again (not Esc).
     $("#webhook-sheet").returnValue = "";

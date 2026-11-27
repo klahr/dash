@@ -1,4 +1,5 @@
-import { drafts, mdEditor } from "../editor.js";
+import { mdEditor } from "../editor.js";
+import { drafts } from "./sheetdraft.js";
 import { $, $$, h, ib, plural, setModelField } from "./dom.js";
 import { api, here } from "./api.js";
 import { ask, attempt, busy, toast } from "./dialogs.js";

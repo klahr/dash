@@ -5,6 +5,7 @@ import { state } from "./state.js";
 import { openCI } from "./actions.js";
 import { githubURL, refreshGraph } from "./history.js";
 import { releaseFields, releaseWarnings } from "./releaseform.js";
+import { sheetDraft } from "./sheetdraft.js";
 
 // ------------------------------------------------------------------ releases
 // "Tag release…" on a pushed commit: pick the next version in the project's
@@ -13,6 +14,9 @@ import { releaseFields, releaseWarnings } from "./releaseform.js";
 // warnings are releaseform.js's, as in Deploy's picker.
 let release = null; // { commit, info, fields, seq } while the sheet is open
 let releaseSeq = 0;
+// Edited notes (and an Other version) are kept in this browser until the tag
+// is pushed, per project and commit.
+const releaseDraft = sheetDraft($("#release-sheet"), { keep: true });
 
 // c is the commit: { sha, short, subject }; sha "" tags the tip of origin's
 // default branch (as the server resolves it).
@@ -57,6 +61,7 @@ function renderRelease() {
   const items = releaseWarnings(info);
   $("#release-warnings").replaceChildren(...items);
   $("#release-warnings").hidden = !items.length;
+  releaseDraft.open(`${release.project.id}/${release.commit.sha}`);
   release.fields.sync();
 }
 
@@ -81,6 +86,7 @@ $("#release-form").addEventListener("submit", attempt(async (e) => {
     // The sheet may have been closed meanwhile and opened on another commit:
     // that one stays open.
     if (release === mine) {
+      releaseDraft.done();
       release = null;
       $("#release-sheet").close();
     }

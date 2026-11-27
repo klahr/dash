@@ -11,6 +11,7 @@ import { showRunnerNeeded } from "./runners.js";
 import { notifyOn } from "./notifications.js";
 import { openDetail } from "./detail.js";
 import { pickDrafts, worstSeverity } from "./tags.js";
+import { sheetDraft } from "./sheetdraft.js";
 
 // ------------------------------------------------------------------ scans
 // Preconfigured, read-only reviews of the project (security, code review,
@@ -412,8 +413,11 @@ function openScanEditor(s = null, edit = false) {
   if (s && !edit) from.textContent = `A new scan, kept in Dash, starting from ${s.source === "dash" ? "the Dash scan" : s.builtin ? "the built-in scan" : s.file} “${s.name}”.`;
   scanFormWas = scanFormValues(f);
   $("#scan-sheet").showModal();
+  // Kept in this browser until saved: per project and the scan it edits or copies.
+  scanDraft.open(`${projectKey(state.project)}/${edit ? "edit" : s ? "copy" : "new"}/${s?.name || ""}`);
   (edit ? f.prompt : f.title).focus();
 }
+const scanDraft = sheetDraft($("#scan-sheet"), { keep: true });
 
 // The editor asks before it drops what was typed (Esc, its backdrop, ×).
 let scanFormWas = "";
@@ -456,6 +460,7 @@ $("#scan-form").addEventListener("submit", attempt(async (e) => {
   if (scanEditing) await api("PUT", `/api/projects/${pid}/scans/${encodeURIComponent(scanEditing.name)}`, body, p.prefix);
   else await api("POST", `/api/projects/${pid}/scans`, body, p.prefix);
   const what = scanEditing ? "Saved" : "Created";
+  scanDraft.done();
   $("#scan-sheet").close();
   await loadScans();
   toast(`${what} ${body.title || body.name}`, { tone: "ok" });

@@ -292,8 +292,16 @@ func TestBrowserGoalsList(t *testing.T) {
 	b.waitJS("only what to get done and how tasks start, no help texts", noHelp+` && document.querySelector("#goal-title-field").hidden && document.querySelector("#goal-max-field").hidden &&
 		document.querySelector("#goal-form select[name=mode]").value === "ask" && !document.querySelector("#goal-form [name=weekly_share]")`)
 	b.do("say what to get done", chromedp.SendKeys(`#goal-form textarea[name=description]`, "Ship the new checkout"))
+	// What is typed is kept in this browser: a reload doesn't lose it, and saving forgets it.
+	const kept = `Object.keys(localStorage).some((k) => k.startsWith("dash.draft.sheet/goal-sheet/new/"))`
+	b.waitJS("the text kept in this browser", kept)
+	b.do("reload, as by accident", chromedp.Reload())
+	b.until("New goal again", `document.querySelector("#goal-sheet").open`, chromedp.Click(chromedp.CSS("#goal-new")))
+	b.waitJS("the text back, saying so", `document.querySelector("#goal-form textarea[name=description]").value === "Ship the new checkout" &&
+		!document.querySelector("#goal-sheet .sheet-draft").hidden`)
 	b.until("the goal opens", `!document.querySelector("#goal-detail").hidden && document.querySelector("#gd-title").textContent.includes("checkout") && !document.querySelector(".toast")?.textContent.includes("Goal started")`,
 		chromedp.Click(chromedp.CSS("#goal-save")))
+	b.waitJS("the text forgotten once saved", "!"+kept)
 	b.until("close it", `document.querySelector("#goal-detail").hidden`, chromedp.Click(chromedp.CSS("#gd-close")))
 
 	// The Board badge's goals: back in the first project, its goal waiting for you leads to every project's goals.

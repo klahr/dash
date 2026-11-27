@@ -38,6 +38,10 @@ instead.
 3. Under **Tasks**, keep **Ask me before starting tasks** (the default) or pick **Start tasks on
    its own**, then click **Start goal**.
 
+What you type in **New goal** and **Edit goal…** is kept on this device until you save it: close
+the sheet or reload the page by accident, and it is back the next time you open it. **Discard it**
+drops it.
+
 A new goal has no limit. To set one, use **Edit goal…** in the goal's **⋯** menu: **Max tasks**.
 Leave it empty for no limit.
 

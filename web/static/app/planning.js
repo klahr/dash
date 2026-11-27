@@ -1906,7 +1906,7 @@ async function startSheet(c, prev = null) {
     runFor.hidden = goal;
     runFor.querySelector("select").required = !goal;
   };
-  const { form, closed } = openSheet({ title: "Start this card", cls: "pl-sheet pl-start-sheet", body: [
+  const { form, closed } = openSheet({ title: "Start this card", cls: "pl-sheet pl-start-sheet", draft: `pl-start/${c.id}`, body: [
     open.length ? h("p", { class: "hint warn" }, ico("alert"), ` Already ${open.length} ${noun} in progress.`) : null,
     waits.length ? h("p", { class: "hint warn" }, ico("lock"), ` Waits for: ${waits.join(", ")} (not done).`) : null,
     h("label", { class: "field" }, h("span", {}, "Project"),

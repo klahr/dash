@@ -1,5 +1,6 @@
 import { $, h, ib, ico, setLabel } from "./dom.js";
 import { attachBox } from "./attachments.js";
+import { draftHash, sheetDraft } from "./sheetdraft.js";
 
 // ------------------------------------------------------------------ toasts & dialogs
 export const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -143,6 +144,7 @@ document.addEventListener("click", (e) => {
 });
 
 const askAttach = attachBox($("#ask-attach"), $("#ask-input"));
+const askDraft = sheetDraft($("#ask-sheet"));
 // ask() shows a confirmation or a text question as a sheet. Resolves to the
 // entered text (or true), or null when cancelled.
 export function ask({ title, body = "", input = false, value = "", placeholder = "", ok = "OK", danger = false, attach = false, attachments = [] }) {
@@ -161,6 +163,9 @@ export function ask({ title, body = "", input = false, value = "", placeholder =
   okBtn.className = `btn ${danger ? "danger" : "primary"}`;
   d.returnValue = "";
   d.showModal();
+  // A typed answer is kept in this browser until it is given: per question
+  // and the text it starts from.
+  if (input) askDraft.open(draftHash(`${title}\n${value}`));
   if (input) field.focus();
   return new Promise((resolve) => {
     d.addEventListener("close", () => {
@@ -180,7 +185,9 @@ export function guardDiscard(sheet, form, dirty, title = "Discard your changes?"
     if (asking) return;
     asking = true;
     try {
-      if (await ask({ title: typeof title === "function" ? title() : title, ok: "Discard", danger: true })) sheet.close("cancel");
+      if (!await ask({ title: typeof title === "function" ? title() : title, ok: "Discard", danger: true })) return;
+      sheet.dispatchEvent(new Event("discard")); // its draft, if any (sheetdraft.js), goes too
+      sheet.close("cancel");
     } finally { asking = false; }
   };
   form.addEventListener("submit", (e) => {
@@ -222,7 +229,9 @@ document.addEventListener("keydown", (e) => {
 // when it closes, after onClose(returnValue). cls adds classes; small: false
 // makes a wider sheet. closed resolves to the dialog's returnValue.
 let sheetSeq = 0;
-export function openSheet({ title, cls = "", small = true, body = [], footer = null, onClose = null }) {
+// draft (a key) keeps what is typed into its fields in this browser until
+// it is submitted (sheetdraft.js).
+export function openSheet({ title, cls = "", small = true, body = [], footer = null, onClose = null, draft = null }) {
   const id = `sheet-title-${++sheetSeq}`;
   const form = h("form", { method: "dialog" },
     h("header", { class: "sheet-head" }, h("h2", { id }, title),
@@ -239,6 +248,7 @@ export function openSheet({ title, cls = "", small = true, body = [], footer = n
   });
   document.body.append(dialog);
   dialog.showModal();
+  if (draft) sheetDraft(dialog).open(draft);
   return { dialog, form, closed };
 }
 
