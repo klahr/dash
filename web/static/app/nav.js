@@ -13,13 +13,15 @@ import { openScans } from "./scans.js";
 import { closeGoal, loadGoals } from "./goals.js";
 import { closeDeploy, loadDeploys } from "./deploys.js";
 import { closeCard, planningShown } from "./planning.js";
+import { closeNeed, needsShown } from "./needs.js";
 import { changed, initial } from "./routes.js";
 import { boardSeen } from "./branches.js";
 import { closeDetail, syncDetailMode } from "./detail.js";
 import { projectKey } from "./events.js";
 
 // ------------------------------------------------------------------ navigation
-// The nav's pages: Board, Goals, History, Code (and Planning, the org's).
+// The nav's pages: Board, Goals, History, Code (and Needs you and Planning,
+// across projects).
 // Some have tabs, each a view of its own (state.view, its URL in routes.js):
 //   History  Commits (view "history") and Deploys ("deploys")
 //   Code     Files ("files") and Shell; the Shell tab has two places, main
@@ -77,18 +79,22 @@ export function projectView(p) {
   return r && PROJECT_VIEWS_OK.includes(r) ? r : null;
 }
 function rememberView(name) {
-  if (!state.project || name === "planning") return;
+  if (!state.project || across(name)) return;
   const views = store.getJSON(PROJECT_VIEWS, {});
   views[projectKey(state.project)] = tabOf(name);
   store.setJSON(PROJECT_VIEWS, views);
 }
+
+// across says whether view name is of no one project: Planning (the org's)
+// and Needs you (every project's).
+function across(name) { return name === "planning" || name === "needs"; }
 
 function applyView(name) {
   const prev = state.view;
   state.view = name;
   store.set("dash.view", name);
   rememberView(name);
-  if ((prev === "planning") !== (name === "planning")) applyBrand(); // Planning is across projects: the default brand
+  if (across(prev) !== across(name)) applyBrand(); // across projects: the default brand
   if (navView(name) === "code") store.set(CODE_TAB, tabOf(name));
   renderNavActive();
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${sectionOf(name)}`));
@@ -105,6 +111,8 @@ function applyView(name) {
   else closeDeploy();
   if (name === "planning") planningShown();
   else closeCard();
+  if (name === "needs") needsShown();
+  else closeNeed();
   if (name === "files" && state.project) loadFiles().catch(fail); // at startup the project (and the files code below) isn't ready yet
   if (name === "try") requestAnimationFrame(() => enterTry().catch(fail));
   else leaveTry();
@@ -159,5 +167,5 @@ $$(".page-tabs [data-tab]").forEach((b) => b.addEventListener("click", () => {
   const linked = initial.named && initial.view;
   const saved = linked || store.get("dash.view");
   const v = saved && resolve(saved);
-  if (v && (linked ? $(`#view-${sectionOf(v)}`) : v === "planning" || PROJECT_VIEWS_OK.includes(v))) applyView(v);
+  if (v && (linked ? $(`#view-${sectionOf(v)}`) : across(v) || PROJECT_VIEWS_OK.includes(v))) applyView(v);
 }

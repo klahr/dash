@@ -68,6 +68,7 @@ import "./app/teamusage.js";
 import "./app/notifications.js";
 import "./app/pushsub.js";
 import "./app/review.js";
+import "./app/needs.js";
 import "./app/runstats.js";
 import { loadUsage, renderUsage } from "./app/usage.js";
 import "./app/actions.js";

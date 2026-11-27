@@ -202,6 +202,38 @@ comment** (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>).
   message to the agent, and under the prompt with the other rework notes.
 - A message sent from the task chat in **Rework** mode takes the waiting comments along too.
 
+## Needs you
+
+**Needs you** in the sidebar (the bottom bar on a phone) lists everything that waits on you,
+across all the projects you can see. Its badge counts it. Open it with <kbd>g</kbd> <kbd>i</kbd>
+or from <kbd>Ctrl</kbd>+<kbd>k</kbd>.
+
+It lists, oldest first:
+
+- **Review**: tasks in *Review*. A pull request that waits on GitHub, Claude or its checks is
+  left out until a person has to act on it, as on the [Wall](wall.md).
+- **Question** and **Permission**: Claude asks you something, or asks to run a tool.
+- **Failed**: tasks that failed.
+
+Each row shows the kind, the task, its project and how long it has waited. The list updates as
+items arrive or are dealt with.
+
+Work through it:
+
+1. Press <kbd>j</kbd> and <kbd>k</kbd> to move between rows, and <kbd>Enter</kbd> to open one.
+   It opens beside the list (full screen on a phone, with **Back**).
+2. Act on it there: **Approve** or **Rework…** a review, **Retry** a failed task, answer a
+   question and **Submit**, or **Allow** or **Deny** a request (<kbd>y</kbd>, <kbd>A</kbd>,
+   <kbd>X</kbd>).
+3. The next row opens. <kbd>Esc</kbd> closes the pane.
+
+The pane shows the task's prompt, why it failed, its test result and its changes. To comment on
+lines or see the timeline, click **Open task** (the arrow at the top): the task opens on its
+project's board.
+
+On a hub, the list covers the hub's projects. Projects on another computer of the hub (which
+only platform admins see) aren't in it.
+
 ## Approve
 
 Click **Approve**. The task goes through *Merging* and ends up in *Merged*, as one squashed

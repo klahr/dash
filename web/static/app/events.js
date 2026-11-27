@@ -40,6 +40,7 @@ import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
 import { goalTaskChanged, onAllEvent, onGoalDeleted, onGoalEvent, showGoal, shownStatus } from "./goals.js";
 import { onDeployEvent } from "./deploys.js";
 import { goalChatEvent, goalChatGone, projectChatEvent } from "./chatpane.js";
+import { loadNeeds, onNeedsEvent, renderNeeds } from "./needs.js";
 
 // ------------------------------------------------------------------ live events
 // One live connection per computer, so notifications arrive from all of them.
@@ -64,7 +65,8 @@ function connectEvents(m) {
       loadClaudeStatus().catch(() => {}); // what the page posted while this was away
     }
     // Dash restarted (a deploy of Dash itself does): its runners kept their processes.
-    loadProjects().then(() => loadProcs()).catch(fail);
+    // Needs you is this Dash's: read again, in case events were missed meanwhile.
+    loadProjects().then(() => Promise.all([loadProcs(), m.local && loadNeeds()])).catch(fail);
     loadPreviews(m).catch(() => {});
   };
   ws.onclose = async () => {
@@ -173,6 +175,7 @@ function onEvent(ev, m = { name: "" }) {
   const sameMachine = !state.project || m.name === state.project.machine;
   const mine = eventFor(state.project, ev, m);
   if (!mine) elsewhere(ev, m);
+  if (m.local) onNeedsEvent(ev); // Needs you: tasks to review, failures and requests of every project
   if (ev.type === "todo.updated" || ev.type === "todo.deleted") { trackActive(ev, m); chatTaskEvent(ev); }
   if (ev.type.startsWith("planning.")) { if (m.local) onPlanningEvent(ev); return; }
   switch (ev.type) {
@@ -185,6 +188,7 @@ function onEvent(ev, m = { name: "" }) {
       // runner's Projects screen shows on both sides.
       loadProjects().then(async () => {
         syncSettingsRunners();
+        renderNeeds(); // its projects' names
         loadChatRunners({ general: false }); // its runs-on labels may have changed which runners its chat can pick
         if ($("#runners-sheet").open) { await renderRunners({ background: true }); await refreshRunnerLinks(); }
       }).catch(fail);

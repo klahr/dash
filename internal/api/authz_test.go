@@ -29,6 +29,7 @@ func orgEndpoints() []endpoint {
 		{"GET", "/api/previews", ""},
 		{"DELETE", "/api/previews", ""},
 		{"GET", "/api/permissions", ""},
+		{"GET", "/api/needs", ""},
 		{"GET", "/api/chat", ""},
 		{"DELETE", "/api/chat", ""},
 		{"GET", "/api/machines", ""},

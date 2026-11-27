@@ -38,6 +38,7 @@ import { closeCommitPreview, previewingCommit } from "./commitpreview.js";
 import { closeGoal, goalsOn, gp, openGoalSheet, stepGoal } from "./goals.js";
 import { closeDeploy, dp, stepDeploy } from "./deploys.js";
 import { cardOpen, closeCard } from "./planning.js";
+import { closeNeed, needsScroller, openSelected, openedPerm, stepNeed } from "./needs.js";
 import { focusTry, openTry } from "./try.js";
 import { startVoiceMode } from "./voicemode.js";
 import { BOUND, CTRL_KEYS, VIEWS, ctrlScrolls, openKeys, cursorTodo, enterKey, isTyping, keys, laneCount, laneSkipped, laneTodos, moveCursor, openCommandLine, openDialog, permKey, runCommand, scrollBy, scroller, setMode, stepLane, todoKey } from "./vim.js";
@@ -86,6 +87,7 @@ function paletteCommands() {
     ["History: Commits", "log", go("history"), "gh", "history git graph tree commits view"],
     ["Goals", "target", go("goals"), "go", "goal coordinator plan progress budget"],
     ["Code: Files", "code", go("files"), "gf", "files browse edit source code tree editor"],
+    ["Needs you", "inbox", go("needs"), "gi", "needs you inbox waiting review reviews approve questions answer permissions failed retry all projects"],
     ["Planning", "plan", go("planning"), "gp", "plan roadmap product owner cards ideas planned"],
     ["Switch project", "repo", openProjects, "p", "projects"],
     p && starsOn() && [isStarred(p) ? "Unstar project" : "Star project", "star", () => toggleStar(p), "", "favorite favourite pin sidebar starred"],
@@ -396,6 +398,7 @@ async function handleNormal(k, n, hadCount) {
     case "gd": return showView("deploys");
     case "gf": return showView("files");
     case "gp": return showView("planning");
+    case "gi": return showView("needs");
     case "gv": return startVoiceMode();
     case "gn": return showView("scans");
     case "p": return openProjects();
@@ -410,10 +413,13 @@ async function handleNormal(k, n, hadCount) {
       if (gp.open) return closeGoal();
       if (dp.open) return closeDeploy();
       if (cardOpen()) return closeCard();
+      if (state.needs.open) return closeNeed();
       return;
     // Permission requests: y allow, A always allow, X deny. (Not n: n is
     // always a new task, so it can't deny by surprise.)
     case "y": case "A": case "X":
+      // On Needs you: the open item's request.
+      if (state.view === "needs" && !state.detail && openedPerm()) return permKey(k, openedPerm(), "");
       if (await permKey(k) === false) toast("No permission request waiting");
       return;
     case "n": case "N":
@@ -513,6 +519,16 @@ async function handleNormal(k, n, hadCount) {
         case "k": case "ArrowUp": return stepGoal(-n);
       }
       if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(gp.open ? $("#gd-body") : scroller(), k, n);
+      return;
+    case "needs":
+      switch (k) {
+        case "j": case "ArrowDown": return stepNeed(n);
+        case "k": case "ArrowUp": return stepNeed(-n);
+        case "gg": return stepNeed(-Infinity);
+        case "G": return stepNeed(Infinity);
+        case "Enter": case " ": return openSelected();
+      }
+      if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(needsScroller() || scroller(), k, n);
       return;
     case "deploys":
       switch (k) {

@@ -20,6 +20,8 @@
 //	/p/{project}/issues/{id}         the draft task an issue became, over the board
 //	/planning                        Planning (the org's)
 //	/planning/cards/{id}             a Planning card, open
+//	/needs                           Needs you: what waits on the user, across projects
+//	/needs/{id}                      an item of it, open
 //
 // {project} is the project's id for a project of this Dash, or
 // {id}@{computer} for one on another computer of a hub (platform admins).
@@ -62,8 +64,11 @@ func Card(id string) string { return "/planning/cards/" + url.PathEscape(id) }
 // Is reports whether path is one of the app's own paths (above), which
 // serve the app's page. Anything else under /p/ or /planning/ is not.
 func Is(path string) bool {
-	if path == "/planning" {
+	if path == "/planning" || path == "/needs" {
 		return true
+	}
+	if id, ok := strings.CutPrefix(path, "/needs/"); ok {
+		return !strings.Contains(id, "/") && segment(id)
 	}
 	if _, ok := CardID(path); ok {
 		return true

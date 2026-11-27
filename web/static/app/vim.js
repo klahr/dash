@@ -35,14 +35,14 @@ import { deleteBody } from "./tags.js";
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
-// In the nav's order: the project's sections, then Planning (the organization's).
+// In the nav's order: the project's sections, then Needs you and Planning (across projects).
 // The nav's pages, in its order, for gt and gT (a page with tabs opens its tab: nav.js).
-export const VIEWS = ["board", "goals", "history", "code", "planning"];
+export const VIEWS = ["board", "goals", "history", "code", "needs", "planning"];
 export const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
 // The keys normal mode takes; any other key keeps the browser's behaviour.
 // web/keys_test.go checks it against the Keyboard sheet.
-export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gn|gc|gs|gh|go|gd|gf|gp|gv|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|z|a|r|e|E|\+|-|_|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gn|gc|gs|gh|go|gd|gf|gp|gi|gv|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|z|a|r|e|E|\+|-|_|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 // The Ctrl keys that scroll. Off a Mac, Ctrl-f and Ctrl-b are the browser's
 // Find and bookmarks, so they stay the browser's.
 export const CTRL_KEYS = isApple ? ["d", "u", "f", "b"] : ["d", "u"];
@@ -103,7 +103,7 @@ export function scroller() {
 
 // Where Ctrl-d/u (and Ctrl-f/b on a Mac) scroll: an open task and the pages
 // whose keys handle them (palette.js). Elsewhere they stay the browser's.
-export const ctrlScrolls = () => !!state.detail || (state.view === "board" ? !!state.project : ["history", "goals", "deploys"].includes(state.view));
+export const ctrlScrolls = () => !!state.detail || (state.view === "board" ? !!state.project : ["history", "goals", "deploys", "needs"].includes(state.view));
 
 export function scrollBy(el, how, n) {
   const page = el.clientHeight || innerHeight;
@@ -161,13 +161,14 @@ export async function todoKey(t, k) {
 // with none open, the first waiting. null when there's none.
 export const pendingPerm = () => state.perms.find((x) => x.todo_id === state.detail) || (!state.detail && state.perms[0]) || null;
 
-// p is the request to answer (default: pendingPerm()).
-export async function permKey(k, p = pendingPerm()) {
+// p is the request to answer (default: pendingPerm()), on the computer of
+// prefix (Needs you's requests: this one's).
+export async function permKey(k, p = pendingPerm(), prefix = undefined) {
   if (!p) return false;
   const decision = { y: "allow", A: "always", X: "deny" }[k];
   if (isQuestion(p) && decision !== "deny") return toast("Answer Claude's question in its card");
   if (isSettingsChange(p) && decision === "always") return toast("Settings changes are allowed one at a time");
-  await api("POST", `/api/permissions/${p.id}`, { decision });
+  await api("POST", `/api/permissions/${p.id}`, { decision }, prefix);
   toast(decision === "deny" ? "Denied" : decision === "always" ? `${p.tool} always allowed in this project` : "Allowed");
   return true; // answered
 }
@@ -261,7 +262,7 @@ export async function runCommand(line) {
 // openKeys opens the Keyboard sheet at the keys of what is shown: the open
 // task, else the page (the Shell at a commit is the Shell; Files has no keys
 // of its own, so it starts at Everywhere).
-const KEY_AREA = { board: "board", run: "shell", try: "shell", history: "history", goals: "goals", deploys: "deploys", planning: "planning" };
+const KEY_AREA = { board: "board", run: "shell", try: "shell", history: "history", goals: "goals", deploys: "deploys", needs: "needs", planning: "planning" };
 export function openKeys() {
   const d = $("#keys-sheet");
   d.showModal();

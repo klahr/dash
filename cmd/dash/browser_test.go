@@ -477,6 +477,88 @@ func TestBrowserHistoryCommitPane(t *testing.T) {
 	b.waitJS("Refresh on a phone", `(() => { const r = document.querySelector("#graph-refresh").getBoundingClientRect(); return r.width > 0 && r.right <= innerWidth; })()`)
 }
 
+// Needs you: tasks waiting for review are listed oldest first with a count
+// on the nav entry; j and Enter open one beside the list, Approve merges it
+// and the pane moves on to the next row, Esc closes it. On a phone the pane
+// is full screen and Back closes it.
+func TestBrowserNeedsYou(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	api, pid := h.api, h.project.ID
+	var ids []string
+	for _, title := range []string{"First to review", "Second to review"} {
+		var td struct{ ID string }
+		api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": title, "prompt": "Add a file for " + title, "enqueue": true},
+			http.StatusCreated, &td)
+		ids = append(ids, td.ID)
+	}
+	for _, id := range ids {
+		waitStatus(t, api, "/api/todos/"+id, "review", nil)
+	}
+	// The list's order is the server's: oldest first.
+	var needs []struct {
+		Kind string
+		Todo struct{ ID, Title string }
+	}
+	api.must("GET", "/api/needs", nil, http.StatusOK, &needs)
+	if len(needs) != 2 || needs[0].Kind != "review" || needs[1].Kind != "review" {
+		t.Fatalf("GET /api/needs: %+v", needs)
+	}
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.waitJS("the count on the nav entry", `document.querySelector("#needs-badge")?.textContent === "2" && !document.querySelector("#needs-badge").hidden`)
+	b.until("open Needs you", `document.querySelector("#view-needs.active")`, chromedp.Click(chromedp.CSS(`.nav [data-view=needs]`)))
+	// The switch to the page is animated (a view transition), and clicks
+	// land on nothing until it is over.
+	b.waitJS("the switch over", `!document.getAnimations().some((a) => a.effect?.pseudoElement?.startsWith("::view-transition"))`)
+	rows := `[...document.querySelectorAll("#needs-list li")]`
+	b.waitJS("both rows, oldest first", fmt.Sprintf(`%s.map((li) => li.querySelector(".need-title").textContent).join("|") === %q && %s.every((li) => li.querySelector(".need-kind").textContent === "Review")`,
+		rows, needs[0].Todo.Title+"|"+needs[1].Todo.Title, rows))
+	b.waitJS("the project and the wait on each row", rows+`.every((li) => li.textContent.includes("app") && li.querySelector(".need-age").textContent)`)
+
+	// j selects the first row, Enter opens it in the pane beside the list.
+	// (Focus off the nav button, whose list takes j and k for itself.)
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`document.activeElement?.blur(), true`)); err != nil {
+		t.Fatal(err)
+	}
+	title := func(s string) string {
+		return fmt.Sprintf(`!document.querySelector("#need-detail").hidden && document.querySelector("#nd-title").textContent === %q`, s)
+	}
+	b.do("press j", chromedp.KeyEvent("j"))
+	b.waitJS("the first row selected", rows+`[0]?.classList.contains("selected")`)
+	b.do("press Enter", chromedp.KeyEvent("\r"))
+	b.waitJS("the first item open", title(needs[0].Todo.Title))
+	b.waitJS("the list beside the pane", `document.querySelector("#needs-list").getBoundingClientRect().right <= document.querySelector("#need-detail").getBoundingClientRect().left + 1`)
+	b.waitJS("its changes", `document.querySelector("#nd-diff")?.textContent.includes("done-by-runner.txt")`)
+	b.waitJS("the task pane's buttons", `[...document.querySelectorAll("#nd-actions button")].map((e) => e.textContent).join("|").includes("Approve")`)
+	b.waitJS("the URL names it", fmt.Sprintf(`location.pathname === %q`, "/needs/"+needs[0].Todo.ID))
+
+	// Approve: it merges, and the pane moves on to the next row.
+	b.clickTextUntil("#nd-actions button", "Approve", `[...document.querySelectorAll(".toast")].some((e) => e.textContent.includes("Approved"))`)
+	waitStatus(t, api, "/api/todos/"+needs[0].Todo.ID, "merged", nil)
+	b.waitJS("the next item open", title(needs[1].Todo.Title))
+	b.waitJS("one row left, counted", rows+`.length === 1 && document.querySelector("#needs-badge").textContent === "1"`)
+
+	// Esc closes the pane.
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`document.activeElement?.blur(), true`)); err != nil {
+		t.Fatal(err)
+	}
+	b.do("press Esc", chromedp.KeyEvent(kb.Escape))
+	b.waitJS("the pane closed", `document.querySelector("#need-detail").hidden && location.pathname === "/needs"`)
+
+	// On a phone the pane is full screen, and Back closes it.
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("Needs you in the bottom nav", `(() => { const r = document.querySelector('.nav [data-view=needs]').getBoundingClientRect(); return r.width > 0 && r.right <= innerWidth; })()`)
+	b.until("open the row", title(needs[1].Todo.Title), chromedp.Click(chromedp.CSS(`#needs-list li .need-open`)))
+	b.waitJS("full screen", `(() => { const r = document.querySelector("#need-detail").getBoundingClientRect(); return r.left <= 0 && r.width >= innerWidth - 1; })()`)
+	b.waitJS("its buttons on screen", `(() => { const r = [...document.querySelectorAll("#nd-actions button")].find((e) => e.textContent.includes("Approve"))?.getBoundingClientRect(); return !!r && r.width > 0 && r.right <= innerWidth; })()`)
+	b.waitJS("a Back button", `document.querySelector("#nd-close").getAttribute("aria-label") === "Back"`)
+	b.do("go back", chromedp.Click(chromedp.ID("nd-close")))
+	b.waitJS("the list again", `document.querySelector("#need-detail").hidden && document.querySelector("#view-needs.active")`)
+}
+
 // A CLI project's terminal preview: open it on a task in review, type in
 // it, and send the task back with the terminal's transcript as the rework
 // notes. In a project of the runner's own, whose runner opens terminals for

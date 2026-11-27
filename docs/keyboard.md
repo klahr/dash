@@ -37,6 +37,7 @@ page you are on.
 | `gd`       | **History → Deploys**          |
 | `gf`       | **Code → Files**               |
 | `gs`       | **Code → Shell**               |
+| `gi`       | **Needs you** (every project's) |
 | `gp`       | **Planning** (the organization's) |
 | `gt` `gT`  | next / previous page           |
 
@@ -106,13 +107,15 @@ A question from Claude has no key for an answer: answer it in its card. `X` decl
 | `D`           | open **History → Deploys** |
 | `!`           | a new shell                |
 
-## History and Goals
+## History, Goals and Needs you
 
 - **History → Commits**: `j`/`k` next / previous commit, `gg`/`G` first / last, `n`/`p` next / previous
   changed file of the open commit, `Ctrl-d`/`Ctrl-u` scroll it, `q`/`Esc` close it (its preview
   first, if it shows one), `P` draw on its live preview, `r` refresh (fetch origin and show its new commits).
 - **Goals**: `j`/`k` open the next / previous goal, `q`/`Esc` close it.
 - **History → Deploys**: `j`/`k` open the next / previous deploy, `q`/`Esc` close it.
+- **Needs you**: `j`/`k` next / previous row (with one open, open that one), `gg`/`G` first / last,
+  `Enter` open it, `y`/`A`/`X` allow, always allow or deny its permission request, `q`/`Esc` close it.
 
 ## Chat
 

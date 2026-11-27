@@ -1,5 +1,5 @@
 import { $, h, ib, ico, plural } from "./dom.js";
-import { api } from "./api.js";
+import { api, here } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import * as store from "./store.js";
@@ -291,12 +291,17 @@ function fillChecks(t) {
 }
 
 // ------------------------------------------------------------------ permission requests
-function permCard(p, withTodo) {
-  if (isQuestion(p)) return questionCard(p, withTodo);
+// permCard is request p's card: a permission's Allow, Always allow and Deny,
+// or a question's answers. where is where it shows: "board" (the banner over
+// the board, naming its task, with Open task), "task" (the task's pane) or
+// "needs" (Needs you's pane, needs.js; prefix is the computer of p's project).
+export function permCard(p, where, prefix = here()) {
+  const withTodo = where === "board";
+  if (isQuestion(p)) return questionCard(p, where, prefix);
   const d = describePerm(p);
   const t = state.todos.get(p.todo_id);
   const decide = (decision) => attempt(async () => {
-    await api("POST", `/api/permissions/${p.id}`, { decision });
+    await api("POST", `/api/permissions/${p.id}`, { decision }, prefix);
     toast(decision === "deny" ? "Denied" : decision === "always" ? `${p.tool} always allowed in this project` : "Allowed");
   });
   return h("div", { class: "perm", role: "group", "aria-label": `Permission request: ${d.title}` },
@@ -318,15 +323,16 @@ const questionCards = new Map();
 // questionCard answers Claude's AskUserQuestion request p: each question
 // with its header, its options (checkboxes when several may be chosen), an
 // Other field for an answer in the user's own words, Submit, and Decline.
-function questionCard(p, withTodo) {
-  const key = `${p.id}:${withTodo ? "board" : "task"}`;
+function questionCard(p, where, prefix) {
+  const withTodo = where === "board";
+  const key = `${p.id}:${where}`;
   if (questionCards.has(key)) return questionCards.get(key);
   const t = state.todos.get(p.todo_id);
-  const { qs, groups, answers, focusMissing } = questionGroups(p, `ask-${p.id}-${withTodo ? "b" : "t"}`);
+  const { qs, groups, answers, focusMissing } = questionGroups(p, `ask-${p.id}-${where[0]}`);
   const send = (body, done) => attempt(async () => {
     buttons.forEach((b) => { b.disabled = true; });
     try {
-      await api("POST", `/api/permissions/${p.id}`, body);
+      await api("POST", `/api/permissions/${p.id}`, body, prefix);
     } catch (e) {
       buttons.forEach((b) => { b.disabled = false; });
       throw e;
@@ -359,15 +365,24 @@ function questionCard(p, withTodo) {
   return card;
 }
 
-export function renderPerms() {
+// forgetQuestionCards drops the kept question cards of where whose requests
+// aren't pending any more (ids: those that are).
+export function forgetQuestionCards(where, ids) {
   for (const key of questionCards.keys()) {
-    if (!state.perms.some((p) => key.startsWith(`${p.id}:`))) questionCards.delete(key);
+    const i = key.lastIndexOf(":");
+    if (key.slice(i + 1) === where && !ids.includes(key.slice(0, i))) questionCards.delete(key);
   }
+}
+
+export function renderPerms() {
+  const ids = state.perms.map((p) => p.id);
+  forgetQuestionCards("board", ids);
+  forgetQuestionCards("task", ids);
   const banner = $("#perm-banner");
   banner.hidden = !state.perms.length;
-  banner.replaceChildren(...state.perms.map((p) => permCard(p, true)));
+  banner.replaceChildren(...state.perms.map((p) => permCard(p, "board")));
   const mine = state.perms.filter((p) => p.todo_id === state.detail);
   $("#d-perms").hidden = !mine.length;
-  $("#d-perms").replaceChildren(...mine.map((p) => permCard(p, false)));
+  $("#d-perms").replaceChildren(...mine.map((p) => permCard(p, "task")));
   renderBoard();
 }

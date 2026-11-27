@@ -1795,7 +1795,12 @@ func (s *Server) listPermissions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	project := r.URL.Query().Get("project")
+	writeJSON(w, http.StatusOK, s.pendingPerms(sv, r.URL.Query().Get("project")))
+}
+
+// pendingPerms are the permission requests and questions waiting in the
+// caller's projects (project's only, unless ""), oldest first.
+func (s *Server) pendingPerms(sv *service, project string) []perm.Request {
 	all := s.Perms.Pending(project)
 	if s.Dispatch != nil {
 		// The hub's tasks wait on their runners' requests.
@@ -1808,7 +1813,7 @@ func (s *Server) listPermissions(w http.ResponseWriter, r *http.Request) {
 			out = append(out, req)
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out
 }
 
 func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {

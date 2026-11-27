@@ -61,11 +61,13 @@ shows, on this computer or another one. It looks like this:
 2. Click **New task** (<kbd>n</kbd>) and say what Claude should do. Click **Queue**.
 3. When the task is in *Review*, read the diff. Click a line to comment on it, then **Rework…** to
    send it back, or **Approve** to merge it.
+4. With several projects, open **Needs you** (<kbd>g</kbd> <kbd>i</kbd>): every task to review,
+   question from Claude and failed task, in one list. See [Needs you](docs/tasks.md#needs-you).
 
 Queue as many tasks as you like: they run in parallel. See [Tasks](docs/tasks.md) for the
 details: test commands, priorities, follow-up tasks, pacing and pausing.
 
-A project has four pages in the sidebar, and Planning is the organization's:
+A project has four pages in the sidebar. **Needs you** and **Planning** are across projects:
 
 - **Board**: the tasks. **From scans** shows the drafts scans added; **⋮ → Scans…** runs and
   sets up the scans.
@@ -73,6 +75,7 @@ A project has four pages in the sidebar, and Planning is the organization's:
 - **History**: **Commits** (the default branch, with what was deployed where) and **Deploys**
   (the environments: deploy, promote, roll back).
 - **Code**: **Files** (browse and edit the default branch) and **Shell** (a terminal).
+- **Needs you**: what waits on you in every project, oldest first.
 
 ## Docs
 

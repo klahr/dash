@@ -656,10 +656,7 @@ func (v *wallTally) card(d *wallData, t model.Todo) {
 		if t.Resumable {
 			d.Stages.Resumable++
 		}
-		since := t.UpdatedAt
-		if t.FinishedAt != nil {
-			since = *t.FinishedAt
-		}
+		since := failedSince(t)
 		p := v.byProject[t.ProjectID]
 		n := wallNeed{Kind: "failed", ID: t.ID, Title: v.title(t), Project: p.Name, Since: since,
 			Old: v.now.Sub(since) > wallFailedOld, Reason: v.reason(t.Error), Resume: t.Resumable}
@@ -703,21 +700,10 @@ func (v *wallTally) running(t model.Todo) wallRun {
 // review counts task t, in review, into d: a need for a reviewer.
 func (v *wallTally) review(d *wallData, t model.Todo) {
 	d.Stages.Review++
-	since := t.UpdatedAt
-	if t.FinishedAt != nil {
-		since = *t.FinishedAt
-	}
-	if t.WaitsOnGitHub() {
-		// Reviewed and merged on GitHub: listed only while a person
-		// has to act there, not while it is a draft, back with
-		// Claude, or waiting for its checks.
-		if t.PR.Waits == "" {
-			d.Stages.ReviewGitHub++
-			return
-		}
-		if w := t.PR.WaitsSince; w != nil && w.After(since) {
-			since = *w
-		}
+	since, waits := reviewWait(t)
+	if !waits {
+		d.Stages.ReviewGitHub++
+		return
 	}
 	if d.Stages.ReviewOldest == nil || since.Before(*d.Stages.ReviewOldest) {
 		x := since
@@ -736,6 +722,36 @@ func (v *wallTally) review(d *wallData, t model.Todo) {
 		}
 	}
 	d.Needs = append(d.Needs, n)
+}
+
+// reviewWait is since when task t, in review, has waited on a person, and
+// whether it does at all. Wall and Needs you (needs.go) both go by it. A
+// task reviewed and merged on GitHub waits on a person only while one has
+// to act there, not while it is a draft, back with Claude, or waiting for
+// its checks; it waits from when its pull request started waiting, or from
+// when Claude last finished if that is later.
+func reviewWait(t model.Todo) (since time.Time, waits bool) {
+	since = t.UpdatedAt
+	if t.FinishedAt != nil {
+		since = *t.FinishedAt
+	}
+	if t.WaitsOnGitHub() {
+		if t.PR.Waits == "" {
+			return since, false
+		}
+		if w := t.PR.WaitsSince; w != nil && w.After(since) {
+			since = *w
+		}
+	}
+	return since, true
+}
+
+// failedSince is when failed task t failed.
+func failedSince(t model.Todo) time.Time {
+	if t.FinishedAt != nil {
+		return *t.FinishedAt
+	}
+	return t.UpdatedAt
 }
 
 // finish sorts d's lists and sums up the day once every card is counted.

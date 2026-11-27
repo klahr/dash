@@ -36,7 +36,7 @@ func TestKeysSheetBound(t *testing.T) {
 
 	// The sections whose keys go through the normal-mode handler (the others:
 	// drawing, the chat, forms and Planning handle their own keys).
-	normal := map[string]bool{"everywhere": true, "sections": true, "board": true, "task": true, "open": true, "perms": true, "shell": true, "history": true, "goals": true, "deploys": true}
+	normal := map[string]bool{"everywhere": true, "sections": true, "board": true, "task": true, "open": true, "perms": true, "shell": true, "history": true, "goals": true, "needs": true, "deploys": true}
 	// How the sheet names a key, against e.key.
 	names := map[string]string{"Esc": "Escape", "Space": " ", "Ctrl-d": "ctrl+d", "Ctrl-u": "ctrl+u"}
 	// Handled before BOUND: the palette (Ctrl-k), the terminal (Ctrl-]), counts (5j).

@@ -131,7 +131,9 @@ export async function selectProject(p, { follow = true, restore = follow } = {})
   // so History and Files aren't loaded twice below. (Goals are: a caller
   // may open a goal once this returns. Scans are, for the Board's
   // From scans.)
-  let view = restore && state.view !== "planning" ? projectView(p) : null;
+  // Planning and Needs you are across projects: they stay (a task opened
+  // from Needs you opens over it).
+  let view = restore && !["planning", "needs"].includes(state.view) ? projectView(p) : null;
   if (view === state.view) view = null;
   if (view) showView(view, { now: true });
   const shows = (v) => !view && state.view === v;
@@ -202,7 +204,7 @@ export function applyBrand() {
   const vars = { brand: "--brand", hover: "--brand-hover", on: "--on-brand" };
   const p = state.project, root = document.documentElement;
   let c = null;
-  if (p?.color && p.color_buttons !== false && state.view !== "planning") {
+  if (p?.color && p.color_buttons !== false && !["planning", "needs"].includes(state.view)) {
     const css = getComputedStyle(root);
     const v = (name, def) => css.getPropertyValue(name).trim() || def;
     const bg = v("--bg", BG), surface = v("--surface", SURFACE), raised = v("--raised", RAISED);

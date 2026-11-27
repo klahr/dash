@@ -21,6 +21,8 @@
 //                                  were drafts), open over the board
 //   /planning                      Planning (the org's, not one project's)
 //   /planning/cards/{id}           a Planning card, open
+//   /needs                         Needs you: what waits on you, across projects
+//   /needs/{id}                    an item of it, open (a request's id, else its task's)
 //
 // Query parameters, on any of them:
 //   board=<id>, project=<id>, tag=<tag> (any number), target=<target>, mine=1
@@ -40,7 +42,9 @@
 // VIEWS are the app's views (state.view), as router.js and nav.js name them.
 // Code's tabs are views files and run (and try), History's history and
 // deploys; their paths are in VIEW_PATH where they differ.
-export const VIEWS = ["board", "run", "try", "history", "goals", "deploys", "files", "planning"];
+export const VIEWS = ["board", "run", "try", "history", "goals", "deploys", "files", "planning", "needs"];
+// ACROSS are the views of no one project: their URLs name none.
+export const ACROSS = ["planning", "needs"];
 export const SHEETS = ["settings", "account", "org", "runners", "scans"];
 const VIEW_PATH = { files: "code", run: "shell" };
 const PATH_VIEW = { code: "files", shell: "run" };
@@ -74,13 +78,13 @@ export function findProject(list, ref) {
 }
 
 // parse turns a URL (a Location or URL) into a route:
-//   { project: {id, machine} | null, view, task, goal, sha, issue, deploy, card,
+//   { project: {id, machine} | null, view, task, goal, sha, issue, deploy, card, need,
 //     plBoard, plProject, plTags, plTarget, plMine, sheet, section, named }
 // named is false for a plain / (no place in it: the saved one applies). A
 // path that isn't the app's parses as / with named false.
 export function parse(loc) {
   const q = new URLSearchParams(loc.search);
-  const r = { project: null, view: null, task: null, goal: null, sha: null, issue: null, deploy: null, card: null,
+  const r = { project: null, view: null, task: null, goal: null, sha: null, issue: null, deploy: null, card: null, need: null,
     plBoard: "", plProject: null, plTags: [], plTarget: "", plMine: false, sheet: null, section: null, named: false };
   const sheet = q.get("sheet");
   if (SHEETS.includes(sheet)) { r.sheet = sheet; r.section = q.get("section"); }
@@ -97,12 +101,18 @@ export function parse(loc) {
     r.plMine = q.get("mine") === "1";
     return r;
   }
+  if (parts[0] === "needs" && (parts.length === 1 || (parts.length === 2 && parts[1]))) {
+    r.named = true;
+    r.view = "needs";
+    r.need = parts[1] || null;
+    return r;
+  }
   if (parts[0] === "p" && parts[1] && parts.length <= 4) {
     r.project = parseProject(parts[1]);
     r.named = true;
     if (parts.length === 2) r.view = "board";
     else if (parts.length === 3 && Object.hasOwn(PATH_VIEW, parts[2])) r.view = PATH_VIEW[parts[2]];
-    else if (parts.length === 3 && VIEWS.includes(parts[2]) && parts[2] !== "planning") r.view = parts[2];
+    else if (parts.length === 3 && VIEWS.includes(parts[2]) && !ACROSS.includes(parts[2])) r.view = parts[2];
     else if (parts.length === 3 && Object.hasOwn(OLD_VIEWS, parts[2])) {
       const old = OLD_VIEWS[parts[2]];
       r.view = old.view;
@@ -139,6 +149,8 @@ export function href(r, p) {
     for (const t of r.plTags || []) q.append("tag", t);
     if (r.plTarget) q.set("target", r.plTarget);
     if (r.plMine) q.set("mine", "1");
+  } else if (r.view === "needs") {
+    path = "/needs" + (r.need ? `/${enc(r.need)}` : "");
   } else if (p) {
     const base = `/p/${projectSegment(p)}`;
     if (r.task) path = `${base}/tasks/${enc(r.task)}`;
@@ -163,7 +175,7 @@ export function href(r, p) {
 export function place(url) {
   const u = new URL(url, "http://x");
   const parts = u.pathname.split("/");
-  const item = (parts[1] === "p" && parts.length === 5) || (parts[1] === "planning" && parts.length === 4);
+  const item = (parts[1] === "p" && parts.length === 5) || (parts[1] === "planning" && parts.length === 4) || (parts[1] === "needs" && parts.length === 3);
   return (item ? parts.slice(0, -1).join("/") + "/*" : u.pathname) + "?" + (u.searchParams.get("sheet") || "");
 }
 

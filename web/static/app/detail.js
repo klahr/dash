@@ -12,7 +12,7 @@ import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.j
 import { canPreview, hidePreview, previewButton, previewOf, pv, renderPreview, stopPreview } from "./preview.js";
 import { canRework, popMenu, renderPane, renderReworkBox, revertTodo, reviewTodo, reworkTodo } from "./drawmode.js";
 import { runnerName } from "./runners.js";
-import { commentsFor, renderChecks, renderPerms } from "./review.js";
+import { renderChecks, renderPerms } from "./review.js";
 import { renderTodoChatMode, todoChat } from "./chat.js";
 import { renderRunStats } from "./runstats.js";
 import { loadTodoChat } from "./chatpane.js";
@@ -235,15 +235,24 @@ export function renderDetail() {
 }
 
 export function renderActions(t) {
+  fillActions($("#d-actions"), t);
+}
+
+// fillActions puts task t's buttons for where it stands (Approve, Rework…,
+// Retry…) in box: the task pane's action bar, or Needs you's pane
+// (needs.js), where project is t's project, not always the one open, and
+// taskPane is false: Preview and Edit, which work in the task pane, are left out.
+export function fillActions(box, t, { project = state.project, taskPane = true } = {}) {
+  const prefix = project?.prefix || "";
   // Disabled while its request is in flight: a double click sends it once.
-  const post = (verb, body, msg) => attempt((e) => busy(e.currentTarget, async () => { await api("POST", `/api/todos/${t.id}/${verb}`, body); toast(msg); }));
+  const post = (verb, body, msg) => attempt((e) => busy(e.currentTarget, async () => { await api("POST", `/api/todos/${t.id}/${verb}`, body, prefix); toast(msg); }));
   const b = (icon, label, onclick, cls = "") => ib({ class: `btn ${cls}`, onclick }, icon, label);
-  const rework = attempt(() => reworkTodo(t));
+  const rework = attempt(() => reworkTodo(t, "", project));
   // With comments on the diff waiting, Rework sends them: it says how many.
-  const comments = commentsFor(t.id).length;
+  const comments = ((state.todos.get(t.id) || t).comments || []).length;
   const reworkButton = () => comments ? b("redo", `Send rework (${comments})…`, rework, "primary") : b("redo", "Rework…", rework);
   // On a desktop the task is edited in the pane itself (⋯ has the full form).
-  const edit = () => desktop.matches ? null : b("edit", "Edit", () => openTodoForm(t));
+  const edit = () => desktop.matches || !taskPane ? null : b("edit", "Edit", () => openTodoForm(t));
   const btns = [];
   switch (t.status) {
     case "draft":
@@ -258,9 +267,9 @@ export function renderActions(t) {
       if (!t.paused) {
         // Pausing keeps the session to go on with: an agent that can't resume one would start over.
         const pause = b("pause", "Pause", post("pause", null, "Pausing"));
-        if (!agentCan(state.project, "resume")) {
+        if (!agentCan(project, "resume")) {
           pause.disabled = true;
-          pause.title = `${cantSay(state.project, "resume")}, so a paused task would start over. Stop it instead.`;
+          pause.title = `${cantSay(project, "resume")}, so a paused task would start over. Stop it instead.`;
         }
         btns.push(pause);
       }
@@ -274,27 +283,27 @@ export function renderActions(t) {
       // Changed no files: nothing to merge. Ask for changes · Close.
       if (closable(t)) {
         btns.push(b("redo", "Ask for changes…", rework));
-        btns.push(b("check", "Close", attempt(() => closeTodo(t)), "review grow"));
-        if (busyTodos.has(t.id)) disableWhileBusy(btns, busyTodos.get(t.id));
+        btns.push(b("check", "Close", attempt(() => closeTodo(t, project)), "review grow"));
+        if (busyTodos.has(t.id)) disableWhileBusy(box, btns, busyTodos.get(t.id));
         break;
       }
       // Preview · Rework · Approve (Claude's review is on the card and in ⋯)
-      if (canPreview(t)) btns.push(previewButton(t));
+      if (taskPane && canPreview(t)) btns.push(previewButton(t));
       btns.push(reworkButton());
       if (approvable(t)) {
         btns.push(b("check", "Approve", attempt(async () => {
-          await whileBusy(t, waitsOnGitHub(t) ? "Pushing…" : "Merging…", () => api("POST", `/api/todos/${t.id}/approve`));
+          await whileBusy(t, waitsOnGitHub(t) ? "Pushing…" : "Merging…", () => api("POST", `/api/todos/${t.id}/approve`, null, prefix));
           toast(waitsOnGitHub(t) ? "Pushing the pull request again" : "Approved — merging");
         }), "review grow"));
       } else if (canMergePR(t)) {
         btns.push(h("a", { class: "btn", href: t.pr.url, target: "_blank", rel: "noopener", title: `Open pull request #${t.pr.number} on GitHub` }, ico("external"), "GitHub"));
-        btns.push(b("merge", "Merge pull request", attempt(() => mergePR(t)), "review grow"));
+        btns.push(b("merge", "Merge pull request", attempt(() => mergePR(t, project)), "review grow"));
       } else {
         // Reviewed on GitHub: a review asking for changes comes back to Claude.
         btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener", title: "Review, approve or close it on GitHub" },
           ico("external"), `Review PR #${t.pr.number} on GitHub`));
       }
-      if (busyTodos.has(t.id)) disableWhileBusy(btns, busyTodos.get(t.id));
+      if (busyTodos.has(t.id)) disableWhileBusy(box, btns, busyTodos.get(t.id));
       break;
     case "merging":
       if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, ico("external"), `Open pull request #${t.pr.number}`));
@@ -303,19 +312,19 @@ export function renderActions(t) {
       btns.push(t.worktree ? reworkButton() : edit());
       btns.push(t.worktree && t.error?.startsWith("merge:")
         ? b("merge", "Retry merge", post("approve", null, "Merging again"), "review grow")
-        : retryButton(t, b, post));
+        : retryButton(t, b, post, project));
       break;
     case "merged":
       if (!t.revert && !closedNoChanges(t)) btns.push(b("undo", "Revert…", attempt(() => revertTodo(t)), "grow"));
       break;
   }
-  if (!busyTodos.has(t.id)) $("#d-actions").removeAttribute("aria-busy");
-  $("#d-actions").replaceChildren(...btns.filter(Boolean));
+  if (!busyTodos.has(t.id)) box.removeAttribute("aria-busy");
+  box.replaceChildren(...btns.filter(Boolean));
 }
 
-// disableWhileBusy disables the pane's buttons while the task is approved,
-// merged or closed, with label on the main one (the last).
-function disableWhileBusy(btns, label) {
+// disableWhileBusy disables the pane's buttons (in box) while the task is
+// approved, merged or closed, with label on the main one (the last).
+function disableWhileBusy(box, btns, label) {
   const els = btns.filter(Boolean);
   for (const el of els) {
     if (el.tagName === "A") { el.setAttribute("aria-disabled", "true"); el.tabIndex = -1; el.classList.add("is-disabled"); }
@@ -323,14 +332,14 @@ function disableWhileBusy(btns, label) {
   }
   const main = els.at(-1);
   if (main?.tagName === "BUTTON") main.lastChild.textContent = label;
-  $("#d-actions").setAttribute("aria-busy", "true");
+  box.setAttribute("aria-busy", "true");
 }
 
 // retryButton queues failed task t again. One its runner can resume
 // continues there, in the session that runner kept.
-function retryButton(t, b, post) {
+function retryButton(t, b, post, project) {
   const btn = b("redo", "Retry", post("enqueue", null, "Queued again"), "primary grow");
-  if (!agentCan(state.project, "resume")) btn.title = `Starts over with the full task: ${cantSay(state.project, "resume")}`;
+  if (!agentCan(project, "resume")) btn.title = `Starts over with the full task: ${cantSay(project, "resume")}`;
   else if (t.resumable && t.runner) btn.title = `Continues on ${runnerName(t.runner)}, where its session is kept`;
   return btn;
 }

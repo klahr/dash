@@ -969,8 +969,8 @@ export function closedNoChanges(t) {
 }
 
 // closeTodo closes task t, in review without changes.
-export async function closeTodo(t) {
-  await whileBusy(t, "Closing…", () => api("POST", `/api/todos/${t.id}/close`));
+export async function closeTodo(t, p = state.project) {
+  await whileBusy(t, "Closing…", () => api("POST", `/api/todos/${t.id}/close`, null, p?.prefix || ""));
   toast("Closed");
 }
 
@@ -997,6 +997,7 @@ function redrawBusy(id) {
   renderBoard();
   const t = state.detail === id && state.todos.get(id);
   if (t) renderActions(t);
+  document.dispatchEvent(new CustomEvent("dash:busy", { detail: id })); // Needs you's pane (needs.js)
 }
 
 // reviewActions is a card's row of buttons in review: Review first (Close,
@@ -1032,18 +1033,18 @@ const MERGE_METHODS = { squash: "squash and merge", merge: "a merge commit", reb
 
 // mergePR asks, then merges task t's pull request on GitHub, with the gh
 // account of the computer that follows it (t's runner, or this Dash's).
-export async function mergePR(t) {
-  const method = state.project?.merge_method;
+export async function mergePR(t, p = state.project) {
+  const method = p?.merge_method;
   const how = MERGE_METHODS[method] ? `with ${MERGE_METHODS[method]}` : "with the repository's default merge method";
   const where = t.runner ? `the runner ${runnerName(t.runner)}, which follows it` : "the computer running Dash";
   const ok = await ask({
     title: `Merge pull request #${t.pr.number}?`,
-    body: `Merges "${title(t)}" into ${baseBranch(state.project) || "the default branch"} on GitHub ${how}. `
+    body: `Merges "${title(t)}" into ${baseBranch(p) || "the default branch"} on GitHub ${how}. `
       + `It is done as the GitHub account gh is signed in with on ${where}. Branch protection applies: if GitHub can't merge it yet, it says why and nothing changes.`,
     ok: "Merge pull request",
   });
   if (!ok) return;
-  const res = await whileBusy(t, "Merging…", () => api("POST", `/api/todos/${t.id}/merge-pr`));
+  const res = await whileBusy(t, "Merging…", () => api("POST", `/api/todos/${t.id}/merge-pr`, null, p?.prefix || ""));
   const as = res?.as ? ` as ${res.as}` : "";
   toast(res?.queued ? `Queued to merge${as}` : `Pull request #${t.pr.number} merged${as}`, { tone: "ok", icon: "merge" });
 }

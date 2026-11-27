@@ -9,7 +9,7 @@ import (
 )
 
 // The web app's navigation: the project's pages Board · Goals · History ·
-// Code, Planning set apart below a divider, Code's Files and Shell tabs (the
+// Code, Needs you and Planning set apart below a divider, Code's Files and Shell tabs (the
 // Shell with a "main / commit…" picker; Try's old link opens it at a
 // commit), History's Commits and Deploys tabs, Scans as a sheet over the
 // Board, old links and keys opening where their pages moved, the Keyboard
@@ -25,13 +25,13 @@ func TestBrowserNavigation(t *testing.T) {
 	key := func(what, k, expr string) { b.until(what, expr, chromedp.KeyEvent(k)) }
 
 	// The rail lists each page once, in order (the drawer's pages among the nav's own):
-	// Board, Goals, History, Code; Planning comes last, after the Organization divider.
-	b.waitJS("the pages in order, Planning below the divider", `(() => {
+	// Board, Goals, History, Code; Needs you and Planning come last, after the Organization divider.
+	b.waitJS("the pages in order, Needs you and Planning below the divider", `(() => {
 		const els = [...document.querySelectorAll(".nav [data-view], .nav > .nav-sep")].filter((e) => e.offsetHeight > 0)
 			.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
 		const sep = els.find((e) => e.matches(".nav-sep"));
 		return sep?.textContent === "Organization"
-			&& els.map((e) => e.dataset.view || "|").join() === "board,goals,history,code,|,planning";
+			&& els.map((e) => e.dataset.view || "|").join() === "board,goals,history,code,|,needs,planning";
 	})()`)
 	// The sidebar has no Actions: Run tests, Push and Builds… are in Run's ▾ menu, Deploy on the Deploys page.
 	b.waitJS("no Actions in the sidebar", `document.querySelector("#run-split") && !document.querySelector("#quick-actions, #quick-test, #push-main, #pm-builds")`)
@@ -140,7 +140,7 @@ func TestBrowserNavigation(t *testing.T) {
 	})()`)
 	b.until("Esc closes the status", `!document.querySelector("#status-pop").open && document.activeElement?.id === "status-btn"`, chromedp.KeyEvent(kb.Escape))
 
-	// A phone: the bottom nav is Board · Chat · Planning · Goals, left to right, with no
+	// A phone: the bottom nav is Board · Chat · Needs you · Planning · Goals, left to right, with no
 	// divider; History and Code are in the menu drawer.
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.do("reload", chromedp.Reload())
@@ -148,7 +148,7 @@ func TestBrowserNavigation(t *testing.T) {
 	b.waitJS("no divider in the bottom nav", `getComputedStyle(document.querySelector(".nav > .nav-sep")).display === "none"`)
 	b.waitJS("the bottom nav's tabs in order", `[...document.querySelectorAll(".nav > button")].filter((e) => e.offsetWidth > 0)
 		.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
-		.map((e) => e.querySelector("span").textContent).join() === "Board,Chat,Planning,Goals"`)
+		.map((e) => e.querySelector("span").textContent).join() === "Board,Chat,Needs you,Planning,Goals"`)
 	b.until("open Goals", `document.querySelector('.nav > button[data-view=goals][aria-current=page].active') && document.querySelector("#view-goals.active")`,
 		chromedp.Click(chromedp.CSS(`.nav > button[data-view=goals]`)))
 	b.openDrawer("")

@@ -325,6 +325,7 @@ func (s *Server) buildMux() *http.ServeMux {
 
 	// Todos
 	mux.HandleFunc("GET /api/projects/{pid}/todos", s.listTodos)
+	mux.HandleFunc("GET /api/needs", s.listNeeds) // Needs you, across projects (needs.go)
 	mux.HandleFunc("POST /api/projects/{pid}/todos", s.createTodo)
 	mux.HandleFunc("GET /api/todos/{tid}", s.getTodo)
 	mux.HandleFunc("PATCH /api/todos/{tid}", s.updateTodo)

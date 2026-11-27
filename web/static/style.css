@@ -1118,7 +1118,7 @@ button.shot-img { cursor: crosshair; }
 .file-status.st-D { color: var(--failed); }
 .file-status:is(.st-R, .st-C) { color: var(--accent); }
 /* The close button: Back on a phone, ✕ on a desktop. A phone shows the whole message (its pane scrolls). */
-#cd-close .cd-x, #gd-close .cd-x, #dd-close .cd-x, #pd-close .cd-x, .commit-message-more { display: none; }
+#cd-close .cd-x, #gd-close .cd-x, #dd-close .cd-x, #pd-close .cd-x, #nd-close .cd-x, .commit-message-more { display: none; }
 .release-warnings { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
 .release-warnings:empty { display: none; }
 .release-warnings a { margin-left: 4px; }
@@ -2606,7 +2606,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   #pc-open, .top-menu > summary .chat-badge { display: none; }
   /* Without Voice commands the ⋮ menu starts with the project's items (no line above them), and has
      nothing without a project. */
-  .nav > .nav-chat { order: 1; }
+  .nav > .nav-chat, .nav > button[data-view="needs"] { order: 1; }
   .nav > button[data-view="planning"] { order: 2; }
   .nav > button[data-view="goals"] { order: 3; }
   /* On a phone chat is a page like the others (the nav's Chat tab, shown active): the view under it
@@ -2698,7 +2698,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .menu-view { order: 2; min-height: 42px; }
   .menu-view svg { width: 20px; height: 20px; }
   .nav > .nav-sep { display: flex; order: 3; }
-  .nav > button[data-view="planning"] { order: 3; }
+  .nav > button:is([data-view="needs"], [data-view="planning"]) { order: 3; }
   .side-collapsed .nav > .nav-sep { padding: 0 6px; }
   .side-collapsed .nav-sep span { display: none; }
   .nav > button { order: 2; flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 42px; padding: 0 10px; border-radius: var(--r-m); font-size: var(--fs-body); }
@@ -2891,6 +2891,16 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
      beside the Board (.detail-beside, the same width): the board narrows to the room left of
      it (app/planning.js marks its root .card-open), the card opened marked and scrolled into sight. Headed like the goal's pane, its close
      button and Copy link at the right. */
+  /* An item of Needs you lies beside its list the same way (app/needs.js marks .need-pane). */
+  .need-detail { width: var(--detail-beside-w); box-shadow: none; }
+  .app.need-pane #view-needs .page.needs { margin: 0 var(--detail-beside-w) 0 0; width: auto; }
+  .need-detail .detail-head { flex-direction: row-reverse; padding: 8px 8px 12px 24px; border-bottom: 1px solid var(--line); }
+  #nd-close .cd-back { display: none; }
+  #nd-close .cd-x { display: block; }
+  .need-detail .detail-titles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-top: 6px; }
+  .need-detail .detail-titles h2 { flex-basis: 100%; }
+  .need-detail .detail-meta { margin-top: 0; }
+  .need-detail .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
   .card-detail { width: var(--detail-beside-w); box-shadow: none; }
   .card-open > .page.planning { margin-right: var(--detail-beside-w); width: auto; }
   .card-detail .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
@@ -3930,6 +3940,52 @@ button.tag-chip.hued:hover { color: var(--tag); border-color: var(--tag); backgr
 .g-blocked { --c: var(--failed); }
 
 .goal-detail { z-index: 34; } /* under a task opened from its plan, and the task's scrim */
+
+/* ---------- needs you ----------
+   Needs you (a .page): what waits on the user in every project, a row each, oldest first:
+   its kind, its title and project, how long it has waited. One opens in #need-detail,
+   beside the list on a desktop (below) and full screen on a phone (app/needs.js). */
+.needs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.needs-list:empty { display: none; }
+.need { --c: var(--muted); }
+.need.k-review { --c: var(--review); }
+.need.k-question, .need.k-permission { --c: var(--accent); }
+.need.k-failed { --c: var(--failed); }
+.need-open {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 10px 14px; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); transition: border-color .15s, background-color .15s;
+}
+.need-open:hover { border-color: var(--faint); }
+.need.selected .need-open { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 8%, var(--surface)); box-shadow: inset 3px 0 0 var(--brand); }
+/* The kind is a word as well as a colour. */
+.need-kind { flex: none; min-width: 84px; display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-s); font-weight: 600; color: var(--c, var(--muted)); }
+.need-kind::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--muted)); }
+.k-review.need-kind { --c: var(--review); } .k-failed.need-kind { --c: var(--failed); }
+:is(.k-question, .k-permission).need-kind { --c: var(--accent); }
+.need-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.need-title { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.need-sub { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: var(--fs-s); color: var(--muted); }
+.need-project { display: inline-flex; align-items: center; gap: 6px; }
+.need-age { flex: none; font-size: var(--fs-s); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* A phone: the kind above the title, the age beside the kind. */
+@media (max-width: 719px) {
+  .need-open { flex-wrap: wrap; gap: 4px 10px; }
+  .need-kind { min-width: 0; }
+  .need-age { margin-left: auto; }
+  .need-main { flex-basis: 100%; order: 1; }
+}
+.need-detail { z-index: 34; } /* under a task opened from it, and the task's scrim */
+.need-detail .need-actions { flex-basis: 100%; gap: 8px; }
+.need-detail .need-actions[hidden] { display: none; }
+.need-perm { margin-bottom: var(--sp-4); }
+.need-perm .perm { margin: 0; }
+.need-checks:empty { display: none; }
+.need-checks { margin-bottom: var(--sp-3); }
+.need-prompt { overflow-wrap: anywhere; }
+.need-diffstat { margin-left: 6px; font-weight: 500; font-size: var(--fs-xs); }
+/* The changes are to read here: comments on lines are made in the task's own pane. */
+.need-diff .diff-lines div[data-ln] { cursor: auto; }
+.need-diff .diff-lines div[data-ln]:hover { outline: 0; }
 
 /* ---------- deploys ----------
    The Deploys page (a .page like Goals): a card per environment, what is live

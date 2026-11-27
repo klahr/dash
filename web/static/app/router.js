@@ -15,6 +15,7 @@ import { openAccount } from "./accountsheet.js";
 import { openOrg } from "./account.js";
 import { openRunners } from "./runners.js";
 import { openScans } from "./scans.js";
+import { closeNeed, loadNeeds, openNeed } from "./needs.js";
 
 // ------------------------------------------------------------------ router
 // Keeps the address bar on what the page shows, so Back and Forward step
@@ -50,8 +51,10 @@ document.addEventListener("dash:route", (e) => {
 
 // current is the route of what the page shows now.
 function current() {
-  const r = { view: state.view, task: null, goal: null, sha: null, issue: null, deploy: null, card: null, plBoard: "", plProject: "", plTags: [], plTarget: "", plMine: false, sheet: null, section: null };
-  if (state.view === "planning") {
+  const r = { view: state.view, task: null, goal: null, sha: null, issue: null, deploy: null, card: null, need: null, plBoard: "", plProject: "", plTags: [], plTarget: "", plMine: false, sheet: null, section: null };
+  if (state.view === "needs") {
+    r.need = state.needs.open;
+  } else if (state.view === "planning") {
     r.card = cardId();
     const f = planningFilters();
     r.plBoard = f.board;
@@ -104,7 +107,7 @@ export async function start({ moved = false } = {}) {
   if (s.ready || s.starting) return;
   s.starting = true;
   const named = initial.named && !moved;
-  const shut = { task: null, goal: null, sha: null, card: null, sheet: null, section: null };
+  const shut = { task: null, goal: null, sha: null, card: null, need: null, sheet: null, section: null };
   // A link to something open (a task, goal, commit, card, sheet): its page
   // without it goes under it, so Back (a phone's too) closes it in Dash.
   // Before it opens: a Back while it loads must not leave Dash.
@@ -223,6 +226,13 @@ async function apply(r, { startup = false, settle = !startup, taskView = null } 
       const t = [...state.todos.values()].find((x) => x.id === r.issue || x.finding?.legacy_ids?.includes(r.issue));
       if (t && state.detail !== t.id) await openDetail(t.id);
     }
+
+    if (r.need) {
+      if (state.needs.open !== r.need) {
+        if (!state.needs.loaded) await loadNeeds().catch(() => {});
+        if (!await openNeed(r.need)) { closeNeed(); missing.push("item"); }
+      }
+    } else if (state.needs.open) closeNeed();
 
     if (r.card) {
       if (cardId() !== r.card) {

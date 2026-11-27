@@ -47,6 +47,7 @@ export const state = {
   previews: new Map(), // "machine/todo id" → live preview, on every computer
   perms: [],           // pending permission requests for this project
   goalOpen: null,      // id of the goal open in its pane
+  needs: { list: [], loaded: false, open: null, sel: null }, // Needs you (needs.js): its items, the one open and the selected row
   pushOn: false,       // this browser gets the hub's Web Push notifications
   pushEvents: null,    // Set of the events the user wants pushed (Account → Notifications); null: all
   pushTasks: null,     // whose task events: "mine" or "all" (Account → Notifications → Tasks); null: all

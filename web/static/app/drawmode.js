@@ -591,17 +591,18 @@ export const reworkLabel = (t) => closable(t) ? "Ask for changesâ€¦" : "Reworkâ€
 // text prefills the notes, e.g. from the task chat. Pictures added from the
 // preview's draw mode (and their notes) come along. Resolves true once sent.
 // The task's comments on its diff (Changes) go with them, before the notes.
-export async function reworkTodo(t, text = "") {
+// p is t's project (Needs you sends rework to tasks of any project).
+export async function reworkTodo(t, text = "", p = state.project) {
   const shot = shots.get(t.id);
   const value = [shot?.text.trim(), text].filter(Boolean).join("\n\n");
-  const n = commentsFor(t.id).length;
+  const n = (state.todos.get(t.id) || t).comments?.length || 0;
   const res = n
     ? await ask({ title: `Send rework with ${plural(n, "comment")}`, body: "Claude continues in the same worktree and addresses each of your comments on the changes. Add a note for all of them if you like.", input: true, value, placeholder: "Anything else? (optional)", ok: "Send rework", attach: true, attachments: shot?.items || [] })
     : closable(t)
     ? await ask({ title: "Ask for changes", body: "Claude continues in the same worktree with your message and runs again. Paste or attach a screenshot if it helps.", input: true, value, placeholder: "What should Claude do?", ok: "Send", attach: true, attachments: shot?.items || [] })
     : await ask({ title: "Rework", body: "Claude continues in the same worktree with your rework notes. Paste or attach a screenshot to show what's wrong.", input: true, value, placeholder: "What should change?", ok: "Rework", attach: true, attachments: shot?.items || [] });
   if (res === null) return false;
-  await api("POST", `/api/todos/${t.id}/rework`, { feedback: res.text, attachments: res.attachments, comments: n > 0 });
+  await api("POST", `/api/todos/${t.id}/rework`, { feedback: res.text, attachments: res.attachments, comments: n > 0 }, p?.prefix || "");
   shots.delete(t.id);
   renderReworkBox();
   toast(closable(t) ? "Sent to Claude" : "Sent for rework");

@@ -107,8 +107,13 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 1 0 0-9M12 11.5v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <span>Goals</span><span class="badge" id="goal-badge" hidden></span>
       </button>
-      <!-- Planning is the organization's, not this project's: below a divider of its own. -->
+      <!-- Needs you and Planning are across projects, not this project's: below a divider of their own. -->
       <div class="nav-sep" role="presentation"><span>Organization</span></div>
+      <!-- Needs you: what waits on you in every project; its badge counts it (app/needs.js) -->
+      <button data-view="needs" title="Needs you: reviews, questions and failed tasks of every project (gi)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span>Needs you</span><span class="badge" id="needs-badge" hidden></span>
+      </button>
       <button data-view="planning" title="Planning: the organization's plan, across projects (gp)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Planning</span>
@@ -329,6 +334,20 @@
       <!-- Planning: the org's plan, cards linked to tasks and goals; a card opens in a pane
            beside the board (app/planning.js builds it; planners get planning.html instead) -->
       <section class="view" id="view-planning" aria-label="Planning"></section>
+
+      <!-- Needs you: every project's tasks in Review, Claude's questions and permission
+           requests, and failed tasks, oldest first; one opens in #need-detail beside the list
+           (app/needs.js) -->
+      <section class="view" id="view-needs" aria-label="Needs you">
+        <div class="page needs">
+          <header class="cl-head needs-head">
+            <h2 class="cl-title page-title">Needs you</h2>
+            <span class="cl-state" id="needs-state" aria-live="polite"></span>
+          </header>
+          <ul class="needs-list" id="needs-list" aria-label="Waiting on you, oldest first"></ul>
+          <div class="empty" id="needs-empty" hidden><p class="empty-title">Nothing needs you</p><p>Tasks to review, Claude's questions and failed tasks of every project show here.</p></div>
+        </div>
+      </section>
 
       <!-- Code → Files: browse the default branch; saving an edit queues it as a task -->
       <section class="view" id="view-files" aria-label="Code: Files">
@@ -692,6 +711,36 @@
         <section class="goal-section" aria-labelledby="dd-log-head">
           <h3 class="commit-files-head" id="dd-log-head">Log <span class="deploy-eta" id="dd-eta" hidden></span></h3>
           <pre class="deploy-log" id="dd-log" tabindex="0"></pre>
+        </section>
+      </div>
+    </aside>
+    <!-- An item of Needs you: beside the list on desktop, full screen with Back on a phone (like
+         a History commit). What it is and where, the task pane's buttons or the request's card,
+         then the task, why it failed, its tests and its changes (app/needs.js). -->
+    <aside class="detail need-detail" id="need-detail" hidden aria-labelledby="nd-title">
+      <header class="detail-head">
+        <button class="icon-btn" id="nd-close" type="button" aria-label="Back" title="Close (Esc)">
+          <svg class="cd-back" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg class="cd-x" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        </button>
+        <div class="detail-titles">
+          <h2 id="nd-title"></h2>
+          <div class="detail-meta" id="nd-meta"></div>
+          <div class="commit-actions need-actions" id="nd-actions"></div>
+        </div>
+        <button class="icon-btn" id="nd-open" type="button" aria-label="Open task" title="Open the task in its project" data-icon="external"></button>
+      </header>
+      <div class="detail-body" id="nd-body">
+        <div class="need-perm" id="nd-perm" hidden></div>
+        <p class="error-note" id="nd-error" hidden></p>
+        <div class="need-checks" id="nd-checks"></div>
+        <section class="goal-section" id="nd-prompt-wrap" aria-labelledby="nd-prompt-head" hidden>
+          <h3 class="commit-files-head" id="nd-prompt-head">Task</h3>
+          <div class="md need-prompt" id="nd-prompt"></div>
+        </section>
+        <section class="goal-section" id="nd-diff-wrap" aria-labelledby="nd-diff-head" hidden>
+          <h3 class="commit-files-head" id="nd-diff-head">Changes <span class="need-diffstat" id="nd-diffstat"></span></h3>
+          <div class="need-diff" id="nd-diff"></div>
         </section>
       </div>
     </aside>
@@ -1896,6 +1945,7 @@
           <button type="button" class="rail-item" data-rail="shell">Code → Shell</button>
           <button type="button" class="rail-item" data-rail="history">History</button>
           <button type="button" class="rail-item" data-rail="goals">Goals</button>
+          <button type="button" class="rail-item" data-rail="needs">Needs you</button>
           <button type="button" class="rail-item" data-rail="planning">Planning</button>
           <button type="button" class="rail-item" data-rail="deploys">History → Deploys</button>
           <button type="button" class="rail-item" data-rail="chat">Chat</button>
@@ -1935,6 +1985,7 @@
                 <tr><th scope="row"><kbd>gd</kbd></th><td>History → Deploys</td></tr>
                 <tr><th scope="row"><kbd>gf</kbd></th><td>Code → Files</td></tr>
                 <tr><th scope="row"><kbd>gs</kbd></th><td>Code → Shell</td></tr>
+                <tr><th scope="row"><kbd>gi</kbd></th><td>Needs you (every project's)</td></tr>
                 <tr><th scope="row"><kbd>gp</kbd></th><td>Planning (the organization's)</td></tr>
                 <tr><th scope="row"><kbd>gv</kbd></th><td>Start voice mode (hands-free)</td></tr>
                 <tr><th scope="row"><kbd>gt</kbd> <kbd>gT</kbd></th><td>Next / previous section</td></tr>
@@ -2047,6 +2098,18 @@
               <caption class="sr-only">Goals</caption>
               <tbody>
                 <tr><th scope="row"><kbd>j</kbd> <kbd>k</kbd></th><td>Open the next / previous goal (also <kbd>↓</kbd>/<kbd>↑</kbd>)</td></tr>
+                <tr><th scope="row"><kbd>q</kbd> <kbd>Esc</kbd></th><td>Close it</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="needs">
+            <table class="keys-table">
+              <caption class="sr-only">Needs you</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>j</kbd> <kbd>k</kbd></th><td>Next / previous row (also <kbd>↓</kbd>/<kbd>↑</kbd>); with one open, open that one</td></tr>
+                <tr><th scope="row"><kbd>gg</kbd> <kbd>G</kbd></th><td>First / last row</td></tr>
+                <tr><th scope="row"><kbd>Enter</kbd></th><td>Open the row</td></tr>
+                <tr><th scope="row"><kbd>y</kbd> <kbd>A</kbd> <kbd>X</kbd></th><td>Allow, always allow or deny the open permission request</td></tr>
                 <tr><th scope="row"><kbd>q</kbd> <kbd>Esc</kbd></th><td>Close it</td></tr>
               </tbody>
             </table>
