@@ -71,6 +71,7 @@ On the board the keys act on the task under the cursor; in an open task, on that
 | `u`                  | revert a merged task                                              |
 | `gx`                 | open its pull request                                             |
 | `i`                  | type in the task chat                                             |
+| `v`                  | mark the file in view viewed, or not (changes of a task in Review) |
 
 ## Drawing
 

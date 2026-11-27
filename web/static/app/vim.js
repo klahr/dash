@@ -42,7 +42,7 @@ export const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row:
 
 // The keys normal mode takes; any other key keeps the browser's behaviour.
 // web/keys_test.go checks it against the Keyboard sheet.
-export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gn|gc|gs|gh|go|gd|gf|gp|gi|gv|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|z|a|r|e|E|\+|-|_|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gn|gc|gs|gh|go|gd|gf|gp|gi|gv|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|z|a|r|e|E|\+|-|_|K|J|\*|t|T|!|v|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 // The Ctrl keys that scroll. Off a Mac, Ctrl-f and Ctrl-b are the browser's
 // Find and bookmarks, so they stay the browser's.
 export const CTRL_KEYS = isApple ? ["d", "u", "f", "b"] : ["d", "u"];

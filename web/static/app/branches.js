@@ -13,6 +13,7 @@ import { canStartNow, closeDetail, goesAfter, openDetail, pacing, renderActions,
 import { canPreview, previewOf, previewTag, previewTodo } from "./preview.js";
 import { shotThumb } from "./screenshots.js";
 import { reviewTodo } from "./drawmode.js";
+import { cardProgress } from "./review.js";
 import { renderRunnerStatus, runnerName, welcomeScreen } from "./runners.js";
 import { updateNeedsYou } from "./notifications.js";
 import { loadRemote } from "./origin.js";
@@ -933,7 +934,9 @@ export function todoRow(t, li = -1, ri = -1) {
       creatorEl(t),
       wait?.drafts?.length && !wait.failed?.length ? h("span", { class: "card-actions" }, queueDepsChip(wait.drafts)) : null,
       paced || after ? h("span", { class: "card-actions" }, startNowChip(t)) : null),
-    t.status === "review" && !t.reviewing ? reviewActions(t) : null);
+    t.status === "review" && !t.reviewing ? reviewActions(t) : null,
+    // In Review: how much of its changes the user has viewed, along the bottom edge.
+    cardProgress(t));
 }
 
 // The card's chips for its priority, and the runner it is set to run on.

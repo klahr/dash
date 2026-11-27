@@ -5,6 +5,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"net/url"
 	"slices"
 	"strings"
@@ -534,6 +535,14 @@ type Todo struct {
 	// diff (Changes), kept until Rework sends them as one feedback note
 	// (agent.ReviewNote), which then stays in Feedback, or they're discarded.
 	Comments []ReviewComment `json:"comments,omitempty"`
+	// ReviewFiles are the files of the task's diff (Changes) as review
+	// progress counts them, read at diff version ReviewKey (see
+	// ReviewKeyOf); Viewed are the files reviewers have marked viewed. A
+	// mark only counts while its hash is its file's (SetReviewFiles drops
+	// the others), so a rework that changes a file clears its mark.
+	ReviewFiles []DiffFile   `json:"review_files,omitempty"`
+	ReviewKey   string       `json:"review_key,omitempty"`
+	Viewed      []ViewedFile `json:"viewed,omitempty"`
 	// ReviewHead is the head of the task's branch as Review shows it (after
 	// its latest run, or an edit made in review), and ReviewBase that
 	// commit's merge base with the branch it lands on. Set where the
@@ -901,6 +910,67 @@ type ReviewComment struct {
 	Code      string    `json:"code"`
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// DiffFile is one file of a task's diff: its path (a rename's old name,
+// as the diff's "a/" side names it), the lines it adds and removes, and
+// a hash of its part of the diff.
+type DiffFile struct {
+	Path  string `json:"path"`
+	Lines int    `json:"lines"`
+	Hash  string `json:"hash"`
+}
+
+// ViewedFile is a reviewer's mark on a file of a task's diff: User (0:
+// Dash with no accounts) viewed File when its part of the diff hashed Hash.
+type ViewedFile struct {
+	User int64  `json:"user"`
+	File string `json:"file"`
+	Hash string `json:"hash"`
+}
+
+// MaxViewed bounds a task's viewed marks, across its reviewers.
+const MaxViewed = 2000
+
+// ReviewKeyOf is the version of t's diff its ReviewFiles must be read at:
+// it changes when a run ends, an edit is saved or the diff's size changes.
+func ReviewKeyOf(t Todo) string {
+	h := fnv.New64a()
+	for _, e := range t.Edits {
+		fmt.Fprintf(h, "%s\x00%s\x00%s\x00", e.Path, e.Blob, e.Content)
+	}
+	return fmt.Sprintf("%d/%x/%d/%d/%d/%s", t.Runs, h.Sum64(), t.DiffFiles, t.DiffAdd, t.DiffDel, t.MergedCommit)
+}
+
+// SetReviewFiles records files as t's diff at version key, and drops the
+// viewed marks on files that are gone or whose part of the diff changed.
+// It reports whether t changed.
+func (t *Todo) SetReviewFiles(files []DiffFile, key string) bool {
+	hash := make(map[string]string, len(files))
+	for _, f := range files {
+		hash[f.Path] = f.Hash
+	}
+	kept := slices.DeleteFunc(slices.Clone(t.Viewed), func(v ViewedFile) bool { return hash[v.File] != v.Hash })
+	if len(kept) == 0 {
+		kept = nil
+	}
+	if len(files) == 0 {
+		files = nil
+	}
+	changed := t.ReviewKey != key || len(kept) != len(t.Viewed) || !slices.Equal(files, t.ReviewFiles)
+	t.ReviewFiles, t.ReviewKey, t.Viewed = files, key, kept
+	return changed
+}
+
+// SetViewed marks file viewed for user at hash, or clears the mark.
+func (t *Todo) SetViewed(user int64, file, hash string, viewed bool) {
+	t.Viewed = slices.DeleteFunc(t.Viewed, func(v ViewedFile) bool { return v.User == user && v.File == file })
+	if viewed {
+		t.Viewed = append(t.Viewed, ViewedFile{User: user, File: file, Hash: hash})
+	}
+	if len(t.Viewed) == 0 {
+		t.Viewed = nil
+	}
 }
 
 // FileEdit is a file's new content, saved in the web editor. Blob is the git

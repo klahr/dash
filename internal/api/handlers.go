@@ -1364,10 +1364,15 @@ func (s *Server) todoDiff(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	diff, err := sv.diff(r.Context(), r.PathValue("tid"))
+	id := r.PathValue("tid")
+	diff, err := sv.diff(r.Context(), id)
 	if err != nil {
 		writeErr(w, err)
 		return
+	}
+	// Viewed marks this diff outdates clear now (viewed.go).
+	if t, err := sv.data.GetTodo(id); err == nil && reviewed(t) {
+		_, _ = sv.setReviewFiles(id, diff)
 	}
 	writeText(w, diff)
 }

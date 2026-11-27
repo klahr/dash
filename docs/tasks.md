@@ -179,6 +179,7 @@ above the diff.
 - Not right? Click **Rework…**, say what to change, and it goes back to Claude. When it comes
   back, **Changes** shows what changed since. See [After a rework](#after-a-rework).
 - To point at code, comment on its lines. See [Comment on lines](#comment-on-lines).
+- To keep your place, mark files viewed. See [Mark files viewed](#mark-files-viewed).
 - For a small fix, click **Edit** on a changed file: saving commits your edit on the task's
   branch, so approving merges it with the rest.
 - The task's prompt shows folded to its first line. Click **Show** to read all of it.
@@ -202,6 +203,24 @@ comment** (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>).
 - After you send them, the comments are in the task's history: in the timeline, as that round's
   message to the agent, and under the prompt with the other rework notes.
 - A message sent from the task chat in **Rework** mode takes the waiting comments along too.
+
+### Mark files viewed
+
+Each file on the **Changes** tab has a **Viewed** checkbox in its header. Check it when you have
+read the file: the file folds. Uncheck it to unfold it. Press <kbd>v</kbd> to mark the file in
+view (or the one with focus).
+
+- A bar above the files shows how far you are, for example *3 of 7 files viewed*. It fills by
+  lines changed, so a big file counts for more than a small one.
+- The task's card in *Review* shows the same fill as a thin bar along its bottom edge. Hover it
+  for the text. The bar shows once you have viewed a file, and is full when you have viewed them
+  all.
+- Your marks are kept with the task, for you alone: closing the task or reloading keeps them, on
+  every device. Each reviewer sees their own progress, on the card too.
+- When a rework changes a file, its mark clears by itself. Files the rework didn't touch stay
+  viewed.
+- After a rework, when **Changes** shows only what changed since your last review, the bar still
+  counts every file of the task's changes.
 
 ### After a rework
 

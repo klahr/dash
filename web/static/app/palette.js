@@ -17,6 +17,7 @@ import { openQuickAdd, openTodoForm } from "./todos.js";
 import { closeDetail, openDetail } from "./detail.js";
 import { hidePreview, pv } from "./preview.js";
 import { renderPane, startDraw } from "./drawmode.js";
+import { toggleViewedKey } from "./review.js";
 import { toggleInvisibles, toggleVim } from "./diffedit.js";
 import { openPrefs } from "./prefs.js";
 import { openRunners } from "./runners.js";
@@ -441,6 +442,7 @@ async function handleNormal(k, n, hadCount) {
       return renderPane();
     }
     if (state.pane === "timeline" && k === "i") return todoChat.input.focus();
+    if (t && k === "v" && state.pane === "diff") return toggleViewedKey();
     if (t && k === "P" && pv.todo === t.id) return startDraw(); // P: pen on the preview (D is Deploy, on the Shell page)
     if (t && k === "Enter" && enterKey(t)) return todoKey(t, enterKey(t));
     if (t) await todoKey(t, k);

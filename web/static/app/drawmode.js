@@ -15,7 +15,7 @@ import { agoText } from "../time.js";
 import { loadDiff, renderActions } from "./detail.js";
 import { PV_LABEL, commitShown, hidePreview, isTermPreview, paneIn, previewOf, previewTodo, pv, renderPreview, shownPreview } from "./preview.js";
 import { canEditDiff, openDiffEdit } from "./diffedit.js";
-import { commentRow, commentsBar, commentsFor, keepCommentBoxes, sentComments, sentRow, sinceBar } from "./review.js";
+import { canComment, commentRow, commentsBar, commentsFor, keepCommentBoxes, progressBar, reviewProgress, sentComments, sentRow, sinceBar, viewedBox, viewedFiles } from "./review.js";
 import { setTodoChatMode, todoChat } from "./chat.js";
 import { isTyping, openDialog } from "./vim.js";
 import { popMenu } from "./popmenu.js";
@@ -696,19 +696,35 @@ function renderDiff(text) {
   const t = state.todos.get(state.detail);
   const reload = () => loadDiff().catch(fail);
   const sent = sentComments(t);
+  // Files marked viewed fold, and say so; the bar above counts them by lines
+  // changed, over the task's whole diff (review_files) even when Changes
+  // shows only what changed since the last review.
+  const viewed = viewedFiles(t);
+  const counted = t?.review_files?.length ? t.review_files : files.map((f) => ({ path: f.path, lines: f.add + f.del }));
+  const progress = canComment(t) && counted.length ? progressBar(reviewProgress(counted, viewed), "pane") : null;
   if (!files.length) {
     const since = state.diffSince?.todo === t?.id && !state.diffSince.full;
     const msg = text.startsWith("error:") ? text : since ? "No changes since your last review." : t?.worktree ? "No changes compared to the default branch." : "Changes appear here once Claude has worked on this task.";
-    $("#d-diff").replaceChildren(...[autoNote(t), goalNote(t), sinceBar(t, sent, reload), h("p", { class: "pane-empty" }, msg)].filter(Boolean));
+    $("#d-diff").replaceChildren(...[autoNote(t), goalNote(t), sinceBar(t, sent, reload), progress, h("p", { class: "pane-empty" }, msg)].filter(Boolean));
     return;
   }
   const commented = new Set([...commentsFor(state.detail), ...sent].map((c) => c.file));
   const editable = canEditDiff(t);
+  // Which files are open is kept as the user opens and closes them: on the
+  // header's click (or Enter), at once, since toggle comes later, maybe after
+  // the diff was drawn again (Viewed folds a file the moment it is checked).
+  const keep = (path, open) => state.diffOpen[open ? "add" : "delete"](path);
   const fileEls = files.map((f) => h("details", {
-    class: "diff-file", open: state.diffOpen.has(f.path) || commented.has(f.path),
-    ontoggle: (e) => state.diffOpen[e.target.open ? "add" : "delete"](f.path),
+    class: `diff-file${viewed.has(f.path) ? " viewed" : ""}`, "data-path": f.path,
+    open: state.diffOpen.has(f.path) || (commented.has(f.path) && !viewed.has(f.path)),
+    onclick: (e) => {
+      const d = e.currentTarget;
+      if (e.target.closest("summary")?.parentElement === d && !e.target.closest("label, button")) keep(f.path, !d.open);
+    },
+    ontoggle: (e) => { if (e.target.isConnected) keep(f.path, e.target.open); },
   },
     h("summary", {}, h("span", { class: "path" }, f.path), h("span", { class: "counts" }, f.binary ? "binary" : [h("span", { class: "plus" }, `+${f.add}`), " ", h("span", { class: "minus" }, `−${f.del}`)]),
+      viewedBox(t, f.path, viewed.has(f.path)),
       editable && !f.deleted && !f.binary ? ib({
         type: "button", class: "btn small diff-edit", title: `Edit ${f.to} before approving`, "aria-label": `Edit ${f.to}`,
         onclick: (e) => { e.preventDefault(); e.stopPropagation(); openDiffEdit(t.id, f.to).catch(fail); },
@@ -724,7 +740,7 @@ function renderDiff(text) {
   // Sent comments whose lines aren't in this diff are listed above it.
   const placed = new Set(fileEls.flatMap((el) => [...el.querySelectorAll(".comment.sent")].map((c) => c.dataset.id)));
   const rest = sent.filter((c) => !placed.has(c.id));
-  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[autoNote(t), goalNote(t), sinceBar(t, rest, reload), shotsView(t), commentsBar(t)].filter(Boolean), ...fileEls));
+  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[autoNote(t), goalNote(t), sinceBar(t, rest, reload), shotsView(t), commentsBar(t), progress].filter(Boolean), ...fileEls));
 }
 
 // Images a diff shows instead of "Binary files … differ" (the server's

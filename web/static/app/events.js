@@ -14,7 +14,7 @@ import { connectLog, connectTerm, loadPreviews, previewEvent, previewOf, pv } fr
 import { loadRunners, refreshRunnerLinks, renderRunners } from "./runners.js";
 import { syncSettingsRunners } from "./settings.js";
 import { notify, notifyGoal } from "./notifications.js";
-import { renderPerms } from "./review.js";
+import { renderPerms, viewedKey } from "./review.js";
 import { describePerm, isQuestion, permHead } from "./chatparts.js";
 import { speakApproval, speakStatus } from "./speech.js";
 
@@ -209,7 +209,7 @@ function onEvent(ev, m = { name: "" }) {
         if (state.detail === ev.todo_id) {
           renderDetail();
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
-          else if (prev?.goal_note?.at !== ev.data.goal_note?.at || shotsKey(prev) !== shotsKey(ev.data)) renderPane(); // the coordinator's review note, the screenshots
+          else if (prev?.goal_note?.at !== ev.data.goal_note?.at || shotsKey(prev) !== shotsKey(ev.data) || viewedKey(prev) !== viewedKey(ev.data)) renderPane(); // the coordinator's review note, the screenshots, files marked viewed
           // Dash explains the failure in the chat.
           if (prev && prev.status !== ev.data.status && ev.data.status === "failed" && !todoChat.busy) loadTodoChat().catch(fail);
         } else if (prev?.status !== ev.data.status && waitsFor(state.todos.get(state.detail), ev.todo_id)) {

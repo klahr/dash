@@ -8,12 +8,14 @@ import { renderBoard, title } from "./branches.js";
 import { describePerm, duration, isQuestion, isSettingsChange, questionGroups, settingChanges } from "./chatparts.js";
 import { openDetail, renderActions } from "./detail.js";
 import { renderPane, reworkTodo } from "./drawmode.js";
+import { myID } from "./people.js";
 
 // ------------------------------------------------------------------ diff comments
 // Comments on lines of a task's diff (Changes), stored with the task until
 // Rework sends them all in one note (reworkTodo) or they are discarded.
 export function commentsFor(id) { return state.todos.get(id)?.comments || []; }
-const canComment = (t) => !!t && ["review", "failed"].includes(t.status);
+// canComment: t takes comments on its diff, and files marked viewed.
+export const canComment = (t) => !!t && ["review", "failed"].includes(t.status);
 
 // applyTodo shows the task as the server answered a change to its comments
 // at once; its todo.updated event follows.
@@ -253,6 +255,108 @@ $("#d-diff").addEventListener("click", (e) => {
   if (line.nextElementSibling?.classList.contains("comment-box")) return line.nextElementSibling.querySelector("textarea").focus();
   commentBox(line, line, t).focus();
 });
+
+// ------------------------------------------------------------------ viewed files
+// Each file of a task's diff in review can be marked viewed, per user. The
+// server keeps the marks with the hash of the file's diff, and the task's
+// review_files (path, lines, hash) as its diff is now: a mark counts while
+// its hash is its file's, so a rework that changes the file clears it.
+
+// viewedFiles is the paths of task t's files the user has viewed.
+export function viewedFiles(t) {
+  const me = myID();
+  const hash = new Map((t?.review_files || []).map((f) => [f.path, f.hash]));
+  return new Set((t?.viewed || []).filter((v) => (v.user || 0) === me && hash.get(v.file) === v.hash).map((v) => v.file));
+}
+
+// viewedKey changes when what the pane shows of t's viewed files does.
+export const viewedKey = (t) => JSON.stringify([t?.viewed || [], (t?.review_files || []).map((f) => f.hash)]);
+
+// reviewProgress is how far a review of files ([{ path, lines }]) has got
+// with the paths in viewed: how many files, and the share of the lines
+// changed (a file with no lines, a binary one, counts as one line).
+export function reviewProgress(files, viewed) {
+  const weight = (f) => Math.max(1, f.lines || 0);
+  let total = 0, done = 0, n = 0;
+  for (const f of files) {
+    total += weight(f);
+    if (viewed.has(f.path)) { done += weight(f); n++; }
+  }
+  return { n, of: files.length, frac: total ? done / total : 0 };
+}
+export const progressText = (p) => `${p.n} of ${plural(p.of, "file")} viewed`;
+
+// progressBar is the bar of review progress p: "pane" (above the diff,
+// with its text) or "card" (along a card's bottom edge, the text its tooltip).
+export function progressBar(p, where) {
+  const text = progressText(p), pct = Math.round(p.frac * 100);
+  const bar = h("span", { class: "review-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), "aria-valuetext": text, "aria-label": "Review progress" },
+    h("span", { class: "review-fill", style: `width:${p.frac * 100}%` }));
+  if (where === "card") {
+    bar.classList.add("card-review-bar");
+    bar.title = text;
+    return bar;
+  }
+  return h("div", { class: `review-progress${p.n === p.of ? " done" : ""}` }, h("span", { class: "review-text" }, text), bar);
+}
+
+// cardProgress is the bar on task t's card in Review: nothing until the
+// user has viewed a file.
+export function cardProgress(t) {
+  if (t.status !== "review" || !t.review_files?.length) return null;
+  const viewed = viewedFiles(t);
+  if (!viewed.size) return null;
+  return progressBar(reviewProgress(t.review_files, viewed), "card");
+}
+
+// setViewed marks file of task t viewed (or not): the file folds (or
+// unfolds) at once, and the server's answer follows.
+const setViewed = attempt(async (t, file, viewed) => {
+  if (viewed) state.diffOpen.delete(file);
+  else state.diffOpen.add(file);
+  const f = (t.review_files || []).find((x) => x.path === file);
+  if (f) {
+    const me = myID();
+    const others = (t.viewed || []).filter((v) => (v.user || 0) !== me || v.file !== file);
+    applyTodo({ ...t, viewed: viewed ? [...others, { user: me, file, hash: f.hash }] : others });
+  }
+  try {
+    applyTodo(await api("PUT", `/api/todos/${t.id}/viewed`, { file, viewed }));
+  } catch (e) {
+    applyTodo(t);
+    throw e;
+  }
+});
+
+// viewedBox is the Viewed checkbox in the header of file path's diff.
+export function viewedBox(t, path, viewed) {
+  if (!canComment(t)) return null;
+  const box = h("input", { type: "checkbox", checked: viewed, "aria-label": `Viewed ${path}`, onchange: () => setViewed(t, path, box.checked) });
+  // In the file's summary, a click on the label's text would also fold or
+  // unfold the file: the label passes it on to the box itself instead.
+  return h("label", { class: "diff-viewed", title: "Mark viewed (v)", onclick: (e) => {
+    if (e.target === box) return;
+    e.preventDefault();
+    box.click();
+  } }, box, h("span", {}, "Viewed"));
+}
+
+// toggleViewedKey is v in an open task's changes: the file with focus,
+// else the one at the top of the pane.
+export function toggleViewedKey() {
+  const t = state.todos.get(state.detail);
+  if (!canComment(t)) throw new Error("Files are marked viewed on a task in review.");
+  const files = [...$("#d-diff").querySelectorAll(".diff-file")];
+  let file = document.activeElement?.closest?.(".diff-file");
+  if (!file) {
+    const top = $("#detail .detail-body")?.getBoundingClientRect().top ?? 0;
+    const sticky = $(".pane-tabs")?.getBoundingClientRect().bottom ?? top;
+    file = files.find((f) => f.getBoundingClientRect().bottom > Math.max(top, sticky) + 8);
+  }
+  const box = file?.querySelector(".diff-viewed input");
+  if (!box) return;
+  setViewed(t, file.dataset.path, !box.checked);
+}
 
 // ------------------------------------------------------------------ since the last review
 // Back in Review after a rework, Changes shows what changed since the user's

@@ -1013,6 +1013,8 @@ func clone(t model.Todo) model.Todo {
 	cp := t
 	cp.Feedback = append([]string(nil), t.Feedback...)
 	cp.Comments = slices.Clone(t.Comments)
+	cp.ReviewFiles = slices.Clone(t.ReviewFiles)
+	cp.Viewed = slices.Clone(t.Viewed)
 	cp.Reviews = slices.Clone(t.Reviews)
 	cp.Tags = slices.Clone(t.Tags)
 	cp.Finding = t.Finding.Clone()

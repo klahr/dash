@@ -208,6 +208,8 @@ type Server struct {
 	// goalEngine runs the goals' coordinators (goalcoord.go), made once.
 	goalsOnce  sync.Once
 	goalEngine *goalEngine
+	// reviewSync reads again the diffs of tasks with viewed files (viewed.go).
+	reviewSync reviewSync
 	// following counts the fetches "origin moved" news started (tests wait).
 	following sync.WaitGroup
 	muxv      *http.ServeMux
@@ -350,6 +352,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("PATCH /api/todos/{tid}/comments/{cid}", s.editComment)
 	mux.HandleFunc("DELETE /api/todos/{tid}/comments/{cid}", s.deleteComments)
 	mux.HandleFunc("DELETE /api/todos/{tid}/comments", s.deleteComments)
+	mux.HandleFunc("PUT /api/todos/{tid}/viewed", s.setViewed)
 	mux.HandleFunc("POST /api/todos/{tid}/test", s.retestTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/duplicate", s.duplicateTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/open", s.openTodo)

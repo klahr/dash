@@ -57,6 +57,8 @@ func init() {
 		// Draft review comments on its diff (comments.go).
 		"POST /api/todos/{tid}/comments", "PATCH /api/todos/{tid}/comments/{cid}",
 		"DELETE /api/todos/{tid}/comments/{cid}", "DELETE /api/todos/{tid}/comments",
+		// Files of its diff marked viewed (viewed.go).
+		"PUT /api/todos/{tid}/viewed",
 		"POST /api/todos/{tid}/test", "POST /api/todos/{tid}/duplicate", "POST /api/todos/{tid}/open",
 		"POST /api/todos/{tid}/revert", "POST /api/todos/{tid}/merge-pr",
 		// Its before/after screenshots (screenshots.go).
