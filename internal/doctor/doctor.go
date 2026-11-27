@@ -48,13 +48,14 @@ const (
 
 // Names of the checks other parts of Dash ask about.
 const (
-	CheckGit    = "git"
-	CheckBash   = "bash"
-	CheckClaude = "claude"
-	CheckHub    = "hub"
-	CheckDisk   = "disk"
-	CheckGH     = "gh"
-	CheckChrome = "chrome"
+	CheckGit     = "git"
+	CheckBash    = "bash"
+	CheckClaude  = "claude"
+	CheckHub     = "hub"
+	CheckDisk    = "disk"
+	CheckGH      = "gh"
+	CheckChrome  = "chrome"
+	CheckSandbox = "sandbox"
 )
 
 // Check is one check's outcome.

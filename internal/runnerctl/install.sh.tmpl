@@ -158,6 +158,13 @@ main() {
 		# Copy next to the target and rename, so a running dash is replaced whole.
 		cp "$tmp/x/dash" "$prefix/.dash.new" && chmod 755 "$prefix/.dash.new" && mv -f "$prefix/.dash.new" "$bin" ||
 			die "can't write $bin (pick another place with --prefix)"
+		# The scripts that sandbox Claude's runs (docs/sandbox.md), beside
+		# dash; nothing turns them on.
+		for f in "$tmp"/x/deploy/sandbox/claude-*; do
+			[ -f "$f" ] || continue
+			cp "$f" "$prefix/.sandbox.new" && chmod 755 "$prefix/.sandbox.new" &&
+				mv -f "$prefix/.sandbox.new" "$prefix/$(basename "$f")" || say "warning: couldn't install $(basename "$f") in $prefix"
+		done
 		rm -rf "$tmp"
 		trap - EXIT
 		say "Installed Dash $tag in $bin."

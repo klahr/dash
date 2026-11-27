@@ -19,6 +19,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -135,7 +136,39 @@ func (u Updater) Run(ctx context.Context) error {
 		}
 		return fmt.Errorf("can't replace %s: %w", u.Bin, err)
 	}
+	if u.GOOS != "windows" {
+		refreshSandboxScripts(archive, dir)
+	}
 	return nil
+}
+
+// refreshSandboxScripts replaces the sandbox scripts (SandboxScripts) in
+// dir with those in a release's .tar.gz, best effort. Only the ones already
+// there: the install script put them beside dash, or the user did.
+func refreshSandboxScripts(archive []byte, dir string) {
+	gz, err := gzip.NewReader(bytes.NewReader(archive))
+	if err != nil {
+		return
+	}
+	tr := tar.NewReader(gz)
+	for {
+		hd, err := tr.Next()
+		if err != nil {
+			return
+		}
+		name := path.Base(hd.Name)
+		if hd.Typeflag != tar.TypeReg || path.Base(path.Dir(hd.Name)) != "sandbox" || !slices.Contains(SandboxScripts, name) {
+			continue
+		}
+		dst := filepath.Join(dir, name)
+		if st, err := os.Lstat(dst); err != nil || !st.Mode().IsRegular() {
+			continue
+		}
+		b, err := io.ReadAll(io.LimitReader(tr, 1<<20))
+		if err == nil {
+			_ = fsutil.WriteFileAtomic(dst, b, 0o755)
+		}
+	}
 }
 
 // runFresh runs a binary that was just written. On Linux its exec fails

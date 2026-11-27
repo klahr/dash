@@ -6,41 +6,54 @@ the runner with `-claude-sandbox`: a command that Dash starts in the task's work
 `claude` and its flags as arguments. It runs Claude for tasks and scans. Chats and titles still
 run Claude as you.
 
-Dash ships two such commands in [`deploy/sandbox`](../deploy/sandbox) (in the release archives
-as well):
+Dash ships three such commands in [`deploy/sandbox`](../deploy/sandbox). They are in the release
+archives, and the install script puts them next to `dash` (`~/.local/bin`); `dash runner update`
+keeps them up to date there.
 
 - `claude-bwrap` runs Claude in a [bubblewrap](https://github.com/containers/bubblewrap)
-  container. Linux only, no root needed. This is the easier one.
+  container. Linux only, no root needed.
+- `claude-seatbelt` runs Claude under macOS's `sandbox-exec`. macOS only, no root needed.
 - `claude-as-user` runs Claude as another user, with `sudo`. Linux and macOS.
 
-Either one can be a starting point for your own (Docker, Podman, firejail, a VM). Dash passes
+Any of them can be a starting point for your own (Docker, Podman, firejail, a VM). Dash passes
 the run's environment to the command, with `DASH_WORKTREE` set to the worktree. The command
 must keep Claude's standard input and output, run it in the worktree and exit with its status.
 
 ## Turn it on
 
-Put the script somewhere the runner can run it, e.g. `~/.local/bin`, then start the runner with
-the flag:
+`dash runner setup` tells you when Claude would run unsandboxed and a bundled script fits the
+computer, with the command that turns it on. It never turns it on by itself. The runner's
+**Doctor** (**Runners** → the runner) shows the same as a yellow **Sandbox** check.
+
+The command adds `DASH_CLAUDE_SANDBOX` to `runner.env` in the runner's data directory, which
+the runner reads each time it starts, under systemd and launchd alike. Then it restarts the
+background service. On macOS:
 
 ```sh
-dash runner -claude-sandbox ~/.local/bin/claude-bwrap
+echo "DASH_CLAUDE_SANDBOX=$HOME/.local/bin/claude-seatbelt" >> ~/.local/share/dash-runner/runner.env
+dash runner install
 ```
 
-For the background service (`dash runner install`), set `DASH_CLAUDE_SANDBOX` in a systemd
-drop-in, which a reinstall keeps:
+On Linux, use `claude-bwrap` instead. Check that it took:
 
 ```sh
-systemctl --user edit dash-runner
+dash runner status                              # "runner.env sets DASH_CLAUDE_SANDBOX"
+grep sandbox ~/Library/Logs/dash-runner.log     # macOS: "Claude runs tasks and scans in a sandbox"
+journalctl --user -u dash-runner | grep sandbox # Linux
 ```
+
+A runner you start by hand takes the flag as well:
+
+```sh
+dash runner -claude-sandbox ~/.local/bin/claude-seatbelt
+```
+
+On Linux you can also set it in a systemd drop-in (`systemctl --user edit dash-runner`), which a
+reinstall keeps:
 
 ```ini
 [Service]
 Environment=DASH_CLAUDE_SANDBOX=%h/.local/bin/claude-bwrap
-```
-
-```sh
-systemctl --user restart dash-runner
-journalctl --user -u dash-runner | grep sandbox   # "Claude runs tasks and scans in a sandbox"
 ```
 
 The flag is a runner's: the hub ignores it. If the command fails to start, the task fails and
@@ -75,12 +88,57 @@ CLAUDE_CONFIG_DIR=~/.local/share/dash-runner/claude-sandbox claude   # log in, t
 
 A build that keeps caches in your home folder (Go, npm, Cargo) starts with an empty one on each
 run. Let it keep them by listing the folders Claude may write in `DASH_SANDBOX_BIND`, and
-folders it may only read in `DASH_SANDBOX_RO` (space separated):
+folders it may only read in `DASH_SANDBOX_RO` (space separated, full paths: `runner.env`
+doesn't expand `$HOME`), then restart the runner:
 
-```ini
-[Service]
-Environment=DASH_CLAUDE_SANDBOX=%h/.local/bin/claude-bwrap
-Environment="DASH_SANDBOX_BIND=%h/.cache %h/go"
+```sh
+echo "DASH_SANDBOX_BIND=$HOME/.cache $HOME/go" >> ~/.local/share/dash-runner/runner.env
+dash runner install
+```
+
+## macOS (sandbox-exec)
+
+`claude-seatbelt` runs Claude under `sandbox-exec` with a profile of its own. Apple marks
+`sandbox-exec` as deprecated, but it still ships with macOS, and Claude Code's own sandbox uses
+it too. Nothing to install. Under the profile:
+
+- Claude can write only in the task's worktree, a temp folder of the run's own (`TMPDIR`), `/tmp`
+  and its own config folder;
+- it can't read `~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.gnupg`, `~/.docker`, `~/.kube`, `~/.npmrc`,
+  `~/.netrc`, your keychains (files and the keychain service), Dash's data folder (other tasks'
+  worktrees, its database, the runner's login), the folder of your projects, your own
+  `~/.claude`, or `~/Library/Application Support`, `Cookies`, `Mail` and `Messages`. The rest
+  of the system can be read, as without a sandbox: list more to hide in `DASH_SANDBOX_HIDE`;
+- the worktree's `.git` file and the project's `.git` can only be read, so Claude can't move
+  branches, commit, or point git at a config of its own;
+- it can't reach the ssh, gpg or Docker agents, the clipboard, or other apps (AppleEvents,
+  `open`), which would run outside the sandbox;
+- Dash's own variables and anything named like a token, password or secret are removed from the
+  environment;
+- the network is the same as yours.
+
+Claude Code uses its own config folder, as with bubblewrap: your settings, `CLAUDE.md`, rules,
+agents, commands and skills are linked in to read, and `settings.json` is copied in fresh each
+run.
+
+Your Claude login is in the keychain, which the sandbox can't reach. The script reads Claude's
+current access token from it before each run and hands that to Claude, never the refresh token,
+so your own Claude stays logged in. If the token has expired (your own Claude hasn't run for
+hours), run `claude` once. For a login that doesn't depend on yours, make a long-lived token
+and give it to the runner:
+
+```sh
+claude setup-token     # prints a token
+echo 'CLAUDE_CODE_OAUTH_TOKEN=<the token>' >> ~/.local/share/dash-runner/runner.env
+dash runner install
+```
+
+Builds can't write their caches in your home folder (`~/Library/Caches`, `~/go`). Go's and npm's
+caches go to the run's temp folder unless you set `DASH_SANDBOX_BIND`, e.g.:
+
+```sh
+echo "DASH_SANDBOX_BIND=$HOME/Library/Caches/go-build $HOME/go" >> ~/.local/share/dash-runner/runner.env
+dash runner install
 ```
 
 ## Another user
@@ -125,11 +183,11 @@ git config --global --unset core.sharedRepository
 systemctl --user edit dash-runner   # delete a UMask=0002 line
 ```
 
-Then turn it on as above:
+Then turn it on as above, with `claude-as-user`:
 
-```ini
-[Service]
-Environment=DASH_CLAUDE_SANDBOX=%h/.local/bin/claude-as-user
+```sh
+echo "DASH_CLAUDE_SANDBOX=$HOME/.local/bin/claude-as-user" >> ~/.local/share/dash-runner/runner.env
+dash runner install
 ```
 
 Before each run the script gives your group write access to the worktree's files (not its

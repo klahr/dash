@@ -1,0 +1,212 @@
+#!/bin/sh
+# Runs Claude Code for a Dash runner under macOS's sandbox-exec (Seatbelt),
+# no root and no second user needed: Claude can write only in the task's
+# worktree, a temp folder and a Claude config folder of its own, and can't
+# read your SSH keys, cloud and gh logins, keychains, Dash's data or your
+# other projects. Claude still reaches the network: the Claude API, Dash's
+# MCP servers and package registries. See docs/sandbox.md.
+#
+#   dash runner -claude-sandbox /path/to/claude-seatbelt
+#
+# Dash starts it in the worktree with claude and its flags as arguments.
+# sandbox-exec is deprecated by Apple but still ships with macOS.
+#
+# DASH_SANDBOX_BIND   folders Claude may write as well, space separated,
+#                     e.g. "$HOME/Library/Caches/go-build $HOME/go" (caches)
+# DASH_SANDBOX_RO     folders Claude may read even where hidden, space
+#                     separated
+# DASH_SANDBOX_HIDE   more folders or files Claude may not read
+# DASH_SANDBOX_CLAUDE Claude Code's config folder in the sandbox (default
+#                     ~/.local/share/dash-runner/claude-sandbox)
+set -eu
+
+[ -x /usr/bin/sandbox-exec ] || { echo "claude-seatbelt: no /usr/bin/sandbox-exec (macOS only)" >&2; exit 127; }
+[ $# -gt 0 ] || { echo "claude-seatbelt: no command to run" >&2; exit 2; }
+
+# Seatbelt matches real paths: /tmp is /private/tmp, and so on.
+canon() {
+	if [ -d "$1" ]; then
+		(cd -P "$1" && pwd)
+	elif [ -e "$1" ] || [ -d "$(dirname "$1")" ]; then
+		d=$(cd -P "$(dirname "$1")" && pwd)
+		printf '%s\n' "${d%/}/$(basename "$1")"
+	else
+		printf '%s\n' "$1"
+	fi
+}
+
+wt=$(canon "${DASH_WORKTREE:-$PWD}")
+claude=$(command -v "$1") || { echo "claude-seatbelt: $1 not found" >&2; exit 127; }
+shift
+home=$(canon "$HOME")
+
+# Claude Code's config folder of its own. Your ~/.claude and ~/.claude.json
+# stay out: hooks and MCP servers written there run in your own Claude,
+# outside the sandbox. Your settings, CLAUDE.md, rules, agents, commands and
+# skills are linked in to read; settings.json is copied in fresh each run
+# and can't be written, so a run can't leave hooks there for the next.
+mine=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
+cfg=${DASH_SANDBOX_CLAUDE:-$HOME/.local/share/dash-runner/claude-sandbox}
+(umask 077 && mkdir -p "$cfg")
+cfg=$(canon "$cfg")
+mine=$(canon "$mine")
+for f in CLAUDE.md rules agents commands skills; do
+	rm -rf "${cfg:?}/$f"
+	[ ! -e "$mine/$f" ] || ln -s "$mine/$f" "$cfg/$f"
+done
+rm -f "$cfg/settings.json"
+if [ -f "$mine/settings.json" ]; then
+	cp "$mine/settings.json" "$cfg/settings.json"
+else
+	echo '{}' >"$cfg/settings.json"
+fi
+
+# The login. The sandbox can't reach the keychain, where Claude Code keeps
+# yours on macOS. Its own login wins: an ANTHROPIC_API_KEY or
+# CLAUDE_CODE_OAUTH_TOKEN (claude setup-token) in the environment, or a
+# login kept in its config folder. Else it shares yours: Claude's current
+# access token, read here, outside the sandbox (never the refresh token, so
+# your own Claude keeps its login).
+if [ -z "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ ! -s "$cfg/.credentials.json" ]; then
+	svc="Claude Code-credentials"
+	if json=$(security find-generic-password -a "$(id -un)" -s "$svc" -w 2>/dev/null) ||
+		json=$(cat "$mine/.credentials.json" 2>/dev/null); then
+		tok=$(printf '%s' "$json" | plutil -extract claudeAiOauth.accessToken raw -o - - 2>/dev/null || true)
+		exp=$(printf '%s' "$json" | plutil -extract claudeAiOauth.expiresAt raw -o - - 2>/dev/null || echo 0)
+		if [ -n "$tok" ]; then
+			CLAUDE_CODE_OAUTH_TOKEN=$tok
+			export CLAUDE_CODE_OAUTH_TOKEN
+			now=$(($(date +%s) * 1000))
+			[ "${exp%.*}" -gt "$now" ] 2>/dev/null ||
+				echo "claude-seatbelt: your Claude login has expired; run claude once to refresh it, or give the sandbox its own (docs/sandbox.md)" >&2
+		fi
+		unset json tok exp
+	fi
+fi
+
+# A temp folder of this run's own (removed after it), and /tmp.
+tmp=$(canon "$(mktemp -d "${TMPDIR:-/tmp}/claude-seatbelt.XXXXXX")")
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 143' TERM HUP INT
+
+# The profile: last matching rule wins.
+p=$(mktemp "$tmp/profile.XXXXXX")
+q() { printf '"%s"' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"; }
+rule() { printf '%s\n' "$*" >>"$p"; }
+paths() { # filter path...: (subpath "path") for each path given
+	kind=$1
+	shift
+	for a; do [ -z "$a" ] || printf ' (%s %s)' "$kind" "$(q "$(canon "$a")")"; done
+}
+
+# A rule for one operation beats a rule for a wildcard (file-read*), so the
+# read rules all name the same operations.
+read='file-read-data file-read-metadata file-read-xattr'
+
+rule '(version 1)'
+rule '(allow default)'
+
+# Writes: only the worktree, the temp folders, Claude's config folder and
+# DASH_SANDBOX_BIND.
+rule '(deny file-write*)'
+# shellcheck disable=SC2086
+rule "(allow file-write* (subpath \"/dev\")$(paths subpath "$wt" "$tmp" /private/tmp "$cfg" ${DASH_SANDBOX_BIND:-}))"
+
+# Reads: Dash's data (other tasks' worktrees, its database, the runner's
+# login), the folder of your projects, your own Claude config, browsers'
+# and apps' data.
+data=
+d=$(dirname "$(dirname "$wt")")
+[ "$(basename "$d")" != worktrees ] || data=$(dirname "$d")
+projects=
+repo=
+gitdir=
+if common=$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+	common=$(canon "$common")
+	gitdir=$(canon "$(git -C "$wt" rev-parse --absolute-git-dir)")
+	repo=$(dirname "$common")
+	[ "$(basename "$common")" = .git ] || repo=$common
+	projects=$(dirname "$repo")
+	case $projects in "$home" | / | "$(dirname "$home")") projects= ;; esac
+else
+	common=
+fi
+hide="$data $projects $home/dash-projects $home/.local/share/dash-runner $mine $home/.claude.json
+	$home/Library/Application?Support $home/Library/Cookies $home/Library/Mail $home/Library/Messages ${DASH_SANDBOX_HIDE:-}"
+# (The space in "Application Support" is a ? above, put back here.)
+set -f
+hidden=
+for h in $hide; do hidden="$hidden$(paths subpath "$(printf '%s' "$h" | tr '?' ' ')")"; done
+set +f
+rule "(deny file-read-data file-read-xattr$hidden)"
+
+# ...but what the run needs among those: the worktree, its git metadata,
+# Claude's config folder, the parts of your Claude config it reads, a
+# task's attachments (--add-dir) and DASH_SANDBOX_RO.
+allow="$(paths subpath "$wt" "$common" "$gitdir" "$cfg" "$tmp")"
+for f in CLAUDE.md rules agents commands skills settings.json; do
+	[ ! -e "$mine/$f" ] || allow="$allow$(paths subpath "$mine/$f")"
+done
+prev=
+for a; do
+	[ "$prev" != --add-dir ] || allow="$allow$(paths subpath "$a")"
+	prev=$a
+done
+# shellcheck disable=SC2086
+rule "(allow $read$allow$(paths subpath ${DASH_SANDBOX_RO:-} ${DASH_SANDBOX_BIND:-}))"
+# The folders above the worktree and its git metadata can be listed (not
+# their files read): git and getcwd walk up through them.
+up=
+for a in "$wt" "$common" "$gitdir"; do
+	while [ -n "$a" ] && [ "$a" != / ]; do
+		a=$(dirname "$a")
+		up="$up$(paths literal "$a")"
+	done
+done
+rule "(allow file-read-data$up)"
+
+# Credentials, whatever was allowed above: SSH keys, cloud, gh, npm and
+# Docker logins, gpg, keychains.
+secrets=$(paths subpath "$home/.ssh" "$home/.aws" "$home/.config/gh" "$home/.gnupg" "$home/.netrc" \
+	"$home/.git-credentials" "$home/.docker" "$home/.kube" "$home/.npmrc" "$home/.pypirc" \
+	"$home/.config/gcloud" "$home/.azure" "$home/Library/Keychains" /Library/Keychains)
+rule "(deny $read file-write*$secrets)"
+# The keychain itself, the clipboard, and other apps (AppleEvents, open):
+# an app started through them runs outside the sandbox.
+rule '(deny mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.securityd")
+	(global-name "com.apple.pasteboard.1") (global-name-regex #"^com\.apple\.coreservices\."))'
+rule '(deny appleevent-send)'
+# Agent sockets: ssh-agent's (launchd's in /private/tmp), gpg's, Docker's.
+agents="(regex #\"^/private/tmp/com\\.apple\\.launchd\\.\")$(paths subpath "$home/.gnupg" "$home/.docker" "$home/.colima" "$home/.orbstack" /private/var/run/docker.sock)"
+rule "(deny $read file-write* network-outbound $agents)"
+
+# The worktree's git metadata stays read-only: the worktree's .git file,
+# the main clone's .git and this worktree's part of it. Dash runs git
+# there after Claude, outside the sandbox, so Claude must not choose its
+# config or hooks. Dash commits; Claude doesn't have to. Nor may a run
+# change what the next one reads from your Claude config.
+ro="$(paths literal "$wt/.git")$(paths subpath "$common" "$gitdir")"
+for f in CLAUDE.md rules agents commands skills settings.json; do ro="$ro$(paths literal "$cfg/$f")"; done
+rule "(deny file-write*$ro)"
+
+# Credentials Claude has no use for: Dash's own, tokens and passwords
+# (but not Claude's login), agent sockets.
+for v in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p'); do
+	case $v in
+	ANTHROPIC_* | CLAUDE_* | DASH_WORKTREE) ;;
+	DASH_* | *TOKEN* | *PASSWORD* | *SECRET* | SSH_AUTH_SOCK | GPG_AGENT_INFO) unset "$v" ;;
+	esac
+done
+CLAUDE_CONFIG_DIR=$cfg TMPDIR=$tmp/
+export CLAUDE_CONFIG_DIR TMPDIR
+# Build caches in your home folder can't be written: unless you listed
+# folders in DASH_SANDBOX_BIND, each run starts empty ones in its temp folder.
+if [ -z "${DASH_SANDBOX_BIND:-}" ]; then
+	: "${GOCACHE:=$tmp/go-build}" "${npm_config_cache:=$tmp/npm}" "${XDG_CACHE_HOME:=$tmp/cache}"
+	export GOCACHE npm_config_cache XDG_CACHE_HOME
+fi
+
+cd "$wt"
+st=0
+/usr/bin/sandbox-exec -f "$p" "$claude" "$@" || st=$?
+exit "$st"

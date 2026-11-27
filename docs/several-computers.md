@@ -267,8 +267,9 @@ The checks come in three groups:
   and at least 5 GB free for task worktrees (or the runner's **Start no task below**, if higher).
   A failure here is an error.
 - **Features**: `gh` installed and logged in (without it, no pull requests), and a headless
-  Chrome or Chromium (without it, no before/after screenshots or browser tests). A failure here
-  is a warning.
+  Chrome or Chromium (without it, no before/after screenshots or browser tests), and on macOS
+  and Linux a [sandbox](sandbox.md) for Claude's runs ("Claude runs unsandboxed", with the
+  command that turns on the bundled script). A failure here is a warning.
 - **Project: …**: for each project the runner serves, the tools its **Test command** and **Run
   command** start with (`go`, `npm`, `make`, …). Scripts like `./scripts/check.sh` and shell
   builtins are skipped. A missing tool is a warning: tasks that run it fail.

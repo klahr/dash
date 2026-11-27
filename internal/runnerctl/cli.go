@@ -223,9 +223,15 @@ func (c *CLI) setup(ctx context.Context, args []string) error {
 		if st := svc.State(); st != "not installed" && !strings.HasPrefix(st, "unsupported") {
 			fmt.Fprintln(c.Out, "note: the background service is installed too ("+st+"); don't run two runners. Remove it with: dash runner uninstall")
 		}
-		return nil
+	} else if err := c.installService(svc); err != nil {
+		return err
 	}
-	return c.installService(svc)
+	// Claude would run as the user: say how to sandbox it, never doing it.
+	abs, _ := filepath.Abs(*data)
+	if hint := SandboxHint(c.Preflight.goos(), svc.Bin, abs, *service, os.Getenv, c.Preflight.lookPath); hint != "" {
+		fmt.Fprintln(c.Out, hint)
+	}
+	return nil
 }
 
 func (c *CLI) absPath(p string) (string, error) {

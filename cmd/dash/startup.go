@@ -1219,7 +1219,13 @@ func (a *app) newReporter(creds tunnel.Credentials, disks *disk.Monitor, hubShar
 // newDoctor checks this runner's setup (runnerctl.Doctor): what it needs,
 // the features it would lose, and the tools of the hub's projects it serves.
 func (a *app) newDoctor(creds tunnel.Credentials, disks *disk.Monitor) *runnerctl.Doctor {
+	bin, _ := os.Executable()
+	if p, err := filepath.EvalSymlinks(bin); err == nil {
+		bin = p
+	}
+	data, _ := filepath.Abs(a.o.dataDir)
 	return &runnerctl.Doctor{Server: creds.Server, ClaudeBin: a.o.claudeBin,
+		Sandbox: strings.Join(a.o.sandbox(), " "), Bin: bin, Data: data, Service: runnerctl.UnderService(),
 		Disk: func() (disk.Status, disk.Settings) { return disks.Status(), disks.Settings() },
 		Projects: func() []runnerctl.DoctorProject {
 			var out []runnerctl.DoctorProject

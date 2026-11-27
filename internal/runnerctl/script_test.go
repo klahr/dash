@@ -162,7 +162,7 @@ func newFakeRelease(t *testing.T) *fakeRelease {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
-	for name, body := range map[string]string{"dash": fakeDash, "README.md": "hi"} {
+	for name, body := range map[string]string{"dash": fakeDash, "README.md": "hi", "deploy/sandbox/claude-seatbelt": "#!/bin/sh\n"} {
 		_ = tw.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(body))})
 		_, _ = tw.Write([]byte(body))
 	}
@@ -240,6 +240,10 @@ func TestScriptInstallsAndRegisters(t *testing.T) {
 	}
 	if !strings.Contains(r.out, "not on your PATH") {
 		t.Errorf("no PATH hint:\n%s", r.out)
+	}
+	// The sandbox scripts go beside dash.
+	if st, err := os.Stat(filepath.Join(home, ".local", "bin", "claude-seatbelt")); err != nil || st.Mode()&0o111 == 0 {
+		t.Errorf("claude-seatbelt not installed executable beside dash: %v", err)
 	}
 
 	// Again, to update: no code, the same version is not downloaded again,

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +42,12 @@ type Doctor struct {
 	Disk func() (disk.Status, disk.Settings)
 	// Projects are the hub's projects it serves (optional).
 	Projects func() []DoctorProject
+	// Sandbox is the runner's -claude-sandbox ("": Claude runs as the
+	// user). Bin is the dash binary, beside which the bundled sandbox
+	// scripts are looked for; Data the runner's data directory (its
+	// runner.env); Service whether it runs as the background service.
+	Sandbox, Bin, Data string
+	Service            bool
 	// Stat, ReadFile and Getenv stand in for the os package's in tests.
 	Stat     func(string) (os.FileInfo, error)
 	ReadFile func(string) ([]byte, error)
@@ -175,6 +182,9 @@ func (d *Doctor) run(ctx context.Context) doctor.Report {
 		checks = append(checks, c)
 	}
 	checks = append(checks, d.ghCheck(ctx, sys), d.chromeCheck(sys))
+	if c, ok := d.sandboxCheck(sys); ok {
+		checks = append(checks, c)
+	}
 	checks = append(checks, d.projectChecks(sys)...)
 	return doctor.Report{At: d.now(), System: sys.Name(), Checks: checks}
 }
@@ -239,6 +249,40 @@ func (d *Doctor) chromeCheck(sys doctor.System) doctor.Check {
 	c.Status, c.Fix = doctor.Warning, doctor.Install("chrome", sys)
 	c.Message = "No Chrome: before/after screenshots are skipped, and browser tests can't run."
 	return c
+}
+
+// sandboxCheck checks that Claude runs in a sandbox (-claude-sandbox),
+// where a bundled script can give it one (ok false: none can here).
+func (d *Doctor) sandboxCheck(sys doctor.System) (doctor.Check, bool) {
+	c := doctor.Check{Group: doctor.GroupFeatures, Name: doctor.CheckSandbox, Status: doctor.OK}
+	if d.Sandbox != "" {
+		c.Message = "Claude runs tasks and scans in a sandbox: " + d.Sandbox
+		return c, true
+	}
+	script, needs := SandboxScript(sys.GOOS, d.Preflight.lookPath)
+	if script == "" {
+		return c, false
+	}
+	c.Status = doctor.Warning
+	c.Message = "Claude runs unsandboxed: its tools reach what you can, such as your SSH keys, gh login and other projects."
+	var fix []string
+	if needs != "" {
+		if inst := doctor.Install(needs, sys); inst != "" {
+			fix = append(fix, inst)
+		} else {
+			c.Message += " Install " + needs + " first."
+		}
+	}
+	if path := FindSandboxScript(d.Bin, script); path != "" {
+		fix = append(fix, SandboxCommand(path, d.Data, d.Service))
+		if !d.Service {
+			c.Message += " Restart the runner after the fix."
+		}
+	} else {
+		c.Message += " Put " + script + " from the release archive beside dash and turn it on: see docs/sandbox.md."
+	}
+	c.Fix = strings.Join(fix, " && ")
+	return c, true
 }
 
 // FindChrome is the Chrome or Chromium this runner has ("": none): the

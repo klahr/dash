@@ -32,6 +32,11 @@ func releaseServer(t *testing.T, sum string) string {
 	_, _ = tw.Write([]byte("hi"))
 	_ = tw.WriteHeader(&tar.Header{Name: "dash", Mode: 0o755, Size: int64(len(bin)), Typeflag: tar.TypeReg})
 	_, _ = tw.Write(bin)
+	for _, f := range []string{"claude-seatbelt", "claude-bwrap"} {
+		body := "#!/bin/sh\n# new " + f + "\n"
+		_ = tw.WriteHeader(&tar.Header{Name: "deploy/sandbox/" + f, Mode: 0o755, Size: int64(len(body)), Typeflag: tar.TypeReg})
+		_, _ = tw.Write([]byte(body))
+	}
 	_ = tw.Close()
 	_ = gz.Close()
 	archive := buf.Bytes()
@@ -75,12 +80,28 @@ func TestUpdateInstallsTheReleaseAndKeepsTheOldBinary(t *testing.T) {
 
 	bin, data := installed(t), t.TempDir()
 	old := read(t, bin)
+	// A sandbox script the install script put beside dash.
+	seatbelt := filepath.Join(filepath.Dir(bin), "claude-seatbelt")
+	if err := os.WriteFile(seatbelt, []byte("#!/bin/sh\n# old\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	u := Updater{Version: "1.3.0", Bin: bin, Data: data, Current: "1.2.0", Releases: releaseServer(t, ""), GOOS: "linux", GOARCH: "amd64"}
 	if err := u.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, bin); !strings.Contains(got, "dash 1.3.0") {
 		t.Errorf("binary after the update: %q", got)
+	}
+	// The script beside it is the release's now; one that wasn't there
+	// isn't added.
+	if got := read(t, seatbelt); !strings.Contains(got, "new claude-seatbelt") {
+		t.Errorf("sandbox script after the update: %q", got)
+	}
+	if st, err := os.Stat(seatbelt); err != nil || st.Mode()&0o111 == 0 {
+		t.Errorf("sandbox script not executable: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(bin), "claude-bwrap")); err == nil {
+		t.Error("the update added a sandbox script that wasn't installed")
 	}
 	if got := read(t, bin+".prev"); got != old {
 		t.Errorf("backup: %q", got)

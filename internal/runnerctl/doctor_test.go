@@ -88,6 +88,7 @@ func TestDoctorAllGood(t *testing.T) {
 	m := &fakeMachine{tools: map[string]bool{"git": true, "claude": true, "gh": true, "chromium": true, "go": true, "npm": true},
 		loggedIn: true, ghAuth: true}
 	d := m.doctor(t, "linux")
+	d.Sandbox = "/home/me/.local/bin/claude-bwrap"
 	d.Disk = func() (disk.Status, disk.Settings) {
 		return disk.Status{Volumes: []disk.Volume{{Label: "projects", Free: 50 * disk.GB, Total: 100 * disk.GB}}}, disk.Settings{}
 	}
@@ -105,7 +106,7 @@ func TestDoctorAllGood(t *testing.T) {
 	for _, c := range rep.Checks {
 		names = append(names, c.Group+":"+c.Name)
 	}
-	want := "required:git required:claude required:hub required:disk features:gh features:chrome project:go project:npm"
+	want := "required:git required:claude required:hub required:disk features:gh features:chrome features:sandbox project:go project:npm"
 	if got := strings.Join(names, " "); got != want {
 		t.Errorf("checks = %s, want %s", got, want)
 	}
@@ -151,6 +152,7 @@ func TestDoctorMissing(t *testing.T) {
 	expect("disk", doctor.Error, "du -sh ~/.cache/* 2>/dev/null | sort -h | tail", "3.0 GB free")
 	expect("gh", doctor.Warning, "gh auth login", "not logged in")
 	expect("chrome", doctor.Warning, "brew install --cask google-chrome", "screenshots are skipped")
+	expect("sandbox", doctor.Warning, "", "docs/sandbox.md") // no claude-seatbelt beside dash
 	expect("hp1/go", doctor.OK, "", "/usr/bin/go")
 	expect("hp1/make", doctor.Warning, "xcode-select --install", "api's test or run command")
 	expect("hp2/npm", doctor.Warning, "brew install node", "web's")
@@ -197,6 +199,9 @@ func TestDoctorWindows(t *testing.T) {
 	}
 	if _, ok := got["disk"]; ok {
 		t.Error("no disk check without a disk monitor")
+	}
+	if c, ok := got["sandbox"]; ok {
+		t.Errorf("a sandbox check on Windows, which has no bundled sandbox: %+v", c)
 	}
 }
 

@@ -192,7 +192,7 @@ const runnerClaudeWarnings = (r) => r.reported?.claude?.warnings || [];
 // The doctor: runner r's setup checks (internal/doctor), as it last ran them
 // (r.doctor; none from a runner too old to run them). Each failed check says
 // what is wrong and the command to fix it, for the runner's system.
-const doctorNames = { git: "git", bash: "bash", claude: "Claude Code", hub: "Hub", disk: "Disk space", gh: "GitHub CLI (gh)", chrome: "Chrome" };
+const doctorNames = { git: "git", bash: "bash", claude: "Claude Code", hub: "Hub", disk: "Disk space", gh: "GitHub CLI (gh)", chrome: "Chrome", sandbox: "Sandbox" };
 const doctorBad = (r) => (r.doctor?.checks || []).filter((c) => c.status !== "ok");
 // doctorTone is "error" or "warning" when something on r needs fixing ("": nothing, or no checks).
 const doctorTone = (r) => {
