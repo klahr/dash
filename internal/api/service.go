@@ -423,7 +423,7 @@ func (sv *service) startOver(ctx context.Context, id string) (model.Todo, error)
 	return sv.data.UpdateTodo(id, func(x *model.Todo) error {
 		x.Runner, x.RemoteID, x.Resumable = "", "", false
 		x.Worktree, x.SessionID, x.Feedback, x.FeedbackSent = nil, "", nil, 0
-		x.MergeMain, x.EditsApplied = false, false
+		x.MergeMain, x.EditsApplied, x.HadConflict, x.AutoApproval = false, false, false, nil // a new branch
 		x.Checks, x.DiffFiles, x.DiffAdd, x.DiffDel, x.NoChanges = nil, 0, 0, 0, false
 		x.AutoFixes, x.AutoMerge, x.SentBack = 0, false, ""
 		x.Conflicts, x.ConflictNoted = nil, nil

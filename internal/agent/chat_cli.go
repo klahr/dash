@@ -98,6 +98,20 @@ func coordinatorFrom(ctx context.Context) bool {
 	return b
 }
 
+type readOnlyKey struct{}
+
+// ReadOnly makes chat turns run with ctx read-only (Read, Grep, Glob),
+// whatever the chat's mode: a turn nobody watches, such as the automatic
+// review of a finished task, has nobody to approve a tool call.
+func ReadOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, readOnlyKey{}, true)
+}
+
+func readOnlyFrom(ctx context.Context) bool {
+	b, _ := ctx.Value(readOnlyKey{}).(bool)
+	return b
+}
+
 func (c ClaudeCodeChat) shell() bool { return c.Tools == ChatShell }
 
 // CoordinatorSystem is a goal coordinator's system prompt.
@@ -221,7 +235,7 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 		c.PermissionMode = mode
 	}
 	coordinator := coordinatorFrom(ctx)
-	if coordinator {
+	if coordinator || readOnlyFrom(ctx) {
 		c.Tools = ChatReadOnly // a coordinator only reads the code; its tasks change it
 	}
 	servers := map[string]any{}

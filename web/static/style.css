@@ -4531,3 +4531,9 @@ html:has(.planning-app #chat-main:not([hidden])) body > .toasts { top: calc(var(
 .site-notice-body strong { color: var(--running); }
 .site-notice-body p { margin: 0; white-space: pre-wrap; }
 .site-notice .icon-btn { flex: none; }
+
+/* Auto-approve: a card's tag (approved on its own, or the rule it missed on hover) and the note above its changes. */
+.auto-tag { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); border: 1px solid currentColor; border-radius: var(--r-s); padding: 0 5px; line-height: 1.5; white-space: nowrap; }
+.auto-tag.ok { color: var(--merged); }
+.auto-note { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--muted); border-radius: var(--r-s); background: var(--surface); font-size: var(--fs-s); color: var(--text); overflow-wrap: anywhere; }
+.auto-note.ok { border-left-color: var(--merged); }

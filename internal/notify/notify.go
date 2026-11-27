@@ -503,12 +503,17 @@ func (n *Notifier) classify(ev model.Event) (Notification, bool) {
 		switch t.Status {
 		case model.StatusReview:
 			kind = model.NotifyReview
+			if a := t.AutoApproval; a != nil && !a.Approved && a.Failed != "" {
+				message = "Not approved automatically: " + a.Failed
+			}
 		case model.StatusFailed:
 			kind, message = model.NotifyFailed, t.Error
 		case model.StatusMerged:
 			kind = model.NotifyMerged
 			if t.NoChanges && t.MergedCommit == "" {
 				message = ClosedNoChanges
+			} else if a := t.AutoApproval; a != nil && a.Approved {
+				message = AutoApproved
 			}
 		default:
 			return Notification{}, false

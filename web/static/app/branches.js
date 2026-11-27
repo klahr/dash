@@ -839,6 +839,20 @@ function needsOwnRunnerTag(t) {
   return h("span", { class: "needs-runner-tag", title: t.waiting }, mine ? "Needs your runner" : "Needs their runner");
 }
 
+// autoTag marks a task the project's auto-approve rules approved (merging or
+// merged), or, in Review, one they didn't: the rule it missed on hover.
+export function autoTag(t) {
+  const a = t.auto_approval;
+  if (!a) return null;
+  if (a.approved && ["merging", "merged"].includes(t.status)) {
+    return h("span", { class: "auto-tag ok", title: `Approved automatically: ${(a.matched || []).join("; ")}` }, "Auto-approved");
+  }
+  if (!a.approved && t.status === "review") {
+    return h("span", { class: "auto-tag", title: `Not approved automatically: ${a.failed}` }, "Not auto-approved");
+  }
+  return null;
+}
+
 export function todoRow(t, li = -1, ri = -1) {
   const atCursor = keys.active && keys.cur.lane === li && keys.cur.row === ri;
   let sub = plainText(t.prompt);
@@ -901,6 +915,7 @@ export function todoRow(t, li = -1, ri = -1) {
       t.pr && t.status !== "merged" ? prTag(t.pr) : null,
       waitsOnGitHub(t) ? prReviewTag(t.pr) : null,
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
+      autoTag(t),
       t.ci_run ? h("span", { class: "ci-tag" }, "Build fix") : null,
       fixing ? h("span", { class: "sentback-tag", title: `Sent back: ${fixing}` }, /^review /.test(fixing) ? "Review comments" : /conflict/.test(fixing) ? "Merge conflict" : "Failing checks") : null,
       t.attachments?.length ? h("span", { class: "attach-tag", title: `${t.attachments.length} attached` }, clip(), String(t.attachments.length)) : null,

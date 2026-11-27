@@ -564,6 +564,8 @@ async function stopAllPreviews() {
 
 // The task chat already gives Claude the task's instructions and diff, and runs
 // in its worktree; a project can replace this prompt in its settings.
+// Keep it the same as model.DefaultReviewPrompt (internal/model/review.go),
+// which the auto-approve rules' review asks.
 export const DEFAULT_REVIEW_PROMPT = `Review this task's changes as a strict senior reviewer, before they are merged. Don't modify any files.
 
 Check, in this order:
@@ -675,6 +677,16 @@ function goalNote(t) {
     h("p", { class: "hint goal-review-hint" }, "The coordinator's review. Approving and merging stay yours."));
 }
 
+// What the project's auto-approve rules made of the task, above its changes:
+// the rules it met, or the one it missed (it then waits in Review as usual).
+function autoNote(t) {
+  const a = t?.auto_approval;
+  if (!a) return null;
+  return a.approved
+    ? h("p", { class: "auto-note ok" }, h("strong", {}, "Approved automatically. "), `Rules met: ${(a.matched || []).join("; ")}.`)
+    : h("p", { class: "auto-note" }, h("strong", {}, "Not approved automatically: "), `${a.failed}.`);
+}
+
 function renderDiff(text) {
   const files = parseDiff(text);
   const add = files.reduce((n, f) => n + f.add, 0);
@@ -684,12 +696,12 @@ function renderDiff(text) {
   if (!files.length) {
     const t = state.todos.get(state.detail);
     const msg = text.startsWith("error:") ? text : t?.worktree ? "No changes compared to the default branch." : "Changes appear here once Claude has worked on this task.";
-    $("#d-diff").replaceChildren(...[goalNote(t), h("p", { class: "pane-empty" }, msg)].filter(Boolean));
+    $("#d-diff").replaceChildren(...[autoNote(t), goalNote(t), h("p", { class: "pane-empty" }, msg)].filter(Boolean));
     return;
   }
   const commented = new Set(commentsFor(state.detail).map((c) => c.file));
   const t = state.todos.get(state.detail), editable = canEditDiff(t);
-  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[goalNote(t), shotsView(t), commentsBar(t)].filter(Boolean), ...files.map((f) => h("details", {
+  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[autoNote(t), goalNote(t), shotsView(t), commentsBar(t)].filter(Boolean), ...files.map((f) => h("details", {
     class: "diff-file", open: state.diffOpen.has(f.path) || commented.has(f.path),
     ontoggle: (e) => state.diffOpen[e.target.open ? "add" : "delete"](f.path),
   },

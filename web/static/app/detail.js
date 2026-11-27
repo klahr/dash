@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import { ask, attempt, busy, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
 import { statusLabel, state } from "./state.js";
-import { approvable, buildsOnMeta, busyTodos, closable, closeTodo, closedNoChanges, canMergePR, whileBusy, doneMeta, conflictMeta, mergePR, depMeta, hasPriority, prChecksEl, prChecksTitle, prReviewTag, prStatus, prTone, waitsOnGitHub } from "./branches.js";
+import { approvable, autoTag, buildsOnMeta, busyTodos, closable, closeTodo, closedNoChanges, canMergePR, whileBusy, doneMeta, conflictMeta, mergePR, depMeta, hasPriority, prChecksEl, prChecksTitle, prReviewTag, prStatus, prTone, waitsOnGitHub } from "./branches.js";
 import { goalChip } from "./goals.js";
 import { editable, openTodoForm } from "./todos.js";
 import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.js";
@@ -201,6 +201,7 @@ export function renderDetail() {
     waitsOnGitHub(t) ? h("span", { class: `pr-status ${prTone(prStatus(t.pr))}`, title: prChecksTitle(t.pr) }, prStatus(t.pr)) : null,
     waitsOnGitHub(t) ? prChecksEl(t.pr) : null,
     t.merged_commit ? h("span", { class: "branch", title: t.merged_commit }, t.merged_commit.slice(0, 8)) : null,
+    autoTag(t),
     liveMeta(t),
     t.revert ? (t.revert.pr_url
       ? h("a", { class: "revert-tag", href: t.revert.pr_url, target: "_blank", rel: "noopener" }, "Revert pull request")

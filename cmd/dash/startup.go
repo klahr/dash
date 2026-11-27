@@ -1243,6 +1243,7 @@ func (a *app) newDoctor(creds tunnel.Credentials, disks *disk.Monitor) *runnerct
 func (a *app) wireOwners() {
 	apiSrv := a.apiSrv
 	a.todos.Owner = apiSrv.TaskOwner
+	a.todos.Review = apiSrv.AutoReview // the auto-approve rules' review
 	a.perms.Member = apiSrv.Member
 	// Revoking a runner's token in Settings disconnects the runner.
 	a.authn.OnRevoke = func(t store.Token) {

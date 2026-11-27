@@ -432,7 +432,9 @@ type projectUpdate struct {
 	MaxAutoFixes   *int      `json:"max_auto_fixes"`
 	AutoPush       *bool     `json:"auto_push"`
 	AutoApprove    *bool     `json:"auto_approve"`
-	CloseNoChanges *bool     `json:"close_no_changes"`
+	// AutoApproveRules replace model.Project.AutoApproveRules.
+	AutoApproveRules *model.AutoApproveRules `json:"auto_approve_rules"`
+	CloseNoChanges   *bool                   `json:"close_no_changes"`
 	// ClearMergedZone is model.Project.ClearMergedZone: an IANA time zone
 	// turns the daily clearing of merged tasks on, "" turns it off.
 	ClearMergedZone *string `json:"clear_merged_zone"`
@@ -623,6 +625,13 @@ func (sv *service) normalizeProjectUpdate(ctx context.Context, req *projectUpdat
 		}
 		req.ClearMergedZone = &z
 	}
+	if req.AutoApproveRules != nil {
+		r, err := req.AutoApproveRules.Clean()
+		if err != nil {
+			return fmt.Errorf("%w: auto_approve_rules: %v", errBadRequest, err)
+		}
+		req.AutoApproveRules = &r
+	}
 	if err := checkScreenshotSettings(req.Screenshots); err != nil {
 		return err
 	}
@@ -698,7 +707,7 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 		p.PreviewCommand = strings.TrimSpace(*req.PreviewCommand)
 	}
 	set(&p.AutoPush, req.AutoPush)
-	set(&p.AutoApprove, req.AutoApprove)
+	p.SetAutoApprove(req.AutoApprove, req.AutoApproveRules, time.Now())
 	set(&p.CloseNoChanges, req.CloseNoChanges)
 	set(&p.ClearMergedZone, req.ClearMergedZone)
 	set(&p.Color, req.Color)

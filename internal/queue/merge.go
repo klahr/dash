@@ -1028,6 +1028,7 @@ func (m *MergeQueue) sendBack(t model.Todo, p model.Project, note string, mergeM
 				x.Feedback = append(x.Feedback, note)
 			}
 			x.MergeMain = x.MergeMain || mergeMain // a rework will resolve it
+			x.HadConflict = x.HadConflict || mergeMain
 			x.Status = model.StatusFailed
 			x.Error = why + " — send it back for rework to let Claude fix it"
 			return nil
@@ -1040,6 +1041,7 @@ func (m *MergeQueue) sendBack(t model.Todo, p model.Project, note string, mergeM
 			x.Feedback = append(x.Feedback, note)
 		}
 		x.MergeMain = x.MergeMain || mergeMain
+		x.HadConflict = x.HadConflict || mergeMain
 		x.AutoMerge = true
 		x.SentBack = why
 		x.AutoFixes++

@@ -317,9 +317,13 @@ func hubSettings(req dispatch.Link, mode string) func(*model.Project) {
 		}
 		// The hub's review settings; an older hub that doesn't send them
 		// leaves the runner's own.
-		if req.AutoApprove != nil {
-			x.AutoApprove = *req.AutoApprove
+		var rules *model.AutoApproveRules // nil from older hubs: the runner keeps its own
+		if req.AutoApproveRules != nil {
+			if r, err := req.AutoApproveRules.Clean(); err == nil {
+				rules = &r
+			}
 		}
+		x.SetAutoApprove(req.AutoApprove, rules, time.Now())
 		if req.CloseNoChanges != nil {
 			x.CloseNoChanges = *req.CloseNoChanges
 		}

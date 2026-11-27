@@ -127,6 +127,11 @@ func (w *Watcher) follow(rel Release) {
 			if !ok {
 				return
 			}
+			select {
+			case <-stop:
+				return
+			default:
+			}
 			// While the webhook works, GitHub says when the build changes:
 			// this poll is only a safety net then.
 			hook := false

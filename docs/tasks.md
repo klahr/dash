@@ -243,6 +243,46 @@ commit on the default branch, pushed if you like. See [Merge queue](merge-queue.
 **Approve** on a card waits a few seconds before the merge starts: click **Undo** in the toast to
 keep the task in *Review*. In a narrow column the card's **Approve** is a check-mark button.
 
+## Auto-approve
+
+Let low-risk tasks merge on their own instead of waiting in *Review*. Open **Project settings →
+Auto-approve** and turn on **Approve tasks automatically**. It is off by default.
+
+A finished task is approved on its own only when all of these hold:
+
+- Its tests passed. The project needs a *Test command*.
+- It changed at most **Most changed lines** lines, added plus deleted. Empty means 200.
+- Optional: every changed file matches one of **Only these paths changed**, one glob per line.
+  `**` matches any number of folders, and a glob with no `/` matches the file name in any folder:
+
+  ```text
+  docs/**
+  **/*_test.go
+  ```
+
+- Optional: **Claude's review found no issues**. Dash then runs the review the **Ask Claude** button
+  runs, read-only, as soon as the task finishes, and adds it to the task's chat. The answer must
+  start with "Ready to merge". The review runs only when the other rules already hold.
+
+A task is never approved on its own when:
+
+- it had a merge conflict;
+- its tests failed, or didn't run;
+- it changed `CLAUDE.md`, `.claude/`, `.dash/`, `.github/workflows/`, or the script the test
+  command runs (such as `scripts/check.sh`);
+- the auto-approve settings changed while it ran.
+
+A task that meets the rules merges as **Approve** does. Its card says **Auto-approved**, its
+**Changes** tab lists the rules it met, and the usual *Merged* notification says it was approved
+automatically.
+
+A task that misses a rule waits in *Review* as usual. Its card says **Not auto-approved** (hover it
+for the reason), and its **Changes** tab and the *Review* notification name the rule it missed.
+
+Auto-approve rules apply when tasks merge in Dash (**Approval & push → Merge it**). With pull
+requests, see [Approve tasks automatically](github.md#approve-tasks-automatically). On runners,
+the hub's settings apply.
+
 ## Move cards
 
 Drag a card to another column to act on it (on a phone, long-press it and drop it on a button

@@ -77,6 +77,10 @@ type Link struct {
 	// tasks whose tests pass skip review and go straight to merging. It is
 	// nil from hubs that predate it; the runner then keeps its own setting.
 	AutoApprove *bool `json:"auto_approve,omitempty"`
+	// AutoApproveRules are the hub project's model.Project.AutoApproveRules:
+	// the conditions AutoApprove checks on the runner. Nil from older hubs
+	// (the runner keeps its own) or for the defaults.
+	AutoApproveRules *model.AutoApproveRules `json:"auto_approve_rules,omitempty"`
 	// CloseNoChanges is the hub project's model.Project.CloseNoChanges:
 	// finished tasks that change no files are closed without review. Nil
 	// from hubs that predate it; the runner then keeps its own setting.
@@ -338,6 +342,9 @@ type TaskState struct {
 	RunStats  []model.TodoRun    `json:"run_stats,omitempty"`
 	Checks    *model.Checks      `json:"checks,omitempty"`
 	PR        *model.PullRequest `json:"pr,omitempty"`
+	// AutoApproval is model.Todo.AutoApproval: what the auto-approve rules
+	// made of the task on the runner.
+	AutoApproval *model.AutoApproval `json:"auto_approval,omitempty"`
 	// Screenshots are the task's before/after screenshots on the runner;
 	// the hub gets their pictures from it (GET /api/hub/tasks/{id}/screenshots/{name}).
 	Screenshots *model.ScreenshotSet `json:"screenshots,omitempty"`
@@ -368,7 +375,7 @@ func StateOf(t model.Todo) TaskState {
 	s := TaskState{
 		HubTodoID: t.HubTodoID, ID: t.ID, Status: t.Status, Paused: t.Paused, Error: t.Error, Summary: t.Summary,
 		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, NoChanges: t.NoChanges, CostUSD: t.CostUSD, Runs: t.Runs, RunStats: t.RunStats,
-		Checks: t.Checks, PR: t.PR, Screenshots: t.Screenshots.Clone(), MergedCommit: t.MergedCommit, Revert: t.Revert, RevertConflict: t.RevertConflict,
+		Checks: t.Checks, PR: t.PR, AutoApproval: t.AutoApproval, Screenshots: t.Screenshots.Clone(), MergedCommit: t.MergedCommit, Revert: t.Revert, RevertConflict: t.RevertConflict,
 		Conflicts: t.Conflicts, Links: t.Links, Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
 	}
 	if t.Worktree != nil {

@@ -41,6 +41,10 @@ export function openSettings() {
   showShots(f, p);
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
+  const rules = p.auto_approve_rules || {};
+  f.aa_max_lines.value = rules.max_lines || "";
+  f.aa_paths.value = (rules.paths || []).join("\n");
+  f.aa_review.checked = !!rules.review;
   f.close_no_changes.checked = !!p.close_no_changes;
   f.clear_merged_zone.checked = !!p.clear_merged_zone;
   clearMergedHint(p.clear_merged_zone);
@@ -454,8 +458,8 @@ function syncMergeHint() {
   // Only direct merges here batch: not pull requests, nor merges on runners.
   $("#merge-batch-row").hidden = pr || onRunners;
   $("#auto-approve-hint").textContent = pr
-    ? "Pull requests whose checks pass skip Dash's review; you still merge them."
-    : "Tasks whose tests pass skip Review and go straight to the merge queue.";
+    ? "Pull requests whose checks pass don't wait for an approving review on GitHub; you still merge them. The rules below apply only when tasks merge in Dash (Approval & push)."
+    : "Tasks that meet every rule skip Review and merge as Approve does. The others wait in Review, with a note on the rule they missed.";
   const merge = $("#merge-hint");
   fill(merge, !p.remote_url
     ? (pr ? "Connect a GitHub repository to open pull requests." : "")
@@ -560,6 +564,10 @@ const FIELDS = {
   screenshots: { read: readShots, el: () => $("#settings-shots") },
   auto_push: { read: (f) => f.auto_push.checked },
   auto_approve: { read: (f) => f.auto_approve.checked },
+  auto_approve_rules: {
+    read: (f) => ({ max_lines: Math.min(100000, Math.max(0, Math.round(Number(f.aa_max_lines.value) || 0))), paths: lines(f.aa_paths.value), review: f.aa_review.checked }),
+    el: () => $("#auto-approve-rules"),
+  },
   close_no_changes: { read: (f) => f.close_no_changes.checked },
   // On: the zone it is on in already, else this browser's; off: "".
   clear_merged_zone: { read: (f) => (f.clear_merged_zone.checked ? state.project.clear_merged_zone || browserZone() || "UTC" : "") },
@@ -581,7 +589,11 @@ const FIELDS = {
   agent: { read: (f) => f.agent.value, skip: () => !$("#settings-agent").options.length },
 };
 // A form control's name → the field it saves.
-const FIELD_OF = { color_pick: "color", shots_on: "screenshots", shots_ui_paths: "screenshots", shots_pages: "screenshots", shots_setup: "screenshots" };
+const FIELD_OF = {
+  color_pick: "color",
+  aa_max_lines: "auto_approve_rules", aa_paths: "auto_approve_rules", aa_review: "auto_approve_rules",
+  shots_on: "screenshots", shots_ui_paths: "screenshots", shots_pages: "screenshots", shots_setup: "screenshots",
+};
 const fieldEl = (f, key) => {
   if (FIELDS[key].el) return FIELDS[key].el(f);
   const el = f.elements[key];

@@ -13,11 +13,13 @@ import (
 	"testing"
 
 	"github.com/klahr/dash/internal/doctor"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // The sandbox scripts are in deploy/sandbox, executable, and the release
 // archives hold that folder; SandboxScripts names every one.
 func TestReleaseArchivesHoldTheSandboxScripts(t *testing.T) {
+	testbin.SkipOnWindows(t, "checks the scripts' executable bits")
 	root := filepath.Join("..", "..")
 	entries, err := os.ReadDir(filepath.Join(root, "deploy", "sandbox"))
 	if err != nil {
@@ -85,6 +87,7 @@ func binWith(t *testing.T, scripts ...string) string {
 // The hint gives the exact command for the script beside dash, only where
 // one fits and no sandbox is set.
 func TestSandboxHint(t *testing.T) {
+	testbin.SkipOnWindows(t, "finds the sandbox scripts by their executable bits")
 	bin := binWith(t, "claude-seatbelt", "claude-bwrap")
 	dir := filepath.Dir(bin)
 	data := filepath.Join(t.TempDir(), "runner data")
@@ -133,6 +136,7 @@ func TestSandboxHint(t *testing.T) {
 
 // Setup prints the hint and never turns the sandbox on.
 func TestSetupSaysHowToSandboxClaude(t *testing.T) {
+	testbin.SkipOnWindows(t, "finds the sandbox scripts by their executable bits")
 	t.Setenv(SandboxEnv, "")
 	tc := newTestCLI(t)
 	tc.Preflight.GOOS = "linux" // with bwrap on its PATH, as all tools are
@@ -169,6 +173,7 @@ func TestSetupSaysHowToSandboxClaude(t *testing.T) {
 // The doctor warns of unsandboxed runs where a bundled script fits, with
 // the command that turns it on (after installing bubblewrap, on Linux).
 func TestDoctorSandbox(t *testing.T) {
+	testbin.SkipOnWindows(t, "finds the sandbox scripts by their executable bits")
 	bin := binWith(t, "claude-seatbelt", "claude-bwrap")
 	dir := filepath.Dir(bin)
 	data := t.TempDir()

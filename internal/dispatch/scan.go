@@ -176,9 +176,10 @@ func (d *Dispatcher) link(ctx context.Context, r tunnel.Runner, p model.Project)
 // commands there. The runner clones p's remote the first time. A link the
 // hub sent the runner lately, unchanged, isn't sent again (see linkCache).
 func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Linked, error) {
+	rules := p.Rules()
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, CloneURL: p.CloneURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
 		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, TaskInstructions: p.TaskInstructions, Agent: p.Agent,
-		AutoApprove: &p.AutoApprove, CloseNoChanges: &p.CloseNoChanges, MaxAutoFixes: &p.MaxAutoFixes,
+		AutoApprove: &p.AutoApprove, AutoApproveRules: &rules, CloseNoChanges: &p.CloseNoChanges, MaxAutoFixes: &p.MaxAutoFixes,
 		TestTimeoutMinutes: &p.TestTimeoutMinutes,
 		SetupCommand:       p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand,
 		Environments: model.CloneEnvironments(p.Environments), PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand,

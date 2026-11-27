@@ -181,6 +181,7 @@ func TestReleaseBuildSurvivesRestart(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	w2 := &Watcher{Store: st, Git: w.Git, Pub: nopPub{}}
+	t.Cleanup(w2.stop)
 	w2.Resume()
 	rel := w2.Status(p.ID).Release
 	if rel == nil || rel.Tag != "v1.0.0" || rel.State != ReleaseBuilding || len(rel.Runs) != 1 || rel.Runs[0].ID != 31 {

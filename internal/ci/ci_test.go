@@ -47,7 +47,9 @@ func newWatcher(t *testing.T, investigate bool) (*Watcher, model.Project, func(s
 			t.Fatal(err)
 		}
 	}
-	return &Watcher{Store: st, Git: g, Pub: nopPub{}}, p, setRuns
+	w := &Watcher{Store: st, Git: g, Pub: nopPub{}}
+	t.Cleanup(w.stop) // before the store closes: a release it follows reads it
+	return w, p, setRuns
 }
 
 func run(id int, wf, sha, status, conclusion string) string {

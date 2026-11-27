@@ -77,9 +77,15 @@ type Project struct {
 	// -github-protocol. It is a URL only: never credentials.
 	CloneURL string `json:"clone_url,omitempty"`
 	AutoPush bool   `json:"auto_push"` // push DefaultBranch after every merge
-	// AutoApprove: finished todos whose tests pass skip review. In "pr"
-	// mode their pull requests merge without an approving review on GitHub.
+	// AutoApprove: finished todos that meet AutoApproveRules skip review
+	// and merge (see EvaluateAutoApprove). In "pr" mode their pull requests
+	// merge without an approving review on GitHub.
 	AutoApprove bool `json:"auto_approve"`
+	// AutoApproveRules are AutoApprove's conditions (nil: the defaults).
+	// AutoApproveChanged is when AutoApprove or them last changed (see
+	// SetAutoApprove): a task running then isn't approved on its own.
+	AutoApproveRules   *AutoApproveRules `json:"auto_approve_rules,omitempty"`
+	AutoApproveChanged *time.Time        `json:"auto_approve_changed,omitempty"`
 	// CloseNoChanges: finished todos that change no files skip review and
 	// are closed (Merged with NoChanges), Claude's answer in their chat.
 	CloseNoChanges bool `json:"close_no_changes"`
@@ -541,6 +547,12 @@ type Todo struct {
 	// since a human already approved it.
 	MergeMain bool `json:"merge_main,omitempty"`
 	AutoMerge bool `json:"auto_merge,omitempty"`
+	// HadConflict: the task's branch once conflicted with the branch it
+	// lands on, so it is never approved on its own (EvaluateAutoApprove).
+	HadConflict bool `json:"had_conflict,omitempty"`
+	// AutoApproval is what the project's auto-approve rules made of the
+	// task when it last finished (nil: they weren't on).
+	AutoApproval *AutoApproval `json:"auto_approval,omitempty"`
 	// SentBack is why the merge queue last returned the todo to Claude
 	// (a conflict or failing tests), shown on the card while it is fixed.
 	SentBack string `json:"sent_back,omitempty"`

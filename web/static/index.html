@@ -1226,6 +1226,7 @@
           <div class="rail-group"><span class="rail-head">Delivery</span>
             <button type="button" class="rail-item" data-rail="deploy">Deploy</button>
             <button type="button" class="rail-item" data-rail="approval">Approval &amp; push</button>
+            <button type="button" class="rail-item" data-rail="autoapprove">Auto-approve</button>
             <button type="button" class="rail-item" data-rail="webhooks">Webhooks</button>
           </div>
         </nav>
@@ -1358,9 +1359,18 @@
             </fieldset>
             <p class="hint" id="settings-board-hint" hidden></p>
           </section>
-          <section class="rail-section" data-section="approval">
-            <label class="toggle"><input type="checkbox" name="auto_approve"><span>Approve tasks automatically</span></label>
+          <section class="rail-section" data-section="autoapprove">
+            <label class="toggle"><input type="checkbox" name="auto_approve"><span>Approve tasks automatically <em>off by default</em></span></label>
             <p class="hint" id="auto-approve-hint"></p>
+            <fieldset class="field choice" id="auto-approve-rules">
+              <legend>Rules <em>a finished task is approved only when its tests passed and every rule holds</em></legend>
+              <label class="field"><span>Most changed lines <em>added plus deleted</em></span><input type="number" name="aa_max_lines" min="1" max="100000" step="1" placeholder="200" inputmode="numeric" autocomplete="off"></label>
+              <label class="field"><span>Only these paths changed <em>one glob per line, e.g. docs/** or **/*_test.go; empty for any file</em></span><textarea name="aa_paths" rows="3" spellcheck="false" autocomplete="off" placeholder="docs/**"></textarea></label>
+              <label class="toggle"><input type="checkbox" name="aa_review"><span>Claude's review found no issues <em>the Ask Claude review runs on its own when the task finishes</em></span></label>
+            </fieldset>
+            <p class="hint">Never approved on its own: a task that had a merge conflict, whose tests failed or didn't run, or that changed CLAUDE.md, <code>.claude</code>, <code>.dash</code>, <code>.github/workflows</code>, the test script or these settings while it ran. <a data-docs="tasks.md#auto-approve" target="_blank" rel="noopener">Learn more</a></p>
+          </section>
+          <section class="rail-section" data-section="approval">
             <fieldset class="field choice">
               <legend>How finished tasks land</legend>
               <label class="radio"><input type="radio" name="merge_mode" value="pr"><span>Open a pull request <em>as soon as Claude finishes; review it on GitHub, where its checks run</em></span></label>

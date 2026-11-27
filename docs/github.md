@@ -138,10 +138,11 @@ follows them (the runner, or a Dash of your own) to check more or less often, e.
 
 ## Approve tasks automatically
 
-With **Approve tasks automatically**:
+With **Project settings → Auto-approve → Approve tasks automatically**:
 
-- **Merge it** mode: finished tasks whose tests pass go straight to the merge queue and the
-  Review column is hidden; tasks with failing tests still wait there for you.
+- **Merge it** mode: finished tasks that meet the project's rules go straight to the merge queue,
+  and the Review column is hidden while nothing waits there. The others wait there for you, with
+  the rule they missed. See [Auto-approve](tasks.md#auto-approve).
 - **Pull request** mode: pull requests don't wait for an approving review. Dash marks a task's
   pull request ready for review once its checks pass, and it then waits for a person to merge it,
   on GitHub or with **Merge pull request** in Dash: Dash never merges it on its own. A review asking for changes still goes back to Claude and

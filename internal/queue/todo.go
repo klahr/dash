@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -91,6 +92,11 @@ type TodoEngine struct {
 	Summarizer interface {
 		Summary(ctx context.Context, report string) (string, error)
 	}
+	// Review runs Claude's review of finished task t (the task chat's
+	// Review) for the auto-approve rules (model.AutoApproveRules.Review),
+	// keeps it in the task's chat and returns its answer. Nil: no review
+	// can run here, and a rule that asks for one never holds.
+	Review func(ctx context.Context, t model.Todo, p model.Project) (answer string, err error)
 	// Screenshots takes before/after screenshots of a finished task's
 	// pages, in the background (see screenshots.go). Nil: none are taken.
 	Screenshots *screenshot.Capturer
@@ -864,7 +870,7 @@ func (r *todoRun) mergeBaseIn() error {
 	} else if _, err := e.Git.CommitAll(ctx, p.ID, wt.Path, "Merge "+p.Base()+" into "+wt.Branch); err != nil {
 		return err
 	}
-	return r.update(func(x *model.Todo) { x.MergeMain = false })
+	return r.update(func(x *model.Todo) { x.MergeMain, x.HadConflict = false, x.HadConflict || len(files) > 0 })
 }
 
 // claudeArgs sets what a run of task t needs in req: limits, model,
@@ -1069,7 +1075,16 @@ func (r *todoRun) handOff() {
 	// whose tests fail waits in Review without one, unless its pull request
 	// is open already: GitHub's checks then say so there.
 	toPR := p.UsesPR() && (passed || t.WaitsOnGitHub())
-	if (t.AutoMerge || p.AutoApprove || toPR) && (passed || toPR) && e.Merges != nil {
+	// Merged in Dash, a task is approved on its own only when it meets the
+	// project's rules; a pull request is reviewed on GitHub instead.
+	var auto *model.AutoApproval
+	if p.AutoApprove && !toPR && !t.AutoMerge && e.Merges != nil {
+		a := r.autoApproval()
+		auto = &a
+		_ = r.update(func(x *model.Todo) { x.AutoApproval = auto })
+		t = r.t
+	}
+	if (t.AutoMerge || auto != nil && auto.Approved || toPR) && (passed || toPR) && e.Merges != nil {
 		switch {
 		case toPR && t.WaitsOnGitHub():
 			r.log(fmt.Sprintf("✔ done; pushing to pull request #%d", t.PR.Number))
@@ -1078,7 +1093,7 @@ func (r *todoRun) handOff() {
 		case toPR:
 			r.log("✔ finished; opening a pull request for review on GitHub")
 		default:
-			r.log("✔ approved automatically; to the merge queue")
+			r.log("✔ approved automatically (" + strings.Join(auto.Matched, "; ") + "); to the merge queue")
 		}
 		if !t.AutoMerge {
 			_ = r.update(func(x *model.Todo) { x.AutoFixes = 0 }) // like approving: a fresh budget for merge conflicts
@@ -1095,6 +1110,9 @@ func (r *todoRun) handOff() {
 			return
 		}
 	}
+	if auto != nil && !auto.Approved {
+		r.log("ⓘ not approved automatically: " + auto.Failed)
+	}
 	if passed {
 		r.log("✔ ready for review")
 	} else {
@@ -1103,6 +1121,72 @@ func (r *todoRun) handOff() {
 	if _, err := e.Store.SetStatus(t.ID, model.StatusReview, ""); err != nil {
 		slog.Error("set review", "todo", t.ID, "err", err)
 	}
+}
+
+// autoReviewTimeout bounds the automatic review of a finished task.
+const autoReviewTimeout = 20 * time.Minute
+
+// autoApproval checks the finished task against its project's auto-approve
+// rules (model.EvaluateAutoApprove), with its diff as it is now and, when
+// the rules ask for it and every other rule holds, Claude's review.
+func (r *todoRun) autoApproval() model.AutoApproval {
+	e, ctx, wt := r.e, r.ctx, r.wt
+	p := r.p
+	if cur, err := e.Store.GetProject(p.ID); err == nil {
+		p = cur.For(r.t) // its settings now: they may have changed while the task ran
+	}
+	t := r.t
+	if cur, err := e.Store.GetTodo(t.ID); err == nil {
+		t = cur
+	}
+	stamp := func(a model.AutoApproval) model.AutoApproval {
+		a.At = time.Now()
+		return a
+	}
+	if !p.AutoApprove {
+		return stamp(model.AutoApproval{Failed: "auto-approve was turned off while it ran"})
+	}
+	facts := model.AutoApproveFacts{TestCommand: p.TestCommand, Checks: t.Checks}
+	facts.Conflict = t.HadConflict || t.MergeMain || slices.ContainsFunc(t.Conflicts, func(c model.Conflict) bool { return c.Base })
+	facts.SettingsChanged = p.AutoApproveChanged != nil && t.StartedAt != nil && p.AutoApproveChanged.After(*t.StartedAt)
+	_, add, del, err := e.Git.DiffStat(ctx, p.ID, wt.Path, p.Base())
+	if err == nil {
+		facts.Lines = add + del
+		facts.Files, err = e.Git.WorkFiles(ctx, p.ID, p.Path, wt.Path, p.Base(), wt.Branch)
+	}
+	if err != nil {
+		slog.Warn("auto-approve: read the task's diff", "todo", t.ID, "err", err)
+		return stamp(model.AutoApproval{Failed: "Dash couldn't read its changes"})
+	}
+	rules := p.Rules()
+	withoutReview := rules
+	withoutReview.Review = false
+	if a := model.EvaluateAutoApprove(withoutReview, facts); !a.Approved || !rules.Review {
+		return stamp(a)
+	}
+	// Every other rule holds: Claude's review decides.
+	facts.ReviewRan, facts.ReviewOK, facts.ReviewLine = r.autoReview(t, p)
+	return stamp(model.EvaluateAutoApprove(rules, facts))
+}
+
+// autoReview runs Claude's review of t for the auto-approve rules: whether
+// it ran, whether it found no issues, and its verdict line (or why it
+// didn't run).
+func (r *todoRun) autoReview(t model.Todo, p model.Project) (ran, ok bool, line string) {
+	if r.e.Review == nil {
+		return false, false, "no chat to review with on this Dash"
+	}
+	r.log("▶ Claude reviews the changes for auto-approve")
+	ctx, cancel := context.WithTimeout(r.ctx, autoReviewTimeout)
+	defer cancel()
+	answer, err := r.e.Review(ctx, t, p)
+	if err != nil {
+		slog.Warn("auto-approve review", "todo", t.ID, "err", err)
+		return false, false, textutil.OneLine(err.Error(), 200)
+	}
+	ok, line = model.ReviewVerdict(answer)
+	r.log("ⓘ Claude's review: " + textutil.OneLine(line, 200))
+	return true, ok, textutil.OneLine(line, 200)
 }
 
 // issuesHint tells a task's Claude about the issue tool.

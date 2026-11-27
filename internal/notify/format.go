@@ -157,6 +157,10 @@ var looks = map[model.NotifyEvent]struct {
 // closed without changes: nothing was merged.
 const ClosedNoChanges = "No changes: nothing was merged"
 
+// AutoApproved is the message of a task.merged notification for a task
+// the project's auto-approve rules approved, with no review by a person.
+const AutoApproved = "Approved automatically: it met the project's auto-approve rules"
+
 // Head is the event's short heading, e.g. "Ready for review".
 func (n Notification) Head() string {
 	if n.head != "" {
