@@ -172,7 +172,9 @@ When Claude is done the task lands in *Review*. Its card shows Claude's summary 
 instead of your prompt. Click **Review** on the card (or open it) and
 read the diff on the **Changes** tab. The spark button on the card (**Ask Claude**) has Claude
 review it first. A changed image
-(PNG, JPEG, GIF or WebP) shows as pictures, before and after, here and in **History**.
+(PNG, JPEG, GIF or WebP) shows as pictures, before and after, here and in **History**. A web
+project can also show [before/after screenshots](screenshots.md) of the pages the task changed,
+above the diff.
 
 - Not right? Click **Rework…**, say what to change, and it goes back to Claude.
 - To point at code, comment on its lines. See [Comment on lines](#comment-on-lines).

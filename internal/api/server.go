@@ -42,6 +42,7 @@ import (
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/scan"
+	"github.com/klahr/dash/internal/screenshot"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tracker"
 	"github.com/klahr/dash/internal/tunnel"
@@ -156,6 +157,10 @@ type Server struct {
 	// Brand is how this Dash presents itself: name, legal links, logo, the
 	// landing page (empty fields: the defaults).
 	Brand branding.Config
+
+	// Screenshots takes and keeps finished tasks' before/after screenshots
+	// here (nil: none are; see screenshots.go).
+	Screenshots *screenshot.Capturer
 
 	// TryRoot is where a runner makes its try sessions' worktrees
 	// (<data>/try; see try.go).
@@ -331,6 +336,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/todos/{tid}/resume", s.resumeTodo)
 	mux.HandleFunc("GET /api/todos/{tid}/diff", s.todoDiff)
 	mux.HandleFunc("GET /api/todos/{tid}/image", s.todoImage)
+	mux.HandleFunc("GET /api/todos/{tid}/screenshots/{name}", s.todoScreenshot)
 	mux.HandleFunc("GET /api/todos/{tid}/log", s.todoLog)
 	mux.HandleFunc("GET /api/todos/{tid}/events", s.todoEvents)
 	mux.HandleFunc("GET /api/todos/{tid}/file", s.todoFile)

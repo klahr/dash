@@ -7,7 +7,8 @@ in the [status popover](status.md) lists them all, with Stop all. One preview ru
 approved, sent back or merged, and after 30 minutes without traffic (`-preview-idle`). If the
 server crashes, its log opens, and **Rework with this log…** hands it to Claude as rework notes.
 
-To mark up a preview and send the picture back to Claude, see [Draw](draw.md).
+To mark up a preview and send the picture back to Claude, see [Draw](draw.md). To get pictures of
+the changed pages in Review without starting the preview, see [Before/after screenshots](screenshots.md).
 
 ## Terminal previews (CLI tools)
 

@@ -97,7 +97,7 @@ Using Dash:
 - [GitHub](docs/github.md) and its [webhooks](docs/github-webhooks.md)
 - [Merge queue](docs/merge-queue.md)
 - [Deploys](docs/deploys.md)
-- [Live previews](docs/previews.md) and [Draw](docs/draw.md)
+- [Live previews](docs/previews.md), [Draw](docs/draw.md) and [before/after screenshots](docs/screenshots.md)
 - [Scans](docs/scans.md): their findings, and problems Claude reports, become tagged drafts on the Board
 - [Task boards](docs/boards.md)
 - [Project color](docs/project-color.md): the top bar, and buttons and highlights

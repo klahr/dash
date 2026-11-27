@@ -181,7 +181,8 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 		AutoApprove: &p.AutoApprove, CloseNoChanges: &p.CloseNoChanges, MaxAutoFixes: &p.MaxAutoFixes,
 		TestTimeoutMinutes: &p.TestTimeoutMinutes,
 		SetupCommand:       p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand,
-		Environments: model.CloneEnvironments(p.Environments), PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand}
+		Environments: model.CloneEnvironments(p.Environments), PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand,
+		Screenshots: p.Screenshots.Clone()}
 	if d.Store != nil {
 		if o, err := d.Store.Accounts().Org(p.OrgID); err == nil {
 			link.OrgFolder = o.ProjectFolder()
@@ -203,6 +204,10 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 				link.SetupCommand = ""
 			case model.CmdPreview:
 				link.PreviewCommand = ""
+			case model.CmdScreenshot:
+				if link.Screenshots != nil {
+					link.Screenshots.SetupCommand = ""
+				}
 			default:
 				for i, e := range link.Environments {
 					if kind == model.HeldEnvKind(e.Name) {

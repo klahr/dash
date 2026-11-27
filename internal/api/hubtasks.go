@@ -62,6 +62,7 @@ func (s *Server) hubTaskRoutes(mux routeMux) {
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/diff", s.hubDiff)
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/files", s.hubFiles)
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/image", s.hubTaskImage)
+	mux.HandleFunc("GET /api/hub/tasks/{htid}/screenshots/{name}", s.hubTaskScreenshot)
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/log", s.hubLog)
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/file", s.hubTaskFile)
 	mux.HandleFunc("PUT /api/hub/tasks/{htid}/file", s.hubTaskFile)
@@ -292,6 +293,7 @@ func hubSettings(req dispatch.Link, mode string) func(*model.Project) {
 		// run empty. An older hub sends one deploy command, "production".
 		x.Environments, x.DeployCommand, x.DeployRunsOn = model.CloneEnvironments(req.Environments), req.DeployCommand, slices.Clone(req.DeployRunsOn)
 		x.MigrateDeploy()
+		x.Screenshots = cleanScreenshotSettings(req.Screenshots)
 		if k, err := checkPreviewKind(req.PreviewKind); err == nil {
 			x.PreviewKind, x.PreviewCommand = k, strings.TrimSpace(req.PreviewCommand)
 		}

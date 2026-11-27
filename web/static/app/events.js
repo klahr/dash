@@ -29,6 +29,7 @@ import { chatRunner, chatTaskEvent, loadChat, loadChatRunners, todoChat } from "
 import { loadTodoChat } from "./chatpane.js";
 import { addWorkerEvent } from "./timeline.js";
 import { renderPane } from "./drawmode.js";
+import { shotsKey } from "./screenshots.js";
 import { attach, attached, termWS } from "./terminal.js";
 import { loadProcs, procsChanged } from "./try.js";
 import { refreshGraph } from "./history.js";
@@ -204,7 +205,7 @@ function onEvent(ev, m = { name: "" }) {
         if (state.detail === ev.todo_id) {
           renderDetail();
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
-          else if (prev?.goal_note?.at !== ev.data.goal_note?.at) renderPane(); // the coordinator's review note
+          else if (prev?.goal_note?.at !== ev.data.goal_note?.at || shotsKey(prev) !== shotsKey(ev.data)) renderPane(); // the coordinator's review note, the screenshots
           // Dash explains the failure in the chat.
           if (prev && prev.status !== ev.data.status && ev.data.status === "failed" && !todoChat.busy) loadTodoChat().catch(fail);
         } else if (prev?.status !== ev.data.status && waitsFor(state.todos.get(state.detail), ev.todo_id)) {

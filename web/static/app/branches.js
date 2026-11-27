@@ -11,6 +11,7 @@ import { landsOnGitHub, loadUnpushed, pushBar } from "./board.js";
 import { activityNodes } from "./activity.js";
 import { canStartNow, closeDetail, goesAfter, openDetail, pacing, renderActions, renderDetail, startNow } from "./detail.js";
 import { canPreview, previewOf, previewTag, previewTodo } from "./preview.js";
+import { shotThumb } from "./screenshots.js";
 import { reviewTodo } from "./drawmode.js";
 import { renderRunnerStatus, runnerName, welcomeScreen } from "./runners.js";
 import { updateNeedsYou } from "./notifications.js";
@@ -909,6 +910,7 @@ export function todoRow(t, li = -1, ri = -1) {
       ["review", "merging", "merged", "failed"].includes(t.status) ? tokenTag(t) : null,
       t.status === "in_progress" && t.started_at ? runClock(t.started_at) : null,
       previewTag(t),
+      shotThumb(t),
       t.status === "merged" && doneAt(t) ? h("span", { class: "done-ago", title: `${closedNoChanges(t) ? "Closed" : "Merged"} ${dateTimeText(doneAt(t))}` }, agoText(doneAt(t))) : null,
       unpushed(t) ? h("span", { class: "unpushed-tag" }, "Not pushed") : null,
       t.status === "review" && t.finished_at ? h("span", { class: "card-ago", title: dateTimeText(t.finished_at) }, agoText(t.finished_at)) : null,

@@ -46,6 +46,7 @@ import (
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/runnerctl"
 	"github.com/klahr/dash/internal/scan"
+	"github.com/klahr/dash/internal/screenshot"
 	"github.com/klahr/dash/internal/store"
 	boardsync "github.com/klahr/dash/internal/tracker"
 	"github.com/klahr/dash/internal/tunnel"
@@ -314,6 +315,7 @@ type app struct {
 	todoLog                             *queue.TodoLog
 	merges                              *queue.MergeQueue
 	todos                               *queue.TodoEngine
+	shots                               *screenshot.Capturer
 	small                               agent.Titler
 	scans                               *scan.Runner
 	scheduler                           *scan.Scheduler
@@ -715,6 +717,13 @@ func (a *app) newQueue() {
 	})
 	agents := a.agents
 	a.todos.ExecFor = func(p model.Project) agent.Executor { return agents.For(p) }
+	// Before/after screenshots of finished tasks of web projects that turn
+	// them on, taken where the tasks run; a deleted task's go with it. The
+	// worktrees a stopped Dash left for the before side are removed.
+	a.shots = &screenshot.Capturer{Root: filepath.Join(o.dataDir, "screenshots"), Git: a.git}
+	_ = os.RemoveAll(filepath.Join(a.shots.Root, ".work"))
+	a.todos.Screenshots = a.shots
+	a.storeEvents.chain(a.shots.Observe)
 	// Claude's short calls. Only a runner makes them: the hub has no tasks
 	// of its own to summarise, and asks the caller's runner for titles and
 	// clean-ups (Titler only says whether to name untitled tasks there).
@@ -778,6 +787,7 @@ func (a *app) newAPIServer() {
 		Scheduler:   a.scheduler,
 		Editor:      o.editor,
 		UploadRoot:  a.merges.UploadRoot,
+		Screenshots: a.shots,
 		TryRoot:     tryRoot,
 		DeployRoot:  filepath.Join(o.dataDir, "deploys"),
 		CI:          a.builds,

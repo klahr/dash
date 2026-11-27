@@ -37,6 +37,7 @@ import "./app/detail.js";
 import "./app/inlineedit.js";
 import "./app/preview.js";
 import "./app/drawmode.js";
+import "./app/screenshots.js";
 import "./app/diffedit.js";
 import "./app/accountsheet.js";
 import "./app/install.js";

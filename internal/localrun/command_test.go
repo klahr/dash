@@ -74,6 +74,7 @@ var execAllowed = map[string]string{
 	"internal/runner/runner.go":       "bash for project commands and terminals (localrun.Check)",
 	"internal/queue/shell.go":         "bash for project commands (localrun.Check)",
 	"internal/deploy/deploy.go":       "bash for environments' build and deploy commands (localrun.Check)",
+	"internal/screenshot/capture.go":  "bash for the start server and screenshot setup commands of a task's screenshots (localrun.Check)",
 	"internal/api/handlers.go":        "the -editor command (localrun.Check)",
 	"internal/agent/claude_exec.go":   "claude (agent's guard)",
 	"internal/agent/claude.go":        "claude (agent's guard)",

@@ -1014,6 +1014,7 @@ func clone(t model.Todo) model.Todo {
 	cp.Finding = t.Finding.Clone()
 	cp.DependsOn = append([]string(nil), t.DependsOn...)
 	cp.Attachments = append([]model.Attachment(nil), t.Attachments...)
+	cp.Screenshots = t.Screenshots.Clone()
 	cp.ConflictNoted = append([]string(nil), t.ConflictNoted...)
 	cp.Links = model.CloneLinks(t.Links)
 	if t.Conflicts != nil {

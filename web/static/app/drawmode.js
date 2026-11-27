@@ -12,13 +12,15 @@ import { baseBranch, multi, projectKey } from "./events.js";
 import { selectProject } from "./projects.js";
 import { closable, title } from "./branches.js";
 import { agoText } from "../time.js";
-import { PV_LABEL, commitShown, hidePreview, isTermPreview, previewOf, previewTodo, pv, renderPreview, shownPreview } from "./preview.js";
+import { renderActions } from "./detail.js";
+import { PV_LABEL, commitShown, hidePreview, isTermPreview, paneIn, previewOf, previewTodo, pv, renderPreview, shownPreview } from "./preview.js";
 import { canEditDiff, openDiffEdit } from "./diffedit.js";
 import { commentRow, commentsBar, commentsFor, keepCommentBoxes } from "./review.js";
 import { setTodoChatMode, todoChat } from "./chat.js";
 import { isTyping, openDialog } from "./vim.js";
 import { popMenu } from "./popmenu.js";
 import { askChat } from "./palette.js";
+import { shotsView } from "./screenshots.js";
 
 // The chat pane (Attach to chat), loaded when first used: it draws itself as
 // it loads, so importing it here would change the order the modules start in.
@@ -222,13 +224,50 @@ async function retakeDraw(exact) {
 
 export function endDraw() {
   if (!draw.on) return;
+  const shot = draw.src?.shot;
   draw.on = false;
   draw.src = null;
   draw.surface?.close();
   $("#d-preview").classList.remove("drawing");
   $("#draw-stage").hidden = true;
   $("#draw-bar").hidden = true;
+  // A screenshot opened the pane only to draw on: it goes with the drawing.
+  if (shot?.opened && pv.todo && !previewOf(pv.todo)) return hidePreview();
   if (pv.todo || pv.commit) renderPreview();
+}
+
+// drawScreenshot opens one of a task's before/after screenshots (src, see
+// screenshots.js) in Draw, in the preview's pane: its marks go to the task's
+// rework notes as a preview's picture does. meta: { path, scale, about }.
+export async function drawScreenshot(t, src, meta) {
+  if (draw.on || draw.busy || !canRework(t)) return;
+  draw.busy = true;
+  try {
+    const res = await fetch(src, { credentials: "same-origin" });
+    if (!res.ok) throw new Error("The screenshot couldn't be loaded.");
+    const bitmap = await createImageBitmap(await res.blob());
+    if (state.detail !== t.id) return bitmap.close(); // closed meanwhile
+    const opened = pv.todo !== t.id;
+    if (opened) {
+      if (pv.commit) hidePreview();
+      paneIn($("#detail"));
+      pv.todo = t.id;
+    }
+    const scale = meta.scale || 1, width = Math.round(bitmap.width / scale), height = Math.round(bitmap.height / scale);
+    draw.on = true;
+    draw.src = { key: t.id, todo: t, p: previewOf(t.id), about: t.worktree?.branch, shot: { opened, about: meta.about } };
+    draw.meta = { path: meta.path, width, height, exact: false };
+    $("#d-preview").classList.add("drawing");
+    $("#draw-stage").hidden = false;
+    $("#draw-bar").hidden = false;
+    $("#draw-add").hidden = false;
+    $("#draw-attach").hidden = true;
+    drawSurfaceOnce().open(bitmap, width, height);
+    renderPreview();
+    renderActions(t);
+  } finally {
+    draw.busy = false;
+  }
 }
 
 function renderDrawBar() {
@@ -241,7 +280,7 @@ function renderDrawBar() {
   const { w, h } = s.size;
   $("#draw-size").textContent = s.crop ? `${Math.round(w)}×${Math.round(h)}` : "";
   const ex = $("#draw-exact");
-  ex.hidden = !exactCapture.supported();
+  ex.hidden = !exactCapture.supported() || !!draw.src?.shot; // a screenshot has no live page to take again
   ex.setAttribute("aria-pressed", String(!!draw.meta?.exact));
 }
 
@@ -267,7 +306,7 @@ async function markHints(origin) {
 // from (a task's branch, or the commit).
 function shotContext(src) {
   const m = draw.meta;
-  return [m.path || "/", `${m.width}×${m.height}`, src.about].filter(Boolean).join(" · ");
+  return [m.path || "/", `${m.width}×${m.height}`, draw.src?.shot?.about || src.about].filter(Boolean).join(" · ");
 }
 
 // shotPicture flattens the picture (marks and crop) to a PNG, and asks the
@@ -276,7 +315,7 @@ async function shotPicture(src) {
   const p = src.p;
   const [blob, hints] = await Promise.all([
     draw.surface.flatten(),
-    p?.url ? markHints(new URL(p.url).origin).catch(() => []) : [],
+    p?.url && !draw.src?.shot ? markHints(new URL(p.url).origin).catch(() => []) : [], // a screenshot's page isn't in the preview
   ]);
   return { blob, hints };
 }
@@ -460,7 +499,7 @@ addEventListener("keydown", (e) => {
   if (k === "Escape") { e.preventDefault(); return endDraw(); }
   if (k === "Enter") { e.preventDefault(); return attempt(addShot)(); }
   if (DRAW_KEYS[k]) { s.tool = DRAW_KEYS[k]; return; }
-  if (k === "x" && exactCapture.supported()) { attempt(() => retakeDraw(!draw.meta?.exact))(); return; }
+  if (k === "x" && exactCapture.supported() && !draw.src?.shot) { attempt(() => retakeDraw(!draw.meta?.exact))(); return; }
   if (["1", "2", "3"].includes(k)) { s.color = Object.values(COLORS)[k - 1]; return; }
 }, true);
 
@@ -649,7 +688,7 @@ function renderDiff(text) {
   }
   const commented = new Set(commentsFor(state.detail).map((c) => c.file));
   const t = state.todos.get(state.detail), editable = canEditDiff(t);
-  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[goalNote(t), commentsBar(t)].filter(Boolean), ...files.map((f) => h("details", {
+  keepCommentBoxes(() => $("#d-diff").replaceChildren(...[goalNote(t), shotsView(t), commentsBar(t)].filter(Boolean), ...files.map((f) => h("details", {
     class: "diff-file", open: state.diffOpen.has(f.path) || commented.has(f.path),
     ontoggle: (e) => state.diffOpen[e.target.open ? "add" : "delete"](f.path),
   },

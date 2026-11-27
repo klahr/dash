@@ -38,6 +38,7 @@ export function openSettings() {
   f.preview_kind.value = p.preview_kind || "web";
   f.preview_command.value = p.preview_command || "";
   f.commit_previews.checked = p.commit_previews !== false;
+  showShots(f, p);
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
   f.close_no_changes.checked = !!p.close_no_changes;
@@ -556,6 +557,7 @@ const FIELDS = {
   preview_kind: { read: (f) => f.preview_kind.value },
   preview_command: { read: (f) => f.preview_command.value.trim() },
   commit_previews: { read: (f) => f.commit_previews.checked },
+  screenshots: { read: readShots, el: () => $("#settings-shots") },
   auto_push: { read: (f) => f.auto_push.checked },
   auto_approve: { read: (f) => f.auto_approve.checked },
   close_no_changes: { read: (f) => f.close_no_changes.checked },
@@ -579,7 +581,7 @@ const FIELDS = {
   agent: { read: (f) => f.agent.value, skip: () => !$("#settings-agent").options.length },
 };
 // A form control's name → the field it saves.
-const FIELD_OF = { color_pick: "color" };
+const FIELD_OF = { color_pick: "color", shots_on: "screenshots", shots_ui_paths: "screenshots", shots_pages: "screenshots", shots_setup: "screenshots" };
 const fieldEl = (f, key) => {
   if (FIELDS[key].el) return FIELDS[key].el(f);
   const el = f.elements[key];
@@ -631,8 +633,33 @@ function saveSetting(key) {
       if (key === "auto_approve") renderBoard(); // auto approve shows or hides Review
       if (key === "clear_merged_zone") clearMergedHint(saved.clear_merged_zone);
       if (key === "agent") { renderRunsOnPreview(); syncMergeHint(); }
+      if (key === "screenshots" || key === "run_command" || key === "preview_kind") shotsHint(saved);
     });
   });
+}
+// Project settings → Screenshots: one setting (screenshots) from four
+// fields. A page is a line "/path Label" ("/path — Label" too).
+function showShots(f, p) {
+  const s = p.screenshots || {};
+  f.shots_on.checked = !!s.on;
+  f.shots_ui_paths.value = (s.ui_paths || []).join("\n");
+  f.shots_pages.value = (s.pages || []).map((x) => (x.label && x.label !== x.path ? `${x.path} ${x.label}` : x.path)).join("\n");
+  f.shots_setup.value = s.setup_command || "";
+  shotsHint(p);
+}
+function readShots(f) {
+  const pages = lines(f.shots_pages.value).map((l) => {
+    const [path, ...rest] = l.split(/\s+/);
+    return { path, label: rest.join(" ").replace(/^[—–\-:|]+\s*/, "") };
+  });
+  return { on: f.shots_on.checked, ui_paths: lines(f.shots_ui_paths.value), pages, setup_command: f.shots_setup.value.trim() };
+}
+// shotsHint says what screenshots need that the project lacks.
+function shotsHint(p) {
+  const el = $("#settings-shots-hint");
+  el.textContent = p.preview_kind === "terminal" ? "Screenshots are for web projects: this one previews tasks in a terminal."
+    : !p.run_command ? "Set a start server command in Commands first: screenshots run the app."
+      : "Runs the app on the task's branch and on the commit it started from. Needs Chrome or Chromium on the computer that runs the task; without it, Review says so.";
 }
 // clearMergedHint names the time zone whose midnight clears merged tasks.
 function clearMergedHint(zone) {
@@ -661,7 +688,8 @@ $("#settings-sheet").addEventListener("close", () => {
 // owner or someone it trusts set it (docs/several-computers.md). Saving a
 // command unchanged approves it; with no Save button that is this button,
 // shown while a command someone else set waits for your approval.
-const COMMAND_FIELDS = { run: "run_command", test: "test_command", deploy: "environments", setup: "setup_command", preview: "preview_command" };
+const COMMAND_FIELDS = { run: "run_command", test: "test_command", deploy: "environments", setup: "setup_command", preview: "preview_command", screenshot: "screenshots" };
+const COMMAND_EMPTY = { deploy: [], screenshot: {} };
 function unapproved() {
   const p = state.project, me = state.me?.user?.id, admin = ["owner", "admin"].includes(state.me?.org?.role);
   return Object.entries(p.commands_by || {}).filter(([, by]) => !by.admin && by.user !== me && (admin || !(by.approved || []).includes(me)));
@@ -678,7 +706,7 @@ function renderApprove() {
 $("#settings-approve-commands").addEventListener("click", (e) => queueSave(() => saveField(e.currentTarget, async () => {
   const p = state.project;
   // Saved again unchanged: the deploy command is the environments.
-  const body = Object.fromEntries(unapproved().map(([k]) => [COMMAND_FIELDS[k], p[COMMAND_FIELDS[k]] || (k === "deploy" ? [] : "")]).filter(([k]) => k));
+  const body = Object.fromEntries(unapproved().map(([k]) => [COMMAND_FIELDS[k], p[COMMAND_FIELDS[k]] || (COMMAND_EMPTY[k] ?? "")]).filter(([k]) => k));
   const saved = await api("PATCH", `/api/projects/${p.id}`, body, p.prefix || "");
   if (savedProject(p, saved)) renderApprove();
 })));

@@ -12,10 +12,12 @@ const (
 	CmdDeploy  = "deploy"
 	CmdSetup   = "setup"
 	CmdPreview = "preview"
+	// CmdScreenshot is the screenshot setup command (ScreenshotSettings.SetupCommand).
+	CmdScreenshot = "screenshot"
 )
 
 // CommandKinds are every kind of project command.
-var CommandKinds = []string{CmdRun, CmdTest, CmdDeploy, CmdSetup, CmdPreview}
+var CommandKinds = []string{CmdRun, CmdTest, CmdDeploy, CmdSetup, CmdPreview, CmdScreenshot}
 
 // CommandSetter is who last set one of a hub project's commands.
 type CommandSetter struct {
@@ -61,6 +63,8 @@ func (p Project) Command(kind string) string {
 		return p.SetupCommand
 	case CmdPreview:
 		return p.PreviewCommand
+	case CmdScreenshot:
+		return p.screenshotCommand()
 	}
 	return ""
 }
@@ -85,6 +89,8 @@ func (p *Project) SetCommand(kind, cmd string) {
 		p.SetupCommand = cmd
 	case CmdPreview:
 		p.PreviewCommand = cmd
+	case CmdScreenshot:
+		p.setScreenshotCommand(cmd)
 	}
 }
 

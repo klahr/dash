@@ -281,7 +281,7 @@ func (sv *service) recordCommands(p *model.Project, cur model.Project, req proje
 		return
 	}
 	sent := map[string]*string{model.CmdRun: req.RunCommand, model.CmdTest: req.TestCommand, model.CmdDeploy: req.deployScripts(),
-		model.CmdSetup: req.SetupCommand, model.CmdPreview: req.PreviewCommand}
+		model.CmdSetup: req.SetupCommand, model.CmdPreview: req.PreviewCommand, model.CmdScreenshot: req.screenshotCommand()}
 	admin, name := sv.s.orgAdmin(sv.c), sv.s.username(sv.c.User)
 	out := maps.Clone(cur.CommandsBy)
 	for _, kind := range model.CommandKinds {
@@ -461,6 +461,10 @@ type projectUpdate struct {
 	// Agent is the agent provider its tasks run on ("": Claude Code). On
 	// a hub they go only to runners that have it. See model.Project.Agent.
 	Agent *string `json:"agent"`
+
+	// Screenshots replace model.Project.Screenshots (its setup command is
+	// a command like the others: model.CmdScreenshot).
+	Screenshots *model.ScreenshotSettings `json:"screenshots"`
 }
 
 func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
@@ -495,7 +499,7 @@ func (sv *service) checkCommandChange(cur model.Project, req projectUpdate, runn
 	changed := func(v *string, was string) bool { return v != nil && strings.TrimSpace(*v) != strings.TrimSpace(was) }
 	if !changed(req.RunCommand, cur.RunCommand) && !changed(req.TestCommand, cur.TestCommand) &&
 		!changed(req.deployScripts(), cur.Command(model.CmdDeploy)) && !changed(req.SetupCommand, cur.SetupCommand) &&
-		!changed(req.PreviewCommand, cur.PreviewCommand) {
+		!changed(req.PreviewCommand, cur.PreviewCommand) && !changed(req.screenshotCommand(), cur.Command(model.CmdScreenshot)) {
 		return nil
 	}
 	for _, run := range runners {
@@ -619,6 +623,9 @@ func (sv *service) normalizeProjectUpdate(ctx context.Context, req *projectUpdat
 		}
 		req.ClearMergedZone = &z
 	}
+	if err := checkScreenshotSettings(req.Screenshots); err != nil {
+		return err
+	}
 	if req.Instructions != nil && len(*req.Instructions) > maxTaskInstructions {
 		return fmt.Errorf("%w: task_instructions is longer than %d KiB", errBadRequest, maxTaskInstructions>>10)
 	}
@@ -739,6 +746,9 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	if req.CommitPreviews != nil {
 		v := *req.CommitPreviews
 		p.CommitPreviews = &v
+	}
+	if req.Screenshots != nil {
+		p.Screenshots = cleanScreenshotSettings(req.Screenshots)
 	}
 	if req.MergeMode != nil {
 		if err := applyMergeMode(p, *req.MergeMode); err != nil {

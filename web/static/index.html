@@ -1170,6 +1170,7 @@
           <div class="rail-group"><span class="rail-head">Project</span>
             <button type="button" class="rail-item" data-rail="general" data-rail-also="repository">General</button>
             <button type="button" class="rail-item" data-rail="commands">Commands</button>
+            <button type="button" class="rail-item" data-rail="screenshots">Screenshots</button>
             <button type="button" class="rail-item" data-rail="claude" data-rail-also="runners">Agent &amp; runners</button>
             <button type="button" class="rail-item" data-rail="board">Board</button>
           </div>
@@ -1221,6 +1222,16 @@
             <label class="field inline"><span>Preview tasks in</span><select name="preview_kind"><option value="web">a browser (start server command)</option><option value="terminal">a terminal (CLI tools)</option></select></label>
             <label class="field"><span>Terminal preview command <em>empty: a plain shell; ./.dash-bin is on PATH as $DASH_BIN</em></span><input name="preview_command" placeholder="go build -o $DASH_BIN/tool . &amp;&amp; exec $SHELL" spellcheck="false"></label>
             <label class="toggle"><input type="checkbox" name="commit_previews"><span>Preview old commits from History <em>runs the start server command at a commit, on a runner; it shares that runner's dev database and .env</em></span></label>
+          </section>
+          <!-- Before/after screenshots of finished tasks, for Review (app/screenshots.js, internal/screenshot) -->
+          <section class="rail-section" data-section="screenshots">
+            <div id="settings-shots">
+              <label class="toggle"><input type="checkbox" name="shots_on"><span>Take before/after screenshots of finished tasks <em>a wide and a phone picture of each page, in the task's Changes</em></span></label>
+              <p class="hint" id="settings-shots-hint"></p>
+              <label class="field"><span>UI paths <em>one per line; only a task that changes a file under one gets screenshots. Empty: any change</em></span><textarea name="shots_ui_paths" rows="2" placeholder="web/" spellcheck="false"></textarea></label>
+              <label class="field"><span>Pages to always capture <em>one per line: a path, then a label. Claude lists the pages its change affects, too</em></span><textarea name="shots_pages" rows="3" placeholder="/settings Settings" spellcheck="false"></textarea></label>
+              <label class="field"><span>Screenshot setup command <em>runs once the app answers, with $PORT and $DASH_APP_URL; lines it prints as Set-Cookie: name=value sign the browser in</em></span><textarea name="shots_setup" rows="2" placeholder="./scripts/seed-demo.sh" spellcheck="false"></textarea></label>
+            </div>
           </section>
           <section class="rail-section" data-section="deploy">
             <ul class="env-edit-list" id="settings-envs"></ul>

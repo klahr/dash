@@ -109,6 +109,10 @@ type Link struct {
 	// PreviewCommand), taken like its commands: a terminal preview is a shell.
 	PreviewKind    string `json:"preview_kind,omitempty"`
 	PreviewCommand string `json:"preview_command,omitempty"`
+	// Screenshots are the hub project's model.Project.Screenshots: the
+	// runner takes them when it finishes a task. Their setup command is
+	// held like the other commands (model.CmdScreenshot).
+	Screenshots *model.ScreenshotSettings `json:"screenshots,omitempty"`
 	// Held are the commands the runner must not run, by kind
 	// (model.CommandKinds), each with why; they are sent empty. See
 	// model.Project.CommandApproved.
@@ -334,6 +338,9 @@ type TaskState struct {
 	RunStats  []model.TodoRun    `json:"run_stats,omitempty"`
 	Checks    *model.Checks      `json:"checks,omitempty"`
 	PR        *model.PullRequest `json:"pr,omitempty"`
+	// Screenshots are the task's before/after screenshots on the runner;
+	// the hub gets their pictures from it (GET /api/hub/tasks/{id}/screenshots/{name}).
+	Screenshots *model.ScreenshotSet `json:"screenshots,omitempty"`
 	// MergedCommit is the commit that landed the task on origin's default
 	// branch, Revert how it was undone since, and RevertConflict the files
 	// a revert conflicted in (the hub then queues a task to undo it by hand).
@@ -361,7 +368,7 @@ func StateOf(t model.Todo) TaskState {
 	s := TaskState{
 		HubTodoID: t.HubTodoID, ID: t.ID, Status: t.Status, Paused: t.Paused, Error: t.Error, Summary: t.Summary,
 		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, NoChanges: t.NoChanges, CostUSD: t.CostUSD, Runs: t.Runs, RunStats: t.RunStats,
-		Checks: t.Checks, PR: t.PR, MergedCommit: t.MergedCommit, Revert: t.Revert, RevertConflict: t.RevertConflict,
+		Checks: t.Checks, PR: t.PR, Screenshots: t.Screenshots.Clone(), MergedCommit: t.MergedCommit, Revert: t.Revert, RevertConflict: t.RevertConflict,
 		Conflicts: t.Conflicts, Links: t.Links, Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
 	}
 	if t.Worktree != nil {

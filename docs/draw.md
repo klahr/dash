@@ -19,6 +19,12 @@ Drawing needs a [preview domain](previews.md#setting-up-a-preview-domain), since
 taken through the proxy (see [what the proxy does](previews.md#what-the-proxy-does)). On a hub,
 Draw works the same, and the picture goes to the task's runner with the rework notes.
 
+## On a screenshot
+
+A task's [before/after screenshots](screenshots.md) open in Draw too: click one in the task's
+**Changes**. The tools are the same, and **Add to rework notes** works as on the preview. It needs
+no preview domain and no running preview.
+
 ## On a commit preview
 
 A [commit preview](previews.md#preview-a-commit-from-history) (**History**, or the header's **Run**)

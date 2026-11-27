@@ -59,6 +59,8 @@ func init() {
 		"DELETE /api/todos/{tid}/comments/{cid}", "DELETE /api/todos/{tid}/comments",
 		"POST /api/todos/{tid}/test", "POST /api/todos/{tid}/duplicate", "POST /api/todos/{tid}/open",
 		"POST /api/todos/{tid}/revert", "POST /api/todos/{tid}/merge-pr",
+		// Its before/after screenshots (screenshots.go).
+		"GET /api/todos/{tid}/screenshots/{name}",
 		// Editing a task's changes in review (todofile.go).
 		"GET /api/todos/{tid}/file", "PUT /api/todos/{tid}/file",
 
@@ -106,6 +108,7 @@ func init() {
 		"POST /api/hub/tasks/{htid}/merge-pr",
 		"GET /api/hub/tasks/{htid}/diff", "GET /api/hub/tasks/{htid}/files", "GET /api/hub/tasks/{htid}/log", "GET /api/hub/tasks/{htid}/events",
 		"GET /api/hub/tasks/{htid}/file", "PUT /api/hub/tasks/{htid}/file", "GET /api/hub/tasks/{htid}/image",
+		"GET /api/hub/tasks/{htid}/screenshots/{name}",
 		"POST " + dispatch.PermissionPath, // the hub's board answers its task's permission request
 		// The Claude part of the hub's scans of linked projects; checked in hubtasks.go.
 		"GET /ws/hub/scan",

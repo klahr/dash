@@ -21,6 +21,7 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
+	"github.com/klahr/dash/internal/screenshot"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/usage"
@@ -90,6 +91,9 @@ type TodoEngine struct {
 	Summarizer interface {
 		Summary(ctx context.Context, report string) (string, error)
 	}
+	// Screenshots takes before/after screenshots of a finished task's
+	// pages, in the background (see screenshots.go). Nil: none are taken.
+	Screenshots *screenshot.Capturer
 
 	minute      time.Duration // length of a "minute" for run limits; shortened in tests
 	wake        chan struct{}
@@ -107,6 +111,7 @@ type TodoEngine struct {
 	// and sessionTests the ones whose Claude runs run_tests now.
 	runCtxs      map[string]context.Context
 	sessionTests map[string]bool
+	shots        map[string]*shotJob // task id → its screenshots being taken
 }
 
 // Remote hands a queued task to a runner. An error is why it can't now
@@ -139,6 +144,7 @@ func NewTodoEngine(e *TodoEngine) *TodoEngine {
 	e.resolving = map[string]string{}
 	e.runCtxs = map[string]context.Context{}
 	e.sessionTests = map[string]bool{}
+	e.shots = map[string]*shotJob{}
 	if e.MaxParallel <= 0 {
 		e.MaxParallel = 1
 	}
@@ -681,6 +687,7 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 		return
 	}
 	r.p = p
+	e.stopScreenshots(t.ID) // of an earlier run: this one takes its own
 	// Other members' work goes on only while this runner may do it.
 	if err := e.Shared.ok(t); err != nil {
 		r.fail(err)
@@ -911,6 +918,9 @@ func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t m
 		}
 	}
 	req.ToolTimeout = toolTimeout
+	if e.screenshotsWanted(p) {
+		system = append(system, screenshot.Hint)
+	}
 	if s := strings.TrimSpace(p.TaskInstructions); s != "" {
 		system = append(system, s)
 	}
@@ -1051,6 +1061,7 @@ func (r *todoRun) commitAndCheck() (step, error) {
 // handOff sends finished work on: to the merge queue (approved or
 // auto-approved), to its pull request, or to Review.
 func (r *todoRun) handOff() {
+	r.startScreenshots() // in the background: they never hold the task up
 	e, t, p := r.e, r.t, r.p
 	passed := t.Checks == nil || t.Checks.Passed
 	// In "pr" mode the review happens on GitHub: finished work goes straight

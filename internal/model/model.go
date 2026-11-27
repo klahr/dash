@@ -118,6 +118,8 @@ type Project struct {
 	// on. An old commit shares the runner's dev database and copied files
 	// (.env), so a project can turn it off. See CommitPreviewsOn.
 	CommitPreviews *bool `json:"commit_previews,omitempty"`
+	// Screenshots are its before/after screenshots of finished tasks (nil: off).
+	Screenshots *ScreenshotSettings `json:"screenshots,omitempty"`
 	// SetupCommand runs once in every new worktree before Claude starts,
 	// e.g. "npm ci". CopyFiles are copied from the main checkout first
 	// (untracked files such as ".env" that worktrees don't get from git).
@@ -584,6 +586,8 @@ type Todo struct {
 	Summary string `json:"summary,omitempty"`
 	// Attachments are files (usually screenshots) given to Claude with the task.
 	Attachments []Attachment `json:"attachments,omitempty"`
+	// Screenshots are before/after pictures of the pages its latest run changed (nil: none).
+	Screenshots *ScreenshotSet `json:"screenshots,omitempty"`
 	// Edits are file changes made in the web editor. The first run commits
 	// them in the worktree instead of running Claude and sets EditsApplied;
 	// later runs (rework, failing tests) are Claude's as usual.
