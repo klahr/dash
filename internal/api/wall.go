@@ -12,7 +12,8 @@ package api
 // what anyone may see, for a screen visitors walk past or a link shared
 // outside the org: counts, timers, line counts and usage, but no task
 // titles or prompts, project or runner names, failure or sent-back
-// reasons, activity lines, issue titles or costs.
+// reasons, activity lines, issue titles, people's names and avatars, or
+// costs. ?nospend=1 leaves out the costs on a signed-in wall too.
 
 import (
 	"errors"
@@ -35,11 +36,22 @@ import (
 	"github.com/klahr/dash/internal/usage"
 )
 
-// When an item that needs a human gets a red border.
+// The wall's thresholds: when an item that needs a human gets a red
+// border, and what turns the overall status (wallStatusOf) amber or red.
 const (
 	wallReviewOld = time.Hour
 	wallFailedOld = 30 * time.Minute
 	wallMaxItems  = 20 // per list: a TV shows fewer anyway
+	wallLandedMax = 5  // the "Just landed" list
+	wallSamples   = 10 // run times per kind of run, for the running cards' typical time (eta.js SAMPLES)
+	// A usage window this full turns the status amber; so does one that,
+	// at the rate it has been used, reaches 100% before it resets.
+	wallUsageHigh = 0.9
+	// An offline runner turns the status red while tasks wait that only it
+	// could take, or while it was last seen this recently; one gone longer
+	// is taken as retired.
+	wallRunnerGone = 24 * time.Hour
+	wallAvgDays    = 7 // the days the "avg" figures in Today average over
 )
 
 type wallData struct {
@@ -56,6 +68,49 @@ type wallData struct {
 	Issues  wallIssues   `json:"issues"`
 	Runners []wallRunner `json:"runners"`
 	Today   wallToday    `json:"today"`
+	// HideSpend: ?nospend=1, no costs anywhere (they are left out, not hidden).
+	HideSpend bool         `json:"hide_spend,omitempty"`
+	Status    wallStatus   `json:"status"`
+	Landed    []wallLanded `json:"landed"` // the newest merges, newest first
+	Week      wallWeek     `json:"week"`
+}
+
+// wallStatus is the wall's one overall state, from the rest of its data
+// (wallStatusOf).
+type wallStatus struct {
+	Level   string   `json:"level"`   // ok | warn | bad
+	Label   string   `json:"label"`   // "All good", "Waiting on people", "Needs action"
+	Reasons []string `json:"reasons"` // why it isn't ok, the red ones first
+	Running int      `json:"running"`
+	Waiting int      `json:"waiting"` // tasks waiting on a person: reviews and failures
+}
+
+// wallLanded is a merged task in "Just landed".
+type wallLanded struct {
+	ID      string    `json:"id"`
+	Title   string    `json:"title"`
+	Project string    `json:"project"`
+	At      time.Time `json:"at"`
+	Add     int       `json:"add,omitempty"`
+	Del     int       `json:"del,omitempty"`
+}
+
+// wallWeek sums up the week so far (since Monday 00:00), for the off-hours
+// summary.
+type wallWeek struct {
+	Since    time.Time `json:"since"`
+	Merged   int       `json:"merged"`
+	FirstTry *float64  `json:"first_try,omitempty"` // 0..1
+}
+
+// wallWindow is a Claude usage window and where it is heading.
+type wallWindow struct {
+	usage.Window
+	// FullAt is when it would reach 100% at the rate it has been used so far
+	// in the window (nil: unused, or too early in the window to tell).
+	FullAt *time.Time `json:"full_at,omitempty"`
+	// RunsOut: FullAt is before it resets, so the queue would pause.
+	RunsOut bool `json:"runs_out,omitempty"`
 }
 
 type wallQueue struct {
@@ -67,8 +122,8 @@ type wallQueue struct {
 }
 
 type wallUsage struct {
-	Known   bool           `json:"known"`
-	Windows []usage.Window `json:"windows"`
+	Known   bool         `json:"known"`
+	Windows []wallWindow `json:"windows"`
 	// Accounts are the meters of each Claude account the runners online are
 	// on (on a hub; none elsewhere). Known and Windows are one of them, for
 	// an older wall page.
@@ -79,10 +134,10 @@ type wallUsage struct {
 type wallAccount struct {
 	// Label names it: its email for a signed-in wall outside public mode,
 	// else its runners' names (as the wall shows them), never an email.
-	Label   string         `json:"label"`
-	Windows []usage.Window `json:"windows"`
-	Paused  bool           `json:"paused,omitempty"`
-	Reason  string         `json:"reason,omitempty"`
+	Label   string       `json:"label"`
+	Windows []wallWindow `json:"windows"`
+	Paused  bool         `json:"paused,omitempty"`
+	Reason  string       `json:"reason,omitempty"`
 }
 
 type wallStage struct {
@@ -112,13 +167,20 @@ type wallRun struct {
 	Icon      string     `json:"icon,omitempty"` // the project's icon (GET /api/wall/icon); empty in privacy mode
 	Runner    string     `json:"runner"`
 	Run       int        `json:"run"`
-	CostUSD   *float64   `json:"cost_usd,omitempty"` // nil in privacy mode
+	CostUSD   *float64   `json:"cost_usd,omitempty"` // nil in privacy mode and with nospend
 	StartedAt *time.Time `json:"started_at,omitempty"`
 	Add       int        `json:"add"`
 	Del       int        `json:"del"`
 	Files     int        `json:"files"`
 	Activity  string     `json:"activity,omitempty"`
-	SentBack  string     `json:"sent_back,omitempty"`
+	// ActivityAt is when the activity line last changed.
+	ActivityAt *time.Time `json:"activity_at,omitempty"`
+	SentBack   string     `json:"sent_back,omitempty"`
+	// Took is how long comparable runs took, in seconds, newest first: the
+	// project's other first runs for a task's first run, its later runs
+	// (rework, retries) for a later one. The wall takes their median
+	// (eta.js typicalOf) as the typical time.
+	Took []int `json:"took,omitempty"`
 }
 
 type wallNeed struct {
@@ -135,6 +197,12 @@ type wallNeed struct {
 	Waits   string    `json:"waits,omitempty"` // what its pull request waits for a person to do: model.PRWaitReview…
 	Reason  string    `json:"reason,omitempty"`
 	Resume  bool      `json:"resumable,omitempty"`
+	// Person is who should act: a review's author (who created the task), a
+	// failure's who started its latest run (else its creator). Avatar is
+	// their picture (GET /api/wall/avatar), if they have one. Both are empty
+	// in public mode.
+	Person string `json:"person,omitempty"`
+	Avatar string `json:"avatar,omitempty"`
 }
 
 type wallIssues struct {
@@ -157,11 +225,21 @@ type wallRunner struct {
 
 type wallToday struct {
 	Merged   int       `json:"merged"`
-	SpendUSD *float64  `json:"spend_usd,omitempty"` // nil in privacy mode
+	SpendUSD *float64  `json:"spend_usd,omitempty"` // nil in privacy mode and with nospend
 	FirstTry *float64  `json:"first_try,omitempty"` // merged today after a single run, 0..1
 	PerHour  []int     `json:"per_hour"`            // merges in each hour of today, 0..23
 	Hour     int       `json:"hour"`                // the current hour
 	Midnight time.Time `json:"midnight"`
+	// Avg is the same figures on an average day of the last week, up to
+	// the same time of day.
+	Avg wallAvg `json:"avg"`
+}
+
+// wallAvg is an average day of the last wallAvgDays, up to this time of day.
+type wallAvg struct {
+	Merged   float64  `json:"merged"`
+	SpendUSD *float64 `json:"spend_usd,omitempty"` // nil in privacy mode and with nospend
+	FirstTry *float64 `json:"first_try,omitempty"` // nil with no merges
 }
 
 // wallCaller is who may see r's wall: a wall token's org (?token=), else
@@ -196,7 +274,7 @@ func (s *Server) wallPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(s.Brand.WithDefaults().Page(b))
 }
 
-// getWall serves GET /api/wall[?project=<id or name>][&privacy=1][&tz=<minutes>].
+// getWall serves GET /api/wall[?project=<id or name>][&privacy=1][&nospend=1][&tz=<minutes>].
 func (s *Server) getWall(w http.ResponseWriter, r *http.Request) {
 	c, public, err := s.wallCaller(r)
 	if err != nil {
@@ -210,7 +288,7 @@ func (s *Server) getWall(w http.ResponseWriter, r *http.Request) {
 			loc = time.FixedZone("", -m*60)
 		}
 	}
-	d, err := s.wall(c, q.Get("project"), public || q.Get("privacy") == "1", time.Now().In(loc))
+	d, err := s.wall(c, q.Get("project"), wallOpts{privacy: public || q.Get("privacy") == "1", noSpend: q.Get("nospend") == "1"}, time.Now().In(loc))
 	d.Locked = public
 	if err != nil {
 		writeErr(w, err)
@@ -256,11 +334,50 @@ func (s *Server) wallIcon(w http.ResponseWriter, r *http.Request) {
 	serveUpload(w, r, a)
 }
 
-// wall sums up c's org's work as of now; privacy is public mode.
-func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wallData, error) {
+// wallAvatar serves GET /api/wall/avatar?user=<id>: a member's picture, for
+// the "Needs a human" rows. Not in public mode, where names aren't shown.
+func (s *Server) wallAvatar(w http.ResponseWriter, r *http.Request) {
+	c, public, err := s.wallCaller(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	uid, err := strconv.ParseInt(r.URL.Query().Get("user"), 10, 64)
+	if err != nil || public {
+		writeErr(w, store.ErrNotFound)
+		return
+	}
+	acc := s.Store.Accounts()
+	if _, err := acc.Membership(uid, c.Org); err != nil {
+		writeErr(w, store.ErrNotFound)
+		return
+	}
+	data, ct, v, err := acc.Avatar(uid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", ct)
+	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	if r.URL.Query().Get("v") == strconv.FormatInt(v, 10) {
+		h.Set("Cache-Control", "private, max-age=31536000, immutable")
+	} else {
+		h.Set("Cache-Control", "private, no-cache")
+	}
+	_, _ = w.Write(data)
+}
+
+// wallOpts are a wall's options: privacy is public mode, noSpend leaves
+// out every cost.
+type wallOpts struct{ privacy, noSpend bool }
+
+// wall sums up c's org's work as of now.
+func (s *Server) wall(c Caller, project string, o wallOpts, now time.Time) (wallData, error) {
+	privacy := o.privacy
 	data := s.Store.ForOrg(c.Org)
-	d := wallData{Now: now, Privacy: privacy, Running: []wallRun{}, Needs: []wallNeed{}, Runners: []wallRunner{},
-		Issues: wallIssues{Severity: map[string]int{}, Top: []string{}}}
+	d := wallData{Now: now, Privacy: privacy, HideSpend: o.noSpend, Running: []wallRun{}, Needs: []wallNeed{}, Runners: []wallRunner{},
+		Issues: wallIssues{Severity: map[string]int{}, Top: []string{}}, Landed: []wallLanded{}}
 	if o, err := s.Store.Accounts().Org(c.Org); err == nil {
 		d.Org = o.Name
 	}
@@ -278,14 +395,26 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 	todos := data.ListTodos(scope)
 	runners := s.orgRunners(c)
 	v := newWallTally(s, now, privacy, byProject, model.TodosByID(todos), runners)
+	v.noSpend = o.noSpend
+	v.took = wallRunTimes(todos)
+	if !privacy {
+		if ms, err := s.Store.Accounts().Members(c.Org); err == nil {
+			v.people = make(map[int64]store.Member, len(ms))
+			for _, m := range ms {
+				v.people[m.ID] = m
+			}
+		}
+	}
 	v.startDay(&d)
 	for _, t := range todos {
 		v.card(&d, t)
+		v.history(t)
 	}
 	v.finish(&d)
 	wallOpenIssues(&d, data, byProject, privacy)
 	s.wallRunners(&d, todos, projects, runners, v.runnerName)
 	s.wallQueue(&d, c, runners, func(r tunnel.Runner) string { return v.runnerName(r.ID) })
+	d.Status = wallStatusOf(&d, now)
 	return d, nil
 }
 
@@ -342,16 +471,92 @@ type wallTally struct {
 	runners     []tunnel.Runner
 	runnerAlias map[string]string
 
+	noSpend      bool
+	people       map[int64]store.Member // the org's members, by id; nil in public mode
+	took         map[wallRunKind][]int  // wallRunTimes
 	runningTotal time.Duration
 	spend        float64
 	firstTry     int
+
+	// The last wallAvgDays, each up to this time of day, summed, and the
+	// week so far.
+	days                           [wallAvgDays][2]time.Time // each day's start and cut-off
+	weekStart                      time.Time
+	avgMerged, avgFirst, weekFirst int
+	weekMerged                     int
+	avgSpend                       float64
+	landed                         []wallLanded
 }
 
 func newWallTally(s *Server, now time.Time, privacy bool, byProject map[string]model.Project, byID map[string]model.Todo, runners []tunnel.Runner) *wallTally {
 	y, m, dd := now.Date()
-	return &wallTally{s: s, now: now, midnight: time.Date(y, m, dd, 0, 0, 0, 0, now.Location()), privacy: privacy,
+	v := &wallTally{s: s, now: now, midnight: time.Date(y, m, dd, 0, 0, 0, 0, now.Location()), privacy: privacy,
 		byProject: byProject, byID: byID, runners: runners,
 		runnerAlias: wallAliases(runners, func(r tunnel.Runner) (string, time.Time) { return r.ID, r.Created }, "Runner ")}
+	sinceMidnight := now.Sub(v.midnight)
+	for i := range v.days {
+		start := v.midnight.AddDate(0, 0, -(i + 1))
+		v.days[i] = [2]time.Time{start, start.Add(sinceMidnight)}
+	}
+	v.weekStart = v.midnight.AddDate(0, 0, -((int(now.Weekday()) + 6) % 7)) // Monday
+	return v
+}
+
+// pastDay reports whether at falls in one of the last days, up to the
+// same time of day as now.
+func (v *wallTally) pastDay(at time.Time) bool {
+	for _, d := range v.days {
+		if !at.Before(d[0]) && at.Before(d[1]) {
+			return true
+		}
+	}
+	return false
+}
+
+// person is a member's name and avatar URL on the wall: none in public
+// mode, or for someone who isn't in the org (Dash itself, a deleted
+// account).
+func (v *wallTally) person(uid int64) (string, string) {
+	m, ok := v.people[uid]
+	if !ok || uid == 0 {
+		return "", ""
+	}
+	avatar := ""
+	if m.Avatar != 0 {
+		avatar = "/api/wall/avatar?" + url.Values{"user": {strconv.FormatInt(uid, 10)}, "v": {strconv.FormatInt(m.Avatar, 10)}}.Encode()
+	}
+	return m.Username, avatar
+}
+
+// history counts t into the past days' figures, the week's and the newest
+// merges.
+func (v *wallTally) history(t model.Todo) {
+	if t.Status != model.StatusDraft {
+		for _, r := range t.RunStats {
+			if v.pastDay(r.At) {
+				v.avgSpend += r.CostUSD
+			}
+		}
+	}
+	if t.Status != model.StatusMerged || t.FinishedAt == nil {
+		return
+	}
+	at := *t.FinishedAt
+	if v.pastDay(at) {
+		v.avgMerged++
+		if t.Runs == 1 {
+			v.avgFirst++
+		}
+	}
+	if !at.Before(v.weekStart) {
+		v.weekMerged++
+		if t.Runs == 1 {
+			v.weekFirst++
+		}
+	}
+	if !t.NoChanges { // closed with nothing to land
+		v.landed = append(v.landed, wallLanded{ID: t.ID, Title: v.title(t), Project: v.byProject[t.ProjectID].Name, At: at, Add: t.DiffAdd, Del: t.DiffDel})
+	}
 }
 
 // startDay sets up d's day: since midnight, by hour.
@@ -456,8 +661,14 @@ func (v *wallTally) card(d *wallData, t model.Todo) {
 			since = *t.FinishedAt
 		}
 		p := v.byProject[t.ProjectID]
-		d.Needs = append(d.Needs, wallNeed{Kind: "failed", ID: t.ID, Title: v.title(t), Project: p.Name, Since: since,
-			Old: v.now.Sub(since) > wallFailedOld, Reason: v.reason(t.Error), Resume: t.Resumable})
+		n := wallNeed{Kind: "failed", ID: t.ID, Title: v.title(t), Project: p.Name, Since: since,
+			Old: v.now.Sub(since) > wallFailedOld, Reason: v.reason(t.Error), Resume: t.Resumable}
+		by := t.RunBy
+		if by == 0 {
+			by = t.CreatedBy
+		}
+		n.Person, n.Avatar = v.person(by)
+		d.Needs = append(d.Needs, n)
 	}
 }
 
@@ -465,14 +676,21 @@ func (v *wallTally) card(d *wallData, t model.Todo) {
 func (v *wallTally) running(t model.Todo) wallRun {
 	p := v.byProject[t.ProjectID]
 	run := wallRun{ID: t.ID, Title: v.title(t), Project: p.Name, Color: p.Color, Runner: v.runnerName(t.Runner), Run: t.Runs + 1,
-		StartedAt: t.StartedAt, Add: t.DiffAdd, Del: t.DiffDel, Files: t.DiffFiles, SentBack: v.sentBack(t.SentBack)}
+		StartedAt: t.StartedAt, Add: t.DiffAdd, Del: t.DiffDel, Files: t.DiffFiles, SentBack: v.sentBack(t.SentBack),
+		Took: v.took[wallRunKind{t.ProjectID, t.Runs > 0}]}
 	if !v.privacy {
 		run.Icon = wallIconURL(p)
-		cost := t.CostUSD
-		run.CostUSD = &cost
+		if !v.noSpend {
+			cost := t.CostUSD
+			run.CostUSD = &cost
+		}
 		if v.s.Hub != nil {
 			if ev, ok := v.s.Hub.Activity(t.ID); ok && (t.StartedAt == nil || !ev.At.Before(*t.StartedAt)) {
 				run.Activity = textutil.OneLine(textutil.FirstLine(strings.TrimPrefix(agent.Summary(ev), "🔧 ")), 200)
+				if !ev.At.IsZero() {
+					at := ev.At
+					run.ActivityAt = &at
+				}
 			}
 		}
 	}
@@ -507,6 +725,7 @@ func (v *wallTally) review(d *wallData, t model.Todo) {
 	}
 	n := wallNeed{Kind: "review", ID: t.ID, Title: v.title(t), Project: v.byProject[t.ProjectID].Name, Since: since,
 		Old: v.now.Sub(since) > wallReviewOld, Add: t.DiffAdd, Del: t.DiffDel}
+	n.Person, n.Avatar = v.person(t.CreatedBy)
 	if t.Checks != nil {
 		n.Tests = map[bool]string{true: "passed", false: "failed"}[t.Checks.Passed]
 	}
@@ -537,7 +756,8 @@ func (v *wallTally) finish(d *wallData) {
 		d.Needs = d.Needs[:wallMaxItems]
 	}
 	d.Today.Merged = d.Stages.MergedToday
-	if !v.privacy {
+	spends := !v.privacy && !v.noSpend
+	if spends {
 		spend := v.spend
 		d.Today.SpendUSD = &spend
 	}
@@ -545,6 +765,186 @@ func (v *wallTally) finish(d *wallData) {
 		f := float64(v.firstTry) / float64(d.Today.Merged)
 		d.Today.FirstTry = &f
 	}
+	d.Today.Avg.Merged = float64(v.avgMerged) / wallAvgDays
+	if spends {
+		spend := v.avgSpend / wallAvgDays
+		d.Today.Avg.SpendUSD = &spend
+	}
+	if v.avgMerged > 0 {
+		f := float64(v.avgFirst) / float64(v.avgMerged)
+		d.Today.Avg.FirstTry = &f
+	}
+	d.Week = wallWeek{Since: v.weekStart, Merged: v.weekMerged}
+	if v.weekMerged > 0 {
+		f := float64(v.weekFirst) / float64(v.weekMerged)
+		d.Week.FirstTry = &f
+	}
+	sort.Slice(v.landed, func(i, j int) bool { return v.landed[i].At.After(v.landed[j].At) })
+	d.Landed = append(d.Landed, v.landed[:min(len(v.landed), wallLandedMax)]...)
+}
+
+// wallRunKind sorts runs for their typical time: a project's first runs of
+// tasks apart from its later ones (rework, retries), which are shorter.
+type wallRunKind struct {
+	project string
+	again   bool
+}
+
+// wallRunTimes are how long the runs of todos took, in seconds, by kind,
+// the newest wallSamples of each. A run from before Dash recorded run times
+// counts only while its task is in Review or failed, where the task's
+// start and finish times are its latest run's.
+func wallRunTimes(todos []model.Todo) map[wallRunKind][]int {
+	type took struct {
+		at time.Time
+		s  int
+	}
+	by := map[wallRunKind][]took{}
+	for _, t := range todos {
+		for i, r := range t.RunStats {
+			if r.Seconds > 0 {
+				k := wallRunKind{t.ProjectID, i > 0}
+				by[k] = append(by[k], took{r.At, r.Seconds})
+			}
+		}
+		latest := len(t.RunStats) > 0 && t.RunStats[len(t.RunStats)-1].Seconds > 0
+		if !latest && (t.Status == model.StatusReview || t.Status == model.StatusFailed) && t.StartedAt != nil && t.FinishedAt != nil &&
+			t.FinishedAt.After(*t.StartedAt) {
+			k := wallRunKind{t.ProjectID, t.Runs > 1}
+			by[k] = append(by[k], took{*t.StartedAt, int(t.FinishedAt.Sub(*t.StartedAt).Seconds())})
+		}
+	}
+	out := make(map[wallRunKind][]int, len(by))
+	for k, ts := range by {
+		sort.Slice(ts, func(i, j int) bool { return ts[i].at.After(ts[j].at) })
+		s := make([]int, 0, min(len(ts), wallSamples))
+		for _, t := range ts[:min(len(ts), wallSamples)] {
+			s = append(s, max(t.s, 1))
+		}
+		out[k] = s
+	}
+	return out
+}
+
+// wallWindowLength is how long a Claude usage window is, by its name (0:
+// not known).
+var wallWindowLength = map[string]time.Duration{"five_hour": 5 * time.Hour, "seven_day": 7 * 24 * time.Hour}
+
+// wallWindows are ws with where each is heading: when it would reach 100%
+// at the rate it has been used since the window began. Too early in a
+// window (its first twentieth) the rate says little, so there is none.
+func wallWindows(ws []usage.Window, now time.Time) []wallWindow {
+	out := make([]wallWindow, 0, len(ws))
+	for _, w := range ws {
+		ww := wallWindow{Window: w}
+		length := wallWindowLength[w.Name]
+		if length > 0 && !w.ResetsAt.IsZero() && w.Utilization > 0 && now.Before(w.ResetsAt) {
+			used := now.Sub(w.ResetsAt.Add(-length))
+			if w.Utilization >= 1 {
+				full := now
+				ww.FullAt, ww.RunsOut = &full, true
+			} else if used >= length/20 && used <= length {
+				left := time.Duration(float64(used) * (1 - w.Utilization) / w.Utilization)
+				full := now.Add(left).Truncate(time.Minute)
+				ww.FullAt, ww.RunsOut = &full, full.Before(w.ResetsAt)
+			}
+		}
+		out = append(out, ww)
+	}
+	return out
+}
+
+// wallWindowNames are the wall's names of the usage windows.
+var wallWindowNames = map[string]string{"five_hour": "Claude 5h", "seven_day": "Claude 7d"}
+
+// wallStatusOf is d's overall state. Red (bad): something waits on a
+// person too long (a need that's old), the queue is paused, or a runner
+// is offline (see wallRunnerGone). Amber (warn): something waits on a
+// person (a review, a failure, an open issue), or a usage window is high
+// (wallUsageHigh) or will run out before it resets. Green (ok) otherwise.
+func wallStatusOf(d *wallData, now time.Time) wallStatus {
+	st := wallStatus{Level: "ok", Label: "All good", Running: d.Stages.Running,
+		Waiting: d.Stages.Review - d.Stages.ReviewGitHub + d.Stages.Failed, Reasons: []string{}}
+	var bad, warn []string
+	oldReview, oldFailed := 0, 0
+	for _, n := range d.Needs {
+		switch {
+		case !n.Old:
+		case n.Kind == "review":
+			oldReview++
+		default:
+			oldFailed++
+		}
+	}
+	if oldReview > 0 {
+		bad = append(bad, wallCount(oldReview, "review")+" waiting over "+wallDuration(wallReviewOld))
+	}
+	if oldFailed > 0 {
+		bad = append(bad, wallCount(oldFailed, "failure")+" unseen over "+wallDuration(wallFailedOld))
+	}
+	if d.Queue.Paused {
+		bad = append(bad, "queue paused")
+	}
+	for _, r := range d.Runners {
+		if !r.Online && (r.Waiting > 0 || r.LastSeen != nil && now.Sub(*r.LastSeen) < wallRunnerGone) {
+			bad = append(bad, r.Name+" offline")
+		}
+	}
+	if d.Issues.Open > 0 {
+		warn = append(warn, wallCount(d.Issues.Open, "open issue"))
+	}
+	usageWarn := func(prefix string, ws []wallWindow) {
+		for _, w := range ws {
+			name := wallWindowNames[w.Name]
+			if name == "" {
+				name = w.Name
+			}
+			switch {
+			case w.Utilization >= 1:
+				warn = append(warn, prefix+name+" at its limit")
+			case w.RunsOut && w.FullAt != nil:
+				warn = append(warn, prefix+name+" 100% in ~"+wallDuration(w.FullAt.Sub(now)))
+			case w.Utilization >= wallUsageHigh:
+				warn = append(warn, fmt.Sprintf("%s%s at %d%%", prefix, name, int(w.Utilization*100)))
+			}
+		}
+	}
+	if len(d.Usage.Accounts) > 1 {
+		for _, a := range d.Usage.Accounts {
+			usageWarn(a.Label+": ", a.Windows)
+		}
+	} else if d.Usage.Known {
+		usageWarn("", d.Usage.Windows)
+	}
+	st.Reasons = append(append(st.Reasons, bad...), warn...)
+	switch {
+	case len(bad) > 0:
+		st.Level, st.Label = "bad", "Needs action"
+	case st.Waiting > 0:
+		st.Level, st.Label = "warn", "Waiting on people"
+	case len(warn) > 0:
+		st.Level, st.Label = "warn", "Heads up"
+	}
+	return st
+}
+
+// wallCount is "1 review", "3 reviews".
+func wallCount(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return strconv.Itoa(n) + " " + noun + "s"
+}
+
+// wallDuration is a short, rounded duration: "40 min", "2 h", "3 d".
+func wallDuration(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return strconv.Itoa(max(1, int(d.Round(time.Minute)/time.Minute))) + " min"
+	case d < 48*time.Hour:
+		return strconv.Itoa(int(d.Round(time.Hour)/time.Hour)) + " h"
+	}
+	return strconv.Itoa(int(d.Round(24*time.Hour)/(24*time.Hour))) + " d"
 }
 
 // wallOpenIssues fills in the open issues: tasks made from reported issues
@@ -669,13 +1069,13 @@ func (s *Server) wallQueue(d *wallData, c Caller, runners []tunnel.Runner, name 
 			if label == "" || c.User == 0 || d.Privacy {
 				label = strings.Join(g.names(name), ", ")
 			}
-			d.Usage.Accounts = append(d.Usage.Accounts, wallAccount{Label: label, Windows: nonNil(a.Windows), Paused: a.Paused, Reason: a.Reason})
+			d.Usage.Accounts = append(d.Usage.Accounts, wallAccount{Label: label, Windows: wallWindows(a.Windows, now), Paused: a.Paused, Reason: a.Reason})
 			ws = append(ws, waits{active: g.active, snap: a})
 		}
 		// Waiting on limits only while every account that could run is.
 		combinePause(&snap, ws)
 	}
-	d.Usage.Known, d.Usage.Windows = snap.Known, nonNil(snap.Windows)
+	d.Usage.Known, d.Usage.Windows = snap.Known, wallWindows(snap.Windows, time.Now())
 	d.Queue.Paused, d.Queue.Reason = snap.Paused, snap.Reason
 	if snap.Paused && snap.Reason == "" {
 		d.Queue.Reason = "paused"

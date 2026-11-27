@@ -2,10 +2,16 @@
 // seconds and ticks the clock and the running tasks' timers in between.
 // Options come from the page's own URL: ?token= (a wall link, no sign-in),
 // ?project= (one project), ?privacy=1 (public mode: only what anyone may
-// see; a public wall token always has it).
-// A module (wall.html) that imports only time.js, which, like this file, a
-// TV with a wall token and no session may load.
+// see; a public wall token always has it), ?nospend=1 (no costs),
+// ?hours=8-18 and ?days=1-5 (work hours, for the off-hours summary).
+// A module (wall.html) that imports only time.js and walllogic.js (and its
+// eta.js), which, like this file, a TV with a wall token and no session may
+// load.
 import { clockText, resetText } from "./time.js";
+import {
+  age, isStale, staleText, progress, stuckText, nextCompact, drift, workHours, offHours, quiet as boardQuiet, weekText,
+  deltaText, oneDecimal, headline, fullText,
+} from "./walllogic.js";
 
 const params = new URLSearchParams(location.search);
 const POLL_MS = 5000;
@@ -25,16 +31,6 @@ function svg(tag, attrs) {
 const pad = (n) => String(n).padStart(2, "0");
 const hhmm = (d) => pad(d.getHours()) + ":" + pad(d.getMinutes());
 const money = (v) => "$" + v.toFixed(2);
-
-// age: "2 h 14", "48 min", "now"
-function age(ms) {
-  const m = Math.max(0, Math.floor(ms / 60000));
-  if (m < 1) return "now";
-  if (m < 60) return m + " min";
-  const hrs = Math.floor(m / 60);
-  if (hrs < 48) return hrs + " h " + pad(m % 60);
-  return Math.floor(hrs / 24) + " d";
-}
 
 // longAge: "2 h 14 min"
 function longAge(ms) {
@@ -88,9 +84,8 @@ let quiet = false; // drawing again after a resize: nothing moves
 const moving = () => !quiet && !calm.matches;
 
 // shown holds what the panels last showed that their animations compare
-// with: the stage counts, the today tiles, the hours' bars, each runner's
-// busy slots.
-const shown = { stages: null, today: {}, hours: {}, busy: {} };
+// with: the stage counts, the today tiles, each runner's busy slots.
+const shown = { stages: null, today: {}, busy: {} };
 
 // snapshot records where a list's cards are now, by their data-key.
 function snapshot(list) {
@@ -177,23 +172,69 @@ function rollValue(v) {
   return parseFloat(String(v).replace(/−/g, "-").replace(/[^\d.-]/g, ""));
 }
 
+// ---- stale data ----
+//
+// When polling fails (or the last good answer is older than about two
+// polls), the board must not look live: it greys out, the running timers
+// stop at the time of the last good answer, and a notice over it says how
+// old the data is. The next good poll clears it all, drawing only what
+// changed.
+
+let lastOk = 0; // when the last good poll answered (local time)
+let okNow = 0; // the server's time then
+let stale = false;
+
+// dataNow is the time the data is drawn at: the server's now, or, while
+// the data is stale, the time it was last good, so nothing counts on.
+const dataNow = () => (stale ? okNow : Date.now() + skew);
+
+function checkStale() {
+  const now = Date.now();
+  const was = stale;
+  stale = isStale({ failures, lastOk, now, pollMs: POLL_MS });
+  if (stale) setText($("stale"), staleText(lastOk, now));
+  if (stale !== was) document.documentElement.classList.toggle("is-stale", stale);
+  return stale !== was;
+}
+
 // ---- clock and timers, every second ----
 
 let skew = 0; // server time − local time, so timers agree with the server
-let timers = []; // the running tasks' timers: {el, since}, from renderRunning
+let timers = []; // the running tasks' timers: {el, since, took, prog, fill, text}, from renderRunning
 let minute = ""; // the clock's text, which changes once a minute
 
 function tick() {
-  const now = Date.now() + skew;
-  for (const t of timers) setText(t.el, clockText(t.since, now));
-  document.documentElement.classList.toggle("blink"); // the pulsing dots (wall.html)
-  const clock = hhmm(new Date(now));
+  checkStale();
+  const now = dataNow();
+  if (!stale) for (const t of timers) tickTimer(t, now);
+  document.documentElement.classList.toggle("blink", !stale && !document.documentElement.classList.contains("blink")); // the pulsing dots (wall.html)
+  const real = Date.now() + skew;
+  const clock = hhmm(new Date(real));
   if (clock === minute) return;
   minute = clock;
   $("clock").textContent = clock;
+  setText($("off-clock"), clock);
+  placeBoard();
   // Ages ("48 min") and the meters' "resets in" are to the minute: draw the
   // panels again, which only rebuilds those whose text moved.
   if (last) renderPanels(last);
+}
+
+// tickTimer shows running task t's elapsed time at now, and how it compares
+// with the typical time; the bar and its words are written only when they
+// change.
+function tickTimer(t, now) {
+  setText(t.el, clockText(t.since, now));
+  if (!t.prog) return;
+  const p = progress(now - t.since, t.took);
+  if (!p) return;
+  const width = (p.fraction * 100).toFixed(0) + "%";
+  if (t.fill.style.width !== width) t.fill.style.width = width;
+  setText(t.text, p.text);
+  // Toggled, not set, so a row's animation classes (motion) stay.
+  for (const lvl of ["over", "late"]) {
+    if (t.prog.classList.contains(lvl) !== (p.level === lvl)) t.prog.classList.toggle(lvl);
+  }
 }
 
 // ---- rendering ----
@@ -205,25 +246,37 @@ const USAGE = [["five_hour", "Claude 5h", "5h"], ["seven_day", "Claude 7d", "7d"
 let meters = null;
 let metersKey = null;
 
+// The overall status's level, as html's class (lvl-ok, lvl-warn, lvl-bad).
+let level = "";
+
 function renderHeader(d) {
   const scope = d.project ? d.project : "all projects";
   setText($("scope"), (d.org ? d.org + " · " : "") + scope + (d.privacy ? " · public view" : ""));
 
-  const q = $("queue");
-  const busy = d.queue.busy, slots = d.queue.slots;
-  let text, cls;
-  if (d.queue.paused) {
-    cls = "paused";
-    text = "Queue paused" + (d.queue.reason ? " · " + d.queue.reason : "");
-  } else {
-    cls = busy > 0 ? "" : "idle";
-    text = (busy > 0 ? "Queue running" : "Queue idle") + " · " + busy + " of " + slots + " slot" + (slots === 1 ? "" : "s") + " busy" +
-      (d.queue.boost > 0 ? " · +" + d.queue.boost + " catching up" : "");
+  // The overall status: a symbol and words, in its colour, and the screen's
+  // edge in the same colour (wall.html .tv::after).
+  const st = headline(d.status);
+  setText($("status-sym"), st.symbol);
+  setText($("status-text"), st.text);
+  setText($("status-why"), st.why);
+  const lvl = "lvl-" + (d.status?.level || "ok");
+  if (lvl !== level) {
+    if (level) document.documentElement.classList.remove(level);
+    document.documentElement.classList.add(lvl);
+    level = lvl;
   }
-  const qcls = "queue-state " + cls;
+
+  // The queue pill only says what the stage bar doesn't: that the queue is
+  // paused, or runs extra slots to catch up.
+  const q = $("queue");
+  let text = "";
+  if (d.queue.paused) text = "Queue paused" + (d.queue.reason ? " · " + d.queue.reason : "");
+  else if (d.queue.boost > 0) text = "+" + d.queue.boost + " slot" + (d.queue.boost === 1 ? "" : "s") + " catching up";
+  const qcls = "queue-state" + (d.queue.paused ? " paused" : "");
   if (q.className !== qcls) q.className = qcls;
-  q.querySelector(".dot").classList.toggle("pulse", !d.queue.paused && busy > 0);
-  setText($("queue-text"), text.length > 70 ? text.slice(0, 69) + "…" : text);
+  if (q.hidden !== !text) q.hidden = !text;
+  q.querySelector(".dot").classList.toggle("pulse", !d.queue.paused && d.queue.busy > 0);
+  setText($("queue-text"), text.length > 60 ? text.slice(0, 59) + "…" : text);
 
   // One set of meters per Claude account the runners are on, under its
   // name; with one account (or an older hub), one unnamed set.
@@ -266,12 +319,13 @@ function renderHeader(d) {
       const title = s.label + (s.paused && s.reason ? " · " + s.reason : "");
       if (ms.name.title !== title) ms.name.title = title;
     }
-    USAGE.forEach(([name], i) => meterTo(ms[i], s, name));
+    USAGE.forEach(([name], i) => meterTo(ms[i], s, name, !!accts));
   });
 }
 
-// meterTo shows window name of usage set s (its known and windows) in m.
-function meterTo(m, s, name) {
+// meterTo shows window name of usage set s (its known and windows) in m;
+// short is for the narrower meters of several accounts.
+function meterTo(m, s, name, short) {
   const w = (s.windows || []).find((x) => x.name === name);
   if (!s.known || !w) {
     setText(m.num, "—");
@@ -282,7 +336,12 @@ function meterTo(m, s, name) {
   const pct = Math.round(w.utilization * 100);
   const color = w.utilization >= 1 ? "var(--bad)" : w.utilization >= 0.7 ? "var(--run)" : "var(--ok)";
   setText(m.num, pct + "%");
-  setText(m.sub, resetText(w.resets_at, Date.now() + skew));
+  // Heading for 100% before it resets (which pauses the queue): say so
+  // instead of when it resets.
+  const full = fullText(w, dataNow(), short);
+  setText(m.sub, full || resetText(w.resets_at, dataNow()));
+  const sub = full ? "full" : "";
+  if (m.sub.className !== sub) m.sub.className = sub;
   const width = Math.min(100, pct) + "%";
   if (m.fill.style.width !== width) m.fill.style.width = width;
   if (m.fill.style.background !== color) m.fill.style.background = color;
@@ -302,9 +361,7 @@ function renderPipeline(d, now) {
       s.review_oldest ? "oldest " + longAge(now - new Date(s.review_oldest)) : s.review_github ? "" : "all reviewed",
       s.review_github ? s.review_github + " on GitHub" : "",
     ].filter(Boolean).join(" · ")],
-    ["Merging", "var(--merge)", s.merging, s.merging_pr ? s.merging_pr + " waiting on PR checks" : s.merging ? "in the merge queue" : "—"],
-    ["Merged today", "var(--ok)", s.merged_today, s.merged_today ? "+" + num(s.merged_add) + " / −" + num(s.merged_del) + " lines" : "none yet"],
-    ["Failed", "var(--bad)", s.failed, s.failed ? (s.resumable ? s.resumable + " resumable" : "need a look") : "none"],
+    ["Merging", "var(--merge)", s.merging, s.merging_pr ? s.merging_pr + " waiting on PR checks" : s.merging ? "in the merge queue" : ""],
   ];
   if (!changed("pipeline", stages)) return false;
   const was = shown.stages || [];
@@ -323,13 +380,13 @@ function renderPipeline(d, now) {
 }
 
 
-// fit hides a list's last children so its panel doesn't overflow, and says
-// how many it hid. It lays the panel out once: it reads where every child
+// fit hides a list's last children so its panel doesn't overflow, and
+// returns how many it hid. It lays the panel out once: it reads where every child
 // ends, works out how many fit (with the "+ n more" note, if some don't),
 // and only then changes the list.
 function fit(list, panel, noun) {
   const kids = [...list.children];
-  if (kids.length < 2) return;
+  if (kids.length < 2) return 0;
   const note = h("div", { class: "more" }, "+ " + kids.length + " more " + noun);
   list.append(note);
   // Reads, all from one layout. Rects are scaled by the canvas's zoom.
@@ -345,13 +402,17 @@ function fit(list, panel, noun) {
   // Writes.
   if (ends[ends.length - 1] <= limit) {
     note.remove();
-    return;
+    return 0;
   }
   let keep = 1; // always show one, as before
   while (keep < kids.length && ends[keep] + noteRoom <= limit) keep++;
   for (let i = keep; i < kids.length; i++) kids[i].remove();
   note.textContent = "+ " + (kids.length - keep) + " more " + noun;
+  return kids.length - keep;
 }
+
+// withToken is a wall image's URL with the wall's token, which it needs too.
+const withToken = (url) => url + (params.get("token") ? "&token=" + encodeURIComponent(params.get("token")) : "");
 
 // projectIcon is a running card's project icon: its image (with the wall's
 // token, which the image's URL needs too), else its initial in its color, as
@@ -360,16 +421,23 @@ function projectIcon(r, privacy) {
   if (privacy || !r.project) return null;
   const initial = () => h("span", { class: "picon", style: r.color ? "--pc:" + r.color : "", "aria-hidden": "true" }, [...r.project][0].toUpperCase());
   if (!r.icon) return initial();
-  const src = r.icon + (params.get("token") ? "&token=" + encodeURIComponent(params.get("token")) : "");
+  const src = withToken(r.icon);
   const icon = h("span", { class: "picon img", "aria-hidden": "true" }, h("img", { src, alt: "" }));
   icon.firstChild.addEventListener("error", () => icon.replaceWith(initial()), { once: true });
   return icon;
 }
 
+// The running list: a card per task while they fit, else compact rows
+// (nextCompact). fits is how many cards fitted when last measured.
+let compact = false;
+let fits = Infinity;
+
 function renderRunning(d) {
-  setText($("running-count"), String(d.running.length));
   $("running-dot").classList.toggle("pulse", d.running.length > 0);
-  if (!changed("running", [d.running, d.privacy, d.queue.paused])) return false;
+  const now = dataNow();
+  // What a card shows that changes with time: whether its activity is stuck.
+  const stuck = d.running.map((r) => stuckText(r.activity, r.activity_at, now));
+  if (!changed("running", [d.running, d.privacy, d.queue.paused, stuck, compact])) return false;
   const list = $("running");
   const before = snapshot(list);
   // A task that stopped running shows how it ended for a moment as it goes:
@@ -385,55 +453,90 @@ function renderRunning(d) {
   };
   if (!d.running.length) {
     timers = [];
+    list.classList.remove("compact");
     list.replaceChildren(h("div", { class: "empty" }, d.queue.paused ? "Nothing running: the queue is paused." : "Nothing running right now."));
     handoff = morph(list, before, { outcome });
     return true;
   }
+  let next = drawRunning(d, list, before, stuck);
+  const hidden = fit(list, list.parentElement, "running");
+  if (!compact) fits = hidden ? d.running.length - hidden : Math.max(d.running.length, fits === Infinity ? 0 : fits);
+  if (nextCompact(compact, d.running.length, fits) !== compact) {
+    // Switch, and draw again in the other layout at once.
+    compact = !compact;
+    drawn.running = JSON.stringify([d.running, d.privacy, d.queue.paused, stuck, compact]);
+    next = drawRunning(d, list, before, stuck);
+    fit(list, list.parentElement, "running");
+  }
+  timers = next.filter((t) => t.el.isConnected);
+  handoff = morph(list, before, { outcome });
+  return true;
+}
+
+// drawRunning fills list with d's running tasks, as cards or compact rows,
+// and returns their timers.
+function drawRunning(d, list, before, stuck) {
+  list.classList.toggle("compact", compact);
   const next = [];
-  list.replaceChildren(...d.running.map((r) => {
-    const meta = [r.project, d.privacy ? r.runner : "runner " + r.runner, "run " + r.run];
-    if (r.cost_usd != null) meta.push(money(r.cost_usd));
-    const changes = r.add || r.del;
+  // A timer and its progress bar against the typical time (none without one).
+  const timer = (r, base) => {
     const clock = h("div", { class: "elapsed num" }, "—");
-    if (r.started_at) {
-      clock.textContent = "";
-      next.push({ el: clock, since: new Date(r.started_at).getTime() });
+    if (!r.started_at) return { clock, bar: null };
+    const t = { el: clock, since: new Date(r.started_at).getTime(), took: r.took };
+    if (r.took?.length) {
+      t.fill = h("i");
+      t.text = h("span", { class: "ptext num" });
+      t.prog = h("div", { class: base }, h("div", { class: "pbar" }, t.fill), t.text);
     }
+    next.push(t);
+    return { clock, t };
+  };
+  list.replaceChildren(...d.running.map((r, i) => {
+    if (compact) {
+      const { clock, t } = timer(r, "crow");
+      const row = t?.prog || h("div", { class: "crow" }, h("div", { class: "pbar", style: "visibility:hidden" }), h("span", { class: "ptext" }));
+      row.dataset.key = r.id;
+      row.prepend(h("div", { class: "t" }, projectIcon(r, d.privacy), r.title));
+      row.append(clock);
+      return row;
+    }
+    const meta = [r.project];
+    if (r.run > 1) meta.push("run " + r.run);
+    const changes = r.add || r.del;
+    const { clock, t } = timer(r, "prog");
     const diff = changes
       ? h("div", { class: "diff num" }, h("span", { class: "add" }, "+" + num(r.add)), " ", h("span", { class: "del" }, "−" + num(r.del)),
         r.files ? " · " + r.files + " file" + (r.files === 1 ? "" : "s") : "")
       : h("div", { class: "diff num", style: "color:var(--faint)" }, "no changes yet");
-    const live = r.activity && h("div", { class: "live" }, r.activity);
-    // In a card that stays, what changed fades in: the latest activity, the diff.
+    // The tool call it is making, small and without a fade; one that stays
+    // the same for a while says so instead.
+    const live = r.activity && h("div", { class: "live" + (stuck[i] ? " stuck" : "") }, stuck[i] || r.activity);
+    // In a card that stays, a changed diff fades in.
     const old = !first && moving() && before.get(r.id)?.el;
-    if (old) {
-      if (live && old.querySelector(".live")?.textContent !== r.activity) live.classList.add("fresh");
-      if (old.querySelector(".diff")?.textContent !== diff.textContent) diff.classList.add("fresh");
-    }
+    if (old && old.querySelector(".diff")?.textContent !== diff.textContent) diff.classList.add("fresh");
     return h("div", { class: "card", "data-key": r.id },
       h("div", {},
         h("div", { class: "t" }, projectIcon(r, d.privacy), r.title, r.sent_back && h("span", { class: "tag" }, "sent back: " + r.sent_back)),
         h("div", { class: "meta" }, meta.map((m) => h("span", {}, m)))),
       h("div", { class: "right" }, clock, diff),
-      live);
+      t?.prog, live);
   }));
   // Fill the timers in before the panel is laid out, so they're measured
   // with their text.
-  const now = Date.now() + skew;
-  for (const t of next) t.el.textContent = clockText(t.since, now);
-  fit(list, list.parentElement, "running");
-  timers = next.filter((t) => t.el.isConnected);
-  handoff = morph(list, before, { outcome });
-  return true;
+  const now = dataNow();
+  for (const t of next) tickTimer(t, now);
+  return next;
 }
 
 // What a pull request in Review waits for a person to do (wallNeed.waits).
 const PR_WAITS = { review: "Awaiting review", merge: "Waiting to be merged", blocked: "Blocked on GitHub" };
 
 function renderNeeds(d, now) {
-  // The model: each row's key, color, title, why and age, as shown.
+  // The model: each row's key, whether it waits too long, color, title, why,
+  // age, and who should act (with their avatar), as shown.
   const rows = d.needs.map((n) => {
     const since = now - new Date(n.since);
+    const who = [n.person || "", n.avatar || ""];
     if (n.kind === "review") {
       const why = ["Review", n.project];
       if (n.add || n.del) why.push("+" + num(n.add) + " −" + num(n.del));
@@ -441,22 +544,25 @@ function renderNeeds(d, now) {
       if (n.tests === "failed") why.push("tests ✗");
       if (n.pr) why.push("PR #" + n.pr);
       if (PR_WAITS[n.waits]) why.push(PR_WAITS[n.waits]);
-      return ["review:" + n.id, !!n.old, "var(--rev)", n.title, why.join(" · "), age(since)];
+      return ["review:" + n.id, !!n.old, "var(--rev)", n.title, why.join(" · "), age(since), ...who, ""];
     }
     const why = ["Failed", n.project];
     if (!d.privacy) why.push(n.reason || "no reason given");
     if (n.resumable) why.push("resumable");
-    return ["failed:" + n.id, !!n.old, "var(--bad)", n.title, why.join(" · "), age(since)];
+    return ["failed:" + n.id, !!n.old, "var(--bad)", n.title, why.join(" · "), age(since), ...who, ""];
   });
   const is = d.issues;
   if (is.open) {
+    // The severity goes next to the title: the right-hand column is always an age.
     const sev = ["critical", "high", "medium", "low", "info"].filter((k) => is.severity[k]).map((k) => is.severity[k] + " " + k);
-    const why = is.top.length ? is.top.join(" · ") : sev.join(" · ");
+    const why = is.top.length ? is.top.join(" · ") : sev.slice(1).join(" · ") || "reported problems not merged yet";
     const urgent = (is.severity.critical || 0) + (is.severity.high || 0) > 0;
-    rows.push(["issues", false, urgent ? "var(--bad)" : "var(--queue)", is.open + " open issue" + (is.open === 1 ? "" : "s"), why, sev[0] || "—"]);
+    rows.push(["issues", false, urgent ? "var(--bad)" : "var(--queue)", is.open + " open issue" + (is.open === 1 ? "" : "s"), why, "", "", "", sev[0] || ""]);
   }
-  const total = d.stages.review - d.stages.review_github + d.stages.failed + (is.open ? 1 : 0);
+  const total = (d.stages.review || 0) - (d.stages.review_github || 0) + (d.stages.failed || 0) + (is.open ? 1 : 0);
   setText($("needs-count"), String(total));
+  // A row that waits too long turns the whole panel red, with words.
+  $("needs-panel").classList.toggle("alarm", rows.some((r) => r[1]));
   if (!changed("needs", rows)) return false;
   const list = $("needs");
   const before = snapshot(list);
@@ -464,13 +570,21 @@ function renderNeeds(d, now) {
   if (!rows.length) {
     list.replaceChildren(h("div", { class: "empty" }, "Nothing waiting for a human. ✓"));
   } else {
-    list.replaceChildren(...rows.map(([key, old, c, t, why, ago]) => {
+    list.replaceChildren(...rows.map(([key, old, c, t, why, ago, person, avatar, sev]) => {
+      const title = h("div", { class: "t" }, h("span", {}, t), sev && h("span", { class: "sev" }, sev));
+      const right = h("div", { class: "age num" });
+      if (avatar) {
+        const img = h("img", { class: "av", src: withToken(avatar), alt: "" });
+        img.addEventListener("error", () => img.remove(), { once: true });
+        right.append(img);
+      }
+      if (person) right.append(h("span", { class: "who" }, person), ago ? " · " : "");
+      if (ago) right.append(ago);
       const row = h("div", { class: "item" + (old ? " old" : ""), style: "--c:" + c, "data-key": key }, h("i", { class: "bar2" }),
-        h("div", {}, h("div", { class: "t" }, t), h("div", { class: "why" }, why)),
-        h("div", { class: "age num" }, ago));
+        h("div", {}, title, h("div", { class: "why" }, why)), right);
       // The issues row stays as their count changes: roll it.
-      const was = before.get(key)?.el.querySelector(".t")?.textContent;
-      if (key === "issues") roll(row.querySelector(".t"), was, t);
+      const was = before.get(key)?.el.querySelector(".t span")?.textContent;
+      if (key === "issues") roll(title.firstChild, was, t);
       return row;
     }));
     fit(list, list.parentElement, "waiting");
@@ -510,8 +624,10 @@ function renderRunners(d, now) {
     for (let i = 0; i < n; i++) {
       slots.append(h("i", { class: (i < busy ? "on" : "") + (i < busy && i >= prev ? " pop" : i >= busy && i < prev ? " drop" : "") }));
     }
+    // A shape as well as a colour: ● online, ◐ paused, ✕ offline.
+    const [glyph, color, word] = !online ? ["✕", "var(--bad)", "offline"] : paused ? ["◐", "var(--run)", "paused"] : ["●", "var(--ok)", "online"];
     return h("div", { class: "runner", "data-key": name },
-      h("span", { class: "dot", style: `color:${online ? (paused ? "var(--run)" : "var(--ok)") : "var(--bad)"}` }),
+      h("span", { class: "rs", style: `color:${color}`, title: word, "aria-label": word }, glyph),
       h("div", {}, h("div", { class: "n" + (online ? "" : " off") }, name), h("div", { class: "h" + (online ? "" : " off") }, sub)),
       slots);
   }));
@@ -520,17 +636,27 @@ function renderRunners(d, now) {
   return true;
 }
 
-function renderToday(d) {
+function renderToday(d, now) {
   const t = d.today;
+  const avg = t.avg || {};
   const add = d.stages.merged_add || 0, del = d.stages.merged_del || 0;
-  if (!changed("today", [t, add, del])) return false;
-  // Each tile: its label, what it shows, and the number roll() compares.
-  const tiles = [["Merged", String(t.merged), t.merged]];
-  if (t.spend_usd != null) tiles.push(["Spend", money(t.spend_usd), t.spend_usd]);
+  // Each tile: its label, what it shows, the number roll() compares, and
+  // how it compares with the average day at this time.
+  const tiles = [["Merged", String(t.merged), t.merged, deltaText(t.merged, avg.merged, oneDecimal)]];
+  if (t.spend_usd != null) tiles.push(["Spend", money(t.spend_usd), t.spend_usd, deltaText(t.spend_usd, avg.spend_usd, money)]);
   if (t.first_try != null) {
     const pct = Math.round(t.first_try * 100);
-    tiles.push(["First-try merges", pct + "%", pct]);
+    const pctOf = (v) => Math.round(v * 100) + "%";
+    tiles.push(["First-try merges", pct + "%", pct, avg.first_try != null ? deltaText(t.first_try, avg.first_try, pctOf) : ""]);
   }
+  // Just landed: the newest merges, with when (today: the time; before: the day too).
+  const day = new Date(now).toDateString();
+  const lands = (d.landed || []).map((l) => {
+    const at = new Date(l.at);
+    const when = at.toDateString() === day ? hhmm(at) : at.toLocaleDateString(undefined, { weekday: "short" }) + " " + hhmm(at);
+    return [l.id, l.title, d.privacy ? "" : l.project, when];
+  });
+  if (!changed("today", [tiles.map((x) => x.slice(0, 2).concat(x[3])), add, del, lands])) return false;
   // Lines landed: the net change is the big number, the lines added and
   // removed beside it. Net removed lines (a refactoring) aren't bad news, so
   // they get an accent colour, not --bad.
@@ -541,45 +667,50 @@ function renderToday(d) {
   tiles.push(["Lines landed", [
     h("span", { class: netClass.filter(Boolean).join(" ") }, netText),
     h("small", { class: "split" }, h("span", {}, "+" + num(add)), h("span", {}, "−" + num(del))),
-  ], net]);
+  ], net, ""]);
   const was = shown.today;
   shown.today = Object.fromEntries(tiles.map(([k, , n]) => [k, n]));
-  const cells = tiles.slice(0, 4).map(([k, v, n]) => {
+  const cells = tiles.slice(0, 4).map(([k, v, n, delta]) => {
     const b = h("b", { class: Array.isArray(v) ? "num lines" : "num" }, v);
     roll(b, was[k], n);
-    return h("div", {}, k, b);
+    return h("div", {}, k, b, delta && h("span", { class: "delta" }, delta));
   });
   $("today").replaceChildren(...cells);
   if (first) appear(cells);
 
-  // Merges per hour: from 08:00 (or the first merge, if earlier) to now.
-  let from = Math.min(8, t.hour);
-  const early = t.per_hour.findIndex((v) => v > 0);
-  if (early >= 0 && early < from) from = early;
-  const hours = t.per_hour.slice(from, t.hour + 1);
-  const max = Math.max(1, ...hours);
-  const slot = 300 / Math.max(hours.length, 1), w = Math.max(4, slot * 0.72);
-  // A bar grows from its old height (or from nothing, on the first draw).
-  const grew = [];
-  const heights = {};
-  $("spark").replaceChildren(...hours.map((v, i) => {
-    const hgt = v ? Math.max(6, (v / max) * 104) : 3;
-    const bar = svg("rect", { x: (i * slot + (slot - w) / 2).toFixed(1), y: (110 - hgt).toFixed(1), width: w.toFixed(1), height: hgt.toFixed(1), rx: 3,
-      style: "fill:var(" + (v ? "--ok" : "--line") + ")", opacity: i === hours.length - 1 ? 1 : 0.55 });
-    const hour = from + i;
-    heights[hour] = hgt;
-    const old = first ? 0 : shown.hours[hour];
-    if (old !== undefined && Math.abs(old - hgt) > 0.5) grew.push([bar, old / hgt, first ? i * 30 : 0]);
-    return bar;
-  }));
-  shown.hours = heights;
-  if ((first && !calm.matches) || moving()) {
-    for (const [bar, s, delay] of grew) {
-      bar.animate([{ transform: `scaleY(${s})` }, { transform: "none" }], { duration: 700, delay, easing: EASE, fill: "backwards" });
-    }
+  const list = $("landed");
+  const before = snapshot(list);
+  if (!lands.length) {
+    list.replaceChildren(h("div", { class: "empty" }, "Nothing merged yet."));
+  } else {
+    list.replaceChildren(...lands.map(([id, title, project, when]) =>
+      h("div", { class: "land", "data-key": id }, h("span", { class: "ck", "aria-label": "merged" }, "✓"),
+        h("span", { class: "t" }, title, project && h("span", { class: "p" }, " · " + project)), h("span", { class: "at num" }, when))));
+    fit(list, list.parentElement, "merged");
   }
-  setText($("spark-from"), pad(from) + ":00");
+  morph(list, before);
   return true;
+}
+
+// ---- off hours ----
+//
+// Outside work hours (workHours: ?hours=, ?days=), with nothing running and
+// nothing waiting on a person, the wall dims to a summary of the week; it
+// comes back as soon as something runs or needs a human.
+
+const hours = workHours(params);
+let off = false;
+
+function renderOff(d, now) {
+  const next = offHours(new Date(now), hours) && boardQuiet(d);
+  if (next !== off) {
+    off = next;
+    document.documentElement.classList.toggle("off", off);
+  }
+  if (!off) return;
+  setText($("off-week"), weekText(d.week || { merged: 0 }));
+  const st = headline(d.status);
+  setText($("off-status"), (st.symbol ? st.symbol + " " : "") + st.text + (st.why ? " · " + st.why : ""));
 }
 
 let landed = false; // a task merged since the last draw (renderPanels)
@@ -590,7 +721,7 @@ let last = null; // the latest data, to draw again each minute and on a resize
 // renderPanels draws d, rebuilding only the panels whose text changed.
 function renderPanels(d) {
   last = d;
-  const now = new Date(Date.now() + skew);
+  const now = new Date(dataNow());
   renderHeader(d);
   // Whether a task merged (or went to merge) since the last draw, for the
   // running cards' "Done".
@@ -600,7 +731,8 @@ function renderPanels(d) {
   handoff = 0;
   // Each runs, so each panel is checked; any rebuilt one may change the
   // stacked page's height.
-  const grew = [renderPipeline(d, now), renderRunning(d), renderNeeds(d, now), renderRunners(d, now), renderToday(d)];
+  const grew = [renderPipeline(d, now), renderRunning(d), renderNeeds(d, now), renderRunners(d, now), renderToday(d, now)];
+  renderOff(d, Date.now() + skew);
   if (grew.some(Boolean)) fitPage();
   first = false;
 }
@@ -614,7 +746,7 @@ function render(d) {
 
 function apiURL() {
   const q = new URLSearchParams();
-  for (const k of ["token", "project", "privacy"]) if (params.get(k)) q.set(k, params.get(k));
+  for (const k of ["token", "project", "privacy", "nospend"]) if (params.get(k)) q.set(k, params.get(k));
   q.set("tz", String(new Date().getTimezoneOffset()));
   return "/api/wall?" + q;
 }
@@ -646,6 +778,11 @@ async function poll() {
       const text = await res.text();
       const d = JSON.parse(text);
       skew = new Date(d.now) - Date.now();
+      // Good data: the board is live again (checkStale, in render's tick).
+      failures = 0;
+      lastOk = Date.now();
+      okNow = lastOk + skew;
+      checkStale();
       // The server puts "now" first; everything after it is the data.
       const same = text.replace(/^\{"now":"[^"]*",?/, "{");
       if (same !== seen || !last) {
@@ -654,13 +791,11 @@ async function poll() {
       } else {
         tick();
       }
-      failures = 0;
       $("error").classList.remove("on");
-      $("stale").classList.remove("on");
     }
   } catch (e) {
     failures++;
-    if (failures >= 2) $("stale").classList.add("on");
+    tick(); // grey out now, not at the next second
   } finally {
     inflight = false;
   }
@@ -698,8 +833,17 @@ function layout() {
     tv.style.minHeight = "";
     tv.style.left = tv.style.top = "0px";
   }
-  tv.style.transform = `scale(${zoom})`;
+  placeBoard();
   fitPage();
+}
+
+// placeBoard scales the canvas and, on a TV, moves it by the burn-in drift
+// (walllogic.js drift): a few pixels, once every few minutes.
+function placeBoard() {
+  const { x, y } = narrow ? { x: 0, y: 0 } : drift(Date.now());
+  const transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+  const tv = $("tv");
+  if (tv.style.transform !== transform) tv.style.transform = transform;
 }
 
 // fitPage gives the scaled canvas a scroll area in the stacked layout (a
@@ -718,6 +862,8 @@ addEventListener("resize", () => {
     // depends on the size.
     if (last) {
       drawn = {};
+      compact = false; // how many cards fit is measured again
+      fits = Infinity;
       quiet = true;
       render(last);
       quiet = false;

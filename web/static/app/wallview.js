@@ -8,20 +8,21 @@ import { connectorSteps, copyBlock } from "./prefs.js";
 import { agoText } from "../time.js";
 
 // ------------------------------------------------------------------ wall view
-// Organization → Wall view configures /wall: which projects it shows and privacy mode (kept in this
+// Organization → Wall view configures /wall: which projects it shows, privacy mode and hiding spend (kept in this
 // browser), a link to open it here, and the org admins' TV links (wall
 // tokens). A TV link's secret is shown only when it's made; while the sheet
 // stays open its link follows the options.
 const wall = { secret: "", tokenName: "" };
 const wallOpts = () => {
   const f = $("#wall-form");
-  return { project: f.project.value, privacy: f.privacy.checked };
+  return { project: f.project.value, privacy: f.privacy.checked, nospend: f.nospend.checked };
 };
 function wallURL(secret = "") {
   const o = wallOpts(), q = new URLSearchParams();
   if (secret) q.set("token", secret);
   if (o.project) q.set("project", o.project);
   if (o.privacy) q.set("privacy", "1");
+  else if (o.nospend) q.set("nospend", "1");
   const s = q.toString();
   return `${location.origin}/wall${s ? `?${s}` : ""}`;
 }
@@ -36,6 +37,7 @@ async function loadWall() {
     ...projects.map((p) => h("option", { value: p.name }, p.name)));
   f.project.value = projects.some((p) => p.name === saved.project) ? saved.project : "";
   f.privacy.checked = !!saved.privacy;
+  f.nospend.checked = !!saved.nospend;
   wall.secret = "";
   $("#wall-token-secret").hidden = true;
   renderWallLink();
@@ -55,7 +57,7 @@ function renderWallLink() {
       h("p", {}, `Copy the link for ${wall.tokenName} now: Dash doesn't show it again.`),
       copyBlock(link, "Wall link copied", { pre: true }),
       h("p", { class: "hint" }, "Open it on the TV. It follows the options above while this stays open; later, change ",
-        h("code", {}, "project"), " and ", h("code", {}, "privacy"), " in the link itself."));
+        h("code", {}, "project"), ", ", h("code", {}, "privacy"), " and ", h("code", {}, "nospend"), " in the link itself."));
   }
 }
 

@@ -811,6 +811,8 @@ var public = map[string]bool{
 	"/sw.js":                true, // service worker updates must not hit the login redirect
 	"/wall.js":              true, // the wall view's script: a TV with a wall token has no session
 	"/time.js":              true, // wall.js imports it
+	"/walllogic.js":         true, // wall.js imports it
+	"/eta.js":               true, // walllogic.js imports it
 	"/api/login":            true,
 	"/api/login/totp":       true, // the login's ticket is its credential
 	// An invitation link's token is its own credential.
@@ -853,11 +855,11 @@ var public = map[string]bool{
 // publicAsset reports whether path is static artwork the sign-in and
 // invitation pages need before there's a session: images and the
 // self-hosted fonts.
-// WallPaths are the wall view's page, data and project icons. Opened with
+// WallPaths are the wall view's page, data, project icons and avatars. Opened with
 // ?token=, they skip the session: the handler checks the token (a
 // store.WallToken), which grants these paths and nothing else. Without one,
 // they need a session as usual.
-var WallPaths = map[string]bool{"/wall": true, "/api/wall": true, "/api/wall/icon": true}
+var WallPaths = map[string]bool{"/wall": true, "/api/wall": true, "/api/wall/icon": true, "/api/wall/avatar": true}
 
 // wallToken reports whether r is a GET of a wall path carrying a token.
 func wallToken(r *http.Request) bool {

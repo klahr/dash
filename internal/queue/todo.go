@@ -1212,6 +1212,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		stat.Model = res.Model
 	}
 	stat.ChatUsage, stat.Turns, stat.CostUSD = res.Usage, res.Turns, res.CostUSD
+	stat.Seconds = max(1, int(time.Since(stat.At).Seconds()))
 	switch {
 	case overTime.Load() && ctx.Err() == nil:
 		err = fmt.Errorf("stopped: Claude worked longer than the %d-minute limit; rework it to let Claude continue, or raise the limit in the project settings", p.RunMinutes())

@@ -538,6 +538,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /wall", s.wallPage)
 	mux.HandleFunc("GET /api/wall", s.getWall)
 	mux.HandleFunc("GET /api/wall/icon", s.wallIcon)
+	mux.HandleFunc("GET /api/wall/avatar", s.wallAvatar)
 	s.wallTokenRoutes(mux)
 
 	// Frontend

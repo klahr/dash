@@ -1142,7 +1142,8 @@ const (
 )
 
 // TodoRun is one Claude run on a task: when it started, what kind of run it
-// was, the model, and the tokens (ChatUsage, flattened), turns and cost it took.
+// was, the model, and the tokens (ChatUsage, flattened), turns, cost and
+// time it took.
 type TodoRun struct {
 	At    time.Time `json:"at"`
 	Kind  string    `json:"kind"`
@@ -1150,6 +1151,9 @@ type TodoRun struct {
 	ChatUsage
 	Turns   int     `json:"turns,omitempty"`
 	CostUSD float64 `json:"cost_usd,omitempty"`
+	// Seconds is how long the run took (0: not recorded, a run from before
+	// Dash kept it).
+	Seconds int `json:"seconds,omitempty"`
 }
 
 // RunEvent is one step of a todo's worker: a Claude run's text, tool calls
