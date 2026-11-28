@@ -24,6 +24,9 @@ func TestBrowserRunnerDoctor(t *testing.T) {
 		b.waitJS("its doctor's checks", `[...document.querySelectorAll("#runner-detail .runner-doctor-group")].map((g) => g.textContent).join(",").startsWith("Required,Features")
 			&& /^Checked /.test(document.querySelector("#runner-detail .runner-doctor-head .hint")?.textContent || "")
 			&& !!document.querySelector('#runner-detail .runner-doctor-check strong')`)
+		// The sheet slides up as it opens: a click on Check again while it
+		// moves can press the button and let go beside it, which is no click.
+		b.waitJS("the sheet slid in", `!document.querySelector("#runners-sheet").getAnimations().length`)
 	}
 	open(b)
 	shot(b, "doctor-wide")
