@@ -70,8 +70,8 @@ func (m *MergeQueue) PostComment(ctx context.Context, todoID, cid string) error 
 	posted, err := m.postComment(ctx, p, n, c)
 	if err != nil {
 		slog.Warn("post a comment from Dash on GitHub", "todo", todoID, "pr", n, "err", err)
-		m.setPosted(todoID, cid, &model.PostedComment{PR: n, Error: brief(err), Since: time.Now().UTC()})
-		m.Log.Line(t, fmt.Sprintf("⚠ couldn't post a comment on %s on pull request #%d: %s", c.File, n, brief(err)))
+		m.setPosted(todoID, cid, &model.PostedComment{PR: n, Error: gitops.Gist(err), Since: time.Now().UTC()})
+		m.Log.Line(t, fmt.Sprintf("⚠ couldn't post a comment on %s on pull request #%d: %s", c.File, n, gitops.Gist(err)))
 		return err
 	}
 	m.postedNow.Store(cid, posted) // for a DeleteComment waiting on this
@@ -167,8 +167,8 @@ func (m *MergeQueue) editPosted(ctx context.Context, t model.Todo, p model.Proje
 	g.Error = ""
 	if err != nil {
 		slog.Warn("edit a comment from Dash on GitHub", "todo", t.ID, "pr", g.PR, "err", err)
-		m.Log.Line(t, fmt.Sprintf("⚠ couldn't edit a comment on pull request #%d: %s", g.PR, brief(err)))
-		g.Error = "edit: " + brief(err)
+		m.Log.Line(t, fmt.Sprintf("⚠ couldn't edit a comment on pull request #%d: %s", g.PR, gitops.Gist(err)))
+		g.Error = "edit: " + gitops.Gist(err)
 	}
 	m.setPosted(t.ID, c.ID, &g)
 	return err
@@ -195,7 +195,7 @@ func (m *MergeQueue) DeleteComment(ctx context.Context, t model.Todo, c model.Re
 	defer cancel()
 	if err := m.Git.DeleteComment(ctx, p.ID, p.Path, c.GitHub.ID, c.GitHub.Issue); err != nil {
 		slog.Warn("delete a comment from Dash on GitHub", "todo", t.ID, "pr", c.GitHub.PR, "err", err)
-		m.Log.Line(t, fmt.Sprintf("⚠ couldn't delete a comment on pull request #%d: %s", c.GitHub.PR, brief(err)))
+		m.Log.Line(t, fmt.Sprintf("⚠ couldn't delete a comment on pull request #%d: %s", c.GitHub.PR, gitops.Gist(err)))
 	}
 }
 

@@ -103,7 +103,7 @@ func (s *Server) repoInfo(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		info, err := s.Git.RepoInfo(ctx, out.RemoteURL)
 		if err != nil {
-			out.Error = "GitHub didn't answer: " + briefGit(err)
+			out.Error = "GitHub didn't answer: " + gitops.Gist(err)
 		} else {
 			out.GitHub = &info
 		}

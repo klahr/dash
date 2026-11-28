@@ -131,7 +131,7 @@ func (m *MergeQueue) replyToReview(ctx context.Context, t model.Todo, p model.Pr
 	defer cancel()
 	warn := func(what string, err error) {
 		slog.Warn("reply to review on GitHub: "+what, "todo", t.ID, "pr", n, "err", err)
-		m.Log.Line(t, fmt.Sprintf("⚠ couldn't %s on pull request #%d: %s", what, n, brief(err)))
+		m.Log.Line(t, fmt.Sprintf("⚠ couldn't %s on pull request #%d: %s", what, n, gitops.Gist(err)))
 	}
 	reply := parseReviewReply(r.Report)
 	if err := m.Git.CommentPR(ctx, p.ID, p.Path, n, textutil.NoMentions(replyComment(r, reply))); err != nil {
@@ -222,7 +222,7 @@ func (m *MergeQueue) reviewFailed(ctx context.Context, todoID, why string) {
 		"Rework the task in Dash, or leave another review here, to have Claude try again.\n"+dashMark, by(r), quote(clip(why)))
 	if err := m.Git.CommentPR(ctx, p.ID, p.Path, n, textutil.NoMentions(body)); err != nil {
 		slog.Warn("say on GitHub that a review fix failed", "todo", t.ID, "pr", n, "err", err)
-		m.Log.Line(t, fmt.Sprintf("⚠ couldn't say on pull request #%d that the fix failed: %s", n, brief(err)))
+		m.Log.Line(t, fmt.Sprintf("⚠ couldn't say on pull request #%d that the fix failed: %s", n, gitops.Gist(err)))
 		return
 	}
 	m.Log.Line(t, fmt.Sprintf("💬 said on pull request #%d that Claude's fix of the review failed", n))

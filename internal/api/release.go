@@ -131,7 +131,7 @@ func (sv *service) prepareRelease(ctx context.Context, p model.Project, sha stri
 	g := sv.s.Git
 	fctx, cancel := context.WithTimeout(ctx, tagTimeout)
 	if err := sv.s.withRemote(fctx, p.ID, func() error { return sv.s.fetchForRelease(fctx, p, sha) }); err != nil {
-		info.FetchError = briefGit(err)
+		info.FetchError = gitops.Gist(err)
 	}
 	cancel()
 	if info.SHA, err = sv.s.releaseCommit(ctx, p, sha); err != nil {
@@ -270,21 +270,6 @@ func (sv *service) releaseNotes(ctx context.Context, p model.Project, prev, sha 
 		b.WriteString("\n")
 	}
 	return strings.TrimSpace(b.String())
-}
-
-// briefGit is the gist of a git failure (its last line of output).
-func briefGit(err error) string {
-	var ce *gitops.CmdError
-	if errors.As(err, &ce) {
-		out := strings.TrimSpace(ce.Output)
-		if i := strings.LastIndexByte(out, '\n'); i >= 0 {
-			out = out[i+1:]
-		}
-		if out != "" {
-			return out
-		}
-	}
-	return err.Error()
 }
 
 // createRelease tags a commit and pushes the tag; see mcptools.NewRelease.

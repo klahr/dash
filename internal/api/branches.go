@@ -46,7 +46,7 @@ func (s *Server) listBranches(w http.ResponseWriter, r *http.Request) {
 			defer cancel()
 			return s.Git.FetchBranches(fctx, p.ID, p.Path)
 		}); err != nil {
-			out.FetchError = briefGit(err)
+			out.FetchError = gitops.Gist(err)
 		}
 	}
 	branches, err := s.Git.ListBranches(ctx, p.ID, p.Path)

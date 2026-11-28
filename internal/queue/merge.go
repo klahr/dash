@@ -383,10 +383,10 @@ func (m *MergeQueue) finish(ctx context.Context, job model.MergeJob, err error) 
 		var pe *prError
 		if errors.As(err, &se) {
 			// The work is fine; GitHub isn't reachable or main diverged. Approve again once fixed.
-			_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Not merged, can't sync with GitHub: "+brief(err))
+			_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Not merged, can't sync with GitHub: "+gitops.Gist(err))
 		} else if errors.As(err, &pe) {
 			// The work is fine; GitHub (or gh) isn't. Approving tries again.
-			_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Couldn't open the pull request: "+brief(err)+". Approve to try again")
+			_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Couldn't open the pull request: "+gitops.Gist(err)+". Approve to try again")
 		} else {
 			noteFailure(m.Store, job.TodoID, "merge: "+err.Error(), "")
 			m.reviewFailed(ctx, job.TodoID, "merge: "+err.Error())
@@ -949,19 +949,6 @@ func (m *MergeQueue) syncRemote(ctx context.Context, p model.Project) error {
 
 type syncError struct{ error }
 
-// brief is the most telling line of a git error, for the UI.
-func brief(err error) string {
-	lines := strings.Split(strings.TrimSpace(err.Error()), "\n")
-	for _, l := range lines {
-		for _, p := range []string{"fatal: ", "error: ", "! ["} {
-			if i := strings.Index(l, p); i >= 0 {
-				return strings.TrimSpace(l[i:])
-			}
-		}
-	}
-	return lines[0]
-}
-
 func (e *syncError) Unwrap() error { return e.error }
 
 // pushDefault pushes the default branch after a merge, syncing and retrying
@@ -1016,7 +1003,7 @@ func (m *MergeQueue) pushed(p model.Project, branch, sha string) {
 func (m *MergeQueue) setSyncError(projectID string, err error) {
 	msg := ""
 	if err != nil {
-		msg = brief(err)
+		msg = gitops.Gist(err)
 	}
 	if p, gerr := m.Store.GetProject(projectID); gerr == nil && p.SyncError == msg {
 		return

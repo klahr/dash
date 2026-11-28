@@ -203,7 +203,7 @@ func (r *RemoteSync) record(p model.Project, fetchErr error) {
 	} else {
 		r.failures[p.ID]++
 		r.retryAt[p.ID] = now.Add(r.backoff(r.failures[p.ID]))
-		st.Error, st.RetryAt = brief(fetchErr), r.retryAt[p.ID]
+		st.Error, st.RetryAt = gitops.Gist(fetchErr), r.retryAt[p.ID]
 	}
 	r.mu.Unlock()
 	st.ProjectID, st.Branch, st.Enabled = p.ID, p.Base(), true
@@ -402,7 +402,7 @@ func (r *RemoteSync) FastForward(ctx context.Context, p model.Project) string {
 		// for a timeout, but still use what the last fetch brought.
 		note = "⚠ origin unreachable lately (" + r.Status(p).Error + "); "
 	} else if err := r.fetchLocked(ctx, p, true); err != nil {
-		note = "⚠ can't fetch origin (" + brief(err) + "); "
+		note = "⚠ can't fetch origin (" + gitops.Gist(err) + "); "
 	}
 	synced, backup := r.syncCheckout(ctx, p)
 	if backup != "" {
@@ -516,7 +516,7 @@ func (r *RemoteSync) syncCheckout(ctx context.Context, p model.Project) (moved i
 	branch, dirty, err := r.Git.CheckoutState(ctx, p.ID, p.Path)
 	switch {
 	case err != nil:
-		stuck = "can't read the checkout: " + brief(err)
+		stuck = "can't read the checkout: " + gitops.Gist(err)
 	case ahead > 0 || branch == p.Base() && dirty:
 		if reset = owned; !reset {
 			stuck = r.whyNotForward(ctx, p, ahead)
@@ -527,7 +527,7 @@ func (r *RemoteSync) syncCheckout(ctx context.Context, p model.Project) (moved i
 		case errors.As(err, new(*gitops.ErrDirtyCheckout)) && owned:
 			reset = true // untracked files in the way
 		case err != nil:
-			stuck = brief(err)
+			stuck = gitops.Gist(err)
 		case n > 0:
 			moved = n
 			slog.Info("fast-forwarded to origin", "project", p.Name, "branch", p.Base(), "commits", n)
@@ -542,7 +542,7 @@ func (r *RemoteSync) syncCheckout(ctx context.Context, p model.Project) (moved i
 		}
 		switch {
 		case err != nil:
-			stuck = "can't reset " + p.Base() + " to origin: " + brief(err)
+			stuck = "can't reset " + p.Base() + " to origin: " + gitops.Gist(err)
 			if backup != "" {
 				stuck += " (what was in the way is saved on " + backup + ")"
 			}
@@ -581,7 +581,7 @@ func (r *RemoteSync) whyNotForward(ctx context.Context, p model.Project, ahead i
 	branch, dirty, err := r.Git.CheckoutState(ctx, p.ID, p.Path)
 	switch {
 	case err != nil:
-		return "can't read the checkout: " + brief(err)
+		return "can't read the checkout: " + gitops.Gist(err)
 	case ahead > 0:
 		return fmt.Sprintf("local %s has %s origin doesn't (diverged)", p.Base(), textutil.Count(ahead, "commit", "commits"))
 	case branch == p.Base() && dirty:
@@ -611,7 +611,7 @@ func (r *RemoteSync) Pull(ctx context.Context, p model.Project) (moved int, err 
 	}
 	defer unlock()
 	if err := r.fetchLocked(ctx, p, true); err != nil {
-		return 0, fmt.Errorf("can't fetch origin: %s", brief(err))
+		return 0, fmt.Errorf("can't fetch origin: %s", gitops.Gist(err))
 	}
 	ahead, behind, err := r.Git.AheadBehind(ctx, p.ID, p.Path, p.Base())
 	if err != nil {

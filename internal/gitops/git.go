@@ -62,6 +62,48 @@ func (e *CmdError) Error() string {
 }
 func (e *CmdError) Unwrap() error { return e.Err }
 
+// gistMarkers start the lines in git's output that say what went wrong.
+var gistMarkers = []string{"fatal: ", "error: ", "! ["}
+
+// Gist is the most telling line of a git or gh failure, for the UI: a
+// GitHub rate limit (with when the pause ends), else the first line with "fatal: ", "error: " or "! [" (from the marker on), else
+// the last line of the command's output. An error that isn't a CmdError
+// gives its first marked line, else its first line.
+func Gist(err error) string {
+	if err == nil {
+		return ""
+	}
+	if rl, ok := AsRateLimit(err); ok {
+		return rl.Error()
+	}
+	var ce *CmdError
+	if errors.As(err, &ce) {
+		if l, ok := markedLine(ce.Output); ok {
+			return l
+		}
+		if l := textutil.LastLine(ce.Output); l != "" {
+			return l
+		}
+	}
+	msg := err.Error()
+	if l, ok := markedLine(msg); ok {
+		return l
+	}
+	return textutil.FirstLine(msg)
+}
+
+// markedLine is the first line of s holding one of gistMarkers, from the marker on.
+func markedLine(s string) (string, bool) {
+	for l := range strings.SplitSeq(s, "\n") {
+		for _, m := range gistMarkers {
+			if i := strings.Index(l, m); i >= 0 {
+				return strings.TrimSpace(l[i:]), true
+			}
+		}
+	}
+	return "", false
+}
+
 func (g *Git) exec(ctx context.Context, projectID, dir, bin string, args ...string) (string, error) {
 	return g.run(ctx, true, projectID, dir, bin, args...)
 }
