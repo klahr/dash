@@ -22,7 +22,7 @@ import (
 // its pull request, as a draft until its checks pass. The todo then waits in
 // Review, where the pull request is reviewed on GitHub and merged by a
 // person (on GitHub, or with MergePR from Dash; Dash never merges it on its
-// own), until pollPRs sees it merged or closed.
+// own), until pollOpenPRs sees it merged or closed.
 func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) error {
 	wt := *t.Worktree
 	if t.WaitsOnGitHub() {
@@ -246,24 +246,20 @@ func (m *MergeQueue) openPRs() []model.Todo {
 	return out
 }
 
-// pollPRs follows the open pull requests of project projectID ("" for
-// all): merged ones are marked merged, closed ones reject their task, and
-// conflicts, failing checks and reviews asking for changes are sent back to
-// Claude. Tasks that failed with their pull request still open are followed
-// too, so a merge or close done by hand on GitHub is noticed.
-// schedulePRPolls runs it per project.
-func (m *MergeQueue) pollPRs(ctx context.Context, projectID string) {
-	m.pollOpenPRs(ctx, projectID, false)
-}
-
 // failedPollEvery is how many PR polls apart the pull requests of failed
 // tasks are followed: only a merge, a close or a review on GitHub changes
 // those, so they needn't cost GitHub calls every minute.
 const failedPollEvery = 10
 
-// pollOpenPRs is pollPRs. It asks GitHub for the state of a project's pull
-// requests in one query (see gitops.PRStatuses), and reads their reviews
-// and comments only when GitHub says they changed (see followPR). With
+// pollOpenPRs follows the open pull requests of project projectID ("" for
+// all): merged ones are marked merged, closed ones reject their task, and
+// conflicts, failing checks and reviews asking for changes are sent back to
+// Claude. Tasks that failed with their pull request still open are followed
+// too, so a merge or close done by hand on GitHub is noticed.
+// schedulePRPolls runs it per project. It asks GitHub for the state of a
+// project's pull requests in one query (see gitops.PRStatuses), and reads
+// their reviews and comments only when GitHub says they changed (see
+// followPR). With
 // spaceFailed (the timed polls), failed tasks' pull requests are followed
 // only every failedPollEvery polls.
 func (m *MergeQueue) pollOpenPRs(ctx context.Context, projectID string, spaceFailed bool) {
@@ -467,7 +463,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			_ = m.sendBack(t, p, m.checksNote(ctx, p, n, code, other), false, fmt.Sprintf("checks fail on pull request #%d", n))
 		case len(other) > 0:
 			// Not something to fix in the code (e.g. an unsigned CLA): say so
-			// and leave it to a person. pollPRs still follows the pull
+			// and leave it to a person. pollOpenPRs still follows the pull
 			// request, and carries on once the check passes.
 			m.blocked(t, fmt.Sprintf("%s%s fails, which isn't about the code. Fix it on GitHub (e.g. sign the CLA); Dash carries on once it passes", blockedPrefix(n), labels(other)))
 		default:

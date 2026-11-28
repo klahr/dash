@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -15,4 +16,10 @@ func TestMain(m *testing.M) {
 	store.UseMigratedTemplateInTests() // new databases copy one migrated once
 	gitops.WriteGap = 0                // the fake gh's writes needn't be spaced out
 	os.Exit(testgit.Run(m))
+}
+
+// pollPRs is one untimed PR poll, as the tests run it: pollOpenPRs with the
+// failed tasks' pull requests followed every time.
+func (m *MergeQueue) pollPRs(ctx context.Context, projectID string) {
+	m.pollOpenPRs(ctx, projectID, false)
 }
