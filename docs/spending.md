@@ -61,6 +61,8 @@ webhook event. A task's warning goes to whoever answers for the task; a project'
 - **Codex** runs report tokens, not cost. Dash estimates their cost from the tokens with a small
   price table (GPT-5's prices for Codex's default model), shows it with ≈ and "(estimate)", and
   counts it toward the caps. A Codex run that reports no tokens counts nothing.
+- **ACP agents** ([Gemini CLI](acp-agents.md)) count the cost they report. Gemini reports none,
+  so its runs count nothing.
 
 Deleted tasks are gone, and so is what they cost.
 

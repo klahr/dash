@@ -17,7 +17,8 @@ On each runner:
 - **git** (2.38 or newer finds conflicts between tasks early).
 - **[Claude Code](https://claude.com/claude-code)**, logged in: run `claude` once and sign in.
   Or the **[Codex CLI](https://github.com/openai/codex)** for projects that use it
-  ([Codex](docs/codex.md)).
+  ([Codex](docs/codex.md)), or the **[Gemini CLI](https://github.com/google-gemini/gemini-cli)**
+  ([ACP agents and Gemini CLI](docs/acp-agents.md)).
 - Optional: **[`gh`](https://cli.github.com)**, logged in, to open pull requests.
 
 Each runner checks these itself, with the tools its projects need, and shows what is missing in
@@ -110,6 +111,7 @@ Using Dash:
 - [Notifications](docs/notifications.md)
 - [Claude status](docs/claude-status.md)
 - [Codex](docs/codex.md)
+- [ACP agents and Gemini CLI](docs/acp-agents.md)
 - [MCP and the claude.ai connector](docs/mcp.md)
 - [Keyboard](docs/keyboard.md)
 - [Links](docs/links.md)

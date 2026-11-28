@@ -357,7 +357,7 @@ Without the script (or to build from source), the dialog's **Manual** tab has th
    own service around `dash runner`, see [Run as a service](service.md)).
 
 A runner takes the same flags as `dash`, and its own: the flags about running work (`-projects`,
-`-parallel`, `-claude`, `-claude-args`, `-codex`, `-codex-args`, `-claude-sandbox`, `-chat`, `-editor`, …) only matter to a runner; the hub
+`-parallel`, `-claude`, `-claude-args`, `-codex`, `-codex-args`, `-gemini`, `-gemini-args`, `-claude-sandbox`, `-chat`, `-editor`, …) only matter to a runner; the hub
 accepts them, logs a warning that it ignores them, and leaves them out of `dash -h`. It doesn't
 listen on a port of its own unless you pass `-addr` (then it also needs `DASH_USERNAME` and
 `DASH_PASSWORD`, like a normal Dash).
@@ -511,7 +511,7 @@ project's work can go; whose tasks a runner then runs is the next section's rule
 - Every runner has the labels of its system (`Linux`, `macOS` or `Windows`) and its architecture
   (`X64`, `ARM64`, `ARM` or `X86`). A runner from before Dash reported its system has none.
 - Every runner also has a label for each agent that is installed and logged in on it, named like
-  the agent: `claude` for Claude Code, `codex` for Codex. A runner too old to report its agents
+  the agent: `claude` for Claude Code, `codex` for Codex, `gemini` for Gemini CLI. A runner too old to report its agents
   keeps `claude`, as every runner ran Claude Code.
 - Its owner or an org admin gives it labels of its own on its page in **Runners → Labels**. A
   label is letters, digits and `- _ . : + /`, up to 64 characters. `any` can't be a runner's
@@ -524,7 +524,7 @@ project's work can go; whose tasks a runner then runs is the next section's rule
   Claude Code unless you change it. Its tasks then go only to runners where that agent is
   installed and logged in. If no online runner has it, the setting says so, and the tasks wait.
   Actions the agent can't do are grayed out on its tasks, with a tooltip saying why. To use
-  Codex, see [Codex](codex.md).
+  Codex, see [Codex](codex.md). To use Gemini CLI, see [ACP agents and Gemini CLI](acp-agents.md).
 
 Every labels field works the same way. The picked labels show as chips; **×** on a chip removes
 it. Below the field are the labels that already exist in the organization (on runners and

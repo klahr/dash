@@ -1,13 +1,63 @@
 # Design note: agents over the Agent Client Protocol (ACP)
 
-Status: research, November 2026. No code yet.
+Status: built, November 2026. Dash has one generic ACP provider and a Gemini CLI profile
+(`gemini`). For setup and use, see [ACP agents and Gemini CLI](acp-agents.md).
 
 Question: can one generic provider run any agent CLI that speaks
 [ACP](https://agentclientprotocol.com), instead of one native provider per CLI like Claude Code
 and Codex?
 
-Short answer: yes, for tasks and resume, with gaps. Build one ACP provider with a small profile
-per agent. Keep Claude Code and Codex native.
+Answer: yes, for tasks and resume, with gaps. Dash has one ACP provider with a small profile per
+agent. Claude Code and Codex stay native.
+
+## What was built
+
+The code is in `internal/agent`:
+
+| File | What |
+|---|---|
+| `acp_rpc.go` | A small JSON-RPC client over the agent's stdin and stdout. No SDK: `acp-go-sdk` wasn't needed for this much. |
+| `acp_session.go` | Start, `initialize`, `authenticate`, `session/new`, `load`, `resume`, `fork`, modes, models, config options, prompt, cancel. |
+| `acp_events.go` | `session/update` to Dash's events. |
+| `acp_perm.go` | `session/request_permission` through Dash's `permission_prompt` tool. |
+| `acp.go` | The provider (`ACP`) and the profile (`ACPProfile`). |
+| `acp_cli.go` | The CLI check: version and abilities from `initialize`, sign-in from `auth_required`. |
+| `acp_chat.go` | The read-only chat. |
+| `gemini.go` | The Gemini CLI profile. |
+
+Choices made:
+
+- ACP v1 only. An agent that answers another version fails with a message.
+- Features come from the agent's `initialize` answer, which the CLI check keeps: `resume` when
+  it has `session/resume` or `loadSession`, `mcp` when it has `mcpCapabilities.http`,
+  `permission-hook` with `mcp`. No `tool-rules`, no `usage`.
+- Updates the agent replays while it loads a session are left out of the task log.
+- A follow-up task forks only when the agent has `session/fork`. Otherwise it starts fresh:
+  loading the parent's session would change it.
+- `AppendSystem` leads the first prompt in `<system-instructions>`. ACP has no system prompt.
+- An MCP tool call is named `mcp__server__tool` when the agent says which server and tool in
+  the call's `_meta` (Gemini's `_meta["gemini-cli"].mcp`). Dash allows the ones in
+  `AllowMCPTools` without asking.
+- Without a permission tool (an unattended run), Dash rejects every request but for tools
+  `AllowedTools` names outright.
+- `Prompt` fails: `Set.Prompter` skips ACP agents, so titles and summaries stay on Claude Code or
+  Codex.
+- `dash mcp-proxy` wasn't built: Gemini takes HTTP MCP servers. An agent without them runs
+  without Dash's MCP servers, with a note in the log.
+
+Gemini CLI, checked against its 0.71 source:
+
+- With `fs` off it reads and writes files itself. It needs no file serving from Dash.
+- It has `loadSession` and HTTP MCP servers. It has no `session/resume` or `session/fork`.
+- Its modes are `default`, `autoEdit`, `yolo` and `plan`. Tasks run in `autoEdit`; the chat
+  and unattended runs in `default`.
+- Signed out, `session/new` answers `auth_required`. With `GEMINI_API_KEY` set, Dash then calls
+  `authenticate` with `gemini-api-key` and tries again.
+- `usage_update` has tokens but no cost.
+
+The tests (`acp_test.go`) run a fake agent that plays recorded ACP traffic
+(`testdata/acp/*.jsonl`), built from Gemini CLI's and OpenCode's messages. They don't run a real
+CLI.
 
 ## What Dash needs from a provider
 
@@ -150,7 +200,7 @@ environment variables, so the profile names the key for work for other members (
 9. Models, modes and the "never ask" mode are agent-specific strings.
 10. v2 is in preview: the client must handle both v1 and v2, or wait for v2 to settle.
 
-## Recommendation
+## Recommendation (followed)
 
 Build one generic ACP provider, with a profile per agent. Keep Claude Code and Codex native:
 they do more natively (tool rules, rate limits, turn limit, tool-free prompts) than through
@@ -162,12 +212,13 @@ profile registers under its own name (`gemini`, `opencode`, `copilot`) with `Reg
 so projects pick it like Codex. The provider reports its features from the agent's
 `initialize` answer, not from a fixed list.
 
-Start with OpenCode (most complete) and Gemini CLI, then Copilot CLI.
+Start with OpenCode (most complete) and Gemini CLI, then Copilot CLI. Gemini CLI came first;
+OpenCode and Copilot CLI are each a new profile value.
 
 Native adapters per agent cost much more. Each CLI has its own headless mode, JSON events and
 flags, and most have no permission hook outside ACP.
 
-## Size
+## Size (estimated before the work)
 
 | Work | Code | Tests |
 |---|---|---|

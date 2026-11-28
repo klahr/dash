@@ -266,22 +266,33 @@ func Summary(e model.RunEvent) string {
 }
 
 // toolLine shows a tool call the way a person reads it: "$ ls" for a shell
-// command, "🔧 Read a.go" for the rest; the raw JSON only when the input has
-// none of the usual fields.
+// command, "🔧 Read a.go" for the rest. An ACP agent's call (whose input is
+// its own) falls back to the title, the first location and the kind the
+// ACP provider adds (acpToolCall.input). The raw JSON only when the input
+// has none of these.
 func toolLine(tool string, input json.RawMessage) string {
 	var in struct {
-		Command  string `json:"command"`
-		FilePath string `json:"file_path"`
-		Pattern  string `json:"pattern"`
-		Path     string `json:"path"`
-		URL      string `json:"url"`
-		Query    string `json:"query"`
+		Command   string `json:"command"`
+		FilePath  string `json:"file_path"`
+		Pattern   string `json:"pattern"`
+		Path      string `json:"path"`
+		URL       string `json:"url"`
+		Query     string `json:"query"`
+		Title     string `json:"title"`
+		Kind      string `json:"kind"`
+		Locations []struct {
+			Path string `json:"path"`
+		} `json:"locations"`
 	}
 	_ = json.Unmarshal(input, &in)
 	if tool == "Bash" && in.Command != "" {
 		return "$ " + textutil.Summary(in.Command, 200)
 	}
-	for _, s := range []string{in.Command, in.FilePath, in.Pattern, in.Path, in.URL, in.Query} {
+	loc := ""
+	if len(in.Locations) > 0 {
+		loc = in.Locations[0].Path
+	}
+	for _, s := range []string{in.Command, in.FilePath, in.Pattern, in.Path, in.URL, in.Query, in.Title, loc, in.Kind} {
 		if s != "" {
 			return fmt.Sprintf("🔧 %s %s", tool, textutil.Summary(s, 200))
 		}

@@ -39,11 +39,13 @@ export function agentCan(p, f) {
 export const SETUP = {
   claude: { install: "install Claude Code (npm install -g @anthropic-ai/claude-code)", login: "claude" },
   codex: { install: "install the Codex CLI (npm install -g @openai/codex)", login: "codex login" },
+  gemini: { install: "install the Gemini CLI (npm install -g @google/gemini-cli)", login: "gemini" },
 };
 
 // NOTES are what else people should know of an agent in Project settings.
 export const NOTES = {
   codex: "Its chat only reads: it can't edit files from the chat. See docs/codex.md.",
+  gemini: "Runs over ACP. Its chat only reads, and scans stay on Claude Code. See docs/acp-agents.md.",
 };
 
 // cantSay is why project p's agent leaves out feature f, for a tooltip.

@@ -77,8 +77,9 @@ func (s *Set) Run(ctx context.Context, every time.Duration, changed func(p Provi
 }
 
 // Prompter answers one-shot prompts (titles, summaries) on the default
-// provider while it is Ready, else on the first other provider that is:
-// a runner with only Codex signed in still names its tasks. With none
+// provider while it is Ready, else on the first other provider that is
+// and can answer them (not an ACP agent: see canPrompt): a runner with
+// only Codex signed in still names its tasks. With none
 // ready, the default answers (and says what is wrong).
 func (s *Set) Prompter() Prompter { return setPrompter{s} }
 
@@ -94,7 +95,7 @@ func (p setPrompter) pick() Provider {
 		return def
 	}
 	for _, x := range p.s.All() {
-		if (def == nil || x.Name() != def.Name()) && Ready(x) {
+		if (def == nil || x.Name() != def.Name()) && canPrompt(x) && Ready(x) {
 			return x
 		}
 	}
@@ -102,4 +103,11 @@ func (p setPrompter) pick() Provider {
 		return defaultPrompter().(Provider)
 	}
 	return def
+}
+
+// canPrompt reports whether p answers one-shot prompts without tools: an
+// ACP agent (NoPrompts) can't.
+func canPrompt(p Provider) bool {
+	n, ok := p.(interface{ NoPrompts() bool })
+	return !ok || !n.NoPrompts()
 }

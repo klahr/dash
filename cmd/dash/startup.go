@@ -84,6 +84,7 @@ type options struct {
 	parallel                         int
 	claudeBin, claudeArgs            string
 	codexBin, codexArgs              string
+	geminiBin, geminiArgs            string
 	claudeSandbox                    string
 	signCommits                      bool
 	chatBackend, chatTools           string
@@ -159,6 +160,8 @@ func parseFlags(args []string, runnerMode bool) *options {
 		"extra flags for `claude -p` (space separated), e.g. --allowedTools / --model")
 	f.StringVar(&o.codexBin, "codex", "codex", "Codex CLI binary used to execute the tasks of projects whose agent is Codex (see docs/codex.md)")
 	f.StringVar(&o.codexArgs, "codex-args", "", "extra flags for `codex exec` (space separated), e.g. --model / -c key=value")
+	f.StringVar(&o.geminiBin, "gemini", "gemini", "Gemini CLI binary used to execute the tasks of projects whose agent is Gemini CLI (see docs/acp-agents.md)")
+	f.StringVar(&o.geminiArgs, "gemini-args", "", "extra flags for `gemini --acp` (space separated) in task runs")
 	f.StringVar(&o.claudeSandbox, "claude-sandbox", "",
 		"a command (space separated) that runs Claude for tasks and scans, given claude and its flags, e.g. a script that runs it as a user with fewer rights or in a container (default $DASH_CLAUDE_SANDBOX; see docs/sandbox.md)")
 	f.BoolVar(&o.signCommits, "sign-commits", false, "GPG/SSH-sign commits Dash makes (needs a non-interactive signing agent)")
@@ -661,6 +664,7 @@ func (a *app) newAgents() {
 	a.agents = agent.NewSet(map[string]agent.Config{
 		agent.DefaultProvider: {Bin: o.claudeBin, Args: strings.Fields(o.claudeArgs), Sandbox: o.sandbox()},
 		agent.CodexProvider:   {Bin: o.codexBin, Args: strings.Fields(o.codexArgs), Sandbox: o.sandbox()},
+		agent.GeminiProvider:  {Bin: o.geminiBin, Args: strings.Fields(o.geminiArgs), Sandbox: o.sandbox()},
 	})
 	prov := a.agents.Get(agent.DefaultProvider)
 	if prov == nil {

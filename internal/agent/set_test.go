@@ -65,7 +65,7 @@ func TestSet(t *testing.T) {
 	for _, p := range s.All() {
 		names = append(names, p.Name())
 	}
-	if !slices.Equal(names, []string{"bare", "claude", "codex"}) {
+	if !slices.Equal(names, []string{"bare", "claude", "codex", "gemini"}) {
 		t.Fatalf("set %v", names)
 	}
 	if c, ok := s.Get("").(*ClaudeCode); !ok || c.Bin != "/opt/claude" || s.Get("claude") != Provider(c) {
@@ -79,7 +79,7 @@ func TestSet(t *testing.T) {
 		t.Errorf("codex %+v", s.For(model.Project{Agent: "codex"}))
 	}
 	st := s.Statuses()
-	if len(st) != 3 || st[0].Name != "bare" || st[1].Name != "claude" || st[2].Name != "codex" || st[0].Installed {
+	if len(st) != 4 || st[0].Name != "bare" || st[1].Name != "claude" || st[2].Name != "codex" || st[3].Name != "gemini" || st[0].Installed {
 		t.Errorf("statuses %+v", st)
 	}
 	var none *Set

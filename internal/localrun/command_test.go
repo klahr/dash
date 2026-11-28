@@ -81,6 +81,7 @@ var execAllowed = map[string]string{
 	"internal/agent/chat_cli.go":      "claude (agent's guard)",
 	"internal/agent/codex.go":         "codex (agent's guard)",
 	"internal/agent/codex_chat.go":    "codex (agent's guard)",
+	"internal/agent/acp_session.go":   "ACP agents such as gemini --acp (agent's guard)",
 	"internal/agent/shell.go":         "the user's shell for a chat's ! commands (localrun.Check)",
 	"internal/clicheck/clicheck.go":   "claude and codex --version probes (agent's guard for codex; runners only)",
 	"internal/disk/monitor.go":        "go env GOCACHE and go clean -cache (localrun.Check; runners only)",

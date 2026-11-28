@@ -1,0 +1,8 @@
+{"recv":"initialize","result":{"protocolVersion":1,"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Log in with your Google account"},{"id":"gemini-api-key","name":"Gemini API key","description":"Use an API key with Gemini Developer API","_meta":{"api-key":{"provider":"google"}}},{"id":"vertex-ai","name":"Vertex AI","description":"Use an API key with Vertex AI GenAI API"}],"agentInfo":{"name":"gemini-cli","title":"Gemini CLI","version":"0.71.1"},"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":true,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":true}}}}
+{"recv":"session/new","result":{"sessionId":"sess-1","modes":{"availableModes":[{"id":"default","name":"Default","description":"Prompts for approval"},{"id":"autoEdit","name":"Auto Edit","description":"Auto-approves edit tools"},{"id":"yolo","name":"YOLO","description":"Auto-approves all tools"}],"currentModeId":"default"},"models":{"availableModels":[{"modelId":"auto","name":"Auto"},{"modelId":"gemini-3-pro","name":"Gemini 3 Pro"}],"currentModelId":"auto"}}}
+{"recv":"session/set_mode","result":null}
+{"recv":"session/prompt"}
+{"send":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Working"}}}}}
+{"send":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"tool_call","toolCallId":"t1","status":"in_progress","title":"sleep 100","content":[],"locations":[],"kind":"execute"}}}}
+{"recv":"session/cancel"}
+{"reply":"session/prompt","result":{"stopReason":"cancelled"}}
