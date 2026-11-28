@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/notify"
-	"github.com/klahr/dash/internal/passhash"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/textutil"
 )
@@ -25,7 +24,11 @@ import (
 //	DELETE /api/admin/notice              stop showing the notice
 //	GET    /api/notice                    anyone signed in: the notice they haven't dismissed
 //	POST   /api/notice/{id}/dismiss       hide it
-//	POST   /api/password/change {password}  a session asked for a new password chooses it
+//
+// An account asked for a new password chooses it with a reset link
+// (Forgot password?, or one a platform admin makes): its old password, which
+// may have leaked with the database, no longer signs in, so it can't be what
+// lets someone choose the new one.
 //
 // The admin who runs it stays signed in in the browser they run it from,
 // and their own account is left out of the new-password and two-factor
@@ -52,14 +55,14 @@ func (a *Auth) lockdownRoutes(mux Mux) {
 	mux.HandleFunc("DELETE /api/admin/notice", a.platformAdmin(a.clearNotice))
 	mux.HandleFunc("GET /api/notice", a.signedIn(a.myNotice))
 	mux.HandleFunc("POST /api/notice/{id}/dismiss", a.signedIn(a.dismissNotice))
-	mux.HandleFunc("POST /api/password/change", a.sessionOnly(a.changeRequiredPassword))
 }
 
 // passwordFree are the paths a session asked for a new password may use:
-// who am I, sign out, and choosing it.
+// who am I and sign out. (Such a session is one from before the lockdown, or
+// a Google sign-in: the new password is chosen with a reset link.)
 func passwordFree(path string) bool {
 	switch path {
-	case "/api/me", "/api/logout", "/api/password/change":
+	case "/api/me", "/api/logout":
 		return true
 	}
 	return public[path]
@@ -74,48 +77,26 @@ func (a *Auth) needsPassword(uid int64) bool {
 	return need
 }
 
-// ---- the forced password change ----
+// ---- the new password ----
 
-// changeRequiredPassword sets the new password of a session asked for one,
-// with the rules of a reset, and lets it carry on. The account's other
-// sessions, API tokens and connected apps end.
-func (a *Auth) changeRequiredPassword(w http.ResponseWriter, r *http.Request, id *Identity) {
-	var req struct {
-		Password string `json:"password"`
+// codePasswordReset is the error code of a sign-in with a password an
+// incident response asked to replace.
+const codePasswordReset = "password_reset_required"
+
+// errPasswordReset is a sign-in with the right password of an account an
+// incident response asked for a new one. The old password may have leaked,
+// so it no longer signs in: a reset link, which proves the mailbox (or an
+// admin's trust), chooses the new one.
+var errPasswordReset = errors.New("password reset required")
+
+// passwordResetMessage tells someone whose password no longer signs in how
+// to choose a new one.
+func (a *Auth) passwordResetMessage() string {
+	msg := "An administrator of this Dash asked everyone to choose a new password, and your old one no longer signs in. "
+	if a.MailOn() {
+		return msg + "Choose a new one with “Forgot password?”, or ask a platform admin for a reset link."
 	}
-	if err := decodeBody(w, r, &req); err != nil {
-		accountError(w, err)
-		return
-	}
-	if !id.NeedsPassword {
-		accountError(w, store.ErrNoPasswordChange)
-		return
-	}
-	if len(req.Password) < store.MinPassword {
-		accountError(w, store.ErrWeakPassword)
-		return
-	}
-	if old, err := a.acc.PasswordHash(id.User.ID); err == nil {
-		if same, _, _ := passhash.Verify(old, req.Password); same {
-			accountError(w, store.ErrSamePassword)
-			return
-		}
-	}
-	hash, err := passhash.Hash(req.Password)
-	if err != nil {
-		accountError(w, err)
-		return
-	}
-	if err := a.acc.ChangeRequiredPassword(id.User.ID, hash, id.key, a.now()); err != nil {
-		accountError(w, err)
-		return
-	}
-	a.audit(r, store.AuthEvent{UserID: id.User.ID, Actor: id.User.ID, Kind: "password.changed", Detail: "asked by incident response"})
-	enrol, err := a.acc.Requires2FA(id.User.ID)
-	if err != nil {
-		slog.Error("change password", "err", err)
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "enrol_2fa": enrol && !id.User.TOTP})
+	return msg + "Ask a platform admin for a reset link to choose a new one."
 }
 
 // ---- the lockdown ----

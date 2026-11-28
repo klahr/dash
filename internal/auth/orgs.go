@@ -122,7 +122,7 @@ func accountError(w http.ResponseWriter, err error) {
 		errors.Is(err, store.ErrDomainTaken), errors.Is(err, store.ErrAccountInUse), errors.Is(err, store.ErrEnvAccount),
 		errors.Is(err, store.ErrLastAdmin), errors.Is(err, store.ErrEnvPassword), errors.Is(err, store.ErrSSOOnly),
 		errors.Is(err, store.ErrAlreadyMember), errors.Is(err, store.ErrOrgInUse), errors.Is(err, store.ErrUnverified),
-		errors.Is(err, store.ErrNoPasswordChange), errors.Is(err, store.ErrNoSealer):
+		errors.Is(err, store.ErrNoSealer):
 		code = http.StatusConflict
 	case errors.Is(err, store.ErrAccountDisabled):
 		code = http.StatusForbidden

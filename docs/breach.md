@@ -11,11 +11,13 @@ Each step can be turned on or off. All are on by default.
 - **Sign out everyone.** Ends every session and deletes every API token, connected app (such as a
   claude.ai connector) and runner token. Cancels pending invitations, sign-up and password reset
   links, runner registration codes and wall view links.
-- **Ask for new passwords.** Everyone with a password must choose a new one at their next sign-in.
-  Until then the sign-in only lets them do that, and their sessions and tokens are refused. The
-  new password follows the usual rules and can't be the old one. Accounts that sign in only with
-  Google aren't asked. The account whose password is `DASH_PASSWORD` isn't either: change it on
-  the server.
+- **Ask for new passwords.** Everyone with a password must choose a new one with a reset link.
+  Their old password may have leaked, so it stops signing in: the sign-in page tells them to use
+  **Forgot password?**, which emails them a link. If Dash doesn't send email, or an account has no
+  address, make them a link under **Admin → Users → Reset password…** and hand it over another
+  way. Until they choose one, their sessions and tokens are refused. The new password follows the
+  usual rules and can't be the old one. Accounts that sign in only with Google aren't asked. The
+  account whose password is `DASH_PASSWORD` isn't either: change it on the server.
 - **Reset two-factor sign-in.** Turns off two-factor sign-in for everyone who has it, and deletes
   their recovery codes. They set it up again, with a new secret, at their next sign-in.
 - **Rotate secrets.** Makes new secrets for notification webhooks, board backends' webhooks and

@@ -60,8 +60,6 @@ busyForm(loginForm, async () => {
       totpForm.reset();
       $("#totp-error").textContent = "";
       show(totpForm);
-    } else if (data.change_password) {
-      changePassword();
     } else if (data.enrol_2fa) {
       await enrol();
     } else {
@@ -70,6 +68,7 @@ busyForm(loginForm, async () => {
     return;
   }
   err.textContent = data.error || `Sign-in failed (${res.status})`;
+  if (data.code === "password_reset_required") forgotButton(err);
   if (data.code === "unverified" && loginForm.username.value.includes("@")) {
     const email = loginForm.username.value.trim();
     err.append(" ", el("button", {
@@ -105,7 +104,7 @@ busyForm(totpForm, async () => {
       totpForm.querySelector("button").focus();
       return;
     }
-    if (data.change_password) changePassword();
+    if (data.change_password) await passwordReset();
     else go();
     return;
   }
@@ -123,16 +122,24 @@ $("#enrol-logout").addEventListener("click", async () => {
   location.replace("/login.html");
 });
 
-// An administrator's incident response asked everyone for a new password:
-// the sign-in worked, and only lets this account choose one. It reuses the
-// reset form, but posts to /api/password/change with the session.
-let changeMode = false;
-function changePassword() {
-  changeMode = true;
-  resetForm.reset();
-  resetForm.querySelector("p").textContent = "An administrator of this Dash asks everyone to choose a new password. Choose one you haven't used here before. You'll be signed out everywhere else.";
-  resetForm.querySelector(".login-error").textContent = "";
-  show(resetForm);
+// An administrator's incident response asked everyone for a new password.
+// The old one may have leaked, so it doesn't choose the new one: a reset
+// link does. A session still open from before (or a Google sign-in) can do
+// nothing else, so it is signed out and the sign-in form says what to do.
+async function passwordReset() {
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  show(loginForm);
+  const err = $("#login-error");
+  err.textContent = "An administrator of this Dash asked everyone to choose a new password, and your old one no longer signs in. " +
+    ($("#to-forgot").hidden ? "Ask a platform admin for a reset link to choose a new one." : "Choose a new one with “Forgot password?”, or ask a platform admin for a reset link.");
+  forgotButton(err);
+}
+
+// forgotButton adds a button to the forgot-password form after err, when
+// this Dash sends email.
+function forgotButton(err) {
+  if ($("#to-forgot").hidden) return;
+  err.append(" ", el("button", { type: "button", class: "link inline", onclick: () => $("#to-forgot").click() }, "Forgot password?"));
 }
 
 // Sent here by the server to choose a new password (signed in already).
@@ -140,7 +147,7 @@ if (new URLSearchParams(location.search).has("change")) {
   fetch("/api/me").then(async (res) => {
     if (!res.ok) return;
     const me = await res.json();
-    if (me.needs_password) changePassword();
+    if (me.needs_password) await passwordReset();
     else if (me.needs_2fa) await enrol();
     else go();
   }).catch(() => {});
@@ -201,13 +208,6 @@ verifyForm.addEventListener("submit", async (e) => {
 let resetToken = "";
 resetForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (changeMode) {
-    const data = await busy(formParts(resetForm), () => post("/api/password/change", { password: resetForm.password.value }));
-    if (!data) { resetForm.password.select(); return; }
-    if (data.enrol_2fa) await enrol();
-    else go();
-    return;
-  }
   const data = await submit(resetForm, "/api/password/reset", { token: resetToken, password: resetForm.password.value });
   if (!data) return;
   resetForm.reset();

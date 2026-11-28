@@ -529,6 +529,10 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 			q.Error = err.Error()
 			o.consent(w, http.StatusForbidden, q)
 			return
+		case errors.Is(err, errPasswordReset):
+			q.Error = o.a.passwordResetMessage()
+			o.consent(w, http.StatusForbidden, q)
+			return
 		case err != nil:
 			q.Error = "sign-in failed"
 			o.consent(w, http.StatusInternalServerError, q)

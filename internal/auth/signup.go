@@ -365,7 +365,7 @@ func (a *Auth) resetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		if errors.Is(err, store.ErrWeakPassword) {
+		if errors.Is(err, store.ErrWeakPassword) || errors.Is(err, store.ErrSamePassword) {
 			a.release(f)
 		}
 		accountError(w, err)

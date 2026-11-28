@@ -141,43 +141,47 @@ func TestLockdownForcesANewPassword(t *testing.T) {
 	if !me.NeedsPassword {
 		t.Error("/api/me doesn't say so")
 	}
-	// Signing in again says so too.
+	// The old password, which may have leaked, no longer signs in, so it
+	// can't choose the new one: there's nothing to choose it with.
 	fresh := &client{t: t, h: e.h}
 	w = fresh.do("POST", "/api/login", `{"username":"bea","password":"pw-bea-long"}`)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"change_password":true`) {
-		t.Errorf("sign-in: %d %s", w.Code, w.Body)
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), codePasswordReset) || fresh.c != nil || len(w.Result().Cookies()) > 0 {
+		t.Errorf("sign-in with the old password: %d %s", w.Code, w.Body)
+	}
+	if w := bea.do("POST", "/api/password/change", `{"password":"bea-new-password"}`); w.Code == http.StatusOK {
+		t.Error("a session chose the new password without a reset link")
+	}
+	// A wrong password says only that.
+	if w := fresh.do("POST", "/api/login", `{"username":"bea","password":"not-her-password"}`); w.Code != http.StatusUnauthorized {
+		t.Errorf("a wrong password: %d %s", w.Code, w.Body)
 	}
 	// The admin who ran it carries on.
 	if w := admin.do("GET", "/api/projects", ""); w.Code != http.StatusOK {
 		t.Errorf("the admin: %d", w.Code)
 	}
 
-	// The password rules, and not the old one.
-	for _, pw := range []string{"short", "pw-bea-long"} {
-		if w := fresh.do("POST", "/api/password/change", fmt.Sprintf(`{"password":%q}`, pw)); w.Code != http.StatusBadRequest {
-			t.Errorf("new password %q: %d %s", pw, w.Code, w.Body)
-		}
+	// A reset link chooses it: not the old one.
+	_, link, _, err := e.a.acc.AdminResetLink(e.bea, e.a.now())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if w := withBearer(e.h, tok, "POST", "/api/password/change", `{"password":"bea-new-password"}`); w.Code == http.StatusOK {
-		t.Error("a token changed the password")
+	anon := &client{t: t, h: e.h}
+	if w := anon.do("POST", "/api/password/reset", fmt.Sprintf(`{"token":%q,"password":"pw-bea-long"}`, link)); w.Code != http.StatusBadRequest {
+		t.Errorf("the old password again: %d %s", w.Code, w.Body)
 	}
-	if w := fresh.do("POST", "/api/password/change", `{"password":"bea-new-password"}`); w.Code != http.StatusOK {
-		t.Fatalf("change: %d %s", w.Code, w.Body)
+	if w := anon.do("POST", "/api/password/reset", fmt.Sprintf(`{"token":%q,"password":"bea-new-password"}`, link)); w.Code != http.StatusOK {
+		t.Fatalf("reset: %d %s", w.Code, w.Body)
 	}
-	if w := fresh.do("GET", "/api/projects", ""); w.Code != http.StatusOK {
-		t.Errorf("after the change: %d %s", w.Code, w.Body)
-	}
-	// Her other session and her token ended with the change.
+	// Her session and her token ended with it.
 	if w := bea.do("GET", "/api/projects", ""); w.Code != http.StatusUnauthorized {
-		t.Errorf("bea's other session after the change: %d", w.Code)
+		t.Errorf("bea's session after the reset: %d", w.Code)
 	}
 	if w := withBearer(e.h, tok, "GET", "/api/projects", ""); w.Code != http.StatusUnauthorized {
-		t.Errorf("bea's token after the change: %d", w.Code)
+		t.Errorf("bea's token after the reset: %d", w.Code)
 	}
-	if w := fresh.do("POST", "/api/password/change", `{"password":"bea-newer-password"}`); w.Code != http.StatusConflict {
-		t.Errorf("a second change: %d", w.Code)
+	if w := signIn(t, e.h, "bea", "bea-new-password").do("GET", "/api/projects", ""); w.Code != http.StatusOK {
+		t.Errorf("after the reset: %d %s", w.Code, w.Body)
 	}
-	signIn(t, e.h, "bea", "bea-new-password")
 }
 
 func TestLockdownResetsTwoFactor(t *testing.T) {

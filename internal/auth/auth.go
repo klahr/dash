@@ -641,6 +641,14 @@ func (a *Auth) attempt(ip, login, password string) (store.User, error) {
 		}
 		return store.User{}, store.ErrAccountDisabled
 	}
+	// An incident response asked for a new password: the old one may have
+	// leaked, so it doesn't sign in (and can't choose the new one).
+	if need, err := a.acc.NeedsPassword(u.ID); err != nil || need {
+		if err != nil {
+			return store.User{}, err
+		}
+		return store.User{}, errPasswordReset
+	}
 	return u, nil
 }
 
@@ -792,6 +800,9 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrAccountDisabled):
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "disabled"})
 		return
+	case errors.Is(err, errPasswordReset):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": a.passwordResetMessage(), "code": codePasswordReset})
+		return
 	case err != nil:
 		slog.Error("login", "err", err)
 		writeError(w, http.StatusInternalServerError, "sign-in failed")
@@ -812,8 +823,7 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("login", "err", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "enrol_2fa": enrol, "google_linked": a.redeemLink(r, req.Link, u.ID),
-		"change_password": a.needsPassword(u.ID)})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "enrol_2fa": enrol, "google_linked": a.redeemLink(r, req.Link, u.ID)})
 }
 
 // Logout handles POST /api/logout. It signs out the session's whole

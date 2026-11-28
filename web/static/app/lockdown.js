@@ -30,14 +30,14 @@ function renderForm(st) {
     sessions: step("sessions", "Sign out everyone",
       `Ends ${plural(p.sessions, "session")} (yours here stays), revokes ${plural(p.api_tokens, "API token")} and connected apps and ${plural(p.runners, "runner")} (they register again), and cancels ${plural(p.invitations, "pending invitation")}, every email link and ${plural(p.wall_links, "wall link")}.`),
     passwords: step("passwords", "Ask for new passwords",
-      `${plural(p.passwords, "account")} must choose a new password at their next sign-in before they can do anything else. Accounts that sign in only with Google aren't asked.`),
+      `${plural(p.passwords, "account")} must choose a new password with a reset link (“Forgot password?”, or one you make under Admin → Users). Their old password stops signing in. Accounts that sign in only with Google aren't asked.`),
     totp: step("totp", "Reset two-factor sign-in",
       `${plural(p.totp, "account")} set up two-factor sign-in again at their next sign-in.`),
     secrets: step("secrets", "Rotate secrets",
       `New secrets for ${plural(p.webhooks, "webhook")}, ${plural(p.github_hooks, "GitHub webhook")} and ${plural(p.trackers, "board backend")}, and a new push key (${plural(p.push_subscriptions, "browser")} turn notifications on again). Webhook tokens and board credentials are cleared. You get a checklist of what to update outside Dash.`),
     notice: step("notice", "Tell everyone", "A message, by email and after sign-in."),
   };
-  const text = h("textarea", { name: "text", rows: 5, maxlength: 10000, placeholder: "What happened, and what people need to do: choose a new password at their next sign-in, set up two-factor sign-in again…" });
+  const text = h("textarea", { name: "text", rows: 5, maxlength: 10000, placeholder: "What happened, and what people need to do: choose a new password with “Forgot password?”, set up two-factor sign-in again…" });
   const email = h("input", { type: "checkbox", name: "email", checked: st.mail, disabled: !st.mail });
   const banner = h("input", { type: "checkbox", name: "banner", checked: true });
   const csv = h("a", { href: "/api/admin/lockdown/users.csv", download: "dash-users.csv" }, "Download names and email addresses (CSV)");
@@ -58,7 +58,7 @@ function renderForm(st) {
     noticeBox.hidden = !steps.notice.box.checked;
     const lines = [];
     if (steps.sessions.box.checked) lines.push("Everyone else is signed out; tokens, runners, invitations and links stop working.");
-    if (steps.passwords.box.checked) lines.push(`${plural(p.passwords, "account")} choose a new password at their next sign-in.`);
+    if (steps.passwords.box.checked) lines.push(`${plural(p.passwords, "account")} choose a new password with a reset link: their old one stops signing in.`);
     if (steps.totp.box.checked) lines.push(`${plural(p.totp, "account")} set up two-factor sign-in again.`);
     if (steps.secrets.box.checked) lines.push("Dash's stored secrets are replaced: update the receivers from the checklist you get next.");
     if (steps.notice.box.checked) {
@@ -155,7 +155,7 @@ function renderResult(res) {
   const r = res.result;
   const done = [];
   if (r.steps.sessions) done.push(`Signed out: ${plural(r.sessions, "session")}, ${plural(r.api_tokens, "token")}, ${plural(r.runners.length, "runner")}, ${plural(r.invitations, "invitation")}, ${plural(r.email_links, "email link")}, ${plural(r.wall_links, "wall link")}.`);
-  if (r.steps.passwords) done.push(`${plural(r.passwords, "account")} choose a new password at their next sign-in.`);
+  if (r.steps.passwords) done.push(`${plural(r.passwords, "account")} choose a new password with a reset link: their old one no longer signs in.`);
   if (r.steps.totp) done.push(`${plural(r.totp, "account")} set up two-factor sign-in again at their next sign-in.`);
   if (r.steps.secrets) done.push(`New secrets for ${plural(r.webhooks.length, "webhook")}, ${plural(r.github_hooks.length, "GitHub webhook")} and ${plural(r.trackers.length, "board backend")}; a new push key.`);
   if (res.notice) done.push("Your message shows after sign-in.");

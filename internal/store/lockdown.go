@@ -23,9 +23,10 @@ type LockdownSteps struct {
 	// Sessions ends every session and deletes every API, OAuth and runner
 	// token, invitation, email link (sign-up and reset) and wall link.
 	Sessions bool `json:"sessions"`
-	// Passwords asks every account with a password to choose a new one at
-	// its next sign-in (not those that sign in only with Google, nor the
-	// DASH_PASSWORD account, whose password is the server's).
+	// Passwords asks every account with a password to choose a new one with
+	// a reset link: its old one, which may have leaked, stops signing in.
+	// Not those that sign in only with Google, nor the DASH_PASSWORD
+	// account, whose password is the server's.
 	Passwords bool `json:"passwords"`
 	// TOTP turns off two-factor sign-in for everyone who has it, and asks
 	// them to set it up again at their next sign-in.
@@ -451,37 +452,10 @@ func (a *Accounts) LockdownUsers() ([]User, error) {
 		userCols+" WHERE unverified = 0 AND COALESCE(email, '') != '' AND "+enabled("users.id")+" ORDER BY username COLLATE NOCASE")
 }
 
-// ---- the forced password change ----
+// ---- the new password ----
 
 // ErrSamePassword is choosing the password that may have leaked again.
 var ErrSamePassword = errors.New("choose a new password, not the one you had")
-
-// ErrNoPasswordChange is the forced change for an account that isn't asked
-// for one.
-var ErrNoPasswordChange = errors.New("your account isn't asked for a new password")
-
-// ChangeRequiredPassword sets the new password of uid, whom a lockdown asked
-// for one, and clears the request. Like a reset it ends their other
-// sessions (all but keep, and its family) and their API tokens and
-// connected apps (the new password_changed_at ends those). hash is the new
-// password's (passhash.Hash).
-func (a *Accounts) ChangeRequiredPassword(uid int64, hash string, keep string, now time.Time) error {
-	return inTx(a.db, func(tx *sql.Tx) error {
-		if err := execOne(tx, ErrNoPasswordChange, "UPDATE user_lockdown SET new_password = 0 WHERE user_id = ? AND new_password = 1", uid); err != nil {
-			return err
-		}
-		if err := execOne(tx, ErrNoPasswordChange, "UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ? AND env_managed = 0",
-			hash, now.UnixNano(), uid); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM sessions WHERE user_id = ?1 AND NOT (key = ?2
-			OR COALESCE(family IN (SELECT family FROM sessions WHERE key = ?2 AND family IS NOT NULL), 0))`, uid, keep); err != nil {
-			return err
-		}
-		_, err := tx.Exec("DELETE FROM email_tokens WHERE user_id = ? AND purpose = 'reset'", uid)
-		return err
-	})
-}
 
 // ---- the notice ----
 
@@ -585,6 +559,10 @@ func (r LockdownResult) Checklist() []ChecklistItem {
 	if r.Kept != "" && (r.Steps.Passwords || r.Steps.TOTP) {
 		add("", "Your own account (%s) was left out so you stay signed in: once you're done here, sign out and choose a new password with “Forgot password?” "+
 			"(or ask another platform admin for a reset link), and turn two-factor sign-in off and on again under Account → Sign-in for a new secret.", r.Kept)
+	}
+	if r.Passwords > 0 {
+		add("", "%d accounts choose a new password with a reset link: their old password no longer signs in. They use “Forgot password?” on the sign-in page; "+
+			"if this Dash doesn't send email (or an account has no address), make them a link under Admin → Users → Reset password… and hand it over another way.", r.Passwords)
 	}
 	if r.EnvAccount != "" {
 		add("", "The account %s signs in with DASH_PASSWORD from the server's environment: set a new DASH_PASSWORD there and restart Dash.", r.EnvAccount)

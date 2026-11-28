@@ -349,6 +349,18 @@ func (a *Accounts) ResetPassword(tok, password string, now time.Time) (User, err
 		if err != nil {
 			return err
 		}
+		// Asked for a new password by an incident response: not the one
+		// that may have leaked.
+		var need bool
+		var old string
+		if err := tx.QueryRow("SELECT "+needsPassword+", u.password_hash FROM users u WHERE u.id = ?", uid).Scan(&need, &old); err != nil {
+			return err
+		}
+		if need {
+			if same, _, _ := passhash.Verify(old, password); same {
+				return ErrSamePassword
+			}
+		}
 		if _, err := tx.Exec("UPDATE users SET password_hash = ?, has_password = 1, password_changed_at = ? WHERE id = ? AND env_managed = 0",
 			hash, now.UnixNano(), uid); err != nil {
 			return err

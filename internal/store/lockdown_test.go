@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/model"
-	"github.com/klahr/dash/internal/passhash"
 )
 
 // lockdownFixture is a Dash with two accounts, signed in, with a token,
@@ -147,26 +146,6 @@ func TestLockdownPasswords(t *testing.T) {
 		t.Error("the passwords step signed people out")
 	}
 
-	// The old password again is refused by the caller; a new one clears it.
-	hash, _ := passhash.Hash("ann-new-password")
-	if err := f.acc.CreateSession("session-c", f.ann, f.now, f.now.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.acc.ChangeRequiredPassword(f.ann, hash, "session-b", f.now); err != nil {
-		t.Fatal(err)
-	}
-	if s, err := f.acc.Session("session-b", f.now); err != nil || s.NeedsPassword {
-		t.Errorf("after the change = %+v, %v", s, err)
-	}
-	if _, err := f.acc.Session("session-c", f.now); !errors.Is(err, ErrNotFound) {
-		t.Errorf("ann's other session after the change: %v", err)
-	}
-	if err := f.acc.ChangeRequiredPassword(f.ann, hash, "session-b", f.now); !errors.Is(err, ErrNoPasswordChange) {
-		t.Errorf("a second change = %v", err)
-	}
-	if _, h, _ := f.acc.Credentials("ann"); h != hash {
-		t.Error("the new password wasn't saved")
-	}
 }
 
 func TestLockdownPasswordsClearedByReset(t *testing.T) {
@@ -178,6 +157,10 @@ func TestLockdownPasswordsClearedByReset(t *testing.T) {
 	_, tok, _, err := f.acc.AdminResetLink(f.ann, f.now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Not the password that may have leaked; the link still works after.
+	if _, err := f.acc.ResetPassword(tok, annPassword, f.now); !errors.Is(err, ErrSamePassword) {
+		t.Errorf("the old password again = %v", err)
 	}
 	if _, err := f.acc.ResetPassword(tok, "ann-reset-password", f.now); err != nil {
 		t.Fatal(err)

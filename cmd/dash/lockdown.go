@@ -33,7 +33,7 @@ func lockdownCmd(args []string, in io.Reader, out, errOut io.Writer) int {
 	envFile := fs.String("env", ".env", "file with the server's DASH_SECRET_KEY and DASH_SMTP_* (real env vars take precedence)")
 	var steps store.LockdownSteps
 	fs.BoolVar(&steps.Sessions, "sessions", false, "sign out everyone: end every session, delete every API, OAuth and runner token, invitation, email link and wall link")
-	fs.BoolVar(&steps.Passwords, "passwords", false, "ask everyone with a password for a new one at their next sign-in")
+	fs.BoolVar(&steps.Passwords, "passwords", false, "ask everyone with a password for a new one, chosen with a reset link: the old one stops signing in")
 	fs.BoolVar(&steps.TOTP, "2fa", false, "reset two-factor sign-in: everyone who had it sets it up again at their next sign-in")
 	fs.BoolVar(&steps.Secrets, "rotate-secrets", false, "new webhook, board and GitHub webhook secrets and VAPID key; clear webhook tokens, board credentials and push subscriptions")
 	all := fs.Bool("all", false, "all four steps above")
@@ -236,7 +236,7 @@ func printLockdownPlan(out io.Writer, s store.LockdownSteps, p store.LockdownPre
 			p.Sessions, p.APITokens, p.Runners, p.Invitations, p.WallLinks)
 	}
 	if s.Passwords {
-		fmt.Fprintf(out, "  - ask %d accounts for a new password at their next sign-in\n", p.Passwords)
+		fmt.Fprintf(out, "  - ask %d accounts for a new password, chosen with a reset link (their old one stops signing in)\n", p.Passwords)
 	}
 	if s.TOTP {
 		fmt.Fprintf(out, "  - reset two-factor sign-in for %d accounts: they set it up again at their next sign-in\n", p.TOTP)
@@ -270,7 +270,7 @@ func printLockdownResult(out io.Writer, r store.LockdownResult) {
 			r.Sessions, r.APITokens, len(r.Runners), r.Invitations, r.EmailLinks, r.WallLinks)
 	}
 	if r.Steps.Passwords {
-		fmt.Fprintf(out, "  - %d accounts choose a new password at their next sign-in\n", r.Passwords)
+		fmt.Fprintf(out, "  - %d accounts choose a new password with a reset link (their old one no longer signs in)\n", r.Passwords)
 	}
 	if r.Steps.TOTP {
 		fmt.Fprintf(out, "  - %d accounts set up two-factor sign-in again at their next sign-in\n", r.TOTP)

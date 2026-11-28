@@ -67,7 +67,7 @@ func (a *Auth) twoFactorRoutes(mux Mux) {
 // twoFactorFree are the paths someone who must still set up two-factor
 // sign-in may use: those of someone with no org, and setting it up.
 func twoFactorFree(path string) bool {
-	return orgFree(path) || strings.HasPrefix(path, "/api/account/2fa") || path == "/api/password/change" || public[path]
+	return orgFree(path) || strings.HasPrefix(path, "/api/account/2fa") || public[path]
 }
 
 // newTicketFor keeps t, waiting for its second factor, and returns its token.
