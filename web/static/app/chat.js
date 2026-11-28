@@ -8,7 +8,7 @@ import { attachBox, attachThumb, clip } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { showView } from "./nav.js";
 import { projectKey } from "./events.js";
-import { chatCloseReason, chatPermCard, duration, permDecided, placeToolCall, savedToolCall, sendStopButton, toolCall, toolResult, toolSettled } from "./chatparts.js";
+import { applyChatDelta, chatCloseReason, duration, placeToolCall, savedToolCall, sendStopButton, toolSettled } from "./chatparts.js";
 import { closeDetail } from "./detail.js";
 import { canRework, reworkLabel, reworkTodo, takeReviewNext } from "./drawmode.js";
 import { commentsFor } from "./review.js";
@@ -772,35 +772,11 @@ function chatStreamHandler(c) {
       if (end) c.toEnd();
       return;
     }
-    switch (d.kind) {
-      case "thinking":
-        cur.think = (cur.think || "") + d.text;
-        cur.thinking.innerHTML = renderMarkdown(cur.think);
-        break;
-      case "text":
-        cur.content += d.text;
-        cur.seg += d.text;
-        cur.reply.innerHTML = renderMarkdown(cur.seg);
-        break;
-      case "tool_use": {
-        // Later text goes below the tool call, in a reply of its own. A reply
-        // still empty stays below it, so consecutive tool calls share one
-        // line (see placeToolCall) and one "Thinking…" at the end.
-        const t = toolCall(d.tool, d.input);
-        cur.tools.set(d.id, t);
-        if (cur.seg) {
-          const next = h("div", { class: "reply" });
-          cur.reply.after(next);
-          cur.reply = next;
-          cur.seg = "";
-        }
-        const el = placeToolCall(t, cur.reply);
-        if (el) entering(el);
-        break;
-      }
-      case "tool_result": {
-        const t = cur.tools.get(d.id);
-        if (t) toolResult(t, d);
+    if (d.kind === "usage") cur.usage = d.usage;
+    else applyChatDelta(cur, d, {
+      log: c.log,
+      decide: (id, decision, answers) => ws.send(JSON.stringify({ type: "permission", id, decision, answers })),
+      toolResult: (t, d) => {
         // A task create_todo made: its card shows under the answer once the
         // turn ends (settleTurn), when the server has saved it with the task.
         if (t && d.task?.id && !d.is_error && c.tasks) cur.tasks.push(d.task);
@@ -811,31 +787,20 @@ function chatStreamHandler(c) {
           row.hidden = false;
           row.append(entering(attachThumb(d.attachment, null, c.prefixOf())));
         }
-        break;
-      }
-      case "permission":
-        cur.reply.before(entering(chatPermCard(d, (decision, answers) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision, answers })))));
+      },
+      permission: (d) => {
         speakApproval(d);
         c.waiting.add(d.id);
         c.onState();
-        break;
-      case "permission_decided": {
-        if (c.waiting.delete(d.id)) c.onState();
-        permDecided(c.log, d);
-        break;
-      }
-      case "usage":
-        cur.usage = d.usage;
-        break;
-      case "error":
+      },
+      permissionDecided: (d) => { if (c.waiting.delete(d.id)) c.onState(); },
+      error: (d) => {
         cur.el.classList.add("error");
         cur.reply.append(h("p", {}, d.text));
         c.settleTurn(cur, { failed: true });
-        break;
-      case "done":
-        c.settleTurn(cur);
-        break;
-    }
+      },
+      done: () => c.settleTurn(cur),
+    });
     if (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120) c.toEnd();
   };
 }

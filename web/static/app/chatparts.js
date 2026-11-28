@@ -3,8 +3,9 @@
 // (plannerclaude.js): tool calls, approval requests and how long things took.
 // It wires up nothing on the page when it loads (bar the elapsed-time
 // ticker), so any page can import it.
-import { h, ib } from "./dom.js";
+import { entering, h, ib } from "./dom.js";
 import { SECOND, durationText } from "../time.js";
+import { renderMarkdown } from "../markdown.js";
 
 // "8s", "1m 5s", "1h 2m"
 export const duration = (ms) => durationText(ms, SECOND);
@@ -276,6 +277,65 @@ function toolGroup(first) {
     time.textContent = end && ms >= 3000 ? duration(ms) : "";
   };
   return g;
+}
+
+// applyChatDelta shows one message d of a reply streaming (see
+// internal/api/ws.go chatWS) in cur, the reply as the chat holds it:
+// { el, thinking, reply, content, seg, tools } (content is all its text, seg
+// the text of the reply element showing now). What only the chat knows goes
+// to on: decide(id, decision, answers) answers an approval request, and
+// permission(d), permissionDecided(d), toolResult(t, d), error(d), done(d)
+// follow the messages of those kinds. Approval answers show in on.log, or
+// cur.el.
+export function applyChatDelta(cur, d, on = {}) {
+  const text = d.text ?? ""; // omitted when empty
+  switch (d.kind) {
+    case "thinking":
+      cur.think = (cur.think || "") + text;
+      cur.thinking.innerHTML = renderMarkdown(cur.think);
+      break;
+    case "text":
+      cur.content += text;
+      cur.seg += text;
+      cur.reply.innerHTML = renderMarkdown(cur.seg);
+      break;
+    case "tool_use": {
+      // Later text goes below the tool call, in a reply of its own. A reply
+      // still empty stays below it, so consecutive tool calls share one
+      // line (see placeToolCall) and one "Thinking…" at the end.
+      const t = toolCall(d.tool, d.input);
+      cur.tools.set(d.id, t);
+      if (cur.seg) {
+        const next = h("div", { class: "reply" });
+        cur.reply.after(next);
+        cur.reply = next;
+        cur.seg = "";
+      }
+      const el = placeToolCall(t, cur.reply);
+      if (el) entering(el);
+      break;
+    }
+    case "tool_result": {
+      const t = cur.tools.get(d.id);
+      if (t) toolResult(t, d);
+      on.toolResult?.(t, d);
+      break;
+    }
+    case "permission":
+      cur.reply.before(entering(chatPermCard(d, (decision, answers) => on.decide?.(d.id, decision, answers))));
+      on.permission?.(d);
+      break;
+    case "permission_decided":
+      permDecided(on.log || cur.el, d);
+      on.permissionDecided?.(d);
+      break;
+    case "error":
+      on.error?.({ ...d, text });
+      break;
+    case "done":
+      on.done?.(d);
+      break;
+  }
 }
 
 // questionGroups builds the questions of Claude's question request p

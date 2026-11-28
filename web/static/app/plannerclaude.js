@@ -12,7 +12,7 @@ import { ask, attempt, fail, railOf, toast } from "./dialogs.js";
 import { runnerCodePane } from "./install.js";
 import { wsURL } from "./viewport.js";
 import { renderMarkdown } from "../editor.js";
-import { chatCloseReason, chatPermCard, permDecided, placeToolCall, sendStopButton, toolCall, toolResult, toolSettled } from "./chatparts.js";
+import { applyChatDelta, chatCloseReason, sendStopButton, toolSettled } from "./chatparts.js";
 
 const call = (method, path, body) => api(method, path, body, "");
 // onPage: this is planning.html. The app (app.js) imports this module too,
@@ -208,55 +208,27 @@ function send(q) {
   const reply = h("div", { class: "reply" });
   const el = entering(h("div", { class: "msg assistant pending" }, thinking, reply));
   log().append(el);
-  ch.cur = { el, thinking, reply, text: "", q, tools: new Map() };
+  ch.cur = { el, thinking, reply, content: "", seg: "", q, tools: new Map() };
   busyButton();
   toEnd();
   sendWS({ type: "send", messages: ch.history });
 }
 
-// delta shows one piece of the reply (see internal/api/ws.go chatWS).
+// delta shows one piece of the reply (see internal/api/ws.go chatWS). The
+// log follows the reply while the reader is at its end.
 function delta(d) {
   const cur = ch.cur;
   if (!cur) return;
-  switch (d.kind) {
-    case "thinking":
-      cur.thinking.textContent += d.text;
-      break;
-    case "text":
-      cur.text += d.text;
-      cur.reply.innerHTML = renderMarkdown(cur.text);
-      break;
-    case "tool_use": {
-      const t = toolCall(d.tool, d.input);
-      cur.tools.set(d.id, t);
-      const el = placeToolCall(t, cur.reply);
-      if (el) entering(el);
-      break;
-    }
-    case "tool_result": {
-      const t = cur.tools.get(d.id);
-      if (t) toolResult(t, d);
-      break;
-    }
-    case "permission":
-      cur.reply.before(entering(chatPermCard(d, (decision, answers) => decide(d.id, decision, answers))));
-      break;
-    case "permission_decided":
-      permDecided(cur.el, d);
-      break;
-    case "done":
-      if (cur.text) ch.history.push({ role: "assistant", content: cur.text });
+  const l = log(), atEnd = l.scrollHeight - l.scrollTop - l.clientHeight < 120;
+  applyChatDelta(cur, d, {
+    decide: (id, decision, answers) => sendWS({ type: "permission", id, decision, answers }),
+    done: () => {
+      if (cur.content) ch.history.push({ role: "assistant", content: cur.content });
       settle("");
-      break;
-    case "error":
-      settle(d.text || "Claude couldn't answer");
-      break;
-  }
-  toEnd();
-}
-
-function decide(id, decision, answers) {
-  sendWS({ type: "permission", id, decision, answers });
+    },
+    error: (d) => settle(d.text || "Claude couldn't answer"),
+  });
+  if (atEnd) toEnd();
 }
 
 // settle ends the reply: done, or failed with why (the question is taken
@@ -267,7 +239,7 @@ function settle(why) {
   cur.el.classList.remove("pending");
   for (const t of cur.tools.values()) toolSettled(t);
   if (why) {
-    if (!cur.text) {
+    if (!cur.content) {
       if (ch.history.at(-1)?.role === "user") ch.history.pop();
       const input = $("#pl-chat-form textarea");
       if (!input.value) input.value = cur.q;
@@ -286,7 +258,7 @@ function stop() {
   ch.cur = null;
   cur.el.classList.remove("pending");
   for (const t of cur.tools.values()) toolSettled(t);
-  if (cur.text) ch.history.push({ role: "assistant", content: cur.text });
+  if (cur.content) ch.history.push({ role: "assistant", content: cur.content });
   else { ch.history.pop(); cur.el.remove(); }
   busyButton();
 }
