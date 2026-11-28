@@ -677,6 +677,24 @@ func writeText(w http.ResponseWriter, s string) {
 	_, _ = w.Write([]byte(s))
 }
 
+// sandboxHeaders makes an answer of bytes Dash doesn't trust (uploads,
+// images from a repository) safe to open directly: its type is
+// contentType, never sniffed, and the sandbox keeps script in it (an SVG,
+// say) from running on Dash's origin.
+func sandboxHeaders(w http.ResponseWriter, contentType, cacheControl string) {
+	h := w.Header()
+	h.Set("Content-Type", contentType)
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", tunnel.RunnerCSP)
+	h.Set("Cache-Control", cacheControl)
+}
+
+// writeSandboxed answers with b under sandboxHeaders.
+func writeSandboxed(w http.ResponseWriter, contentType, cacheControl string, b []byte) {
+	sandboxHeaders(w, contentType, cacheControl)
+	_, _ = w.Write(b)
+}
+
 func writeErr(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
 	var inv model.ErrInvalidTransition

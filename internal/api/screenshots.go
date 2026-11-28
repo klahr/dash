@@ -84,11 +84,7 @@ func (s *Server) readShot(t model.Todo, name string) ([]byte, error) {
 // writeShot answers with a WebP picture. Its name changes with every run,
 // so it may be kept a while.
 func writeShot(w http.ResponseWriter, b []byte) {
-	w.Header().Set("Content-Type", "image/webp")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	w.Header().Set("Cache-Control", "private, max-age=3600")
-	_, _ = w.Write(b)
+	writeSandboxed(w, "image/webp", "private, max-age=3600", b)
 }
 
 // maxShotSetup bounds the screenshot setup command, like other commands' scripts.

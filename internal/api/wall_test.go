@@ -551,8 +551,21 @@ func TestWallNeedsPerson(t *testing.T) {
 		t.Errorf("Dash's task %+v", n)
 	}
 	avatar := got["bob's review"].Avatar
-	if w := do(t, h, "GET", avatar, ""); w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" {
+	w := do(t, h, "GET", avatar, "")
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" {
 		t.Errorf("avatar signed in: %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+	// A browser that has the picture isn't sent it again.
+	if etag := w.Header().Get("ETag"); etag == "" {
+		t.Error("avatar without an ETag")
+	} else {
+		r := httptest.NewRequest("GET", avatar, nil)
+		r.Header.Set("If-None-Match", etag)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusNotModified || w.Body.Len() != 0 {
+			t.Errorf("avatar with If-None-Match: %d, %d bytes", w.Code, w.Body.Len())
+		}
 	}
 	if w := do(t, routes, "GET", avatar, ""); w.Code != http.StatusUnauthorized {
 		t.Errorf("avatar signed out: %d", w.Code)

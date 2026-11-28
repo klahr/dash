@@ -65,11 +65,7 @@ func diffImageQuery(r *http.Request) (name string, old bool, err error) {
 // directly: no sniffing, and no script in an SVG.
 func writeDiffImage(w http.ResponseWriter, name string, b []byte) {
 	ct, _ := diffImageType(name)
-	w.Header().Set("Content-Type", ct)
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	w.Header().Set("Cache-Control", "private, max-age=60")
-	_, _ = w.Write(b)
+	writeSandboxed(w, ct, "private, max-age=60", b)
 }
 
 // fileAt reads name as rev has it, in repo.

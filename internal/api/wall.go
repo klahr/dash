@@ -357,15 +357,7 @@ func (s *Server) wallAvatar(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	h := w.Header()
-	h.Set("Content-Type", ct)
-	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	if r.URL.Query().Get("v") == strconv.FormatInt(v, 10) {
-		h.Set("Cache-Control", "private, max-age=31536000, immutable")
-	} else {
-		h.Set("Cache-Control", "private, no-cache")
-	}
-	_, _ = w.Write(data)
+	auth.ServeAvatar(w, r, data, ct, v)
 }
 
 // wallOpts are a wall's options: privacy is public mode, noSpend leaves

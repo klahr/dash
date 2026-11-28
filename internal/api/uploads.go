@@ -122,13 +122,10 @@ func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
 // serveUpload answers r with an upload: images to show, other files to
 // download, either way never run as a page of Dash's.
 func serveUpload(w http.ResponseWriter, r *http.Request, a model.Attachment) {
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Type", a.Type)
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	sandboxHeaders(w, a.Type, "private, max-age=86400, immutable")
 	if !strings.HasPrefix(a.Type, "image/") {
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": a.Name}))
 	}
-	w.Header().Set("Cache-Control", "private, max-age=86400, immutable")
 	http.ServeFile(w, r, a.Path)
 }
 

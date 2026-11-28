@@ -73,8 +73,16 @@ func (a *Auth) getAvatar(w http.ResponseWriter, r *http.Request, id *Identity) {
 		accountError(w, err)
 		return
 	}
+	ServeAvatar(w, r, data, ct, v)
+}
+
+// ServeAvatar answers r with a profile picture: data of type ct, at version
+// v. It is sandboxed, cached for good when r asks for ?v={v}, and answered
+// with 304 Not Modified when the browser already has version v.
+func ServeAvatar(w http.ResponseWriter, r *http.Request, data []byte, ct string, v int64) {
 	h := w.Header()
 	h.Set("Content-Type", ct)
+	// The same value as tunnel.RunnerCSP, which auth can't import.
 	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	// A URL with the picture's version always gets the same picture.
 	if r.URL.Query().Get("v") == strconv.FormatInt(v, 10) {
