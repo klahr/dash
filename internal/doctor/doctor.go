@@ -46,7 +46,8 @@ const (
 	GroupProject  = "project"
 )
 
-// Names of the checks other parts of Dash ask about.
+// Names of the required and feature checks a runner reports (see
+// runnerctl's Preflight and Doctor), which other parts of Dash ask about.
 const (
 	CheckGit     = "git"
 	CheckBash    = "bash"

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/doctor"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/tunnel"
 )
@@ -71,7 +72,7 @@ func (p Preflight) goos() string {
 // bash checks for the bash project commands and Claude's tools run with on
 // Windows: Git for Windows' (localrun.Bash).
 func (p Preflight) bash() Check {
-	c := Check{Name: "bash"}
+	c := Check{Name: doctor.CheckBash}
 	bash := p.Bash
 	if bash == "" {
 		bash = localrun.Bash()
@@ -87,7 +88,7 @@ func (p Preflight) bash() Check {
 }
 
 func (p Preflight) git() Check {
-	c := Check{Name: "git"}
+	c := Check{Name: doctor.CheckGit}
 	path, err := p.lookPath("git")
 	if err != nil {
 		c.Detail = "not found on PATH"
@@ -99,7 +100,7 @@ func (p Preflight) git() Check {
 }
 
 func (p Preflight) claude(ctx context.Context, bin string) Check {
-	c := Check{Name: "claude"}
+	c := Check{Name: doctor.CheckClaude}
 	path, err := p.lookPath(bin)
 	if err != nil {
 		c.Detail = bin + " not found on PATH"
@@ -136,7 +137,7 @@ func (p Preflight) claude(ctx context.Context, bin string) Check {
 }
 
 func (p Preflight) hub(ctx context.Context, server string) Check {
-	c := Check{Name: "hub"}
+	c := Check{Name: doctor.CheckHub}
 	u, err := tunnel.CheckServer(server)
 	if err != nil {
 		c.Detail, c.Fix = err.Error(), "serve the hub over HTTPS (see docs/deploy.md) and use its https:// address"
