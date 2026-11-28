@@ -56,18 +56,6 @@ func (r Runner) Has(name string) bool {
 	return ok
 }
 
-// HasChrome reports whether the runner has a headless Chrome or Chromium,
-// as its doctor last found: browser tests and before/after screenshots
-// need one.
-func (r Runner) HasChrome() bool { return r.Has(doctor.CheckChrome) }
-
-// AnyHas reports whether one of list has feature check name (Runner.Has):
-// a feature can then say "no runner has Chrome" instead of skipping
-// silently.
-func AnyHas(list []Runner, name string) bool {
-	return slices.ContainsFunc(list, func(r Runner) bool { return r.Has(name) })
-}
-
 // MissingFor are the tools hub project id's commands use that the runner's
 // doctor found missing (none: none, or it doesn't say).
 func (r Runner) MissingFor(project string) []string {

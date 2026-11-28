@@ -27,17 +27,6 @@ const (
 	Error   Status = "error"
 )
 
-// rank orders statuses from good to bad.
-func (s Status) rank() int {
-	switch s {
-	case Warning:
-		return 1
-	case Error:
-		return 2
-	}
-	return 0
-}
-
 // The groups checks come in. A required check that fails is an error; a
 // feature or project check that fails a warning.
 const (
@@ -85,20 +74,6 @@ type Report struct {
 	// "macOS", "Linux (Debian/Ubuntu)", "Windows", …
 	System string  `json:"system,omitempty"`
 	Checks []Check `json:"checks"`
-}
-
-// Worst is the worst status of r's checks (OK for none, or a nil r).
-func (r *Report) Worst() Status {
-	worst := OK
-	if r == nil {
-		return worst
-	}
-	for _, c := range r.Checks {
-		if c.Status.rank() > worst.rank() {
-			worst = c.Status
-		}
-	}
-	return worst
 }
 
 // Has reports whether r's check name (a required or feature check)

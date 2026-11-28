@@ -50,13 +50,6 @@ type Answer struct {
 	Digest   *Digest   `json:"digest,omitempty"`
 }
 
-// ParseFindings finds the findings JSON in the agent's final message (see
-// ParseAnswer).
-func ParseFindings(answer string) ([]Finding, error) {
-	a, err := ParseAnswer(answer)
-	return a.Findings, err
-}
-
 // ParseAnswer finds the answer JSON in the agent's final message. It
 // tries, in order: the fenced code blocks (json or untagged, last first),
 // the whole message, and every balanced JSON object in the message holding

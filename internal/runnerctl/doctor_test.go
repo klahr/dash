@@ -99,8 +99,10 @@ func TestDoctorAllGood(t *testing.T) {
 	if rep.System != "Linux (Debian/Ubuntu)" || rep.At.IsZero() {
 		t.Errorf("system %q at %v", rep.System, rep.At)
 	}
-	if rep.Worst() != doctor.OK {
-		t.Errorf("worst = %s: %+v", rep.Worst(), rep.Checks)
+	for _, c := range rep.Checks {
+		if c.Status != doctor.OK {
+			t.Errorf("%s:%s = %s %q", c.Group, c.Name, c.Status, c.Message)
+		}
 	}
 	var names []string
 	for _, c := range rep.Checks {
@@ -157,9 +159,6 @@ func TestDoctorMissing(t *testing.T) {
 	expect("hp1/make", doctor.Warning, "xcode-select --install", "api's test or run command")
 	expect("hp2/npm", doctor.Warning, "brew install node", "web's")
 	expect("hp2/make", doctor.Warning, "xcode-select --install", "web's")
-	if rep.Worst() != doctor.Error {
-		t.Errorf("worst = %s", rep.Worst())
-	}
 	// make is looked up once for both projects.
 	n := 0
 	for _, a := range m.asked {

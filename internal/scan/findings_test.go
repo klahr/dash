@@ -10,6 +10,12 @@ import (
 	"github.com/klahr/dash/internal/model"
 )
 
+// parseFindings is the findings of ParseAnswer(answer).
+func parseFindings(answer string) ([]Finding, error) {
+	a, err := ParseAnswer(answer)
+	return a.Findings, err
+}
+
 func TestParseFindings(t *testing.T) {
 	t.Parallel()
 
@@ -22,17 +28,17 @@ func TestParseFindings(t *testing.T) {
 		"in prose":    `Here you go: {"findings": [` + one + `]} — done.`,
 		"fence first": "```json\n{\"findings\": [" + one + "]}\n```\nNote: use {braces} carefully.",
 	} {
-		fs, err := ParseFindings(answer)
+		fs, err := parseFindings(answer)
 		if err != nil || len(fs) != 1 || fs[0].Title != "x" {
 			t.Errorf("%s: %+v %v", name, fs, err)
 		}
 	}
-	fs, err := ParseFindings("```json\n{\"findings\": []}\n```")
+	fs, err := parseFindings("```json\n{\"findings\": []}\n```")
 	if err != nil || len(fs) != 0 {
 		t.Errorf("empty: %+v %v", fs, err)
 	}
 	for _, bad := range []string{"", "No issues found.", `{"results": []}`, "```json\n{\"findings\": [\n```"} {
-		if _, err := ParseFindings(bad); !errors.Is(err, ErrNoFindings) {
+		if _, err := parseFindings(bad); !errors.Is(err, ErrNoFindings) {
 			t.Errorf("%q: %v", bad, err)
 		}
 	}
@@ -48,7 +54,7 @@ func TestParseFindingsRunAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fs, err := ParseFindings(string(b))
+	fs, err := parseFindings(string(b))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +82,7 @@ func TestParseFindingsFences(t *testing.T) {
 		"indented fence":              "  ```json\n  " + obj + "\n  ```",
 		"crlf":                        "Hi\r\n```json\r\n" + obj + "\r\n```\r\n",
 	} {
-		fs, err := ParseFindings(answer)
+		fs, err := parseFindings(answer)
 		if err != nil || len(fs) != 1 || fs[0].Title != "x" {
 			t.Errorf("%s: %+v %v", name, fs, err)
 		}
@@ -87,7 +93,7 @@ func TestValidateFinding(t *testing.T) {
 	t.Parallel()
 
 	parse := func(js string) Finding {
-		fs, err := ParseFindings(`{"findings": [` + js + `]}`)
+		fs, err := parseFindings(`{"findings": [` + js + `]}`)
 		if err != nil || len(fs) != 1 {
 			t.Fatalf("%s: %v", js, err)
 		}
@@ -146,7 +152,7 @@ func TestIssuesDropsInvalidAndDuplicates(t *testing.T) {
 	t.Parallel()
 
 	tm := Template{Name: "sec", Kind: KindSecurity}
-	fs, err := ParseFindings(`{"findings": [
+	fs, err := parseFindings(`{"findings": [
 		{"title":"Hardcoded key","file":"cfg.go","line":3,"fingerprint":"hardcoded-key"},
 		{"title":"Hard-coded API key","file":"cfg.go","line":9,"fingerprint":"hardcoded-key"},
 		{"title":"","severity":"high"},

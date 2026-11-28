@@ -39,7 +39,7 @@ func TestReportCarriesDoctor(t *testing.T) {
 	}
 
 	report(map[string]any{"parallel": 1}) // an older runner
-	if r := runnerOf(t, h, id); r.Doctor != nil || r.HasChrome() {
+	if r := runnerOf(t, h, id); r.Doctor != nil || r.Has(doctor.CheckChrome) {
 		t.Fatalf("doctor from a runner without one: %+v", r.Doctor)
 	}
 
@@ -56,7 +56,7 @@ func TestReportCarriesDoctor(t *testing.T) {
 	if r.Doctor == nil || !r.Doctor.At.Equal(at) || len(r.Doctor.Checks) != 4 || r.Doctor.System != "macOS" {
 		t.Fatalf("doctor = %+v", r.Doctor)
 	}
-	if !r.HasChrome() || r.Has(doctor.CheckGH) || !AnyHas([]Runner{{}, r}, doctor.CheckChrome) || AnyHas([]Runner{r}, doctor.CheckGH) {
+	if !r.Has(doctor.CheckChrome) || r.Has(doctor.CheckGH) {
 		t.Error("Has: chrome yes, gh no")
 	}
 	if got := r.MissingFor("hp1"); !slices.Equal(got, []string{"go"}) {

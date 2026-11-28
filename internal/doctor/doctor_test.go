@@ -89,8 +89,8 @@ func TestInstall(t *testing.T) {
 
 func TestReport(t *testing.T) {
 	var none *Report
-	if none.Worst() != OK || none.ProjectMissing("p") != nil {
-		t.Error("a nil report should be OK and miss nothing")
+	if none.ProjectMissing("p") != nil {
+		t.Error("a nil report should miss nothing")
 	}
 	if _, known := none.Has(CheckChrome); known {
 		t.Error("a nil report knows nothing")
@@ -103,9 +103,6 @@ func TestReport(t *testing.T) {
 		{Group: GroupProject, Name: "node", Project: "p1", Status: OK},
 		{Group: GroupProject, Name: "gh", Project: "p2", Status: Warning},
 	}}
-	if r.Worst() != Warning {
-		t.Errorf("Worst = %s", r.Worst())
-	}
 	if has, known := r.Has(CheckChrome); has || !known {
 		t.Errorf("Has(chrome) = %v %v", has, known)
 	}
@@ -114,10 +111,6 @@ func TestReport(t *testing.T) {
 	}
 	if got := r.ProjectMissing("p1"); !slices.Equal(got, []string{"go"}) {
 		t.Errorf("ProjectMissing(p1) = %q", got)
-	}
-	r.Checks = append(r.Checks, Check{Group: GroupRequired, Name: CheckClaude, Status: Error})
-	if r.Worst() != Error {
-		t.Errorf("Worst = %s", r.Worst())
 	}
 }
 
