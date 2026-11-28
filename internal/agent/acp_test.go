@@ -444,6 +444,30 @@ func TestACPChecker(t *testing.T) {
 		t.Errorf("with a key: status = %+v", st)
 	}
 
+	// A session that fails for another reason: its sign-in is unknown,
+	// which keeps its label, and the agent's own name is kept.
+	odd := &ACP{Profile: &ACPProfile{Name: "odd", Title: "Odd"}}
+	odd.CLI = &acpChecker{Profile: odd.Profile, check: func(context.Context) (acpInit, error, error) {
+		var i acpInit
+		i.AgentInfo = &struct {
+			Name    string `json:"name"`
+			Title   string `json:"title"`
+			Version string `json:"version"`
+		}{Name: "odd-agent", Title: "Odd Agent", Version: "1.2.3"}
+		return i, nil, errors.New("internal error")
+	}}
+	if st := odd.CLI.Check(context.Background()); st.LoggedOut || !st.SignInUnknown || st.Title != "Odd Agent" {
+		t.Errorf("unknown: status = %+v", st)
+	}
+	if s := StatusOf(odd); !s.Installed || !s.LoggedIn || !s.Ready() || s.SignIn != model.SignInUnknown || s.Title != "Odd Agent" || s.Version != "1.2.3" {
+		t.Errorf("unknown: agent status = %+v", s)
+	}
+	// Then a run finds it signed out.
+	odd.CLI.signedOut()
+	if s := StatusOf(odd); s.LoggedIn || s.SignIn != model.SignedOut {
+		t.Errorf("signed out after unknown: agent status = %+v", s)
+	}
+
 	missing := &acpChecker{Profile: &ACPProfile{Name: "x", Title: "X", Bin: filepath.Join(t.TempDir(), "nope"), Install: "install it"}}
 	if st := missing.Check(context.Background()); st.Version != "" || len(st.Warnings) != 1 {
 		t.Errorf("missing: status = %+v", st)

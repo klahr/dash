@@ -18,7 +18,7 @@ import { loadTry } from "./try.js";
 import { loadRunnerTokens } from "./tokens.js";
 import { isRelease, runnerOutdated as outdatedFor } from "../runnerversion.js";
 import { LABEL_ANY, projectLabels, runnerLabels, servesProject } from "../groups.js";
-import { FEATURES, agentTitle, loadAgents } from "./agents.js";
+import { FEATURES, agentSetup, agentTitle, featureLabel, loadAgents, signInState, withCode } from "./agents.js";
 import { docsLabels, labelPicker, refreshLabelPickers } from "./labelpicker.js";
 
 // ------------------------------------------------------------------ runners
@@ -671,6 +671,7 @@ function paintOverview(list) {
           osChip(r),
           showOwner && r.owner ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
           accountChip(r),
+          agentChips(r),
           h("span", {}, n ? plural(n, "project") : "No projects"),
           runnerWarned(r) ? h("span", { class: "runner-row-warn" }, ico("alert"), runnerWarnText(r)) : null,
           doctorTone(r) ? h("span", { class: "runner-row-doctor" }, doctorDot(r), doctorText(r)) : null)),
@@ -805,16 +806,39 @@ function paintRunner(r) {
 }
 
 // agentState is how agent a stands on its runner: a short text and a tone.
+// An unknown sign-in (an ACP agent Dash couldn't open a session with) says
+// so, without the sign-in hint: its tasks still go there.
 function agentState(a) {
   if (!a.checked_at) return { text: "Not checked yet", tone: "muted" };
   if (!a.installed) return { text: "Not installed", tone: "off" };
-  if (!a.logged_in) return { text: "Not logged in", tone: "warn" };
-  return { text: "Logged in", tone: "ok" };
+  const s = signInState(a);
+  if (s === "signed-out") return { text: "Not signed in", tone: "warn" };
+  if (s === "unknown") return { text: "Sign-in unknown", tone: "muted" };
+  return { text: "Signed in", tone: "ok" };
 }
 
-// runnerAgents lists the agent CLIs runner r reported: each one's version,
-// login, the features it has and its warnings. Projects on an agent run
-// only on runners where it is installed and logged in (its label).
+// agentName is agent a's name for people: this Dash's name for it, else
+// the one the agent reported (an ACP agent's own), else its name.
+function agentName(a) {
+  return (state.agents || []).some((x) => x.name === a.name) ? agentTitle(a.name) : a.title || a.name;
+}
+
+// agentChips are runner r's agents for its row in the overview: those it
+// found, each with its version and a mark when it isn't signed in.
+function agentChips(r) {
+  const found = (r.agents || []).filter((a) => a.installed);
+  if (!found.length) return null;
+  return h("span", { class: "runner-row-agents" }, ...found.map((a) => {
+    const st = agentState(a);
+    return h("span", { class: `runner-row-agent ${st.tone}`, title: `${agentName(a)}${a.version ? ` ${a.version}` : ""}: ${st.text.toLowerCase()}` },
+      st.tone === "warn" ? ico("alert") : null, agentName(a), a.version ? h("span", { class: "runner-row-agent-v" }, a.version) : null);
+  }));
+}
+
+// runnerAgents lists the agent CLIs runner r found: each one's version,
+// sign-in (with how to sign in when it isn't), the features it reported and
+// its warnings; then, on one line, those it didn't find. Projects on an
+// agent run only on runners where it is installed and signed in (its label).
 function runnerAgents(r) {
   const list = r.agents || [];
   if (!list.length) {
@@ -822,22 +846,36 @@ function runnerAgents(r) {
   }
   // Claude Code's warnings are shown above, as before agents were reported.
   const claudeShown = runnerClaudeWarnings(r).length > 0;
-  return h("ul", { class: "runner-agents" }, ...list.map((a) => {
-    const st = agentState(a);
-    const has = new Set(a.features || []);
-    const warns = a.name === "claude" && claudeShown ? [] : a.warnings || [];
-    return h("li", { class: "runner-agent" },
-      h("div", { class: "runner-agent-head" },
-        h("strong", {}, agentTitle(a.name)),
-        a.version ? h("span", { class: `runner-version${a.warnings?.length ? " warn" : ""}`, title: `${agentTitle(a.name)} version` }, a.version) : null,
-        h("span", { class: `runner-agent-state ${st.tone}` }, st.text),
-        h("span", { class: "runner-label default", title: st.tone === "ok" || st.tone === "muted"
-          ? `Its label: projects on ${agentTitle(a.name)} run here` : `Without its label until ${agentTitle(a.name)} is installed and logged in` }, a.name)),
-      h("div", { class: "runner-agent-features", "aria-label": "Features" }, ...Object.entries(FEATURES).map(([f, x]) =>
-        h("span", { class: `runner-agent-feature${has.has(f) ? "" : " off"}`, title: `${has.has(f) ? "Can" : "Can't"} ${x.does}` },
-          ico(has.has(f) ? "check" : "x"), x.label))),
-      warns.length ? h("ul", { class: "hint warn runner-agent-warn" }, ...warns.map((w) => h("li", {}, w))) : null);
-  }));
+  const missing = list.filter((a) => a.checked_at && !a.installed);
+  const shown = list.filter((a) => !missing.includes(a));
+  return h("div", { class: "runner-agents-box" },
+    shown.length ? h("ul", { class: "runner-agents" }, ...shown.map((a) => {
+      const st = agentState(a);
+      const has = new Set(a.features || []);
+      // Every feature Dash names, on or off, then any other it reported.
+      const feats = [...Object.keys(FEATURES), ...[...has].filter((f) => !FEATURES[f])];
+      const warns = a.name === "claude" && claudeShown ? [] : a.warnings || [];
+      const name = agentName(a);
+      return h("li", { class: "runner-agent" },
+        h("div", { class: "runner-agent-head" },
+          h("strong", {}, name),
+          a.version ? h("span", { class: `runner-version${a.warnings?.length ? " warn" : ""}`, title: `${name} version` }, a.version) : null,
+          h("span", { class: `runner-agent-state ${st.tone}` }, st.text),
+          h("span", { class: "runner-label default", title: st.tone === "ok" || st.tone === "muted"
+            ? `Its label: projects on ${name} run here` : `Without its label until ${name} is installed and signed in` }, a.name)),
+        st.tone === "warn" ? h("p", { class: "hint warn runner-agent-signin" },
+          `To sign in, run `, h("code", {}, agentSetup(a.name).login), ` on ${r.name} as the user the runner runs as. It checks again within five minutes.`) : null,
+        signInState(a) === "unknown" ? h("p", { class: "hint runner-agent-signin" },
+          "Dash couldn't tell whether it is signed in. Its tasks still go here; one fails if it isn't.") : null,
+        h("div", { class: "runner-agent-features", "aria-label": "Features" }, ...feats.map((f) =>
+          h("span", { class: `runner-agent-feature${has.has(f) ? "" : " off"}`, title: `${has.has(f) ? "Can" : "Can't"} ${FEATURES[f]?.does || f}` },
+            ico(has.has(f) ? "check" : "x"), featureLabel(f)))),
+        warns.length ? h("ul", { class: "hint warn runner-agent-warn" }, ...warns.map((w) => h("li", {}, w))) : null);
+    })) : null,
+    missing.length ? h("p", { class: "hint runner-agents-missing" },
+      `Not found on its PATH: ${missing.map(agentName).join(", ")}. `,
+      ...missing.flatMap((a, i) => [i ? " " : "", `${agentName(a)}: `, ...withCode(agentSetup(a.name).install), "."]), " ",
+      docsLink("several-computers.md#agents")) : null);
 }
 
 // runnerLabelsSection shows runner r's labels: its system's (dashed) and,

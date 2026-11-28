@@ -73,3 +73,22 @@ func TestCleanAgent(t *testing.T) {
 		}
 	}
 }
+
+func TestSignInState(t *testing.T) {
+	now := time.Now()
+	for _, x := range []struct {
+		a    AgentStatus
+		want string
+	}{
+		{AgentStatus{Installed: true, LoggedIn: true}, ""},                       // not checked yet
+		{AgentStatus{CheckedAt: now}, ""},                                        // not installed
+		{AgentStatus{CheckedAt: now, Installed: true, LoggedIn: true}, SignedIn}, // an older runner
+		{AgentStatus{CheckedAt: now, Installed: true}, SignedOut},                // an older runner
+		{AgentStatus{CheckedAt: now, Installed: true, LoggedIn: true, SignIn: SignInUnknown}, SignInUnknown},
+		{AgentStatus{CheckedAt: now, Installed: true, SignIn: SignedOut}, SignedOut},
+	} {
+		if got := x.a.SignInState(); got != x.want {
+			t.Errorf("%+v: %q, want %q", x.a, got, x.want)
+		}
+	}
+}

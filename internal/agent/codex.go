@@ -75,6 +75,10 @@ func (Codex) Name() string { return CodexProvider }
 // DisplayName is "Codex".
 func (Codex) DisplayName() string { return "Codex" }
 
+// InstallHint and LoginHint say how to set the Codex CLI up (SetupHinter).
+func (Codex) InstallHint() string { return "install it with `npm install -g @openai/codex`" }
+func (Codex) LoginHint() string   { return "codex login" }
+
 // CanResume: `codex exec resume <thread>` continues a session.
 func (Codex) CanResume() bool { return true }
 

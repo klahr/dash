@@ -37,6 +37,7 @@ import { loadScans, resetScans } from "./scans.js";
 import { loadDeploys, resetDeploys } from "./deploys.js";
 import { gp, loadGoals, resetGoals, showGoal } from "./goals.js";
 import { planner } from "./planner.js";
+import { agentReadyOn, agentSetup, agentTitle, loadAgents, signInState, suggestAgent, withCode } from "./agents.js";
 import { followProject } from "./planning.js";
 import { loadPeople } from "./people.js";
 import { isStarred, loadStars, othersOpen, setOthersOpen, setStar, starsOn } from "./stars.js";
@@ -279,6 +280,8 @@ export function openNewProject() {
     `${r.name}${r.mine ? " (yours)" : ""}`)));
   f.machine.value = pick;
   $("#new-project-runner").hidden = runners.length < 2;
+  fillAgents();
+  if (!state.agents) loadAgents().then(() => { if (d.open) { fillAgents(); syncHubMode(); } });
   showProgress(false);
   d.showModal();
   setHubMode(hubMode());
@@ -311,7 +314,9 @@ const ghState = { cache: new Map(), pick: null, loading: "" };
 // np is the sheet's own state: the name it filled in itself (replaced as the
 // repository changes, until the user types their own), the GitHub repository
 // it created (so trying again doesn't create it twice), and the run under way.
-const np = { nameAuto: "", runsOnAuto: "", created: null, run: null };
+// agentAuto is the agent it picked itself (suggestAgent), replaced as the
+// runners change until the user picks one.
+const np = { nameAuto: "", runsOnAuto: "", agentAuto: "", created: null, run: null };
 // defaultRunsOn is what a project added with runner r runs on: r's own
 // labels, so it runs where its owner set them up, or "any" (any runner) while
 // it has none.
@@ -397,6 +402,54 @@ function newProjectReady(mode = hubMode()) {
   return { ready: has, why: "" };
 }
 
+// fillAgents offers the agents this Dash can run in the Agent field,
+// keeping the one picked.
+function fillAgents() {
+  const sel = $("#new-project-agent"), keep = sel.value;
+  const names = (state.agents || []).map((a) => a.name);
+  if (!names.includes("claude")) names.unshift("claude");
+  sel.replaceChildren(...names.map((n) => h("option", { value: n }, agentTitle(n))));
+  sel.value = names.includes(keep) ? keep : np.agentAuto || "claude";
+  sel.disabled = names.length < 2;
+}
+
+// syncAgent picks the agent for the new project while the user hasn't
+// (suggestAgent: Claude Code when a connected runner has it ready, else one
+// that is), and says where the picked one is ready, or why not.
+function syncAgent() {
+  const sel = $("#new-project-agent"), r = sheetRunner();
+  if (!np.agentAuto || sel.value === np.agentAuto || !sel.value) {
+    np.agentAuto = suggestAgent(r, state.runners);
+    sel.value = np.agentAuto;
+  }
+  const name = sel.value, title = agentTitle(name);
+  const online = (state.runners || []).filter((x) => x.online);
+  const ready = online.filter((x) => agentReadyOn(x, name));
+  // Runners that have it but couldn't tell whether it is signed in: its
+  // tasks still go there (they keep its label).
+  const unsure = online.filter((x) => signInState((x.agents || []).find((a) => a.name === name)) === "unknown");
+  const lines = [];
+  if (ready.length) {
+    const auto = name === np.agentAuto && name !== "claude";
+    lines.push(`${auto ? `${agentTitle("claude")} isn't signed in on a connected runner. ` : ""}${title} is ready on ${ready.map((x) => x.name).join(", ")}.`);
+  } else if (unsure.length) {
+    lines.push(`${title} is on ${unsure.map((x) => x.name).join(", ")}, which couldn't tell whether it is signed in.`);
+  } else {
+    lines.push(`No connected runner has ${title} installed and signed in: its tasks wait until one does.`);
+  }
+  // The picked runner: how to get it ready there.
+  const a = r?.online && !ready.includes(r) ? (r.agents || []).find((x) => x.name === name) : null;
+  const st = signInState(a);
+  const setup = agentSetup(name);
+  const how = !a ? [] : !a.installed && a.checked_at ? [`Not on ${r.name}: ${setup.install}.`]
+    : st === "signed-out" ? [`On ${r.name}, sign in with \`${setup.login}\`.`] : [];
+  const hint = $("#new-project-agent-hint");
+  hint.replaceChildren(...withCode([...lines, ...how].join(" ")));
+  hint.classList.toggle("warn", !ready.length && !unsure.length);
+  hint.hidden = false;
+}
+$("#new-project-agent").addEventListener("change", syncAgent);
+
 // syncHubMode updates what depends on the fields: the name (shown once
 // there is a repository, filled in from it), the hints, and the button,
 // which says what it will do and stays disabled until it can.
@@ -435,6 +488,7 @@ function syncHubMode() {
       ? `It runs on ${runsOnText(runsOn)} (Advanced), which ${where} lacks: one of them clones it when it first gets work.`
       : "It runs on no runner until you give it labels (Advanced).");
   hint.hidden = !hint.textContent || (mode === "gh" && !r?.mine);
+  syncAgent();
   $("#new-project-github-hint").textContent = `An empty ${f.github_public.checked ? "public" : "private"} repository, created with ${where}'s GitHub login.`;
   $("#new-project-github-hint").hidden = !!why;
   $("#new-project-local-where").textContent = r?.name || "the runner";
@@ -565,12 +619,14 @@ export function startAdd(plan = null) {
   // The deploy command is a script: its lines as the textarea has them.
   const commands = { run_command: body.run_command, test_command: body.test_command, deploy_command: f.deploy_command.value };
   const run = { mode, r, name: (body.name || "").trim(), remote: "", project: null, made: null, done: false, steps: [], plan };
+  // Claude Code is the default: a project on it names none.
+  const agent = body.agent && body.agent !== "claude" ? body.agent : "";
   const id = encodeURIComponent(r.id);
   const step = (label, fn) => run.steps.push({ label, fn, state: "wait", detail: "", actions: null });
   if (mode === "local") {
     run.title = `Creating ${run.name}`;
     step(`Creating the repository on ${r.name}`, async (s) => {
-      run.project = await api("POST", `/api/runners/${id}/projects`, { name: run.name, ...commands });
+      run.project = await api("POST", `/api/runners/${id}/projects`, { name: run.name, agent, ...commands });
       s.label = `Created ${run.project.name} on ${r.name}, local only`;
     });
   } else {
@@ -599,7 +655,7 @@ export function startAdd(plan = null) {
     step("Adding project", async (s) => {
       const runsOn = parseLabels(body.runs_on);
       run.project = await api("POST", "/api/projects", { name: run.name, remote_url: run.remote, clone_url: (body.clone_url || "").trim(),
-        runs_on: runsOn.length ? runsOn : defaultRunsOn(r), deploy_runs_on: parseLabels(body.deploy_runs_on), ...commands }, "");
+        runs_on: runsOn.length ? runsOn : defaultRunsOn(r), deploy_runs_on: parseLabels(body.deploy_runs_on), agent, ...commands }, "");
       np.created = null;
       s.label = `Added ${run.project.name}`;
     });
@@ -724,7 +780,7 @@ async function finishAdd(run) {
     f.reset();
     setLabels(f.runs_on, []);
     setLabels(f.deploy_runs_on, []);
-    np.nameAuto = np.runsOnAuto = "";
+    np.nameAuto = np.runsOnAuto = np.agentAuto = "";
     ghState.pick = null;
     if (d.open) d.close();
     showProgress(false);

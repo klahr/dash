@@ -67,6 +67,12 @@ repositories and clones the new project. The project runs on the labels under **
 on**: by default the picked runner's own labels, or `any` (any runner of the org) while it has
 none.
 
+**Agent** picks the agent CLI its tasks run on. It starts as Claude Code when a connected runner
+has Claude Code signed in. Otherwise it starts as an agent that the picked runner, or another
+connected runner, has installed and signed in. An agent whose sign-in is unknown isn't picked for
+you. The hint below says where the agent is ready, or how to get it ready on the picked runner.
+Change it later in **Project settings → Agent & runners**.
+
 - **Write a project brief** (at the top): start from an idea instead. Claude interviews you and
   writes a brief, then one of the sources below makes the repository. See
   [Write a project brief](plan-project.md).
@@ -374,17 +380,42 @@ checks the version and whether `claude -p` still accepts `--output-format stream
 stream-json events (the session's start, messages, `rate_limit_event`, the result) still have the
 fields Dash reads.
 
-Its page in **Runners** also lists its **Agents**: each agent CLI it can run tasks with (Claude
-Code, and any other agent this Dash supports), with its version, whether it is installed and
-logged in, its warnings, and the features it has:
+#### Agents
+
+Each runner's row in **Runners** shows the agents it found, with their versions. One that isn't
+signed in is marked. Its page lists its **Agents**: each agent CLI it found (Claude Code, and any
+other agent this Dash supports), with its version, its sign-in state, its warnings, and the
+features it reports:
 
 - **Resume**: it continues a task's earlier session (needed for **Pause** and **Build on**);
 - **MCP**: it uses Dash's MCP servers (the task tools);
 - **Permission prompts**: it asks you in Dash before a tool call it isn't allowed;
+- **Scans**: it keeps a scan's file reads inside its checkout;
 - **Usage**: it reports its account's usage limits.
 
-The runner checks each agent when it starts and every hour; nothing needs setting up. A runner
-older than this version reports only Claude Code, which the hub shows as its one agent.
+An ACP agent reports its features in its own answer, so it may show others too.
+
+The sign-in state is one of:
+
+- **Signed in**: its tasks go to this runner.
+- **Not signed in**: the page says the command that signs it in, e.g. `codex login`. Run it on
+  the runner's computer, as the user the runner runs as. The runner checks again within five
+  minutes.
+- **Sign-in unknown**: Dash couldn't tell, e.g. an ACP agent whose test session failed for
+  another reason. Its tasks still go to this runner; a task fails if it isn't signed in.
+
+Agents it didn't find are listed on one line, with how to install each.
+
+The runner finds agents on its `PATH`, so no flag is needed. It also looks in the folders agent
+CLIs are usually installed in, which a service's `PATH` may lack: `~/.local/bin`,
+`~/.npm-global/bin`, `~/.bun/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and a few more (on
+Windows, `%APPDATA%\npm`). `dash runner install` also puts each agent's folder on the service's
+`PATH`. Use `-claude`, `-codex` or `-gemini` only for a binary somewhere else. To keep the
+runner to its `PATH` alone, set `DASH_AGENT_PATH=off`.
+
+The runner checks each agent when it starts and every hour, and whether it is signed in every five
+minutes. A runner older than this version reports only Claude Code, which the hub shows as its one
+agent.
 
 Its owner and the org's admins can:
 
@@ -510,7 +541,7 @@ project's work can go; whose tasks a runner then runs is the next section's rule
 
 - Every runner has the labels of its system (`Linux`, `macOS` or `Windows`) and its architecture
   (`X64`, `ARM64`, `ARM` or `X86`). A runner from before Dash reported its system has none.
-- Every runner also has a label for each agent that is installed and logged in on it, named like
+- Every runner also has a label for each agent that is installed and signed in on it, named like
   the agent: `claude` for Claude Code, `codex` for Codex, `gemini` for Gemini CLI. A runner too old to report its agents
   keeps `claude`, as every runner ran Claude Code.
 - Its owner or an org admin gives it labels of its own on its page in **Runners → Labels**. A

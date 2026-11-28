@@ -37,15 +37,32 @@ const (
 	FeatureUsage = "usage"
 )
 
+// Sign-in states of an installed agent CLI (AgentStatus.SignIn).
+const (
+	SignedIn  = "signed-in"
+	SignedOut = "signed-out"
+	// SignInUnknown: Dash couldn't tell, e.g. an ACP agent whose test
+	// session failed for another reason than auth_required. It doesn't
+	// keep tasks away (LoggedIn stays true), but isn't offered as ready.
+	SignInUnknown = "unknown"
+)
+
 // AgentStatus is what a runner found about one agent CLI it can run.
 type AgentStatus struct {
 	// Name is the agent provider's registered name, e.g. "claude".
-	Name    string `json:"name"`
+	Name string `json:"name"`
+	// Title is the agent's own name for people, when it says one (an ACP
+	// agent's initialize answer), e.g. "Gemini CLI".
+	Title   string `json:"title,omitempty"`
 	Version string `json:"version,omitempty"` // "" when unknown
-	// Installed: the CLI ran; LoggedIn: it is signed in.
-	Installed bool     `json:"installed"`
-	LoggedIn  bool     `json:"logged_in"`
-	Warnings  []string `json:"warnings,omitempty"`
+	// Installed: the CLI ran; LoggedIn: it isn't known to be signed out
+	// (what runner labels go by).
+	Installed bool `json:"installed"`
+	LoggedIn  bool `json:"logged_in"`
+	// SignIn is SignedIn, SignedOut or SignInUnknown ("" from an older
+	// runner, or when it isn't installed: see SignInState).
+	SignIn   string   `json:"sign_in,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 	// Features are the optional abilities it has (FeatureResume, …).
 	Features []string `json:"features,omitempty"`
 	// CheckedAt is when it was last checked (zero: not yet, as on a
@@ -58,6 +75,21 @@ type AgentStatus struct {
 // moment).
 func (a AgentStatus) Ready() bool {
 	return a.CheckedAt.IsZero() || a.Installed && a.LoggedIn
+}
+
+// SignInState is a's sign-in state (SignedIn, SignedOut or SignInUnknown),
+// "" when it isn't installed or wasn't checked yet. From a runner older than
+// SignIn it is read from LoggedIn.
+func (a AgentStatus) SignInState() string {
+	switch {
+	case a.CheckedAt.IsZero() || !a.Installed:
+		return ""
+	case a.SignIn != "":
+		return a.SignIn
+	case a.LoggedIn:
+		return SignedIn
+	}
+	return SignedOut
 }
 
 // Has reports whether a has feature f.

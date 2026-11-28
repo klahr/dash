@@ -1752,6 +1752,14 @@ button.shot-img { cursor: crosshair; }
 .runner-agent-feature.off { color: var(--muted); border-style: dashed; }
 .runner-agent-feature.off .ico { color: var(--muted); }
 .runner-agent-warn { margin: 0; padding-left: 18px; overflow-wrap: anywhere; }
+.runner-agents-box { display: grid; gap: 8px; min-width: 0; }
+.runner-agent-signin, .runner-agents-missing { margin: 0; overflow-wrap: anywhere; }
+.runner-row-agents { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.runner-row-agent { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font-size: var(--fs-xs); border: 1px solid var(--line); border-radius: var(--r-pill); color: var(--text); }
+.runner-row-agent-v { color: var(--muted); }
+.runner-row-agent.warn { color: var(--running); border-color: currentColor; }
+.runner-row-agent.muted { border-style: dashed; }
+.runner-row-agent .ico { width: 12px; height: 12px; }
 .runner-claude-warn ul { margin: 4px 0 0; padding-left: 18px; font-size: var(--fs-s); overflow-wrap: anywhere; }
 /* A runner's Doctor: its setup checks by group, each with a coloured status, what was found and the fix to copy. */
 .runner-doctor-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--running); }

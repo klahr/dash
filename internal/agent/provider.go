@@ -132,13 +132,25 @@ type CLIStatus struct {
 	Warnings  []string
 	CheckedAt time.Time // zero: not checked yet
 	// LoggedOut: the CLI said it isn't signed in. A sign-in state Dash
-	// doesn't understand isn't LoggedOut, so it doesn't keep tasks away.
-	LoggedOut bool
+	// doesn't understand isn't LoggedOut, so it doesn't keep tasks away:
+	// it is SignInUnknown.
+	LoggedOut     bool
+	SignInUnknown bool
+	// Title is the agent's own name, when it says one (ACP's agentInfo).
+	Title string
 }
 
 // DisplayNamer is a provider with a name for people, e.g. "Claude Code".
 type DisplayNamer interface {
 	DisplayName() string
+}
+
+// SetupHinter is a provider that says how to set its CLI up, for people:
+// how to install it ("npm install -g @openai/codex") and the command that
+// signs it in ("codex login").
+type SetupHinter interface {
+	InstallHint() string
+	LoginHint() string
 }
 
 // CanResume reports whether x can continue an earlier session (Resumer).
@@ -249,6 +261,22 @@ func ProviderNames() []string {
 	return out
 }
 
+// CLIBins are the default binaries of the registered providers' CLIs, e.g.
+// "claude", "codex" and "gemini", each once.
+func CLIBins() []string {
+	var out []string
+	for _, n := range ProviderNames() {
+		p, err := NewProvider(n, Config{})
+		if err != nil {
+			continue
+		}
+		if b, ok := p.(interface{ bin() string }); ok && b.bin() != "" && !slices.Contains(out, b.bin()) {
+			out = append(out, b.bin())
+		}
+	}
+	return out
+}
+
 // NewProvider builds the provider registered as name ("": DefaultProvider).
 func NewProvider(name string, cfg Config) (Provider, error) {
 	if name == "" {
@@ -332,10 +360,19 @@ func ClaudeStatus(c claudecli.Status) model.AgentStatus {
 // logged in unless the CLI said it isn't: an auth status Dash doesn't
 // understand doesn't keep tasks from a runner.
 func withCLIStatus(s model.AgentStatus, c CLIStatus) model.AgentStatus {
-	s.Version, s.CheckedAt = c.Version, c.CheckedAt
+	s.Version, s.CheckedAt, s.Title = c.Version, c.CheckedAt, c.Title
 	s.Warnings = slices.Clone(c.Warnings)
 	s.Installed = c.Version != ""
 	s.LoggedIn = s.Installed && !c.LoggedOut
+	switch {
+	case !s.Installed:
+	case c.LoggedOut:
+		s.SignIn = model.SignedOut
+	case c.SignInUnknown:
+		s.SignIn = model.SignInUnknown
+	default:
+		s.SignIn = model.SignedIn
+	}
 	return s
 }
 
@@ -349,6 +386,10 @@ type ProviderInfo struct {
 	Title    string   `json:"title"` // for people (DisplayNamer), else Name
 	Features []string `json:"features"`
 	Default  bool     `json:"default,omitempty"` // DefaultProvider
+	// Install and Login say how to install its CLI and sign it in
+	// (SetupHinter; "" when it doesn't say).
+	Install string `json:"install,omitempty"`
+	Login   string `json:"login,omitempty"`
 	// Status is what this Dash found of its CLI, when it runs tasks itself
 	// (nil on a hub: its runners report theirs).
 	Status *model.AgentStatus `json:"status,omitempty"`
@@ -365,6 +406,9 @@ func Providers() []ProviderInfo {
 		i := ProviderInfo{Name: n, Title: n, Features: Features(p), Default: n == DefaultProvider}
 		if d, ok := p.(DisplayNamer); ok && d.DisplayName() != "" {
 			i.Title = d.DisplayName()
+		}
+		if h, ok := p.(SetupHinter); ok {
+			i.Install, i.Login = h.InstallHint(), h.LoginHint()
 		}
 		out = append(out, i)
 	}

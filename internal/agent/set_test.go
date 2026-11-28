@@ -39,20 +39,42 @@ func TestStatusOf(t *testing.T) {
 	for _, x := range []struct {
 		st                  claudecli.Status
 		installed, loggedIn bool
+		signIn              string
 	}{
-		{claudecli.Status{CheckedAt: now, Warnings: []string{"Couldn't run `claude --version`"}}, false, false},
-		{claudecli.Status{Version: "2.1.0", CheckedAt: now}, true, true}, // auth not understood: counts as logged in
-		{claudecli.Status{Version: "2.1.0", CheckedAt: now, Auth: &claudecli.Auth{Method: claudecli.AuthNone}}, true, false},
-		{claudecli.Status{Version: "2.1.0", CheckedAt: now, Auth: &claudecli.Auth{Method: claudecli.AuthAPIKey}}, true, true},
-		{claudecli.Status{Version: "2.1.0", CheckedAt: now, Auth: &claudecli.Auth{Method: claudecli.AuthSubscription}}, true, true},
+		{claudecli.Status{CheckedAt: now, Warnings: []string{"Couldn't run `claude --version`"}}, false, false, ""},
+		// Auth not understood: counts as logged in, its sign-in unknown.
+		{claudecli.Status{Version: "2.1.0", CheckedAt: now}, true, true, model.SignInUnknown},
+		{claudecli.Status{Version: "2.1.0", CheckedAt: now, Auth: &claudecli.Auth{Method: claudecli.AuthNone}}, true, false, model.SignedOut},
+		{claudecli.Status{Version: "2.1.0", CheckedAt: now, Auth: &claudecli.Auth{Method: claudecli.AuthAPIKey}}, true, true, model.SignedIn},
+		{claudecli.Status{Version: "2.1.0", CheckedAt: now, Auth: &claudecli.Auth{Method: claudecli.AuthSubscription}}, true, true, model.SignedIn},
 	} {
 		s := ClaudeStatus(x.st)
+		if s.SignIn != x.signIn || s.SignInState() != x.signIn {
+			t.Errorf("%+v: sign-in %q (%q), want %q", x.st, s.SignIn, s.SignInState(), x.signIn)
+		}
 		if s.Name != "claude" || s.Version != x.st.Version || s.Installed != x.installed || s.LoggedIn != x.loggedIn ||
 			!slices.Equal(s.Warnings, x.st.Warnings) || !s.CheckedAt.Equal(now) || len(s.Features) != 5 {
 			t.Errorf("%+v: %+v", x.st, s)
 		}
 		if s.Ready() != (x.installed && x.loggedIn) {
 			t.Errorf("%+v: ready %v", x.st, s.Ready())
+		}
+	}
+}
+
+func TestCLIBins(t *testing.T) {
+	bins := CLIBins()
+	for _, want := range []string{"claude", "codex", "gemini"} {
+		if !slices.Contains(bins, want) {
+			t.Errorf("CLIBins() = %v, lacks %s", bins, want)
+		}
+	}
+}
+
+func TestProvidersSetupHints(t *testing.T) {
+	for _, p := range Providers() {
+		if p.Install == "" || p.Login == "" {
+			t.Errorf("%s: install %q, login %q", p.Name, p.Install, p.Login)
 		}
 	}
 }

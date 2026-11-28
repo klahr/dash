@@ -15,7 +15,7 @@ import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
 import { refreshDeploys } from "./deploys.js";
 import { agentRunners, missingLabels, parseLabels, projectAgent, servesProject } from "../groups.js";
-import { FEATURES, NOTES, SETUP, agentTitle, loadAgents } from "./agents.js";
+import { FEATURES, NOTES, agentSetup, agentTitle, loadAgents, signInState } from "./agents.js";
 import { docsLabels, labelPicker, matchList, setLabels } from "./labelpicker.js";
 import { loadSpendTrend, readSpending, showSpending, spendingHint } from "./spending.js";
 
@@ -126,11 +126,11 @@ function renderAgentHint() {
   const hint = $("#settings-agent-hint");
   // A runner's own page: what this computer found of the CLI.
   const st = info?.status;
-  if (st?.checked_at && !(st.installed && st.logged_in)) {
-    const setup = SETUP[name];
+  if (st?.checked_at && (!st.installed || signInState(st) === "signed-out")) {
+    const setup = agentSetup(name);
     warns.push(!st.installed
-      ? `${agentTitle(name)} isn't installed on this computer: ${setup?.install || "install its CLI"}, then sign in with \`${setup?.login || name}\`.`
-      : `${agentTitle(name)} isn't signed in on this computer: run \`${setup?.login || name}\`.`);
+      ? `${agentTitle(name)} isn't installed on this computer: ${setup.install}, then sign in with \`${setup.login}\`.`
+      : `${agentTitle(name)} isn't signed in on this computer: run \`${setup.login}\`.`);
   }
   if (Array.isArray(state.runners) && !state.project.prefix) {
     const { ready, why } = agentRunners(state.runners, name);

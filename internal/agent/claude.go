@@ -34,6 +34,12 @@ func (ClaudeCode) Name() string { return DefaultProvider }
 // DisplayName is "Claude Code".
 func (ClaudeCode) DisplayName() string { return "Claude Code" }
 
+// InstallHint and LoginHint say how to set Claude Code up (SetupHinter).
+func (ClaudeCode) InstallHint() string {
+	return "install it with `npm install -g @anthropic-ai/claude-code`"
+}
+func (ClaudeCode) LoginHint() string { return "claude" }
+
 // CanResume: Claude Code continues sessions with --resume.
 func (ClaudeCode) CanResume() bool { return true }
 
@@ -67,10 +73,11 @@ type claudeChecker struct{ *claudecli.Monitor }
 func (c claudeChecker) CLIStatus() CLIStatus { return claudeCLIStatus(c.Status()) }
 
 // claudeCLIStatus is what a Claude Code CLI monitor found (c) as a
-// CLIStatus: logged out only when `claude auth status` said so.
+// CLIStatus: logged out only when `claude auth status` said so, and its
+// sign-in unknown when it gave no answer Dash understands.
 func claudeCLIStatus(c claudecli.Status) CLIStatus {
 	return CLIStatus{Version: c.Version, Warnings: c.Warnings, CheckedAt: c.CheckedAt,
-		LoggedOut: c.Auth != nil && c.Auth.Method == claudecli.AuthNone}
+		LoggedOut: c.Auth != nil && c.Auth.Method == claudecli.AuthNone, SignInUnknown: c.Auth == nil}
 }
 
 func (c ClaudeCode) bin() string {

@@ -359,6 +359,8 @@ func (s *Server) ownedRunner(w http.ResponseWriter, r *http.Request, what string
 type localProject struct {
 	Name      string `json:"name"`
 	LocalOnly bool   `json:"local_only"`
+	// Agent is the agent its tasks run on (projectRequest.Agent).
+	Agent string `json:"agent,omitempty"`
 	commandFields
 }
 

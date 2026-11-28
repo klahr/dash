@@ -131,6 +131,10 @@ var (
 func (a ACP) Name() string        { return a.Profile.Name }
 func (a ACP) DisplayName() string { return a.Profile.Title }
 
+// InstallHint and LoginHint are the profile's (SetupHinter).
+func (a ACP) InstallHint() string { return a.Profile.Install }
+func (a ACP) LoginHint() string   { return a.Profile.Login }
+
 // lastCaps are the abilities each profile's agent last said it has, by
 // profile name: a provider built afresh (Providers) knows them too.
 var lastCaps sync.Map

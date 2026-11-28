@@ -21,6 +21,9 @@ import (
 
 func TestMain(m *testing.M) {
 	store.UseMigratedTemplateInTests() // in-process stores; the built dash migrates for real
+	// The dash processes find only the CLIs the tests put on their PATH,
+	// not ones installed in the usual folders (localrun.AgentPath).
+	os.Setenv("DASH_AGENT_PATH", "off")
 	if err := killChildrenOnExit(); err != nil {
 		// Not fatal: the tests still stop their servers when they finish.
 		fmt.Fprintln(os.Stderr, "dash e2e: servers may outlive a killed test run:", err)

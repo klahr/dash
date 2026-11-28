@@ -124,6 +124,8 @@ type projectRequest struct {
 	// CloneURL is the URL the runners clone as it is (see
 	// model.Project.CloneURL); empty, they pick it from RemoteURL.
 	CloneURL string `json:"clone_url"`
+	// Agent is the agent provider its tasks run on ("": DefaultAgent).
+	Agent string `json:"agent"`
 }
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +209,12 @@ func newProjectFromRequest(req projectRequest, base model.Project, gh bool) (mod
 	if err := checkMergeMode(req.MergeMode, base.RemoteURL); err != nil {
 		return model.Project{}, err
 	}
+	name, ok := model.CleanAgent(req.Agent)
+	if !ok || name != "" && !slices.Contains(agent.ProviderNames(), name) {
+		return model.Project{}, fmt.Errorf("%w: agent must be one of %s", errBadRequest, strings.Join(agent.ProviderNames(), ", "))
+	}
 	np := base
+	np.Agent = name
 	np.Name = strings.TrimSpace(req.Name)
 	np.DefaultBranch = cmp.Or(req.DefaultBranch, "main")
 	np.RunCommand, np.TestCommand, np.SetupCommand = req.RunCommand, req.TestCommand, req.SetupCommand

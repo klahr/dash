@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,10 +55,11 @@ type acpInit struct {
 type ACPCaps struct {
 	Known   bool // an initialize answer was read
 	Version string
-	Load    bool // session/load
-	Resume  bool // session/resume
-	Fork    bool // session/fork (unstable)
-	HTTP    bool // MCP servers over HTTP
+	Title   string // agentInfo's title, else its name
+	Load    bool   // session/load
+	Resume  bool   // session/resume
+	Fork    bool   // session/fork (unstable)
+	HTTP    bool   // MCP servers over HTTP
 }
 
 func present(raw json.RawMessage) bool {
@@ -69,6 +71,7 @@ func (i acpInit) caps() ACPCaps {
 		Resume: present(i.AgentCapabilities.SessionCapabilities.Resume), Fork: present(i.AgentCapabilities.SessionCapabilities.Fork)}
 	if i.AgentInfo != nil {
 		c.Version = i.AgentInfo.Version
+		c.Title = cmp.Or(strings.TrimSpace(i.AgentInfo.Title), strings.TrimSpace(i.AgentInfo.Name))
 	}
 	return c
 }

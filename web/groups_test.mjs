@@ -180,7 +180,7 @@ test("agentRunners: the online runners that can run an agent, and why the others
   assert.deepEqual(agentRunners(list, "codex").ready.map((r) => r.name), ["a"]);
   assert.deepEqual(agentRunners(list, "codex").why, ["b: not installed", "old: doesn't have it"]);
   assert.deepEqual(agentRunners(list, "").ready.map((r) => r.name), ["old"]);
-  assert.deepEqual(agentRunners(list, "claude").why, ["a: not logged in", "b: doesn't have it"]);
+  assert.deepEqual(agentRunners(list, "claude").why, ["a: not signed in", "b: doesn't have it"]);
   assert.deepEqual(agentRunners(list, "gemini").ready, []);
 });
 

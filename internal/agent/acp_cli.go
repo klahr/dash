@@ -23,7 +23,10 @@ type acpChecker struct {
 	cli       clicheck.Base // its lock guards the fields below too
 	checked   time.Time
 	loggedOut bool
-	found     ACPCaps
+	// unknown: the last check couldn't tell whether it is signed in (its
+	// session failed for another reason than auth_required).
+	unknown bool
+	found   ACPCaps
 	// check replaces the real check (tests).
 	check func(ctx context.Context) (acpInit, error, error)
 }
@@ -53,7 +56,8 @@ func (c *acpChecker) CLIStatus() CLIStatus {
 	}
 	var s CLIStatus
 	c.cli.Read(func(version string, warnings []string) {
-		s = CLIStatus{Version: version, Warnings: warnings, CheckedAt: c.checked, LoggedOut: c.loggedOut}
+		s = CLIStatus{Version: version, Warnings: warnings, CheckedAt: c.checked, LoggedOut: c.loggedOut,
+			SignInUnknown: c.unknown && !c.loggedOut, Title: c.found.Title}
 	})
 	return s
 }
@@ -90,7 +94,7 @@ func (c *acpChecker) Check(ctx context.Context) CLIStatus {
 	}
 	init, err, sessErr := probe(ctx)
 	var warns []string
-	version, loggedOut := "", false
+	version, loggedOut, unknown := "", false, false
 	var caps ACPCaps
 	switch {
 	case err != nil:
@@ -107,12 +111,13 @@ func (c *acpChecker) Check(ctx context.Context) CLIStatus {
 		case errors.Is(sessErr, errACPLoggedOut):
 			loggedOut = true
 		case sessErr != nil:
+			unknown = true
 			warns = append(warns, "Couldn't open a session: "+sessErr.Error())
 		}
 	}
 	c.cli.Set(version, warns, func() bool {
-		changed := loggedOut != c.loggedOut || caps != c.found
-		c.checked, c.loggedOut = time.Now(), loggedOut
+		changed := loggedOut != c.loggedOut || unknown != c.unknown || caps != c.found
+		c.checked, c.loggedOut, c.unknown = time.Now(), loggedOut, unknown
 		if caps.Known || err != nil {
 			c.found = caps
 		}
@@ -171,7 +176,7 @@ func (c *acpChecker) signedOut() {
 	}
 	c.cli.Update(func() bool {
 		changed := !c.loggedOut
-		c.loggedOut = true
+		c.loggedOut, c.unknown = true, false
 		return changed
 	})
 }

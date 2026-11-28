@@ -19,6 +19,10 @@ Click **Add project**. With several runners, pick one beside the title. Then pic
 - **Write a project brief**: Claude interviews you about an idea, writes a brief, and Dash starts
   the project and a goal from it ([Write a project brief](plan-project.md)).
 
+**Agent** is the agent CLI its tasks run on. It starts as Claude Code when a connected runner has
+it signed in, else as an agent a runner has ready (see
+[Agents](several-computers.md#agents)).
+
 Repositories already on a runner's disk are added with **Add from this runner…** on its page in
 **Runners**. A clone that has a favicon gets it as its project icon.
 

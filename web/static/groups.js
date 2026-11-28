@@ -107,7 +107,7 @@ export function agentRunners(runners, name) {
     if (!r.online) continue;
     if (runnerLabels(r).some((l) => String(l).toLowerCase() === want)) { ready.push(r); continue; }
     const a = runnerAgent(r, want);
-    why.push(`${r.name}: ${!a ? "doesn't have it" : !a.installed ? "not installed" : !a.logged_in ? "not logged in" : "not ready"}`);
+    why.push(`${r.name}: ${!a ? "doesn't have it" : !a.installed ? "not installed" : !a.logged_in ? "not signed in" : "not ready"}`);
   }
   return { ready, why };
 }

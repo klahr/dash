@@ -31,9 +31,11 @@ Do this on each computer that runs `dash runner` and should run Codex tasks.
 
 The runner checks the CLI when it starts, then every hour, and whether it is signed in every
 five minutes. **Runners** shows each runner's agents, their versions and whether they are signed
-in. A runner gets the `codex` label once Codex is installed and signed in there.
+in, with the command to sign in when one isn't. A runner gets the `codex` label once Codex is
+installed and signed in there. The runner finds `codex` on its `PATH` and in the usual install
+folders (see [Agents](several-computers.md#agents)).
 
-If `codex` isn't on the runner's `PATH`, start the runner with `-codex /path/to/codex`. Extra
+For a `codex` binary somewhere else, start the runner with `-codex /path/to/codex`. Extra
 flags for task runs go in `-codex-args`, for example:
 
 ```sh

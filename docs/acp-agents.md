@@ -30,11 +30,16 @@ Do this on each computer that runs `dash runner` and should run Gemini tasks.
    ```
 
 The runner starts `gemini --acp` when it starts, then every hour, and every five minutes to see
-whether it is signed in. **Runners** shows each runner's agents, their versions and whether they
-are signed in. A runner gets the `gemini` label once the Gemini CLI is installed and signed in
-there.
+whether it is signed in. **Runners** shows each runner's agents, their versions, the features each
+reports in its `initialize` answer, and whether they are signed in. A runner gets the `gemini`
+label once the Gemini CLI is installed and signed in there.
 
-If `gemini` isn't on the runner's `PATH`, start the runner with `-gemini /path/to/gemini`. Extra
+If its test session fails for another reason than `auth_required`, **Runners** shows
+**Sign-in unknown**. The runner keeps its label, but **Add project** doesn't pick the agent for
+you. See [Agents](several-computers.md#agents).
+
+The runner finds `gemini` on its `PATH` and in the usual install folders. For a binary elsewhere,
+start the runner with `-gemini /path/to/gemini`. Extra
 flags for task runs go in `-gemini-args`, for example:
 
 ```sh

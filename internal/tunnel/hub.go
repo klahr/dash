@@ -1257,6 +1257,12 @@ func cleanAgents(list []AgentStatus) []AgentStatus {
 			continue
 		}
 		a.Version = cleanVersion(a.Version)
+		a.Title = textutil.Clip(strings.TrimSpace(a.Title), 64)
+		switch a.SignIn {
+		case "", model.SignedIn, model.SignedOut, model.SignInUnknown:
+		default:
+			a.SignIn = model.SignInUnknown
+		}
 		a.Warnings = clipList(a.Warnings, 10, 500)
 		a.Features = clipList(a.Features, 16, 40)
 		out = append(out, a)
@@ -1295,8 +1301,8 @@ func carryOverAgents(prev *Reported, agents []AgentStatus) []AgentStatus {
 func agentsKey(list []AgentStatus) string {
 	k := ""
 	for _, a := range list {
-		k += fmt.Sprintf("%s\x00%s\x00%t%t\x00%s\x00%s\x01", a.Name, a.Version, a.Installed, a.LoggedIn,
-			strings.Join(a.Warnings, "\x00"), strings.Join(a.Features, ","))
+		k += fmt.Sprintf("%s\x00%s\x00%s\x00%t%t\x00%s\x00%s\x00%s\x01", a.Name, a.Title, a.Version, a.Installed, a.LoggedIn,
+			a.SignIn, strings.Join(a.Warnings, "\x00"), strings.Join(a.Features, ","))
 	}
 	return k
 }

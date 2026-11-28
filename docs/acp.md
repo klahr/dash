@@ -21,7 +21,7 @@ The code is in `internal/agent`:
 | `acp_events.go` | `session/update` to Dash's events. |
 | `acp_perm.go` | `session/request_permission` through Dash's `permission_prompt` tool. |
 | `acp.go` | The provider (`ACP`) and the profile (`ACPProfile`). |
-| `acp_cli.go` | The CLI check: version and abilities from `initialize`, sign-in from `auth_required`. |
+| `acp_cli.go` | The CLI check: name, version and abilities from `initialize`, sign-in from `auth_required` (another error: sign-in unknown). |
 | `acp_chat.go` | The read-only chat. |
 | `gemini.go` | The Gemini CLI profile. |
 

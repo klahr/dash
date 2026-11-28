@@ -45,6 +45,14 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 		json.Unmarshal(w.Body.Bytes(), &made) != nil || !slices.Equal(made.RunsOn, []string{"any"}) {
 		t.Errorf("POST /api/projects with a remote only: %d %s", w.Code, w.Body)
 	}
+	// Add project picks its agent: a known one is kept, an unknown refused.
+	if w := call("POST", "/api/projects", `{"name":"x","remote_url":"https://example.com/x.git","agent":"codex"}`); w.Code != http.StatusCreated ||
+		json.Unmarshal(w.Body.Bytes(), &made) != nil || made.Agent != "codex" || !slices.Equal(made.RunnerLabels(), []string{"any", "codex"}) {
+		t.Errorf("POST /api/projects with an agent: %d %s", w.Code, w.Body)
+	}
+	if w := call("POST", "/api/projects", `{"name":"x","remote_url":"https://example.com/x.git","agent":"nobody"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "agent must be") {
+		t.Errorf("POST /api/projects with an unknown agent: %d %s", w.Code, w.Body)
+	}
 	// A shared project's merge mode is checked like a local one's.
 	if w := call("POST", "/api/projects", `{"name":"x","remote_url":"https://example.com/x.git","runs_on":["any"],"merge_mode":"squash"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "merge_mode must be") {
 		t.Errorf("POST /api/projects with a bad merge_mode: %d %s", w.Code, w.Body)

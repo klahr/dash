@@ -657,6 +657,15 @@ func (a *app) newAgents() {
 	if err := a.tracker.Keep(filepath.Join(o.dataDir, "usage.json")); err != nil {
 		slog.Warn("read usage.json", "err", err)
 	}
+	// A runner finds agent CLIs on the PATH, and in the folders they are
+	// usually installed in, which a service's PATH may lack: no flag needs
+	// to name them (localrun.AgentPath). DASH_AGENT_PATH=off keeps the
+	// PATH as it is (tests that hide a CLI).
+	if o.runnerMode && os.Getenv("DASH_AGENT_PATH") != "off" {
+		if err := os.Setenv("PATH", localrun.AgentPath(os.Getenv("PATH"), o.home)); err != nil {
+			slog.Warn("extend PATH", "err", err)
+		}
+	}
 	// The agent CLIs that run tasks: each project's tasks and chat run on
 	// its agent (agent.Set.For), and a runner reports them all to its hub.
 	// Scans need per-tool rules (agent.ToolRuler), so they use Claude Code,

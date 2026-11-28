@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/crypto/ssh/agent"
 
+	dashagent "github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -262,10 +263,10 @@ func (c *CLI) newService(data string) (*Service, error) {
 		args = append(args, "-data", abs)
 	}
 	// Services start with a bare PATH: give the runner the one it was set
-	// up with, plus where dash, git and claude are.
+	// up with, plus where dash, git and each agent CLI are.
 	var extra []string
 	extra = append(extra, filepath.Dir(bin))
-	for _, b := range []string{"git", "claude"} {
+	for _, b := range append([]string{"git"}, dashagent.CLIBins()...) {
 		if p, err := exec.LookPath(b); err == nil {
 			extra = append(extra, filepath.Dir(p))
 		}
