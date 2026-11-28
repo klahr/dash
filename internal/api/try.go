@@ -814,12 +814,8 @@ func webTryAllowed(p model.Project) error {
 // line for each, for the server's log.
 func copyTryFiles(p model.Project, dir string) []string {
 	var notes []string
-	for _, f := range p.CopyFiles {
-		f = filepath.Clean(strings.TrimSpace(f))
-		if f == "" || f == "." || !fsutil.RelInside(f) {
-			continue
-		}
-		switch err := fsutil.CopyPath(filepath.Join(p.Path, f), filepath.Join(dir, f)); {
+	_ = fsutil.CopyProjectFiles(p.Path, dir, p.CopyFiles, func(f string, err error) error {
+		switch {
 		case err == nil:
 			notes = append(notes, "· copied "+f)
 		case errors.Is(err, fs.ErrNotExist):
@@ -827,7 +823,8 @@ func copyTryFiles(p model.Project, dir string) []string {
 		default:
 			notes = append(notes, "· couldn't copy "+f+": "+err.Error())
 		}
-	}
+		return nil
+	})
 	return notes
 }
 

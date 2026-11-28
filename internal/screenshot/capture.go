@@ -241,15 +241,12 @@ func (c *Capturer) before(ctx, bctx context.Context, j Job, dir string, pages []
 		_ = os.RemoveAll(wt)
 		c.Git.PruneWorktrees(bg, p.ID, p.Path)
 	}()
-	for _, f := range p.CopyFiles {
-		f = filepath.Clean(strings.TrimSpace(f))
-		if f == "" || f == "." || !fsutil.RelInside(f) {
-			continue
-		}
-		if err := fsutil.CopyPath(filepath.Join(p.Path, f), filepath.Join(wt, f)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	_ = fsutil.CopyProjectFiles(p.Path, wt, p.CopyFiles, func(f string, err error) error {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			j.log("📸 couldn't copy " + f + " for the before screenshots: " + err.Error())
 		}
-	}
+		return nil
+	})
 	script := p.RunCommand
 	if setup := strings.TrimSpace(p.SetupCommand); setup != "" {
 		script = "(\n" + setup + "\n) || exit $?\n" + p.RunCommand

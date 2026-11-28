@@ -51,6 +51,25 @@ func RelInside(rel string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+// CopyProjectFiles copies each of files (a project's copy_files, paths
+// relative to src) from src to the same place under dst, and calls each
+// with the cleaned path and CopyPath's error for it, nil when it copied.
+// Blank entries, "." and paths that leave the root are skipped without a
+// call. It stops, returning that error, when each returns one: the error
+// policy (skip a missing file, note it, give up) is the caller's.
+func CopyProjectFiles(src, dst string, files []string, each func(path string, err error) error) error {
+	for _, f := range files {
+		f = filepath.Clean(strings.TrimSpace(f))
+		if f == "" || f == "." || !RelInside(f) {
+			continue
+		}
+		if err := each(f, CopyPath(filepath.Join(src, f), filepath.Join(dst, f))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // CopyPath copies the file or folder src to dst, making dst's parent
 // folders: a file keeps its permission bits, a folder is copied whole.
 func CopyPath(src, dst string) error {

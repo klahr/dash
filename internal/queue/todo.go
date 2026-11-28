@@ -1657,19 +1657,18 @@ func createFile(root, dst, content string) error {
 
 // prepareWorktree copies untracked files and runs the setup command in a new worktree.
 func (e *TodoEngine) prepareWorktree(ctx context.Context, t model.Todo, p model.Project, wt model.Worktree, log func(string)) error {
-	for _, f := range p.CopyFiles {
-		f = filepath.Clean(strings.TrimSpace(f))
-		if f == "" || f == "." || !fsutil.RelInside(f) {
-			continue
-		}
-		if err := fsutil.CopyPath(filepath.Join(p.Path, f), filepath.Join(wt.Path, f)); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				log("· " + f + " not found in the main checkout; skipped")
-				continue
-			}
+	if err := fsutil.CopyProjectFiles(p.Path, wt.Path, p.CopyFiles, func(f string, err error) error {
+		switch {
+		case err == nil:
+			log("· copied " + f)
+		case errors.Is(err, fs.ErrNotExist):
+			log("· " + f + " not found in the main checkout; skipped")
+		default:
 			return fmt.Errorf("copy %s: %w", f, err)
 		}
-		log("· copied " + f)
+		return nil
+	}); err != nil {
+		return err
 	}
 	if err := heldErr(p, model.CmdSetup); err != nil {
 		return fmt.Errorf("setup command: %w", err)

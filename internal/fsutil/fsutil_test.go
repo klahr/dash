@@ -1,9 +1,12 @@
 package fsutil
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +75,42 @@ func TestRelInside(t *testing.T) {
 		if got := RelInside(filepath.FromSlash(c.rel)); got != c.want {
 			t.Errorf("RelInside(%q) = %v, want %v", c.rel, got, c.want)
 		}
+	}
+}
+
+func TestCopyProjectFiles(t *testing.T) {
+	src, dst := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, ".env"), []byte("A=1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files := []string{" .env ", "", ".", "../outside", "/abs", "missing", "a/../.env"}
+	var got []string
+	err := CopyProjectFiles(src, dst, files, func(p string, err error) error {
+		switch {
+		case err == nil:
+			got = append(got, "ok "+p)
+		case errors.Is(err, fs.ErrNotExist):
+			got = append(got, "missing "+p)
+		default:
+			t.Errorf("%s: %v", p, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ok .env", "missing missing", "ok .env"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("calls = %q, want %q", got, want)
+	}
+	if b, err := os.ReadFile(filepath.Join(dst, ".env")); err != nil || string(b) != "A=1" {
+		t.Errorf("copied .env = %q, %v", b, err)
+	}
+
+	stop := errors.New("stop")
+	calls := 0
+	err = CopyProjectFiles(src, dst, []string{"missing", ".env"}, func(string, error) error { calls++; return stop })
+	if err != stop || calls != 1 {
+		t.Errorf("err = %v after %d calls, want stop after 1", err, calls)
 	}
 }
